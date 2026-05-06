@@ -1,25 +1,58 @@
 /**
- * Customer Management System - Main Logic
+ * ERP Integrated Management System - Main Logic
  */
 
 // --- State Management ---
 let customers = JSON.parse(localStorage.getItem('customers')) || [];
-let currentFilter = '';
+let employees = JSON.parse(localStorage.getItem('employees')) || [];
+let currentView = 'customers'; // 'customers' or 'employees'
+let customerFilter = '';
+let employeeFilter = '';
 
 // --- DOM Elements ---
+const navCustomers = document.getElementById('nav-customers');
+const navEmployees = document.getElementById('nav-employees');
+const customerSection = document.getElementById('customer-section');
+const employeeSection = document.getElementById('employee-section');
+
 const customerList = document.getElementById('customer-list');
-const emptyState = document.getElementById('empty-state');
-const customerModal = document.getElementById('customer-modal');
-const customerForm = document.getElementById('customer-form');
+const employeeList = document.getElementById('employee-list');
+const customerEmpty = document.getElementById('customer-empty');
+const employeeEmpty = document.getElementById('employee-empty');
+
+const appModal = document.getElementById('app-modal');
+const appForm = document.getElementById('app-form');
+const formFields = document.getElementById('form-fields');
 const modalTitle = document.getElementById('modal-title');
-const searchInput = document.getElementById('search-input');
 const themeBtn = document.getElementById('theme-btn');
+
+const customerSearch = document.getElementById('customer-search');
+const employeeSearch = document.getElementById('employee-search');
 
 // --- Initialization ---
 document.addEventListener('DOMContentLoaded', () => {
     initTheme();
-    renderCustomers();
+    renderAll();
 });
+
+// --- Navigation Logic ---
+function switchView(view) {
+    currentView = view;
+    if (view === 'customers') {
+        navCustomers.classList.add('active');
+        navEmployees.classList.remove('active');
+        customerSection.classList.remove('hidden');
+        employeeSection.classList.add('hidden');
+    } else {
+        navCustomers.classList.remove('active');
+        navEmployees.classList.add('active');
+        customerSection.classList.add('hidden');
+        employeeSection.classList.remove('hidden');
+    }
+}
+
+navCustomers.addEventListener('click', () => switchView('customers'));
+navEmployees.addEventListener('click', () => switchView('employees'));
 
 // --- Theme Logic ---
 function initTheme() {
@@ -42,131 +75,215 @@ function updateThemeBtnText(theme) {
 
 // --- CRUD Operations ---
 
-function saveCustomers() {
-    localStorage.setItem('customers', JSON.stringify(customers));
+function saveData(type) {
+    if (type === 'customer') {
+        localStorage.setItem('customers', JSON.stringify(customers));
+    } else {
+        localStorage.setItem('employees', JSON.stringify(employees));
+    }
 }
 
-function addCustomer(customer) {
-    customers.unshift({
+function addItem(type, data) {
+    const newItem = {
         id: Date.now().toString(),
         createdAt: new Date().toLocaleDateString(),
-        ...customer
-    });
-    saveCustomers();
-    renderCustomers();
+        ...data
+    };
+    if (type === 'customer') {
+        customers.unshift(newItem);
+    } else {
+        employees.unshift(newItem);
+    }
+    saveData(type);
+    renderAll();
 }
 
-function updateCustomer(id, updatedData) {
-    customers = customers.map(c => c.id === id ? { ...c, ...updatedData } : c);
-    saveCustomers();
-    renderCustomers();
+function updateItem(type, id, data) {
+    if (type === 'customer') {
+        customers = customers.map(item => item.id === id ? { ...item, ...data } : item);
+    } else {
+        employees = employees.map(item => item.id === id ? { ...item, ...data } : item);
+    }
+    saveData(type);
+    renderAll();
 }
 
-function deleteCustomer(id) {
-    if (confirm('정말 이 고객 정보를 삭제하시겠습니까?')) {
-        customers = customers.filter(c => c.id !== id);
-        saveCustomers();
-        renderCustomers();
+function deleteItem(type, id) {
+    const msg = type === 'customer' ? '이 고객 정보를 삭제하시겠습니까?' : '이 직원 정보를 삭제하시겠습니까?';
+    if (confirm(msg)) {
+        if (type === 'customer') {
+            customers = customers.filter(item => item.id !== id);
+        } else {
+            employees = employees.filter(item => item.id !== id);
+        }
+        saveData(type);
+        renderAll();
     }
 }
 
 // --- UI Rendering ---
 
+function renderAll() {
+    renderCustomers();
+    renderEmployees();
+}
+
 function renderCustomers() {
     const filtered = customers.filter(c => 
-        c.name.toLowerCase().includes(currentFilter.toLowerCase()) ||
-        c.email.toLowerCase().includes(currentFilter.toLowerCase())
+        c.name.toLowerCase().includes(customerFilter.toLowerCase()) ||
+        c.email.toLowerCase().includes(customerFilter.toLowerCase())
     );
 
     customerList.innerHTML = '';
-    
     if (filtered.length === 0) {
-        emptyState.classList.remove('hidden');
+        customerEmpty.classList.remove('hidden');
     } else {
-        emptyState.classList.add('hidden');
-        filtered.forEach(customer => {
+        customerEmpty.classList.add('hidden');
+        filtered.forEach(item => {
             const tr = document.createElement('tr');
             tr.innerHTML = `
-                <td><strong>${customer.name}</strong></td>
-                <td>${customer.email}</td>
-                <td>${customer.phone || '-'}</td>
-                <td>${customer.createdAt}</td>
+                <td><strong>${item.name}</strong></td>
+                <td>${item.email}</td>
+                <td>${item.phone || '-'}</td>
+                <td>${item.createdAt}</td>
                 <td class="action-btns">
-                    <button class="edit-btn" data-id="${customer.id}">수정</button>
-                    <button class="delete-btn" data-id="${customer.id}">삭제</button>
+                    <button class="edit-btn" onclick="openAppModal('customer', '${item.id}')">수정</button>
+                    <button class="delete-btn" onclick="deleteAppItem('customer', '${item.id}')">삭제</button>
                 </td>
             `;
             customerList.appendChild(tr);
         });
     }
-
-    // Attach event listeners to new buttons
-    document.querySelectorAll('.edit-btn').forEach(btn => {
-        btn.addEventListener('click', () => openModal(btn.dataset.id));
-    });
-    document.querySelectorAll('.delete-btn').forEach(btn => {
-        btn.addEventListener('click', () => deleteCustomer(btn.dataset.id));
-    });
 }
+
+function renderEmployees() {
+    const filtered = employees.filter(e => 
+        e.name.toLowerCase().includes(employeeFilter.toLowerCase()) ||
+        e.title.toLowerCase().includes(employeeFilter.toLowerCase())
+    );
+
+    employeeList.innerHTML = '';
+    if (filtered.length === 0) {
+        employeeEmpty.classList.remove('hidden');
+    } else {
+        employeeEmpty.classList.add('hidden');
+        filtered.forEach(item => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td><strong>${item.name}</strong></td>
+                <td>${item.title}</td>
+                <td>${item.contact || '-'}</td>
+                <td>${item.startDate || '-'}</td>
+                <td class="action-btns">
+                    <button class="edit-btn" onclick="openAppModal('employee', '${item.id}')">수정</button>
+                    <button class="delete-btn" onclick="deleteAppItem('employee', '${item.id}')">삭제</button>
+                </td>
+            `;
+            employeeList.appendChild(tr);
+        });
+    }
+}
+
+// Global scope for onclick handlers in generated HTML
+window.openAppModal = openAppModal;
+window.deleteAppItem = deleteItem;
 
 // --- Event Listeners ---
 
-// Search
-searchInput.addEventListener('input', (e) => {
-    currentFilter = e.target.value;
+customerSearch.addEventListener('input', (e) => {
+    customerFilter = e.target.value;
     renderCustomers();
 });
 
-// Modal Logic
-document.getElementById('add-customer-btn').addEventListener('click', () => openModal());
+employeeSearch.addEventListener('input', (e) => {
+    employeeFilter = e.target.value;
+    renderEmployees();
+});
+
+document.getElementById('add-customer-btn').addEventListener('click', () => openAppModal('customer'));
+document.getElementById('add-employee-btn').addEventListener('click', () => openAppModal('employee'));
 document.getElementById('close-modal').addEventListener('click', closeModal);
 document.getElementById('cancel-btn').addEventListener('click', closeModal);
 
-function openModal(id = null) {
-    customerForm.reset();
-    document.getElementById('customer-id').value = id || '';
+function openAppModal(type, id = null) {
+    appForm.reset();
+    document.getElementById('item-id').value = id || '';
+    document.getElementById('item-type').value = type;
     
-    if (id) {
-        const customer = customers.find(c => c.id === id);
-        if (customer) {
-            modalTitle.textContent = '고객 정보 수정';
-            document.getElementById('name').value = customer.name;
-            document.getElementById('email').value = customer.email;
-            document.getElementById('phone').value = customer.phone;
-            document.getElementById('notes').value = customer.notes;
-        }
+    let fieldsHtml = '';
+    if (type === 'customer') {
+        const item = id ? customers.find(c => c.id === id) : null;
+        modalTitle.textContent = id ? '고객 정보 수정' : '새 고객 등록';
+        fieldsHtml = `
+            <div class="form-group">
+                <label for="name">이름</label>
+                <input type="text" id="name" required value="${item ? item.name : ''}" placeholder="성함을 입력하세요">
+            </div>
+            <div class="form-group">
+                <label for="email">이메일</label>
+                <input type="email" id="email" required value="${item ? item.email : ''}" placeholder="example@email.com">
+            </div>
+            <div class="form-group">
+                <label for="phone">전화번호</label>
+                <input type="tel" id="phone" value="${item ? item.phone : ''}" placeholder="010-0000-0000">
+            </div>
+            <div class="form-group">
+                <label for="notes">메모</label>
+                <textarea id="notes" rows="3" placeholder="추가 사항">${item ? item.notes : ''}</textarea>
+            </div>
+        `;
     } else {
-        modalTitle.textContent = '새 고객 등록';
+        const item = id ? employees.find(e => e.id === id) : null;
+        modalTitle.textContent = id ? '직원 정보 수정' : '새 직원 등록';
+        fieldsHtml = `
+            <div class="form-group">
+                <label for="name">이름</label>
+                <input type="text" id="name" required value="${item ? item.name : ''}" placeholder="성함을 입력하세요">
+            </div>
+            <div class="form-group">
+                <label for="title">직함</label>
+                <input type="text" id="title" required value="${item ? item.title : ''}" placeholder="예: 과장, 개발자">
+            </div>
+            <div class="form-group">
+                <label for="contact">연락처</label>
+                <input type="tel" id="contact" value="${item ? item.contact : ''}" placeholder="010-0000-0000">
+            </div>
+            <div class="form-group">
+                <label for="startDate">투입일</label>
+                <input type="date" id="startDate" value="${item ? item.startDate : ''}">
+            </div>
+        `;
     }
     
-    customerModal.classList.remove('hidden');
+    formFields.innerHTML = fieldsHtml;
+    appModal.classList.remove('hidden');
 }
 
 function closeModal() {
-    customerModal.classList.add('hidden');
+    appModal.classList.add('hidden');
 }
 
-customerForm.addEventListener('submit', (e) => {
+appForm.addEventListener('submit', (e) => {
     e.preventDefault();
     
-    const id = document.getElementById('customer-id').value;
-    const customerData = {
-        name: document.getElementById('name').value,
-        email: document.getElementById('email').value,
-        phone: document.getElementById('phone').value,
-        notes: document.getElementById('notes').value
-    };
+    const id = document.getElementById('item-id').value;
+    const type = document.getElementById('item-type').value;
+    
+    const data = {};
+    const inputs = formFields.querySelectorAll('input, textarea');
+    inputs.forEach(input => {
+        data[input.id] = input.value;
+    });
 
     if (id) {
-        updateCustomer(id, customerData);
+        updateItem(type, id, data);
     } else {
-        addCustomer(customerData);
+        addItem(type, data);
     }
     
     closeModal();
 });
 
-// Close modal when clicking outside
 window.addEventListener('click', (e) => {
-    if (e.target === customerModal) closeModal();
+    if (e.target === appModal) closeModal();
 });

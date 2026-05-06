@@ -9,7 +9,11 @@
 <body>
     <header class="app-header">
         <div class="header-container">
-            <h1>고객 관리 <span class="accent">CRM</span></h1>
+            <h1>전사 통합 관리 <span class="accent">ERP</span></h1>
+            <nav class="main-nav">
+                <button id="nav-customers" class="nav-link active">고객 관리</button>
+                <button id="nav-employees" class="nav-link">직원 관리</button>
+            </nav>
             <div class="header-actions">
                 <button id="theme-btn" class="icon-btn">테마 변경</button>
             </div>
@@ -17,59 +21,82 @@
     </header>
 
     <main class="dashboard">
-        <section class="controls">
-            <div class="search-box">
-                <input type="text" id="search-input" placeholder="고객 이름 또는 이메일 검색...">
+        <!-- 고객 관리 섹션 -->
+        <section id="customer-section" class="content-section">
+            <div class="controls">
+                <div class="search-box">
+                    <input type="text" id="customer-search" placeholder="고객 이름 또는 이메일 검색...">
+                </div>
+                <button id="add-customer-btn" class="primary-btn">+ 새 고객 등록</button>
             </div>
-            <button id="add-customer-btn" class="primary-btn">+ 새 고객 등록</button>
+
+            <div class="customer-list-container table-wrapper">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>이름</th>
+                            <th>이메일</th>
+                            <th>전화번호</th>
+                            <th>가입일</th>
+                            <th>관리</th>
+                        </tr>
+                    </thead>
+                    <tbody id="customer-list">
+                        <!-- 고객 정보가 여기에 렌더링됩니다 -->
+                    </tbody>
+                </table>
+                <div id="customer-empty" class="empty-state hidden">
+                    <p>등록된 고객이 없습니다.</p>
+                </div>
+            </div>
         </section>
 
-        <section class="customer-list-container">
-            <table class="customer-table">
-                <thead>
-                    <tr>
-                        <th>이름</th>
-                        <th>이메일</th>
-                        <th>전화번호</th>
-                        <th>가입일</th>
-                        <th>관리</th>
-                    </tr>
-                </thead>
-                <tbody id="customer-list">
-                    <!-- 고객 정보가 여기에 렌더링됩니다 -->
-                </tbody>
-            </table>
-            <div id="empty-state" class="empty-state hidden">
-                <p>등록된 고객이 없습니다. 새 고객을 추가해 주세요.</p>
+        <!-- 직원 관리 섹션 -->
+        <section id="employee-section" class="content-section hidden">
+            <div class="controls">
+                <div class="search-box">
+                    <input type="text" id="employee-search" placeholder="직원 이름 또는 직함 검색...">
+                </div>
+                <button id="add-employee-btn" class="primary-btn">+ 새 직원 등록</button>
+            </div>
+
+            <div class="employee-list-container table-wrapper">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>이름</th>
+                            <th>직함</th>
+                            <th>연락처</th>
+                            <th>투입일</th>
+                            <th>관리</th>
+                        </tr>
+                    </thead>
+                    <tbody id="employee-list">
+                        <!-- 직원 정보가 여기에 렌더링됩니다 -->
+                    </tbody>
+                </table>
+                <div id="employee-empty" class="empty-state hidden">
+                    <p>등록된 직원이 없습니다.</p>
+                </div>
             </div>
         </section>
     </main>
 
-    <!-- 고객 추가/수정 모달 -->
-    <div id="customer-modal" class="modal hidden">
+    <!-- 공통 모달 -->
+    <div id="app-modal" class="modal hidden">
         <div class="modal-content">
             <header class="modal-header">
-                <h2 id="modal-title">고객 등록</h2>
+                <h2 id="modal-title">등록</h2>
                 <button id="close-modal" class="close-btn">&times;</button>
             </header>
-            <form id="customer-form">
-                <input type="hidden" id="customer-id">
-                <div class="form-group">
-                    <label for="name">이름</label>
-                    <input type="text" id="name" required placeholder="성함을 입력하세요">
+            <form id="app-form">
+                <input type="hidden" id="item-id">
+                <input type="hidden" id="item-type"> <!-- 'customer' or 'employee' -->
+                
+                <div id="form-fields">
+                    <!-- JS에서 동적으로 필드 생성 -->
                 </div>
-                <div class="form-group">
-                    <label for="email">이메일</label>
-                    <input type="email" id="email" required placeholder="example@email.com">
-                </div>
-                <div class="form-group">
-                    <label for="phone">전화번호</label>
-                    <input type="tel" id="phone" placeholder="010-0000-0000">
-                </div>
-                <div class="form-group">
-                    <label for="notes">메모</label>
-                    <textarea id="notes" rows="3" placeholder="추가 사항"></textarea>
-                </div>
+
                 <div class="form-actions">
                     <button type="button" id="cancel-btn" class="secondary-btn">취소</button>
                     <button type="submit" id="save-btn" class="primary-btn">저장하기</button>

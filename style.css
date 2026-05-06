@@ -64,6 +64,35 @@ body {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    gap: 2rem;
+}
+
+.main-nav {
+    display: flex;
+    gap: 1rem;
+    flex: 1;
+}
+
+.nav-link {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    font-size: 1rem;
+    font-weight: 600;
+    padding: 0.5rem 1rem;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    border-radius: 8px;
+}
+
+.nav-link:hover {
+    color: var(--text-color);
+    background-color: var(--secondary-btn);
+}
+
+.nav-link.active {
+    color: var(--accent-color);
+    background-color: rgba(56, 189, 248, 0.1);
 }
 
 .accent {
@@ -75,6 +104,15 @@ body {
     max-width: 1200px;
     margin: 2rem auto;
     padding: 0 2rem;
+}
+
+.content-section {
+    animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
 }
 
 .controls {
@@ -114,6 +152,7 @@ body {
     font-weight: 600;
     cursor: pointer;
     transition: background-color 0.3s;
+    white-space: nowrap;
 }
 
 .primary-btn:hover {
@@ -143,9 +182,10 @@ body {
     border-radius: 20px;
     cursor: pointer;
     font-size: 0.85rem;
+    white-space: nowrap;
 }
 
-.customer-list-container {
+.table-wrapper {
     background-color: var(--card-bg);
     border-radius: 12px;
     border: 1px solid var(--border-color);
@@ -153,13 +193,13 @@ body {
     box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
 }
 
-.customer-table {
+.data-table {
     width: 100%;
     border-collapse: collapse;
     text-align: left;
 }
 
-.customer-table th {
+.data-table th {
     background-color: var(--bg-color);
     padding: 1rem;
     font-size: 0.85rem;
@@ -168,13 +208,13 @@ body {
     letter-spacing: 0.05em;
 }
 
-.customer-table td {
+.data-table td {
     padding: 1rem;
     border-top: 1px solid var(--border-color);
 }
 
-.customer-table tr:hover {
-    background-color: rgba(var(--accent-color), 0.05);
+.data-table tr:hover {
+    background-color: rgba(56, 189, 248, 0.05);
 }
 
 .action-btns {
