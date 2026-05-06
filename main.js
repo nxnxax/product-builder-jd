@@ -130,8 +130,7 @@ function renderAll() {
 
 function renderCustomers() {
     const filtered = customers.filter(c => 
-        c.name.toLowerCase().includes(customerFilter.toLowerCase()) ||
-        c.email.toLowerCase().includes(customerFilter.toLowerCase())
+        c.name.toLowerCase().includes(customerFilter.toLowerCase())
     );
 
     customerList.innerHTML = '';
@@ -143,7 +142,6 @@ function renderCustomers() {
             const tr = document.createElement('tr');
             tr.innerHTML = `
                 <td data-label="이름"><strong>${item.name}</strong></td>
-                <td data-label="이메일">${item.email}</td>
                 <td data-label="전화번호">${item.phone || '-'}</td>
                 <td data-label="가입일">${item.createdAt}</td>
                 <td class="action-btns">
@@ -218,10 +216,6 @@ function openAppModal(type, id = null) {
             <div class="form-group">
                 <label for="name">이름</label>
                 <input type="text" id="name" required value="${item ? item.name : ''}" placeholder="성함을 입력하세요">
-            </div>
-            <div class="form-group">
-                <label for="email">이메일</label>
-                <input type="email" id="email" required value="${item ? item.email : ''}" placeholder="example@email.com">
             </div>
             <div class="form-group">
                 <label for="phone">전화번호</label>
