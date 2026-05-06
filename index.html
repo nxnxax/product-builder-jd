@@ -3,106 +3,127 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>고객 정보 관리 시스템</title>
+    <title>Enterprise Resource Planning | ERP Console</title>
     <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
 </head>
 <body>
     <header class="app-header">
         <div class="header-container">
-            <h1>전사 통합 관리 <span class="accent">ERP</span></h1>
+            <h1>JDHOON <span class="accent">ERP CONSOLE</span></h1>
             <nav class="main-nav">
-                <button id="nav-customers" class="nav-link active">고객 관리</button>
-                <button id="nav-employees" class="nav-link">직원 관리</button>
+                <button id="nav-customers" class="nav-link active">CRM: 고객 관리</button>
+                <button id="nav-employees" class="nav-link">HRM: 직원 관리</button>
             </nav>
-            <div class="header-actions">
-                <button id="theme-btn" class="icon-btn">테마 변경</button>
-            </div>
         </div>
     </header>
 
     <main class="dashboard">
         <!-- 고객 관리 섹션 -->
         <section id="customer-section" class="content-section">
-            <div class="controls">
-                <div class="search-box">
-                    <input type="text" id="customer-search" placeholder="고객 이름 검색...">
+            <div class="section-header">
+                <div class="title-group">
+                    <h2>Customer Management</h2>
+                    <p class="subtitle">전체 등록 고객 현황 및 세부 정보 관리</p>
                 </div>
-                <button id="add-customer-btn" class="primary-btn">+ 새 고객 등록</button>
+                <div class="controls">
+                    <div class="search-box">
+                        <input type="text" id="customer-search" placeholder="고객 성명으로 데이터 검색...">
+                    </div>
+                    <button id="add-customer-btn" class="primary-btn">+ 신규 고객 등록</button>
+                </div>
             </div>
 
-            <div class="customer-list-container table-wrapper">
+            <div class="table-wrapper">
                 <table class="data-table">
                     <thead>
                         <tr>
-                            <th>이름</th>
-                            <th>전화번호</th>
-                            <th>가입일</th>
-                            <th>관리</th>
+                            <th>고객 성명</th>
+                            <th>연락처</th>
+                            <th>등록 일자</th>
+                            <th>액션</th>
                         </tr>
                     </thead>
                     <tbody id="customer-list">
-                        <!-- 고객 정보가 여기에 렌더링됩니다 -->
+                        <!-- 데이터 로딩... -->
                     </tbody>
                 </table>
                 <div id="customer-empty" class="empty-state hidden">
-                    <p>등록된 고객이 없습니다.</p>
+                    <p>조회된 데이터가 없습니다. 새로운 고객을 등록해 주세요.</p>
                 </div>
             </div>
         </section>
 
         <!-- 직원 관리 섹션 -->
         <section id="employee-section" class="content-section hidden">
-            <div class="controls">
-                <div class="search-box">
-                    <input type="text" id="employee-search" placeholder="직원 이름 또는 직함 검색...">
+            <div class="section-header">
+                <div class="title-group">
+                    <h2>Human Resources</h2>
+                    <p class="subtitle">임직원 인사 정보 및 투입 현황 통합 관리</p>
                 </div>
-                <button id="add-employee-btn" class="primary-btn">+ 새 직원 등록</button>
+                <div class="controls">
+                    <div class="search-box">
+                        <input type="text" id="employee-search" placeholder="성명 또는 직함으로 검색...">
+                    </div>
+                    <button id="add-employee-btn" class="primary-btn">+ 신규 직원 등록</button>
+                </div>
             </div>
 
-            <div class="employee-list-container table-wrapper">
+            <div class="table-wrapper">
                 <table class="data-table">
                     <thead>
                         <tr>
-                            <th>이름</th>
-                            <th>직함</th>
+                            <th>임직원 성명</th>
+                            <th>직함 / 포지션</th>
                             <th>연락처</th>
-                            <th>투입일</th>
-                            <th>관리</th>
+                            <th>투입(입사) 일자</th>
+                            <th>액션</th>
                         </tr>
                     </thead>
                     <tbody id="employee-list">
-                        <!-- 직원 정보가 여기에 렌더링됩니다 -->
+                        <!-- 데이터 로딩... -->
                     </tbody>
                 </table>
                 <div id="employee-empty" class="empty-state hidden">
-                    <p>등록된 직원이 없습니다.</p>
+                    <p>조회된 임직원 데이터가 없습니다.</p>
                 </div>
             </div>
         </section>
     </main>
 
-    <!-- 공통 모달 -->
+    <!-- 통합 관리 모달 -->
     <div id="app-modal" class="modal hidden">
         <div class="modal-content">
             <header class="modal-header">
-                <h2 id="modal-title">등록</h2>
+                <h2 id="modal-title">Data Management</h2>
                 <button id="close-modal" class="close-btn">&times;</button>
             </header>
             <form id="app-form">
                 <input type="hidden" id="item-id">
-                <input type="hidden" id="item-type"> <!-- 'customer' or 'employee' -->
+                <input type="hidden" id="item-type">
                 
                 <div id="form-fields">
-                    <!-- JS에서 동적으로 필드 생성 -->
+                    <!-- JS Dynamic Rendering -->
                 </div>
 
                 <div class="form-actions">
                     <button type="button" id="cancel-btn" class="secondary-btn">취소</button>
-                    <button type="submit" id="save-btn" class="primary-btn">저장하기</button>
+                    <button type="submit" id="save-btn" class="primary-btn">데이터 저장</button>
                 </div>
             </form>
         </div>
     </div>
+
+    <style>
+        .title-group h2 { margin-bottom: 0.25rem; }
+        .subtitle { color: var(--text-muted); font-size: 0.9rem; font-weight: 500; }
+        @media (max-width: 768px) {
+            .section-header { align-items: flex-start; }
+            .title-group { margin-bottom: 1rem; }
+        }
+    </style>
 
     <script src="main.js" type="module"></script>
 </body>
