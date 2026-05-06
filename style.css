@@ -1,30 +1,73 @@
 
+:root {
+    --bg-color: #121212;
+    --container-bg: #1e1e1e;
+    --text-color: #ffffff;
+    --dot-color: rgba(255, 255, 255, 0.05);
+    --btn-bg: #333;
+    --btn-border: #555;
+    --shadow-color: rgba(0, 0, 0, 0.5);
+}
+
+[data-theme='light'] {
+    --bg-color: #f0f2f5;
+    --container-bg: #ffffff;
+    --text-color: #121212;
+    --dot-color: rgba(0, 0, 0, 0.05);
+    --btn-bg: #e0e0e0;
+    --btn-border: #ccc;
+    --shadow-color: rgba(0, 0, 0, 0.1);
+}
+
 body {
-    background-color: #121212;
-    color: #ffffff;
+    background-color: var(--bg-color);
+    color: var(--text-color);
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     display: flex;
     justify-content: center;
     align-items: center;
     height: 100vh;
     margin: 0;
-    background-image: radial-gradient(rgba(255, 255, 255, 0.05) 1.5px, transparent 1.5px);
+    background-image: radial-gradient(var(--dot-color) 1.5px, transparent 1.5px);
     background-size: 30px 30px;
+    transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+.theme-toggle {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+}
+
+#theme-btn {
+    background: none;
+    border: 2px solid var(--btn-border);
+    border-radius: 20px;
+    color: var(--text-color);
+    padding: 5px 15px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    transition: all 0.3s ease;
+}
+
+#theme-btn:hover {
+    background-color: var(--btn-bg);
 }
 
 .container {
     text-align: center;
-    background-color: #1e1e1e;
+    background-color: var(--container-bg);
     padding: 40px;
     border-radius: 15px;
     box-shadow: 0 10px 20px rgba(0,0,0,0.19), 0 6px 6px rgba(0,0,0,0.23),
                 inset 0 -1px 1px rgba(255,255,255,0.05);
+    transition: background-color 0.3s ease;
 }
 
 h1 {
     font-size: 2.5rem;
     margin-bottom: 30px;
-    text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+    text-shadow: 0 2px 4px var(--shadow-color);
 }
 
 .lotto-numbers-container {
@@ -63,19 +106,19 @@ h1 {
 .glowing-btn {
     padding: 15px 30px;
     font-size: 1.2rem;
-    color: #fff;
-    background-color: #333;
-    border: 2px solid #555;
+    color: var(--text-color);
+    background-color: var(--btn-bg);
+    border: 2px solid var(--btn-border);
     border-radius: 8px;
     cursor: pointer;
     transition: all 0.3s ease;
-    box-shadow: 0 0 5px rgba(255,255,255,0.2), 0 0 10px rgba(255,255,255,0.1);
+    box-shadow: 0 0 5px rgba(255,255,255,0.1), 0 0 10px rgba(255,255,255,0.05);
 }
 
 .glowing-btn:hover {
-    background-color: #444;
-    border-color: #777;
-    box-shadow: 0 0 15px rgba(255,255,255,0.4), 0 0 20px rgba(255,255,255,0.2);
+    background-color: var(--btn-bg);
+    filter: brightness(1.2);
+    box-shadow: 0 0 15px rgba(255,255,255,0.2), 0 0 20px rgba(255,255,255,0.1);
 }
 
 /* Color styles for lotto balls */

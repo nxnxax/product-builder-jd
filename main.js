@@ -1,3 +1,28 @@
+
+// Theme Toggle Logic
+const themeBtn = document.getElementById('theme-btn');
+const currentTheme = localStorage.getItem('theme');
+
+if (currentTheme) {
+    document.documentElement.setAttribute('data-theme', currentTheme);
+    if (currentTheme === 'light') {
+        themeBtn.textContent = '다크 모드';
+    }
+}
+
+themeBtn.addEventListener('click', () => {
+    let theme = document.documentElement.getAttribute('data-theme');
+    if (theme === 'light') {
+        document.documentElement.removeAttribute('data-theme');
+        localStorage.setItem('theme', 'dark');
+        themeBtn.textContent = '라이트 모드';
+    } else {
+        document.documentElement.setAttribute('data-theme', 'light');
+        localStorage.setItem('theme', 'light');
+        themeBtn.textContent = '다크 모드';
+    }
+});
+
 class LottoBall extends HTMLElement {
     constructor() {
         super();
