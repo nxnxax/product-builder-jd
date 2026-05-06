@@ -1,20 +1,83 @@
-작<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>로또 번호 생성기</title>
+    <title>고객 정보 관리 시스템</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <div class="theme-toggle">
-        <button id="theme-btn">테마 변경</button>
+    <header class="app-header">
+        <div class="header-container">
+            <h1>고객 관리 <span class="accent">CRM</span></h1>
+            <div class="header-actions">
+                <button id="theme-btn" class="icon-btn">테마 변경</button>
+            </div>
+        </div>
+    </header>
+
+    <main class="dashboard">
+        <section class="controls">
+            <div class="search-box">
+                <input type="text" id="search-input" placeholder="고객 이름 또는 이메일 검색...">
+            </div>
+            <button id="add-customer-btn" class="primary-btn">+ 새 고객 등록</button>
+        </section>
+
+        <section class="customer-list-container">
+            <table class="customer-table">
+                <thead>
+                    <tr>
+                        <th>이름</th>
+                        <th>이메일</th>
+                        <th>전화번호</th>
+                        <th>가입일</th>
+                        <th>관리</th>
+                    </tr>
+                </thead>
+                <tbody id="customer-list">
+                    <!-- 고객 정보가 여기에 렌더링됩니다 -->
+                </tbody>
+            </table>
+            <div id="empty-state" class="empty-state hidden">
+                <p>등록된 고객이 없습니다. 새 고객을 추가해 주세요.</p>
+            </div>
+        </section>
+    </main>
+
+    <!-- 고객 추가/수정 모달 -->
+    <div id="customer-modal" class="modal hidden">
+        <div class="modal-content">
+            <header class="modal-header">
+                <h2 id="modal-title">고객 등록</h2>
+                <button id="close-modal" class="close-btn">&times;</button>
+            </header>
+            <form id="customer-form">
+                <input type="hidden" id="customer-id">
+                <div class="form-group">
+                    <label for="name">이름</label>
+                    <input type="text" id="name" required placeholder="성함을 입력하세요">
+                </div>
+                <div class="form-group">
+                    <label for="email">이메일</label>
+                    <input type="email" id="email" required placeholder="example@email.com">
+                </div>
+                <div class="form-group">
+                    <label for="phone">전화번호</label>
+                    <input type="tel" id="phone" placeholder="010-0000-0000">
+                </div>
+                <div class="form-group">
+                    <label for="notes">메모</label>
+                    <textarea id="notes" rows="3" placeholder="추가 사항"></textarea>
+                </div>
+                <div class="form-actions">
+                    <button type="button" id="cancel-btn" class="secondary-btn">취소</button>
+                    <button type="submit" id="save-btn" class="primary-btn">저장하기</button>
+                </div>
+            </form>
+        </div>
     </div>
-    <div class="container">
-        <h1>로또 번호 생성기</h1>
-        <div id="lotto-numbers" class="lotto-numbers-container"></div>
-        <button id="generate-btn" class="glowing-btn">번호 생성</button>
-    </div>
+
     <script src="main.js" type="module"></script>
 </body>
 </html>

@@ -1,101 +1,172 @@
+/**
+ * Customer Management System - Main Logic
+ */
 
-// Theme Toggle Logic
+// --- State Management ---
+let customers = JSON.parse(localStorage.getItem('customers')) || [];
+let currentFilter = '';
+
+// --- DOM Elements ---
+const customerList = document.getElementById('customer-list');
+const emptyState = document.getElementById('empty-state');
+const customerModal = document.getElementById('customer-modal');
+const customerForm = document.getElementById('customer-form');
+const modalTitle = document.getElementById('modal-title');
+const searchInput = document.getElementById('search-input');
 const themeBtn = document.getElementById('theme-btn');
-const currentTheme = localStorage.getItem('theme');
 
-if (currentTheme) {
-    document.documentElement.setAttribute('data-theme', currentTheme);
-    if (currentTheme === 'light') {
-        themeBtn.textContent = '다크 모드';
-    }
+// --- Initialization ---
+document.addEventListener('DOMContentLoaded', () => {
+    initTheme();
+    renderCustomers();
+});
+
+// --- Theme Logic ---
+function initTheme() {
+    const savedTheme = localStorage.getItem('theme') || 'dark';
+    document.documentElement.setAttribute('data-theme', savedTheme);
+    updateThemeBtnText(savedTheme);
 }
 
 themeBtn.addEventListener('click', () => {
-    let theme = document.documentElement.getAttribute('data-theme');
-    if (theme === 'light') {
-        document.documentElement.removeAttribute('data-theme');
-        localStorage.setItem('theme', 'dark');
-        themeBtn.textContent = '라이트 모드';
-    } else {
-        document.documentElement.setAttribute('data-theme', 'light');
-        localStorage.setItem('theme', 'light');
-        themeBtn.textContent = '다크 모드';
-    }
+    const currentTheme = document.documentElement.getAttribute('data-theme');
+    const newTheme = currentTheme === 'light' ? 'dark' : 'light';
+    document.documentElement.setAttribute('data-theme', newTheme);
+    localStorage.setItem('theme', newTheme);
+    updateThemeBtnText(newTheme);
 });
 
-class LottoBall extends HTMLElement {
-    constructor() {
-        super();
-        this.attachShadow({ mode: 'open' });
-    }
-
-    connectedCallback() {
-        const number = this.getAttribute('number');
-        const colorClass = this.getAttribute('color-class');
-        
-        const lottoBall = document.createElement('div');
-        lottoBall.classList.add('lotto-ball', colorClass);
-        lottoBall.textContent = number;
-
-        const style = document.createElement('style');
-        style.textContent = `
-            .lotto-ball {
-                width: 60px;
-                height: 60px;
-                border-radius: 50%;
-                display: flex;
-                justify-content: center;
-                align-items: center;
-                font-size: 1.5rem;
-                font-weight: bold;
-                color: white;
-                box-shadow: 0 4px 8px rgba(0,0,0,0.3), inset 0 2px 3px rgba(255,255,255,0.2);
-                text-shadow: 0 1px 2px rgba(0,0,0,0.5);
-                animation: bounce-in 0.5s ease;
-            }
-
-            @keyframes bounce-in {
-                0% {
-                    transform: scale(0.5);
-                    opacity: 0;
-                }
-                100% {
-                    transform: scale(1);
-                    opacity: 1;
-                }
-            }
-            .color-1 { background: linear-gradient(135deg, #f368e0, #ff9f43); }
-            .color-2 { background: linear-gradient(135deg, #54a0ff, #5f27cd); }
-            .color-3 { background: linear-gradient(135deg, #ff6b6b, #ee5253); }
-            .color-4 { background: linear-gradient(135deg, #48dbfb, #1dd1a1); }
-            .color-5 { background: linear-gradient(135deg, #feca57, #ff9f43); }
-            .color-6 { background: linear-gradient(135deg, #ff9ff3, #cf6a87); }
-        `;
-
-        this.shadowRoot.append(style, lottoBall);
-    }
+function updateThemeBtnText(theme) {
+    themeBtn.textContent = theme === 'light' ? '🌙 다크 모드' : '☀️ 라이트 모드';
 }
 
-customElements.define('lotto-ball', LottoBall);
+// --- CRUD Operations ---
 
+function saveCustomers() {
+    localStorage.setItem('customers', JSON.stringify(customers));
+}
 
-document.getElementById('generate-btn').addEventListener('click', () => {
-    const lottoNumbersContainer = document.getElementById('lotto-numbers');
-    lottoNumbersContainer.innerHTML = '';
-    const numbers = generateLottoNumbers();
-
-    numbers.forEach((number, index) => {
-        const lottoBall = document.createElement('lotto-ball');
-        lottoBall.setAttribute('number', number);
-        lottoBall.setAttribute('color-class', `color-${index + 1}`);
-        lottoNumbersContainer.appendChild(lottoBall);
+function addCustomer(customer) {
+    customers.unshift({
+        id: Date.now().toString(),
+        createdAt: new Date().toLocaleDateString(),
+        ...customer
     });
+    saveCustomers();
+    renderCustomers();
+}
+
+function updateCustomer(id, updatedData) {
+    customers = customers.map(c => c.id === id ? { ...c, ...updatedData } : c);
+    saveCustomers();
+    renderCustomers();
+}
+
+function deleteCustomer(id) {
+    if (confirm('정말 이 고객 정보를 삭제하시겠습니까?')) {
+        customers = customers.filter(c => c.id !== id);
+        saveCustomers();
+        renderCustomers();
+    }
+}
+
+// --- UI Rendering ---
+
+function renderCustomers() {
+    const filtered = customers.filter(c => 
+        c.name.toLowerCase().includes(currentFilter.toLowerCase()) ||
+        c.email.toLowerCase().includes(currentFilter.toLowerCase())
+    );
+
+    customerList.innerHTML = '';
+    
+    if (filtered.length === 0) {
+        emptyState.classList.remove('hidden');
+    } else {
+        emptyState.classList.add('hidden');
+        filtered.forEach(customer => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td><strong>${customer.name}</strong></td>
+                <td>${customer.email}</td>
+                <td>${customer.phone || '-'}</td>
+                <td>${customer.createdAt}</td>
+                <td class="action-btns">
+                    <button class="edit-btn" data-id="${customer.id}">수정</button>
+                    <button class="delete-btn" data-id="${customer.id}">삭제</button>
+                </td>
+            `;
+            customerList.appendChild(tr);
+        });
+    }
+
+    // Attach event listeners to new buttons
+    document.querySelectorAll('.edit-btn').forEach(btn => {
+        btn.addEventListener('click', () => openModal(btn.dataset.id));
+    });
+    document.querySelectorAll('.delete-btn').forEach(btn => {
+        btn.addEventListener('click', () => deleteCustomer(btn.dataset.id));
+    });
+}
+
+// --- Event Listeners ---
+
+// Search
+searchInput.addEventListener('input', (e) => {
+    currentFilter = e.target.value;
+    renderCustomers();
 });
 
-function generateLottoNumbers() {
-    const numbers = new Set();
-    while (numbers.size < 6) {
-        numbers.add(Math.floor(Math.random() * 45) + 1);
+// Modal Logic
+document.getElementById('add-customer-btn').addEventListener('click', () => openModal());
+document.getElementById('close-modal').addEventListener('click', closeModal);
+document.getElementById('cancel-btn').addEventListener('click', closeModal);
+
+function openModal(id = null) {
+    customerForm.reset();
+    document.getElementById('customer-id').value = id || '';
+    
+    if (id) {
+        const customer = customers.find(c => c.id === id);
+        if (customer) {
+            modalTitle.textContent = '고객 정보 수정';
+            document.getElementById('name').value = customer.name;
+            document.getElementById('email').value = customer.email;
+            document.getElementById('phone').value = customer.phone;
+            document.getElementById('notes').value = customer.notes;
+        }
+    } else {
+        modalTitle.textContent = '새 고객 등록';
     }
-    return Array.from(numbers);
+    
+    customerModal.classList.remove('hidden');
 }
+
+function closeModal() {
+    customerModal.classList.add('hidden');
+}
+
+customerForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    
+    const id = document.getElementById('customer-id').value;
+    const customerData = {
+        name: document.getElementById('name').value,
+        email: document.getElementById('email').value,
+        phone: document.getElementById('phone').value,
+        notes: document.getElementById('notes').value
+    };
+
+    if (id) {
+        updateCustomer(id, customerData);
+    } else {
+        addCustomer(customerData);
+    }
+    
+    closeModal();
+});
+
+// Close modal when clicking outside
+window.addEventListener('click', (e) => {
+    if (e.target === customerModal) closeModal();
+});

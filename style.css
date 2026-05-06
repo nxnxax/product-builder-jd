@@ -1,131 +1,297 @@
-
 :root {
-    --bg-color: #121212;
-    --container-bg: #1e1e1e;
-    --text-color: #ffffff;
+    --bg-color: #0f172a;
+    --card-bg: #1e293b;
+    --text-color: #f8fafc;
+    --text-muted: #94a3b8;
+    --accent-color: #38bdf8;
+    --primary-btn: #0284c7;
+    --primary-btn-hover: #0369a1;
+    --secondary-btn: #334155;
+    --secondary-btn-hover: #475569;
+    --border-color: #334155;
+    --input-bg: #0f172a;
     --dot-color: rgba(255, 255, 255, 0.05);
-    --btn-bg: #333;
-    --btn-border: #555;
-    --shadow-color: rgba(0, 0, 0, 0.5);
+    --modal-overlay: rgba(0, 0, 0, 0.7);
+    --danger-color: #ef4444;
 }
 
 [data-theme='light'] {
-    --bg-color: #f0f2f5;
-    --container-bg: #ffffff;
-    --text-color: #121212;
+    --bg-color: #f1f5f9;
+    --card-bg: #ffffff;
+    --text-color: #0f172a;
+    --text-muted: #64748b;
+    --accent-color: #0ea5e9;
+    --primary-btn: #0ea5e9;
+    --primary-btn-hover: #0284c7;
+    --secondary-btn: #e2e8f0;
+    --secondary-btn-hover: #cbd5e1;
+    --border-color: #e2e8f0;
+    --input-bg: #ffffff;
     --dot-color: rgba(0, 0, 0, 0.05);
-    --btn-bg: #e0e0e0;
-    --btn-border: #ccc;
-    --shadow-color: rgba(0, 0, 0, 0.1);
+    --modal-overlay: rgba(0, 0, 0, 0.5);
+    --danger-color: #dc2626;
+}
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
 }
 
 body {
     background-color: var(--bg-color);
     color: var(--text-color);
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    height: 100vh;
-    margin: 0;
+    font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, sans-serif;
+    min-height: 100vh;
     background-image: radial-gradient(var(--dot-color) 1.5px, transparent 1.5px);
     background-size: 30px 30px;
     transition: background-color 0.3s ease, color 0.3s ease;
+    line-height: 1.5;
 }
 
-.theme-toggle {
-    position: absolute;
-    top: 20px;
-    right: 20px;
+.app-header {
+    background-color: var(--card-bg);
+    border-bottom: 1px solid var(--border-color);
+    padding: 1rem 2rem;
+    position: sticky;
+    top: 0;
+    z-index: 100;
 }
 
-#theme-btn {
-    background: none;
-    border: 2px solid var(--btn-border);
-    border-radius: 20px;
-    color: var(--text-color);
-    padding: 5px 15px;
-    cursor: pointer;
-    font-size: 0.9rem;
-    transition: all 0.3s ease;
-}
-
-#theme-btn:hover {
-    background-color: var(--btn-bg);
-}
-
-.container {
-    text-align: center;
-    background-color: var(--container-bg);
-    padding: 40px;
-    border-radius: 15px;
-    box-shadow: 0 10px 20px rgba(0,0,0,0.19), 0 6px 6px rgba(0,0,0,0.23),
-                inset 0 -1px 1px rgba(255,255,255,0.05);
-    transition: background-color 0.3s ease;
-}
-
-h1 {
-    font-size: 2.5rem;
-    margin-bottom: 30px;
-    text-shadow: 0 2px 4px var(--shadow-color);
-}
-
-.lotto-numbers-container {
+.header-container {
+    max-width: 1200px;
+    margin: 0 auto;
     display: flex;
-    justify-content: center;
-    gap: 15px;
-    margin-bottom: 40px;
+    justify-content: space-between;
+    align-items: center;
 }
 
-.lotto-ball {
-    width: 60px;
-    height: 60px;
-    border-radius: 50%;
+.accent {
+    color: var(--accent-color);
+    font-weight: 800;
+}
+
+.dashboard {
+    max-width: 1200px;
+    margin: 2rem auto;
+    padding: 0 2rem;
+}
+
+.controls {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 2rem;
+    gap: 1rem;
+}
+
+.search-box {
+    flex: 1;
+}
+
+.search-box input {
+    width: 100%;
+    max-width: 400px;
+    padding: 0.75rem 1rem;
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+    background-color: var(--input-bg);
+    color: var(--text-color);
+    outline: none;
+    transition: border-color 0.3s;
+}
+
+.search-box input:focus {
+    border-color: var(--accent-color);
+}
+
+.primary-btn {
+    background-color: var(--primary-btn);
+    color: white;
+    border: none;
+    padding: 0.75rem 1.5rem;
+    border-radius: 8px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 0.3s;
+}
+
+.primary-btn:hover {
+    background-color: var(--primary-btn-hover);
+}
+
+.secondary-btn {
+    background-color: var(--secondary-btn);
+    color: var(--text-color);
+    border: none;
+    padding: 0.75rem 1.5rem;
+    border-radius: 8px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 0.3s;
+}
+
+.secondary-btn:hover {
+    background-color: var(--secondary-btn-hover);
+}
+
+.icon-btn {
+    background: none;
+    border: 1px solid var(--border-color);
+    color: var(--text-color);
+    padding: 0.5rem 1rem;
+    border-radius: 20px;
+    cursor: pointer;
+    font-size: 0.85rem;
+}
+
+.customer-list-container {
+    background-color: var(--card-bg);
+    border-radius: 12px;
+    border: 1px solid var(--border-color);
+    overflow: hidden;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+}
+
+.customer-table {
+    width: 100%;
+    border-collapse: collapse;
+    text-align: left;
+}
+
+.customer-table th {
+    background-color: var(--bg-color);
+    padding: 1rem;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.customer-table td {
+    padding: 1rem;
+    border-top: 1px solid var(--border-color);
+}
+
+.customer-table tr:hover {
+    background-color: rgba(var(--accent-color), 0.05);
+}
+
+.action-btns {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.edit-btn, .delete-btn {
+    padding: 0.4rem 0.8rem;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    cursor: pointer;
+    border: none;
+}
+
+.edit-btn {
+    background-color: var(--secondary-btn);
+    color: var(--text-color);
+}
+
+.delete-btn {
+    background-color: rgba(239, 68, 68, 0.1);
+    color: var(--danger-color);
+}
+
+.delete-btn:hover {
+    background-color: var(--danger-color);
+    color: white;
+}
+
+.empty-state {
+    padding: 4rem;
+    text-align: center;
+    color: var(--text-muted);
+}
+
+.hidden {
+    display: none !important;
+}
+
+/* Modal */
+.modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: var(--modal-overlay);
     display: flex;
     justify-content: center;
     align-items: center;
+    z-index: 1000;
+    backdrop-filter: blur(4px);
+}
+
+.modal-content {
+    background-color: var(--card-bg);
+    width: 90%;
+    max-width: 500px;
+    border-radius: 16px;
+    padding: 2rem;
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 2rem;
+}
+
+.close-btn {
+    background: none;
+    border: none;
+    color: var(--text-muted);
     font-size: 1.5rem;
-    font-weight: bold;
-    color: white;
-    box-shadow: 0 4px 8px rgba(0,0,0,0.3), inset 0 2px 3px rgba(255,255,255,0.2);
-    text-shadow: 0 1px 2px rgba(0,0,0,0.5);
-    animation: bounce-in 0.5s ease;
-}
-
-@keyframes bounce-in {
-    0% {
-        transform: scale(0.5);
-        opacity: 0;
-    }
-    100% {
-        transform: scale(1);
-        opacity: 1;
-    }
-}
-
-.glowing-btn {
-    padding: 15px 30px;
-    font-size: 1.2rem;
-    color: var(--text-color);
-    background-color: var(--btn-bg);
-    border: 2px solid var(--btn-border);
-    border-radius: 8px;
     cursor: pointer;
-    transition: all 0.3s ease;
-    box-shadow: 0 0 5px rgba(255,255,255,0.1), 0 0 10px rgba(255,255,255,0.05);
 }
 
-.glowing-btn:hover {
-    background-color: var(--btn-bg);
-    filter: brightness(1.2);
-    box-shadow: 0 0 15px rgba(255,255,255,0.2), 0 0 20px rgba(255,255,255,0.1);
+.form-group {
+    margin-bottom: 1.5rem;
 }
 
-/* Color styles for lotto balls */
-.color-1 { background: linear-gradient(135deg, #f368e0, #ff9f43); }
-.color-2 { background: linear-gradient(135deg, #54a0ff, #5f27cd); }
-.color-3 { background: linear-gradient(135deg, #ff6b6b, #ee5253); }
-.color-4 { background: linear-gradient(135deg, #48dbfb, #1dd1a1); }
-.color-5 { background: linear-gradient(135deg, #feca57, #ff9f43); }
-.color-6 { background: linear-gradient(135deg, #ff9ff3, #cf6a87); }
+.form-group label {
+    display: block;
+    margin-bottom: 0.5rem;
+    font-size: 0.9rem;
+    color: var(--text-muted);
+}
 
+.form-group input, .form-group textarea {
+    width: 100%;
+    padding: 0.75rem;
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+    background-color: var(--input-bg);
+    color: var(--text-color);
+    outline: none;
+}
+
+.form-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 1rem;
+    margin-top: 2rem;
+}
+
+@media (max-width: 768px) {
+    .controls {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    .search-box input {
+        max-width: none;
+    }
+    .customer-table {
+        display: block;
+        overflow-x: auto;
+    }
+}
