@@ -24,14 +24,12 @@ const appModal = document.getElementById('app-modal');
 const appForm = document.getElementById('app-form');
 const formFields = document.getElementById('form-fields');
 const modalTitle = document.getElementById('modal-title');
-const themeBtn = document.getElementById('theme-btn');
 
 const customerSearch = document.getElementById('customer-search');
 const employeeSearch = document.getElementById('employee-search');
 
 // --- Initialization ---
 document.addEventListener('DOMContentLoaded', () => {
-    initTheme();
     renderAll();
 });
 
@@ -53,25 +51,6 @@ function switchView(view) {
 
 navCustomers.addEventListener('click', () => switchView('customers'));
 navEmployees.addEventListener('click', () => switchView('employees'));
-
-// --- Theme Logic ---
-function initTheme() {
-    const savedTheme = localStorage.getItem('theme') || 'dark';
-    document.documentElement.setAttribute('data-theme', savedTheme);
-    updateThemeBtnText(savedTheme);
-}
-
-themeBtn.addEventListener('click', () => {
-    const currentTheme = document.documentElement.getAttribute('data-theme');
-    const newTheme = currentTheme === 'light' ? 'dark' : 'light';
-    document.documentElement.setAttribute('data-theme', newTheme);
-    localStorage.setItem('theme', newTheme);
-    updateThemeBtnText(newTheme);
-});
-
-function updateThemeBtnText(theme) {
-    themeBtn.textContent = theme === 'light' ? '🌙 다크 모드' : '☀️ 라이트 모드';
-}
 
 // --- CRUD Operations ---
 
