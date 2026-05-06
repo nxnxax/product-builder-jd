@@ -142,10 +142,10 @@ function renderCustomers() {
         filtered.forEach(item => {
             const tr = document.createElement('tr');
             tr.innerHTML = `
-                <td><strong>${item.name}</strong></td>
-                <td>${item.email}</td>
-                <td>${item.phone || '-'}</td>
-                <td>${item.createdAt}</td>
+                <td data-label="이름"><strong>${item.name}</strong></td>
+                <td data-label="이메일">${item.email}</td>
+                <td data-label="전화번호">${item.phone || '-'}</td>
+                <td data-label="가입일">${item.createdAt}</td>
                 <td class="action-btns">
                     <button class="edit-btn" onclick="openAppModal('customer', '${item.id}')">수정</button>
                     <button class="delete-btn" onclick="deleteAppItem('customer', '${item.id}')">삭제</button>
@@ -170,10 +170,10 @@ function renderEmployees() {
         filtered.forEach(item => {
             const tr = document.createElement('tr');
             tr.innerHTML = `
-                <td><strong>${item.name}</strong></td>
-                <td>${item.title}</td>
-                <td>${item.contact || '-'}</td>
-                <td>${item.startDate || '-'}</td>
+                <td data-label="이름"><strong>${item.name}</strong></td>
+                <td data-label="직함">${item.title}</td>
+                <td data-label="연락처">${item.contact || '-'}</td>
+                <td data-label="투입일">${item.startDate || '-'}</td>
                 <td class="action-btns">
                     <button class="edit-btn" onclick="openAppModal('employee', '${item.id}')">수정</button>
                     <button class="delete-btn" onclick="deleteAppItem('employee', '${item.id}')">삭제</button>
