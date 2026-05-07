@@ -121,13 +121,23 @@ async function initAuth() {
 async function loadSupabaseConfig() {
     try {
         const config = await import(`./supabase_config.js?v=${Date.now()}`);
-        const url = String(config.SUPABASE_URL || '').trim();
+        const url = normalizeSupabaseUrl(config.SUPABASE_URL);
         const anonKey = String(config.SUPABASE_ANON_KEY || '').trim();
         const isPlaceholder = url.includes('your-project-ref') || anonKey.includes('your-supabase-anon-key');
         if (!url || !anonKey || isPlaceholder) return null;
         return { url, anonKey };
     } catch {
         return null;
+    }
+}
+
+function normalizeSupabaseUrl(value) {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    try {
+        return new URL(raw).origin;
+    } catch {
+        return raw.replace(/\/+$/, '');
     }
 }
 
