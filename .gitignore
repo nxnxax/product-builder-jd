@@ -6,3 +6,6 @@ node_modules/
 .DS_Store
 db_config.php
 api/db_config.php
+supabase_config.js
+supabase_config.php
+api/supabase_config.php

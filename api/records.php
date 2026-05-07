@@ -18,6 +18,11 @@ if (!is_file($configPath)) {
 }
 
 $db = require $configPath;
+$authConfigPath = __DIR__ . '/supabase_config.php';
+if (!is_file($authConfigPath)) {
+    $authConfigPath = dirname(__DIR__) . '/supabase_config.php';
+}
+$auth = is_file($authConfigPath) ? require $authConfigPath : ['require_auth' => false];
 
 function respond($payload, $status = 200) {
     http_response_code($status);
@@ -74,7 +79,70 @@ function employee_row($row) {
     ];
 }
 
+function base64url_decode_strict($value) {
+    $value = strtr((string)$value, '-_', '+/');
+    $padding = strlen($value) % 4;
+    if ($padding) $value .= str_repeat('=', 4 - $padding);
+    $decoded = base64_decode($value, true);
+    if ($decoded === false) respond(['ok' => false, 'error' => '인증 토큰 형식이 올바르지 않습니다.'], 401);
+    return $decoded;
+}
+
+function verify_supabase_jwt($auth) {
+    if (empty($auth['require_auth'])) return null;
+
+    $jwtSecret = (string)($auth['jwt_secret'] ?? '');
+    if ($jwtSecret === '' || $jwtSecret === 'your-supabase-jwt-secret') {
+        respond(['ok' => false, 'error' => 'Supabase 인증 설정이 없습니다.'], 500);
+    }
+
+    $header = $_SERVER['HTTP_AUTHORIZATION'] ?? '';
+    if (!preg_match('/^Bearer\s+(.+)$/i', $header, $matches)) {
+        respond(['ok' => false, 'error' => '로그인이 필요합니다.'], 401);
+    }
+
+    $token = $matches[1];
+    $parts = explode('.', $token);
+    if (count($parts) !== 3) {
+        respond(['ok' => false, 'error' => '인증 토큰 형식이 올바르지 않습니다.'], 401);
+    }
+
+    [$headerPart, $payloadPart, $signaturePart] = $parts;
+    $headerJson = json_decode(base64url_decode_strict($headerPart), true);
+    $payload = json_decode(base64url_decode_strict($payloadPart), true);
+
+    if (!is_array($headerJson) || !is_array($payload) || ($headerJson['alg'] ?? '') !== 'HS256') {
+        respond(['ok' => false, 'error' => '지원하지 않는 인증 토큰입니다.'], 401);
+    }
+
+    $expected = hash_hmac('sha256', $headerPart . '.' . $payloadPart, $jwtSecret, true);
+    $actual = base64url_decode_strict($signaturePart);
+    if (!hash_equals($expected, $actual)) {
+        respond(['ok' => false, 'error' => '인증 토큰 검증에 실패했습니다.'], 401);
+    }
+
+    if (($payload['exp'] ?? 0) < time()) {
+        respond(['ok' => false, 'error' => '로그인 세션이 만료되었습니다.'], 401);
+    }
+
+    $issuer = (string)($auth['issuer'] ?? '');
+    if ($issuer !== '' && ($payload['iss'] ?? '') !== $issuer) {
+        respond(['ok' => false, 'error' => '인증 발급자가 올바르지 않습니다.'], 401);
+    }
+
+    $audience = (string)($auth['audience'] ?? 'authenticated');
+    $aud = $payload['aud'] ?? '';
+    $audiences = is_array($aud) ? $aud : [$aud];
+    if ($audience !== '' && !in_array($audience, $audiences, true)) {
+        respond(['ok' => false, 'error' => '인증 대상이 올바르지 않습니다.'], 401);
+    }
+
+    return $payload;
+}
+
 try {
+    $authUser = verify_supabase_jwt($auth);
+
     $pdo = new PDO(
         sprintf(
             'mysql:host=%s;port=%d;dbname=%s;charset=utf8mb4',

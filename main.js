@@ -12,11 +12,29 @@ let currentView = 'customers'; // 'customers', 'employees', or 'marketing'
 let customerFilter = '';
 let employeeFilter = '';
 let isLoading = false;
+let authEnabled = false;
+let authMode = 'login';
+let supabaseClient = null;
+let currentSession = null;
 
 // --- DOM Elements ---
 const navCustomers = document.getElementById('nav-customers');
 const navEmployees = document.getElementById('nav-employees');
 const navMarketing = document.getElementById('nav-marketing');
+
+const authScreen = document.getElementById('auth-screen');
+const appHeader = document.getElementById('app-header');
+const appDashboard = document.getElementById('app-dashboard');
+const authForm = document.getElementById('auth-form');
+const authEmail = document.getElementById('auth-email');
+const authPassword = document.getElementById('auth-password');
+const authSubmit = document.getElementById('auth-submit');
+const authMessage = document.getElementById('auth-message');
+const loginTab = document.getElementById('login-tab');
+const signupTab = document.getElementById('signup-tab');
+const userMenu = document.getElementById('user-menu');
+const userEmail = document.getElementById('user-email');
+const logoutBtn = document.getElementById('logout-btn');
 
 const customerSection = document.getElementById('customer-section');
 const employeeSection = document.getElementById('employee-section');
@@ -40,8 +58,15 @@ const employeeSearch = document.getElementById('employee-search');
 document.addEventListener('DOMContentLoaded', initApp);
 
 async function initApp() {
-    renderLoading();
     try {
+        await initAuth();
+        if (authEnabled && !currentSession) {
+            renderSignedOut();
+            return;
+        }
+
+        renderSignedIn();
+        renderLoading();
         await loadAll();
         await migrateLocalStorageIfNeeded();
         renderAll();
@@ -50,11 +75,89 @@ async function initApp() {
     }
 }
 
+async function initAuth() {
+    const config = await loadSupabaseConfig();
+    if (!config) {
+        authEnabled = false;
+        return;
+    }
+
+    const { createClient } = await import('https://esm.sh/@supabase/supabase-js@2');
+    supabaseClient = createClient(config.url, config.anonKey);
+    authEnabled = true;
+
+    const { data, error } = await supabaseClient.auth.getSession();
+    if (error) throw error;
+    currentSession = data.session || null;
+
+    supabaseClient.auth.onAuthStateChange((event, session) => {
+        currentSession = session || null;
+        if (event === 'SIGNED_OUT' || !currentSession) {
+            renderSignedOut();
+            return;
+        }
+
+        setTimeout(async () => {
+            renderSignedIn();
+            renderLoading();
+            try {
+                await loadAll();
+                renderAll();
+            } catch (error) {
+                showError(error);
+            }
+        }, 0);
+    });
+}
+
+async function loadSupabaseConfig() {
+    try {
+        const config = await import(`./supabase_config.js?v=${Date.now()}`);
+        const url = String(config.SUPABASE_URL || '').trim();
+        const anonKey = String(config.SUPABASE_ANON_KEY || '').trim();
+        const isPlaceholder = url.includes('your-project-ref') || anonKey.includes('your-supabase-anon-key');
+        if (!url || !anonKey || isPlaceholder) return null;
+        return { url, anonKey };
+    } catch {
+        return null;
+    }
+}
+
+function renderSignedOut() {
+    authScreen.classList.remove('hidden');
+    appHeader.classList.add('hidden');
+    appDashboard.classList.add('hidden');
+    userMenu.classList.add('hidden');
+    setAuthMessage('', '');
+}
+
+function renderSignedIn() {
+    authScreen.classList.add('hidden');
+    appHeader.classList.remove('hidden');
+    appDashboard.classList.remove('hidden');
+
+    if (authEnabled && currentSession?.user?.email) {
+        userEmail.textContent = currentSession.user.email;
+        userMenu.classList.remove('hidden');
+    } else {
+        userMenu.classList.add('hidden');
+    }
+}
+
 // --- API ---
 async function apiRequest(resource, options = {}) {
+    const headers = {
+        'Content-Type': 'application/json',
+        ...(options.headers || {})
+    };
+
+    if (currentSession?.access_token) {
+        headers.Authorization = `Bearer ${currentSession.access_token}`;
+    }
+
     const response = await fetch(`${API_URL}?resource=${encodeURIComponent(resource)}`, {
-        headers: { 'Content-Type': 'application/json' },
-        ...options
+        ...options,
+        headers
     });
     const payload = await response.json().catch(() => null);
     if (!response.ok || !payload || payload.ok === false) {
@@ -144,6 +247,62 @@ navCustomers.addEventListener('click', () => switchView('customers'));
 navEmployees.addEventListener('click', () => switchView('employees'));
 if (navMarketing) {
     navMarketing.addEventListener('click', () => switchView('marketing'));
+}
+
+loginTab.addEventListener('click', () => setAuthMode('login'));
+signupTab.addEventListener('click', () => setAuthMode('signup'));
+logoutBtn.addEventListener('click', signOut);
+authForm.addEventListener('submit', handleAuthSubmit);
+
+function setAuthMode(mode) {
+    authMode = mode;
+    loginTab.classList.toggle('active', mode === 'login');
+    signupTab.classList.toggle('active', mode === 'signup');
+    authSubmit.textContent = mode === 'login' ? '로그인' : '회원가입';
+    authPassword.autocomplete = mode === 'login' ? 'current-password' : 'new-password';
+    setAuthMessage('', '');
+}
+
+async function handleAuthSubmit(event) {
+    event.preventDefault();
+    if (!supabaseClient) return;
+
+    const email = authEmail.value.trim();
+    const password = authPassword.value;
+
+    authSubmit.disabled = true;
+    authSubmit.textContent = authMode === 'login' ? '로그인 중...' : '가입 중...';
+    setAuthMessage('', '');
+
+    try {
+        if (authMode === 'signup') {
+            const { data, error } = await supabaseClient.auth.signUp({ email, password });
+            if (error) throw error;
+            if (!data.session) {
+                setAuthMessage('가입 확인 메일을 보냈습니다. 메일 인증 후 로그인하세요.', 'success');
+                return;
+            }
+        } else {
+            const { error } = await supabaseClient.auth.signInWithPassword({ email, password });
+            if (error) throw error;
+        }
+    } catch (error) {
+        setAuthMessage(error?.message || '인증 처리에 실패했습니다.', 'error');
+    } finally {
+        authSubmit.disabled = false;
+        authSubmit.textContent = authMode === 'login' ? '로그인' : '회원가입';
+    }
+}
+
+async function signOut() {
+    if (!supabaseClient) return;
+    await supabaseClient.auth.signOut();
+}
+
+function setAuthMessage(message, type) {
+    authMessage.textContent = message;
+    authMessage.classList.toggle('error', type === 'error');
+    authMessage.classList.toggle('success', type === 'success');
 }
 
 // --- CRUD Operations ---

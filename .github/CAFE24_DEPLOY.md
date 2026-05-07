@@ -65,6 +65,31 @@ return [
 ];
 ```
 
+## Supabase Auth
+
+회원가입/로그인은 Supabase Auth를 사용합니다. 브라우저에는 공개 가능한 Supabase Project URL과 anon key만 둡니다.
+
+로컬 또는 카페24 서버 루트의 `supabase_config.js` 형식:
+
+```js
+export const SUPABASE_URL = 'https://프로젝트-ref.supabase.co';
+export const SUPABASE_ANON_KEY = 'Supabase anon public key';
+```
+
+DB API 보호를 위해 카페24 서버 루트의 `supabase_config.php`에 JWT secret을 둡니다. 이 파일은 GitHub Actions 배포 대상에 포함하지 않습니다.
+
+```php
+<?php
+return [
+    'jwt_secret' => 'Supabase JWT secret',
+    'issuer' => 'https://프로젝트-ref.supabase.co/auth/v1',
+    'audience' => 'authenticated',
+    'require_auth' => true,
+];
+```
+
+Supabase 값은 Dashboard > Project Settings > API에서 Project URL, anon public key, JWT secret을 확인해 입력하세요.
+
 ## Compatibility
 
 워크플로는 기존 저장소에 `FTP_SERVER`, `FTP_USER`, `FTP_PASS`, `FTP_PASSWORD` 이름으로 Secret이 이미 등록된 경우도 함께 지원합니다. 새로 등록한다면 `CAFE24_` 접두어가 붙은 이름을 사용하세요.

@@ -32,6 +32,106 @@ body {
     -webkit-font-smoothing: antialiased;
 }
 
+.auth-screen {
+    min-height: 100vh;
+    display: grid;
+    place-items: center;
+    padding: 2rem;
+    background:
+        linear-gradient(135deg, rgba(30, 41, 59, 0.94), rgba(15, 23, 42, 0.88)),
+        linear-gradient(90deg, #e0f2fe, #f8fafc);
+}
+
+.auth-panel {
+    width: min(100%, 440px);
+    background: var(--surface-color);
+    border: 1px solid rgba(226, 232, 240, 0.9);
+    border-radius: 20px;
+    padding: 2.5rem;
+    box-shadow: 0 30px 70px rgba(15, 23, 42, 0.28);
+}
+
+.auth-brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: var(--primary-color);
+    font-weight: 900;
+    letter-spacing: 0;
+    margin-bottom: 1.75rem;
+}
+
+.auth-brand span {
+    color: var(--accent-color);
+}
+
+.auth-brand strong {
+    font-size: 0.78rem;
+    color: #0f172a;
+    background: #e0f2fe;
+    padding: 0.2rem 0.45rem;
+    border-radius: 6px;
+}
+
+.auth-copy h1 {
+    font-size: 1.9rem;
+    line-height: 1.15;
+    color: var(--primary-color);
+    margin-bottom: 0.55rem;
+}
+
+.auth-copy p {
+    color: var(--text-muted);
+    font-size: 0.95rem;
+    margin-bottom: 1.5rem;
+}
+
+.auth-tabs {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.5rem;
+    padding: 0.35rem;
+    background: #f1f5f9;
+    border-radius: 12px;
+    margin-bottom: 1.5rem;
+}
+
+.auth-tab {
+    border: 0;
+    border-radius: 9px;
+    background: transparent;
+    color: var(--text-muted);
+    font-weight: 800;
+    padding: 0.7rem 1rem;
+    cursor: pointer;
+}
+
+.auth-tab.active {
+    color: var(--accent-color);
+    background: #fff;
+    box-shadow: var(--shadow-soft);
+}
+
+.auth-form .primary-btn {
+    width: 100%;
+}
+
+.auth-message {
+    min-height: 1.4rem;
+    margin-top: 1rem;
+    color: var(--text-muted);
+    font-size: 0.87rem;
+    line-height: 1.5;
+}
+
+.auth-message.error {
+    color: var(--danger-color);
+}
+
+.auth-message.success {
+    color: var(--success-color);
+}
+
 /* Header Redesign: Deep & Professional */
 .app-header {
     background-color: var(--primary-color);
@@ -49,6 +149,7 @@ body {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    gap: 1rem;
 }
 
 .header-container h1 {
@@ -72,6 +173,36 @@ body {
 .main-nav {
     display: flex;
     gap: 0.25rem;
+}
+
+.user-menu {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    color: rgba(255, 255, 255, 0.86);
+    font-size: 0.82rem;
+    font-weight: 700;
+}
+
+.user-menu span {
+    max-width: 210px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.user-menu button {
+    border: 1px solid rgba(255, 255, 255, 0.22);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.08);
+    color: #fff;
+    font-weight: 800;
+    padding: 0.42rem 0.65rem;
+    cursor: pointer;
+}
+
+.user-menu button:hover {
+    background: rgba(255, 255, 255, 0.16);
 }
 
 .nav-link {
@@ -363,6 +494,10 @@ body {
     .header-container {
         flex-direction: column;
         gap: 1.25rem;
+    }
+    .user-menu {
+        width: 100%;
+        justify-content: center;
     }
     .dashboard {
         margin: 1.5rem auto;

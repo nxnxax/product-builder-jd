@@ -10,7 +10,36 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
 </head>
 <body>
-    <header class="app-header">
+    <section id="auth-screen" class="auth-screen hidden">
+        <div class="auth-panel">
+            <div class="auth-brand">
+                <span>JDHOON</span>
+                <strong>ERP CONSOLE</strong>
+            </div>
+            <div class="auth-copy">
+                <h1>계정으로 접속</h1>
+                <p>회원가입 또는 로그인 후 고객/직원 데이터를 관리합니다.</p>
+            </div>
+            <div class="auth-tabs" role="tablist">
+                <button type="button" id="login-tab" class="auth-tab active">로그인</button>
+                <button type="button" id="signup-tab" class="auth-tab">회원가입</button>
+            </div>
+            <form id="auth-form" class="auth-form">
+                <div class="form-group">
+                    <label for="auth-email">이메일</label>
+                    <input type="email" id="auth-email" autocomplete="email" required placeholder="name@example.com">
+                </div>
+                <div class="form-group">
+                    <label for="auth-password">비밀번호</label>
+                    <input type="password" id="auth-password" autocomplete="current-password" required minlength="6" placeholder="6자 이상 입력">
+                </div>
+                <button type="submit" id="auth-submit" class="primary-btn">로그인</button>
+                <p id="auth-message" class="auth-message" aria-live="polite"></p>
+            </form>
+        </div>
+    </section>
+
+    <header id="app-header" class="app-header">
         <div class="header-container">
             <h1>JDHOON <span class="accent">ERP CONSOLE</span></h1>
             <nav class="main-nav">
@@ -18,10 +47,14 @@
                 <button id="nav-employees" class="nav-link">HRM: 직원 관리</button>
                 <button id="nav-marketing" class="nav-link">Marketing: 마케팅 분석</button>
             </nav>
+            <div id="user-menu" class="user-menu hidden">
+                <span id="user-email"></span>
+                <button type="button" id="logout-btn">로그아웃</button>
+            </div>
         </div>
     </header>
 
-    <main class="dashboard">
+    <main id="app-dashboard" class="dashboard">
         <!-- 고객 관리 섹션 -->
         <section id="customer-section" class="content-section">
             <div class="section-header">
@@ -189,6 +222,6 @@
             if (frame) frame.addEventListener('load', resizeMarketingFrame);
         });
     </script>
-    <script src="main.js?v=20260507-db" type="module"></script>
+    <script src="main.js?v=20260507-auth" type="module"></script>
 </body>
 </html>
