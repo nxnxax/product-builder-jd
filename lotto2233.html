@@ -10,6 +10,8 @@ body{margin:0;background:#0f0f0f;color:#fff;font-family:sans-serif;}
 label{display:block;margin-top:16px;margin-bottom:6px;font-size:13px;color:#bbb;}
 input,select{width:100%;padding:13px;border-radius:10px;border:1px solid #333;background:#1a1a1a;color:#fff;box-sizing:border-box;font-size:15px;}
 .row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;}
+.calendar-row{display:grid;grid-template-columns:120px 1fr 1fr 1fr;gap:10px;}
+.calendar-help{margin-top:8px;color:#888;font-size:12px;line-height:1.5;}
 .gender{display:flex;gap:10px;}
 .gender button{flex:1;padding:13px;border-radius:10px;border:1px solid #333;background:#1a1a1a;color:#fff;}
 .gender button.active{background:#2b6fff;border:none;}
@@ -20,6 +22,10 @@ input,select{width:100%;padding:13px;border-radius:10px;border:1px solid #333;ba
 .note{margin-top:12px;padding-top:10px;border-top:1px solid #2d2d2d;font-size:13px;color:#bbb;}
 .yellow{background:#fbc400}.blue{background:#69c8f2}.red{background:#ff7272}.gray{background:#aaa}.green{background:#7bc043}
 .error{color:#ff5c5c;font-size:13px;margin-top:10px;}
+@media (max-width:440px){
+    .calendar-row{grid-template-columns:1fr 1fr 1fr;}
+    .calendar-row select{grid-column:1 / -1;}
+}
 </style>
 </head>
 
@@ -38,11 +44,16 @@ input,select{width:100%;padding:13px;border-radius:10px;border:1px solid #333;ba
 </div>
 
 <label>태어난 연 / 월 / 일</label>
-<div class="row">
+<div class="calendar-row">
+<select id="calendarType">
+<option value="solar">양력</option>
+<option value="lunar">음력</option>
+</select>
 <input id="birthY" type="number" placeholder="연">
 <input id="birthM" type="number" placeholder="월">
 <input id="birthD" type="number" placeholder="일">
 </div>
+<div class="calendar-help">음력을 선택하면 양력 날짜로 변환한 뒤 사주를 계산합니다.</div>
 
 <label>태어난 시간</label>
 <select id="timeType" onchange="toggleTime()">
@@ -126,6 +137,51 @@ const hiddenStems={
 };
 
 function mod(n,m){return ((n%m)+m)%m;}
+
+function validDate(y,m,d){
+    const dt=new Date(y,m-1,d);
+    return dt.getFullYear()===y&&dt.getMonth()===m-1&&dt.getDate()===d;
+}
+
+function formatKoreanLunar(date){
+    const parts=new Intl.DateTimeFormat("ko-KR-u-ca-dangi",{
+        year:"numeric",month:"numeric",day:"numeric"
+    }).formatToParts(date);
+    const out={};
+    parts.forEach(p=>{
+        const n=Number(String(p.value).replace(/\D/g,""));
+        if(p.type==="year"||p.type==="relatedYear")out.y=n;
+        if(p.type==="month")out.m=n;
+        if(p.type==="day")out.d=n;
+    });
+    return out;
+}
+
+function lunarToSolar(y,m,d){
+    const start=new Date(y-1,0,1);
+    const end=new Date(y+1,11,31);
+    for(let t=start.getTime();t<=end.getTime();t+=86400000){
+        const dt=new Date(t);
+        const lunar=formatKoreanLunar(dt);
+        if(lunar.y===y&&lunar.m===m&&lunar.d===d){
+            return {y:dt.getFullYear(),m:dt.getMonth()+1,d:dt.getDate()};
+        }
+    }
+    return null;
+}
+
+function resolveBirthDate(y,m,d){
+    const type=document.getElementById("calendarType").value;
+    if(!validDate(y,m,d))return {error:"올바른 생년월일을 입력해주세요."};
+    if(type==="solar")return {y,m,d,type:"양력"};
+    try{
+        const converted=lunarToSolar(y,m,d);
+        if(!converted)return {error:"입력한 음력 날짜를 양력으로 변환할 수 없습니다."};
+        return {...converted,type:"음력",input:{y,m,d}};
+    }catch(e){
+        return {error:"이 브라우저는 한국 음력 변환을 지원하지 않습니다. 양력으로 입력해주세요."};
+    }
+}
 
 function solarMonthIndex(m,d){
     if((m===2&&d>=4)||(m===3&&d<6))return 2;
@@ -346,7 +402,9 @@ function makeSet(seedVal,pool){
 function validate(){
     if(!document.getElementById("userName").value.trim())return "이름을 입력해주세요.";
     if(!document.getElementById("birthY").value||!document.getElementById("birthM").value||!document.getElementById("birthD").value)return "생년월일을 입력해주세요.";
+    if(!validDate(Number(document.getElementById("birthY").value),Number(document.getElementById("birthM").value),Number(document.getElementById("birthD").value)))return "올바른 생년월일을 입력해주세요.";
     if(!document.getElementById("drawY").value||!document.getElementById("drawM").value||!document.getElementById("drawD").value)return "추첨일을 입력해주세요.";
+    if(!validDate(Number(document.getElementById("drawY").value),Number(document.getElementById("drawM").value),Number(document.getElementById("drawD").value)))return "올바른 추첨일을 입력해주세요.";
     return "";
 }
 
@@ -356,9 +414,14 @@ function generate(){
     if(err){result.innerHTML=`<div class="error">${err}</div>`;return;}
 
     const nm=document.getElementById("userName").value.trim();
-    const y=Number(document.getElementById("birthY").value);
-    const m=Number(document.getElementById("birthM").value);
-    const d=Number(document.getElementById("birthD").value);
+    const inputY=Number(document.getElementById("birthY").value);
+    const inputM=Number(document.getElementById("birthM").value);
+    const inputD=Number(document.getElementById("birthD").value);
+    const birthDate=resolveBirthDate(inputY,inputM,inputD);
+    if(birthDate.error){result.innerHTML=`<div class="error">${birthDate.error}</div>`;return;}
+    const y=birthDate.y;
+    const m=birthDate.m;
+    const d=birthDate.d;
     const h=document.getElementById("timeType").value==="exact"
         ? Number(document.getElementById("timeExact").value||12)
         : Number(document.getElementById("timeZodiac").value);
@@ -382,11 +445,16 @@ function generate(){
     const sw=getSewoon(dy);
     const ww=getWolwoon(dy,dm);
 
-    const baseSeed=makeSeed(nm+selectedGender+y+m+d+h+dy+dm+dd+ys+ge+str+lucky+rel+dw+sw+ww);
+    const birthLabel=birthDate.type==="음력"
+        ? `음력 ${inputY}년 ${inputM}월 ${inputD}일 → 양력 ${y}년 ${m}월 ${d}일`
+        : `양력 ${y}년 ${m}월 ${d}일`;
+
+    const baseSeed=makeSeed(nm+selectedGender+birthDate.type+y+m+d+h+dy+dm+dd+ys+ge+str+lucky+rel+dw+sw+ww);
 
     let html=`
     <div class="box">
     <b>🎯 추첨일 맞춤 추천 번호</b><br>
+    출생일 기준: <b>${birthLabel}</b><br>
     ${dy}년 ${dm}월 ${dd}일 추첨일과 ${nm}님의 사주를 비교한 결과,
     오늘 가장 운을 보완하는 핵심 기운은 <b>${elementKor[lucky]}</b>입니다.
     </div>`;
