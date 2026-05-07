@@ -20,9 +20,9 @@ GitHub 저장소에서 `Settings > Secrets and variables > Actions > New reposit
 | FTP/SSH 아이디 | `nxnxqxx` |
 | FTP 포트 | `21` |
 | SSH 포트 | `22` |
-| 업로드 경로 | `/www/` |
+| 업로드 경로 | `/` |
 
-만약 카페24 FTP 접속 시 웹 루트가 이미 `www` 안으로 잡혀 있다면 `.github/workflows/deploy.yml`의 `server-dir`를 `/`로 바꾸세요.
+카페24 FTP 계정은 접속 위치가 웹 루트로 잡히는 경우가 많습니다. SSH에서 보이는 `/www/` 경로와 FTP에서 사용하는 업로드 경로가 다를 수 있습니다.
 
 ## Database
 
