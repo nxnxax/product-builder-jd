@@ -50,3 +50,7 @@ GitHub 저장소에서 `Settings > Secrets and variables > Actions > New reposit
 | DB 종류 | `MariaDB` |
 
 DB 비밀번호도 GitHub 저장소에 커밋하지 말고 Secret 또는 서버 전용 설정 파일로 관리하세요.
+
+## Compatibility
+
+워크플로는 기존 저장소에 `FTP_SERVER`, `FTP_USER`, `FTP_PASS`, `FTP_PASSWORD` 이름으로 Secret이 이미 등록된 경우도 함께 지원합니다. 새로 등록한다면 `CAFE24_` 접두어가 붙은 이름을 사용하세요.
