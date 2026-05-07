@@ -33,22 +33,45 @@ body {
 }
 
 .auth-screen {
+    position: fixed;
+    inset: 0;
+    z-index: 1200;
     min-height: 100vh;
     display: grid;
     place-items: center;
     padding: 2rem;
-    background:
-        linear-gradient(135deg, rgba(30, 41, 59, 0.94), rgba(15, 23, 42, 0.88)),
-        linear-gradient(90deg, #e0f2fe, #f8fafc);
+    background: rgba(15, 23, 42, 0.58);
+    backdrop-filter: blur(10px);
 }
 
 .auth-panel {
+    position: relative;
     width: min(100%, 440px);
     background: var(--surface-color);
     border: 1px solid rgba(226, 232, 240, 0.9);
-    border-radius: 20px;
+    border-radius: 16px;
     padding: 2.5rem;
     box-shadow: 0 30px 70px rgba(15, 23, 42, 0.28);
+}
+
+.auth-close-btn {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    width: 34px;
+    height: 34px;
+    border: 1px solid var(--border-color);
+    border-radius: 999px;
+    background: #fff;
+    color: var(--text-muted);
+    font-size: 1.35rem;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.auth-close-btn:hover {
+    background: #f8fafc;
+    color: var(--text-main);
 }
 
 .auth-brand {
@@ -86,32 +109,6 @@ body {
     margin-bottom: 1.5rem;
 }
 
-.auth-tabs {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 0.5rem;
-    padding: 0.35rem;
-    background: #f1f5f9;
-    border-radius: 12px;
-    margin-bottom: 1.5rem;
-}
-
-.auth-tab {
-    border: 0;
-    border-radius: 9px;
-    background: transparent;
-    color: var(--text-muted);
-    font-weight: 800;
-    padding: 0.7rem 1rem;
-    cursor: pointer;
-}
-
-.auth-tab.active {
-    color: var(--accent-color);
-    background: #fff;
-    box-shadow: var(--shadow-soft);
-}
-
 .auth-form .primary-btn {
     width: 100%;
 }
@@ -136,25 +133,26 @@ body {
 
 .google-btn {
     width: 100%;
-    min-height: 46px;
+    min-height: 44px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 0.65rem;
-    border: 1px solid var(--border-color);
-    border-radius: 10px;
+    gap: 12px;
+    border: 1px solid #dadce0;
+    border-radius: 4px;
     background: #fff;
-    color: var(--text-main);
-    font-size: 0.92rem;
-    font-weight: 850;
+    color: #3c4043;
+    font-family: Roboto, Arial, sans-serif;
+    font-size: 14px;
+    font-weight: 500;
     cursor: pointer;
     transition: var(--transition-base);
-    box-shadow: var(--shadow-soft);
+    box-shadow: none;
 }
 
 .google-btn:hover {
-    border-color: #cbd5e1;
-    background: #f8fafc;
+    background: #f8fafd;
+    border-color: #d2e3fc;
 }
 
 .google-btn:disabled {
@@ -163,16 +161,29 @@ body {
 }
 
 .google-mark {
-    width: 22px;
-    height: 22px;
-    display: inline-flex;
+    width: 18px;
+    height: 18px;
+    flex: 0 0 auto;
+}
+
+.auth-switch {
+    display: flex;
     align-items: center;
     justify-content: center;
-    border-radius: 999px;
-    color: #fff;
-    background: #4285f4;
-    font-size: 0.82rem;
-    font-weight: 900;
+    gap: 0.4rem;
+    margin-top: 1.2rem;
+    color: var(--text-muted);
+    font-size: 0.9rem;
+}
+
+.auth-switch button {
+    border: 0;
+    background: transparent;
+    color: var(--accent-color);
+    font: inherit;
+    font-weight: 800;
+    cursor: pointer;
+    padding: 0.2rem;
 }
 
 .signup-fields {
@@ -265,6 +276,21 @@ body {
     gap: 0.25rem;
 }
 
+.header-auth-btn {
+    border: 1px solid rgba(255, 255, 255, 0.28);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.08);
+    color: #fff;
+    font-weight: 800;
+    padding: 0.48rem 0.85rem;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.header-auth-btn:hover {
+    background: rgba(255, 255, 255, 0.16);
+}
+
 .user-menu {
     display: flex;
     align-items: center;
@@ -299,6 +325,9 @@ body {
     background: none;
     border: none;
     color: rgba(255, 255, 255, 0.7);
+    display: inline-flex;
+    align-items: center;
+    text-decoration: none;
     font-size: 0.85rem;
     font-weight: 600;
     padding: 0.5rem 1rem;
@@ -588,6 +617,9 @@ body {
     .user-menu {
         width: 100%;
         justify-content: center;
+    }
+    .header-auth-btn {
+        width: 100%;
     }
     .verify-row {
         grid-template-columns: 1fr;

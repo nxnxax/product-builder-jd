@@ -26,6 +26,7 @@ const authScreen = document.getElementById('auth-screen');
 const appHeader = document.getElementById('app-header');
 const appDashboard = document.getElementById('app-dashboard');
 const authForm = document.getElementById('auth-form');
+const closeAuthBtn = document.getElementById('close-auth-btn');
 const signupFields = document.getElementById('signup-fields');
 const authName = document.getElementById('auth-name');
 const authPhone = document.getElementById('auth-phone');
@@ -40,6 +41,8 @@ const identityStatus = document.getElementById('identity-status');
 const googleLoginBtn = document.getElementById('google-login-btn');
 const loginTab = document.getElementById('login-tab');
 const signupTab = document.getElementById('signup-tab');
+const authSwitchText = document.getElementById('auth-switch-text');
+const openLoginBtn = document.getElementById('open-login-btn');
 const userMenu = document.getElementById('user-menu');
 const userEmail = document.getElementById('user-email');
 const logoutBtn = document.getElementById('logout-btn');
@@ -70,6 +73,7 @@ async function initApp() {
         await initAuth();
         if (authEnabled && !currentSession) {
             renderSignedOut();
+            renderAuthRequiredTables();
             return;
         }
 
@@ -142,9 +146,10 @@ function normalizeSupabaseUrl(value) {
 }
 
 function renderSignedOut() {
-    authScreen.classList.remove('hidden');
-    appHeader.classList.add('hidden');
-    appDashboard.classList.add('hidden');
+    authScreen.classList.add('hidden');
+    appHeader.classList.remove('hidden');
+    appDashboard.classList.remove('hidden');
+    openLoginBtn.classList.remove('hidden');
     userMenu.classList.add('hidden');
     setAuthMessage('', '');
 }
@@ -157,9 +162,18 @@ function renderSignedIn() {
     if (authEnabled && currentSession?.user?.email) {
         userEmail.textContent = currentSession.user.email;
         userMenu.classList.remove('hidden');
+        openLoginBtn.classList.add('hidden');
     } else {
         userMenu.classList.add('hidden');
+        openLoginBtn.classList.remove('hidden');
     }
+}
+
+function renderAuthRequiredTables() {
+    customerList.innerHTML = '<tr><td colspan="4">로그인 후 고객 데이터를 확인할 수 있습니다.</td></tr>';
+    employeeList.innerHTML = '<tr><td colspan="5">로그인 후 직원 데이터를 확인할 수 있습니다.</td></tr>';
+    customerEmpty.classList.add('hidden');
+    employeeEmpty.classList.add('hidden');
 }
 
 // --- API ---
@@ -267,6 +281,11 @@ if (navMarketing) {
     navMarketing.addEventListener('click', () => switchView('marketing'));
 }
 
+openLoginBtn.addEventListener('click', () => openAuthPanel('login'));
+closeAuthBtn.addEventListener('click', closeAuthPanel);
+authScreen.addEventListener('click', (event) => {
+    if (event.target === authScreen) closeAuthPanel();
+});
 loginTab.addEventListener('click', () => setAuthMode('login'));
 signupTab.addEventListener('click', () => setAuthMode('signup'));
 identityVerifyBtn.addEventListener('click', handleIdentityVerify);
@@ -276,8 +295,8 @@ authForm.addEventListener('submit', handleAuthSubmit);
 
 function setAuthMode(mode) {
     authMode = mode;
-    loginTab.classList.toggle('active', mode === 'login');
-    signupTab.classList.toggle('active', mode === 'signup');
+    loginTab.classList.toggle('hidden', mode === 'login');
+    signupTab.classList.toggle('hidden', mode === 'signup');
     signupFields.classList.toggle('hidden', mode !== 'signup');
     confirmPasswordField.classList.toggle('hidden', mode !== 'signup');
     authName.required = mode === 'signup';
@@ -286,8 +305,19 @@ function setAuthMode(mode) {
     if (mode === 'login') authPasswordConfirm.value = '';
     authSubmit.textContent = mode === 'login' ? '로그인' : '회원가입';
     authPassword.autocomplete = mode === 'login' ? 'current-password' : 'new-password';
+    authSwitchText.textContent = mode === 'login' ? '아직 회원이 아니신가요?' : '이미 회원이신가요?';
     setAuthMessage('', '');
     setIdentityStatus('PASS/NICE/KCB 본인확인 연동 후 인증 완료 처리됩니다.', '');
+}
+
+function openAuthPanel(mode = 'login') {
+    setAuthMode(mode);
+    authScreen.classList.remove('hidden');
+    setTimeout(() => authEmail.focus(), 0);
+}
+
+function closeAuthPanel() {
+    authScreen.classList.add('hidden');
 }
 
 function handleIdentityVerify() {
@@ -465,6 +495,12 @@ async function refreshResource(resource) {
     }
 }
 
+function requireSignedIn() {
+    if (!authEnabled || currentSession) return true;
+    openAuthPanel('login');
+    return false;
+}
+
 // --- UI Rendering ---
 
 function renderLoading() {
@@ -574,8 +610,12 @@ employeeSearch.addEventListener('input', (e) => {
     renderEmployees();
 });
 
-document.getElementById('add-customer-btn').addEventListener('click', () => openAppModal('customer'));
-document.getElementById('add-employee-btn').addEventListener('click', () => openAppModal('employee'));
+document.getElementById('add-customer-btn').addEventListener('click', () => {
+    if (requireSignedIn()) openAppModal('customer');
+});
+document.getElementById('add-employee-btn').addEventListener('click', () => {
+    if (requireSignedIn()) openAppModal('employee');
+});
 document.getElementById('close-modal').addEventListener('click', closeModal);
 document.getElementById('cancel-btn').addEventListener('click', closeModal);
 

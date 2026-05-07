@@ -21,7 +21,7 @@ jobs:
         run: |
           rm -rf deploy
           mkdir -p deploy
-          cp index.html style.css main.js Marketing.html kapp_premium.php deploy/
+          cp index.html style.css main.js Marketing.html kapp_premium.php lotto2233.html deploy/
           cp api/analyze.php deploy/analyze.php
           cp api/records.php deploy/records.php
 

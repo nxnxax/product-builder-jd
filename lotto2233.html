@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI 점집 사주 로또 추천</title>
+<style>
+body{margin:0;background:#0f0f0f;color:#fff;font-family:sans-serif;}
+.container{max-width:520px;margin:auto;padding:20px;}
+label{display:block;margin-top:16px;margin-bottom:6px;font-size:13px;color:#bbb;}
+input,select{width:100%;padding:13px;border-radius:10px;border:1px solid #333;background:#1a1a1a;color:#fff;box-sizing:border-box;font-size:15px;}
+.row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;}
+.gender{display:flex;gap:10px;}
+.gender button{flex:1;padding:13px;border-radius:10px;border:1px solid #333;background:#1a1a1a;color:#fff;}
+.gender button.active{background:#2b6fff;border:none;}
+.main-btn{margin-top:22px;width:100%;padding:16px;border:none;border-radius:12px;font-size:16px;color:#fff;background:linear-gradient(135deg,#7f00ff,#2b6fff);}
+.box{margin-top:20px;padding:16px;background:#1a1a1a;border-radius:14px;line-height:1.65;}
+.nums{display:flex;justify-content:space-between;gap:8px;}
+.ball{width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:bold;font-size:18px;}
+.note{margin-top:12px;padding-top:10px;border-top:1px solid #2d2d2d;font-size:13px;color:#bbb;}
+.yellow{background:#fbc400}.blue{background:#69c8f2}.red{background:#ff7272}.gray{background:#aaa}.green{background:#7bc043}
+.error{color:#ff5c5c;font-size:13px;margin-top:10px;}
+</style>
+</head>
+
+<body>
+<div class="container">
+
+<h2>🔮 AI 점집 사주 로또 추천</h2>
+
+<label>이름</label>
+<input id="userName" placeholder="이름 입력">
+
+<label>성별</label>
+<div class="gender">
+<button id="maleBtn" onclick="setGender('male')">남자</button>
+<button id="femaleBtn" onclick="setGender('female')">여자</button>
+</div>
+
+<label>태어난 연 / 월 / 일</label>
+<div class="row">
+<input id="birthY" type="number" placeholder="연">
+<input id="birthM" type="number" placeholder="월">
+<input id="birthD" type="number" placeholder="일">
+</div>
+
+<label>태어난 시간</label>
+<select id="timeType" onchange="toggleTime()">
+<option value="zodiac">자시~해시</option>
+<option value="exact">정확한 시간</option>
+</select>
+
+<select id="timeZodiac" style="margin-top:10px;">
+<option value="23">자시</option>
+<option value="1">축시</option>
+<option value="3">인시</option>
+<option value="5">묘시</option>
+<option value="7">진시</option>
+<option value="9">사시</option>
+<option value="11">오시</option>
+<option value="13">미시</option>
+<option value="15">신시</option>
+<option value="17">유시</option>
+<option value="19">술시</option>
+<option value="21">해시</option>
+</select>
+
+<input id="timeExact" type="number" placeholder="0~23시 입력" style="display:none;margin-top:10px;">
+
+<label>로또 추첨일</label>
+<div class="row">
+<input id="drawY" type="number" placeholder="연">
+<input id="drawM" type="number" placeholder="월">
+<input id="drawD" type="number" placeholder="일">
+</div>
+
+<button class="main-btn" onclick="generate()">번호 생성</button>
+
+<div id="result"></div>
+
+</div>
+
+<script>
+let selectedGender="male";
+
+window.onload=function(){
+    document.getElementById("maleBtn").classList.add("active");
+    const t=new Date();
+    document.getElementById("drawY").value=t.getFullYear();
+    document.getElementById("drawM").value=t.getMonth()+1;
+    document.getElementById("drawD").value=t.getDate();
+};
+
+function setGender(g){
+    selectedGender=g;
+    document.getElementById("maleBtn").classList.remove("active");
+    document.getElementById("femaleBtn").classList.remove("active");
+    if(g==="male") document.getElementById("maleBtn").classList.add("active");
+    else document.getElementById("femaleBtn").classList.add("active");
+}
+
+function toggleTime(){
+    const type=document.getElementById("timeType").value;
+    document.getElementById("timeZodiac").style.display=type==="zodiac"?"block":"none";
+    document.getElementById("timeExact").style.display=type==="exact"?"block":"none";
+}
+
+const stems=["갑","을","병","정","무","기","경","신","임","계"];
+const branches=["자","축","인","묘","진","사","오","미","신","유","술","해"];
+
+const elementMap={
+"갑":"wood","을":"wood","병":"fire","정":"fire","무":"earth","기":"earth",
+"경":"metal","신":"metal","임":"water","계":"water",
+"자":"water","축":"earth","인":"wood","묘":"wood","진":"earth","사":"fire",
+"오":"fire","미":"earth","유":"metal","술":"earth","해":"water"
+};
+
+const elementKor={wood:"목(木)",fire:"화(火)",earth:"토(土)",metal:"금(金)",water:"수(水)"};
+const produces={wood:"fire",fire:"earth",earth:"metal",metal:"water",water:"wood"};
+const controls={wood:"earth",earth:"water",water:"fire",fire:"metal",metal:"wood"};
+
+const hiddenStems={
+자:["계"],축:["기","계","신"],인:["갑","병","무"],묘:["을"],
+진:["무","을","계"],사:["병","무","경"],오:["정","기"],미:["기","정","을"],
+신:["경","임","무"],유:["신"],술:["무","신","정"],해:["임","갑"]
+};
+
+function mod(n,m){return ((n%m)+m)%m;}
+
+function solarMonthIndex(m,d){
+    if((m===2&&d>=4)||(m===3&&d<6))return 2;
+    if((m===3&&d>=6)||(m===4&&d<5))return 3;
+    if((m===4&&d>=5)||(m===5&&d<6))return 4;
+    if((m===5&&d>=6)||(m===6&&d<6))return 5;
+    if((m===6&&d>=6)||(m===7&&d<7))return 6;
+    if((m===7&&d>=7)||(m===8&&d<8))return 7;
+    if((m===8&&d>=8)||(m===9&&d<8))return 8;
+    if((m===9&&d>=8)||(m===10&&d<8))return 9;
+    if((m===10&&d>=8)||(m===11&&d<7))return 10;
+    if((m===11&&d>=7)||(m===12&&d<7))return 11;
+    if((m===12&&d>=7)||(m===1&&d<6))return 0;
+    return 1;
+}
+
+function yearPillar(y,m,d){
+    let yy=y;
+    if(m===1||(m===2&&d<4))yy--;
+    const diff=yy-1984;
+    return {stem:stems[mod(diff,10)],branch:branches[mod(diff,12)]};
+}
+
+function monthPillar(yearStem,m,d){
+    const mi=solarMonthIndex(m,d);
+    const yi=stems.indexOf(yearStem);
+    return {stem:stems[mod(yi*2+mi,10)],branch:branches[mi]};
+}
+
+function dayPillar(y,m,d){
+    const target=new Date(y,m-1,d);
+    const base=new Date(1900,0,31);
+    const diff=Math.floor((target-base)/86400000);
+    return {stem:stems[mod(diff,10)],branch:branches[mod(diff,12)]};
+}
+
+function hourPillar(dayStem,h){
+    let bi=(h===23||h===0)?0:Math.floor((h+1)/2);
+    if(bi>11) bi=11;
+    const di=stems.indexOf(dayStem);
+    return {stem:stems[mod(di*2+bi,10)],branch:branches[bi]};
+}
+
+function getPillars(y,m,d,h){
+    const yp=yearPillar(y,m,d);
+    const mp=monthPillar(yp.stem,m,d);
+    const dp=dayPillar(y,m,d);
+    const hp=hourPillar(dp.stem,h);
+    return [yp,mp,dp,hp];
+}
+
+function yinYang(s){return ["갑","병","무","경","임"].includes(s)?"양":"음";}
+
+function tenGod(dayStem,targetStem){
+    const a=elementMap[dayStem], b=elementMap[targetStem];
+    const same=yinYang(dayStem)===yinYang(targetStem);
+    if(a===b)return same?"비견":"겁재";
+    if(produces[a]===b)return same?"식신":"상관";
+    if(produces[b]===a)return same?"편인":"정인";
+    if(controls[a]===b)return same?"편재":"정재";
+    if(controls[b]===a)return same?"편관":"정관";
+    return "중립";
+}
+
+function elementScore(ps){
+    const s={wood:0,fire:0,earth:0,metal:0,water:0};
+    ps.forEach((p,i)=>{
+        s[elementMap[p.stem]]+=(i===1?1.8:1.2);
+        s[elementMap[p.branch]]+=(i===1?2.0:1.0);
+        hiddenStems[p.branch].forEach((hs,idx)=>{
+            s[elementMap[hs]]+=(idx===0?0.8:0.35);
+        });
+    });
+    return s;
+}
+
+function strength(dayStem,ps,score){
+    const dayEl=elementMap[dayStem];
+    const monthEl=elementMap[ps[1].branch];
+    const mother=Object.keys(produces).find(k=>produces[k]===dayEl);
+    let p=0;
+    if(monthEl===dayEl)p+=3.2;
+    if(produces[monthEl]===dayEl)p+=2.1;
+    if(score[dayEl]>=3.5)p+=2;
+    if(score[mother]>=2.4)p+=1.6;
+    if(p>=5.2)return "신강";
+    if(p<=2.7)return "신약";
+    return "중화";
+}
+
+function climate(branch){
+    if(["사","오","미"].includes(branch))return "조열";
+    if(["해","자","축"].includes(branch))return "한습";
+    if(["인","묘","진"].includes(branch))return "생목";
+    return "숙금";
+}
+
+function yongshin(dayStem,ps,score,str){
+    const dayEl=elementMap[dayStem];
+    const mother=Object.keys(produces).find(k=>produces[k]===dayEl);
+    const child=produces[dayEl];
+    const wealth=controls[dayEl];
+    const c=climate(ps[1].branch);
+
+    if(c==="조열"&&score.water<2.8)return "water";
+    if(c==="한습"&&score.fire<2.8)return "fire";
+
+    if(str==="신강") return score[child]<=score[wealth]?child:wealth;
+    if(str==="신약") return score[mother]<=score[dayEl]?mother:dayEl;
+
+    let min="wood";
+    for(const k in score) if(score[k]<score[min]) min=k;
+    return min;
+}
+
+function gyeok(ps,dayStem){
+    const main=hiddenStems[ps[1].branch][0];
+    return tenGod(dayStem,main)+"격";
+}
+
+function gyeokStatus(ge,str,rel){
+    if(rel.includes("충")) return "파격 기운";
+    if(str==="중화") return "균형격";
+    if(str==="신강" && (ge.includes("비견")||ge.includes("겁재"))) return "신강 변격";
+    if(str==="신약" && (ge.includes("정관")||ge.includes("편관"))) return "관성 부담격";
+    return "성격 유지";
+}
+
+function relations(ps){
+    const z=ps.map(p=>p.branch);
+    const arr=[];
+    const list=[
+    ["자","오","자오충"],["축","미","축미충"],["인","신","인신충"],["묘","유","묘유충"],["진","술","진술충"],["사","해","사해충"],
+    ["자","축","자축합"],["인","해","인해합"],["묘","술","묘술합"],["진","유","진유합"],["사","신","사신합"],["오","미","오미합"],
+    ["자","묘","자묘형"],["인","사","인사형"],["축","술","축술형"],["자","유","자유파"],["진","축","진축파"],["신","해","신해해"]
+    ];
+    list.forEach(([a,b,n])=>{if(z.includes(a)&&z.includes(b))arr.push(n);});
+    return arr.length?arr.join(", "):"큰 충돌 없이 안정적";
+}
+
+function luckyElement(birthPs,drawPs,ys,str){
+    const bs=elementScore(birthPs), ds=elementScore(drawPs);
+    const sc={wood:0,fire:0,earth:0,metal:0,water:0};
+    for(const e in sc){
+        sc[e]+=Math.max(0,3.5-bs[e])*1.8;
+        sc[e]+=ds[e]*1.2;
+        if(e===ys)sc[e]+=5.5;
+    }
+    const rel=relations(birthPs.concat(drawPs));
+    if(rel.includes("합"))sc[ys]+=1.7;
+    if(rel.includes("충"))sc[elementMap[drawPs[2].stem]]+=1.1;
+    if(str==="신약")sc[ys]+=1.5;
+    return Object.keys(sc).sort((a,b)=>sc[b]-sc[a])[0];
+}
+
+function getDaewoon(year, gender){
+    const nowYear = new Date().getFullYear();
+    const koreanAge = nowYear - year + 1;
+    const startAge = gender === "male" ? 8 : 7;
+    const cycle = Math.max(0, Math.floor((koreanAge - startAge) / 10));
+    const from = startAge + cycle * 10;
+    const to = from + 9;
+    return `${from}세 ~ ${to}세 대운`;
+}
+
+function getSewoon(year){
+    const diff = year - 1984;
+    return stems[mod(diff,10)] + branches[mod(diff,12)];
+}
+
+function getWolwoon(year, month){
+    const yStem=yearPillar(year,month,15).stem;
+    const mp=monthPillar(yStem,month,15);
+    return mp.stem+mp.branch;
+}
+
+function aiReading(name, str, ge, geStatus, cl, ys, lucky, daewoon, sewoon, wolwoon, rel){
+    return `
+    ${name}님의 사주는 <b>${ge}</b>의 성향을 가지고 있고, 현재 구조는 <b>${str}</b> 쪽으로 읽힙니다.
+    격국 상태는 <b>${geStatus}</b>으로 보이며, 조후는 <b>${cl}</b>의 영향을 받습니다.<br><br>
+
+    지금은 <b>${daewoon}</b> 흐름 안에 있고, 추첨일의 세운은 <b>${sewoon}</b>, 월운은 <b>${wolwoon}</b>입니다.
+    이 흐름을 출생 사주와 맞춰보면 <b>${elementKor[lucky]}</b> 기운이 가장 보완 작용을 강하게 합니다.<br><br>
+
+    그래서 이번 추천번호는 단순 랜덤이 아니라, 용신 <b>${elementKor[ys]}</b>, 조후, 대운, 세운, 월운, 추첨일 기운을 함께 보고 뽑은 숫자입니다.<br><br>
+
+    💰 <b>금전운</b>: 큰 욕심보다 안정적으로 들어오는 기회를 잡는 흐름이 좋습니다.<br>
+    ❤️ <b>연애운</b>: 감정적으로 몰아붙이기보다 자연스럽게 신뢰를 쌓는 쪽이 유리합니다.<br>
+    ⚠️ <b>주의할 점</b>: ${rel.includes("충") ? "충의 기운이 있어 급한 결정, 감정적 선택, 과한 기대를 조심해야 합니다." : "큰 충돌은 약하지만 무리한 욕심과 조급함은 피하는 것이 좋습니다."}<br>
+    ⭐ <b>조언</b>: 오늘은 ${elementKor[lucky]} 기운을 상징하는 숫자와 흐름을 참고하는 것이 가장 자연스럽습니다.
+    `;
+}
+
+function elementNumbers(e){
+    if(e==="water")return [1,6,11,16,21,26,31,36,41];
+    if(e==="wood")return [3,8,13,18,23,28,33,38,43];
+    if(e==="fire")return [2,7,12,17,22,27,32,37,42];
+    if(e==="metal")return [4,9,14,19,24,29,34,39,44];
+    return [5,10,15,20,25,30,35,40,45];
+}
+
+function color(n){if(n<=10)return"yellow";if(n<=20)return"blue";if(n<=30)return"red";if(n<=40)return"gray";return"green";}
+function rnd(seed){const x=Math.sin(seed)*10000;return x-Math.floor(x);}
+function makeSeed(text){let s=0;for(let i=0;i<text.length;i++)s+=text.charCodeAt(i)*(i+1);return s;}
+
+function makeSet(seedVal,pool){
+    const nums=[];let c=0;
+    while(nums.length<6&&c<600){
+        c++;
+        let n;
+        if(rnd(seedVal+c)<0.82)n=pool[Math.floor(rnd(seedVal+c*3)*pool.length)];
+        else n=Math.floor(rnd(seedVal+c*7)*45)+1;
+        if(!nums.includes(n))nums.push(n);
+    }
+    return nums.sort((a,b)=>a-b);
+}
+
+function validate(){
+    if(!document.getElementById("userName").value.trim())return "이름을 입력해주세요.";
+    if(!document.getElementById("birthY").value||!document.getElementById("birthM").value||!document.getElementById("birthD").value)return "생년월일을 입력해주세요.";
+    if(!document.getElementById("drawY").value||!document.getElementById("drawM").value||!document.getElementById("drawD").value)return "추첨일을 입력해주세요.";
+    return "";
+}
+
+function generate(){
+    const result=document.getElementById("result");
+    const err=validate();
+    if(err){result.innerHTML=`<div class="error">${err}</div>`;return;}
+
+    const nm=document.getElementById("userName").value.trim();
+    const y=Number(document.getElementById("birthY").value);
+    const m=Number(document.getElementById("birthM").value);
+    const d=Number(document.getElementById("birthD").value);
+    const h=document.getElementById("timeType").value==="exact"
+        ? Number(document.getElementById("timeExact").value||12)
+        : Number(document.getElementById("timeZodiac").value);
+
+    const dy=Number(document.getElementById("drawY").value);
+    const dm=Number(document.getElementById("drawM").value);
+    const dd=Number(document.getElementById("drawD").value);
+
+    const bp=getPillars(y,m,d,h);
+    const dp=getPillars(dy,dm,dd,12);
+    const bs=elementScore(bp);
+    const str=strength(bp[2].stem,bp,bs);
+    const ys=yongshin(bp[2].stem,bp,bs,str);
+    const ge=gyeok(bp,bp[2].stem);
+    const cl=climate(bp[1].branch);
+    const rel=relations(bp.concat(dp));
+    const geStatus=gyeokStatus(ge,str,rel);
+    const lucky=luckyElement(bp,dp,ys,str);
+    const pool=elementNumbers(lucky);
+    const dw=getDaewoon(y, selectedGender);
+    const sw=getSewoon(dy);
+    const ww=getWolwoon(dy,dm);
+
+    const baseSeed=makeSeed(nm+selectedGender+y+m+d+h+dy+dm+dd+ys+ge+str+lucky+rel+dw+sw+ww);
+
+    let html=`
+    <div class="box">
+    <b>🎯 추첨일 맞춤 추천 번호</b><br>
+    ${dy}년 ${dm}월 ${dd}일 추첨일과 ${nm}님의 사주를 비교한 결과,
+    오늘 가장 운을 보완하는 핵심 기운은 <b>${elementKor[lucky]}</b>입니다.
+    </div>`;
+
+    for(let i=0;i<5;i++){
+        const set=makeSet(baseSeed+i*777,pool);
+        const score=(90+rnd(baseSeed+i*99)*8).toFixed(1);
+        html+=`
+        <div class="box">
+        <div>${i+1}게임 · 추첨일 사주 적합도 ${score}%</div>
+        <div class="nums">${set.map(n=>`<div class="ball ${color(n)}">${n}</div>`).join("")}</div>
+        <div class="note">
+        🔹 보완기운: <b>${elementKor[lucky]}</b><br>
+        🔹 격국: <b>${ge}</b> / 상태: <b>${geStatus}</b><br>
+        🔹 대운: <b>${dw}</b> / 세운: <b>${sw}</b> / 월운: <b>${ww}</b>
+        </div>
+        </div>`;
+    }
+
+    html+=`
+    <div class="box">
+    <h3 style="margin-top:0;">🔮 AI식 종합 운세 해석</h3>
+    ${aiReading(nm,str,ge,geStatus,cl,ys,lucky,dw,sw,ww,rel)}
+    </div>
+
+    <div class="box">
+    <h3 style="margin-top:0;">📘 적용된 사주풀이 방식</h3>
+    - 절기 기준 월주 계산<br>
+    - 사주팔자 년주·월주·일주·시주 계산<br>
+    - 지장간 반영<br>
+    - 십성 세분화<br>
+    - 신강/신약 판단<br>
+    - 격국 판단<br>
+    - 격국 파격 / 변격 판단<br>
+    - 조후 판단<br>
+    - 용신 판단<br>
+    - 대운 / 세운 / 월운 계산<br>
+    - 합·충·형·파·해 관계 반영<br>
+    - 출생 사주와 로또 추첨일 사주의 오행 비교<br><br>
+    ※ 이 결과는 실제 당첨을 보장하지 않는 참고용 추천입니다.
+    </div>`;
+
+    result.innerHTML=html;
+}
+</script>
+</body>
+</html>

@@ -34,6 +34,7 @@ GitHub 저장소에서 `Settings > Secrets and variables > Actions > New reposit
 - `main.js`
 - `Marketing.html`
 - `kapp_premium.php`
+- `lotto2233.html`
 - `api/analyze.php` -> `analyze.php`
 - `api/records.php` -> `records.php`
 
