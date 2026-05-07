@@ -4,4 +4,5 @@
 node_modules/
 .wrangler/
 .DS_Store
-
+db_config.php
+api/db_config.php

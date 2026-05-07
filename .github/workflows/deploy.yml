@@ -23,6 +23,7 @@ jobs:
           mkdir -p deploy
           cp index.html style.css main.js Marketing.html kapp_premium.php deploy/
           cp api/analyze.php deploy/analyze.php
+          cp api/records.php deploy/records.php
 
       - name: FTP Deploy
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5

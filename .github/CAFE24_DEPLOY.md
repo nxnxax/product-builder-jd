@@ -35,12 +35,13 @@ GitHub 저장소에서 `Settings > Secrets and variables > Actions > New reposit
 - `Marketing.html`
 - `kapp_premium.php`
 - `api/analyze.php` -> `analyze.php`
+- `api/records.php` -> `records.php`
 
-카페24 FTP에서 새 폴더 생성이 막힐 수 있어 PHP API는 서버 루트의 `analyze.php`로 배포합니다. `Marketing.html`도 같은 루트의 `analyze.php`를 호출합니다.
+카페24 FTP에서 새 폴더 생성이 막힐 수 있어 PHP API는 서버 루트의 `analyze.php`, `records.php`로 배포합니다. `Marketing.html`도 같은 루트의 `analyze.php`를 호출합니다.
 
 ## Database
 
-현재 자동배포에는 DB 접속 정보가 필요하지 않습니다. 앱에서 DB를 사용하게 되면 아래 정보를 기준으로 별도 서버 설정 파일이나 환경변수로 연결하세요.
+CRM/HRM 데이터는 카페24 MariaDB를 사용합니다. DB 비밀번호는 저장소에 커밋하지 않고, 카페24 서버 루트의 `db_config.php`에만 둡니다. 이 파일은 GitHub Actions 배포 대상에 포함하지 않습니다.
 
 | 항목 | 값 |
 | --- | --- |
@@ -50,6 +51,19 @@ GitHub 저장소에서 `Settings > Secrets and variables > Actions > New reposit
 | DB 종류 | `MariaDB` |
 
 DB 비밀번호도 GitHub 저장소에 커밋하지 말고 Secret 또는 서버 전용 설정 파일로 관리하세요.
+
+서버 루트의 `db_config.php` 형식:
+
+```php
+<?php
+return [
+    'host' => 'localhost',
+    'port' => 3306,
+    'database' => 'DB명',
+    'user' => 'DB아이디',
+    'password' => 'DB비밀번호',
+];
+```
 
 ## Compatibility
 
