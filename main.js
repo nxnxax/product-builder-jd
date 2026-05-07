@@ -5,6 +5,8 @@
 // --- State Management ---
 const API_URL = 'records.php';
 const MIGRATION_FLAG = 'erpDbMigrationComplete';
+const OAUTH_INTENT_KEY = 'erpOAuthIntent';
+const AUTH_NOTICE_KEY = 'erpAuthNotice';
 
 let customers = [];
 let employees = [];
@@ -39,6 +41,7 @@ const authMessage = document.getElementById('auth-message');
 const identityVerifyBtn = document.getElementById('identity-verify-btn');
 const identityStatus = document.getElementById('identity-status');
 const googleLoginBtn = document.getElementById('google-login-btn');
+const googleLoginLabel = document.getElementById('google-login-label');
 const loginTab = document.getElementById('login-tab');
 const signupTab = document.getElementById('signup-tab');
 const authSwitchText = document.getElementById('auth-switch-text');
@@ -75,6 +78,7 @@ async function initApp() {
         if (authEnabled && !currentSession) {
             renderSignedOut();
             renderAuthRequiredTables();
+            showPendingAuthNotice();
             return;
         }
 
@@ -102,18 +106,29 @@ async function initAuth() {
     const { data, error } = await supabaseClient.auth.getSession();
     if (error) throw error;
     currentSession = data.session || null;
+    if (currentSession) await handlePostOAuthSession();
 
     supabaseClient.auth.onAuthStateChange((event, session) => {
         currentSession = session || null;
         if (event === 'SIGNED_OUT' || !currentSession) {
             renderSignedOut();
+            renderAuthRequiredTables();
+            showPendingAuthNotice();
             return;
         }
 
         setTimeout(async () => {
-            renderSignedIn();
-            renderLoading();
             try {
+                await handlePostOAuthSession();
+                if (!currentSession) {
+                    renderSignedOut();
+                    renderAuthRequiredTables();
+                    showPendingAuthNotice();
+                    return;
+                }
+
+                renderSignedIn();
+                renderLoading();
                 await loadAll();
                 renderAll();
             } catch (error) {
@@ -144,6 +159,51 @@ function normalizeSupabaseUrl(value) {
     } catch {
         return raw.replace(/\/+$/, '');
     }
+}
+
+async function handlePostOAuthSession() {
+    const user = currentSession?.user;
+    if (!user) return;
+
+    const providers = user.app_metadata?.providers || [];
+    const provider = user.app_metadata?.provider || '';
+    const isGoogleUser = provider === 'google' || providers.includes('google');
+    if (!isGoogleUser) return;
+
+    const isRegistered = user.user_metadata?.app_registered === true || user.user_metadata?.app_registered === 'true';
+    if (isRegistered) return;
+
+    const intent = localStorage.getItem(OAUTH_INTENT_KEY);
+    localStorage.removeItem(OAUTH_INTENT_KEY);
+
+    if (intent === 'signup') {
+        const { error } = await supabaseClient.auth.updateUser({
+            data: {
+                app_registered: true,
+                signup_method: 'google',
+                identity_verified: false,
+                phone_verified: false
+            }
+        });
+        if (error) throw error;
+
+        const { data } = await supabaseClient.auth.getSession();
+        currentSession = data.session || currentSession;
+        return;
+    }
+
+    localStorage.setItem(AUTH_NOTICE_KEY, '회원가입이 필요합니다. 먼저 회원가입을 진행해주세요.');
+    await supabaseClient.auth.signOut();
+    currentSession = null;
+}
+
+function showPendingAuthNotice() {
+    const notice = localStorage.getItem(AUTH_NOTICE_KEY);
+    if (!notice) return;
+
+    localStorage.removeItem(AUTH_NOTICE_KEY);
+    openAuthPanel('signup');
+    setAuthMessage(notice, 'error');
 }
 
 function renderSignedOut() {
@@ -313,6 +373,7 @@ function setAuthMode(mode) {
     authPasswordConfirm.required = mode === 'signup';
     if (mode === 'login') authPasswordConfirm.value = '';
     authSubmit.textContent = mode === 'login' ? '로그인' : '회원가입';
+    if (googleLoginLabel) googleLoginLabel.textContent = mode === 'login' ? 'Google로 로그인' : 'Google로 회원가입';
     authPassword.autocomplete = mode === 'login' ? 'current-password' : 'new-password';
     authSwitchText.textContent = mode === 'login' ? '아직 회원이 아니신가요?' : '이미 회원이신가요?';
     setAuthMessage('', '');
@@ -392,7 +453,9 @@ async function handleAuthSubmit(event) {
                         full_name: fullName,
                         phone,
                         phone_verified: false,
-                        identity_verified: false
+                        identity_verified: false,
+                        app_registered: true,
+                        signup_method: 'email'
                     }
                 }
             });
@@ -420,6 +483,7 @@ async function handleGoogleLogin() {
     setAuthMessage('', '');
 
     try {
+        localStorage.setItem(OAUTH_INTENT_KEY, authMode === 'signup' ? 'signup' : 'login');
         const { error } = await supabaseClient.auth.signInWithOAuth({
             provider: 'google',
             options: {
@@ -428,6 +492,7 @@ async function handleGoogleLogin() {
         });
         if (error) throw error;
     } catch (error) {
+        localStorage.removeItem(OAUTH_INTENT_KEY);
         googleLoginBtn.disabled = false;
         setAuthMessage(error?.message || 'Google 로그인에 실패했습니다.', 'error');
     }
