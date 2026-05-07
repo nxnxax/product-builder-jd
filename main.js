@@ -202,8 +202,10 @@ function showPendingAuthNotice() {
     if (!notice) return;
 
     localStorage.removeItem(AUTH_NOTICE_KEY);
-    openAuthPanel('signup');
-    setAuthMessage(notice, 'error');
+    setTimeout(() => {
+        openAuthPanel('signup');
+        setAuthMessage(notice, 'error');
+    }, 0);
 }
 
 function renderSignedOut() {
