@@ -19,9 +19,8 @@ jobs:
 
       - name: Prepare deploy files
         run: |
-          mkdir -p deploy/api
           cp index.html Marketing.html style.css main.js deploy/
-          cp api/analyze.php deploy/api/
+          cp api/analyze.php deploy/analyze.php
 
       - name: FTP Deploy
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5

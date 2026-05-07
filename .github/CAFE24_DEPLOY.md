@@ -27,7 +27,7 @@ GitHub 저장소에서 `Settings > Secrets and variables > Actions > New reposit
 
 카페24 웹호스팅 자동배포에서는 `server-dir`를 `/www/`로 지정합니다. 루트(`/`)로 지정하면 550 오류가 날 수 있습니다.
 
-워크플로는 `deploy/` 폴더를 임시로 만든 뒤 실제 서비스에 필요한 파일만 업로드합니다.
+워크플로는 `deploy/` 폴더를 임시로 만든 뒤 실제 서비스에 필요한 파일만 업로드합니다. 카페24 FTP에서 새 폴더 생성이 막힐 수 있어 PHP API는 서버 루트의 `analyze.php`로 배포합니다.
 
 ## Database
 
