@@ -17,6 +17,12 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Prepare deploy files
+        run: |
+          mkdir -p deploy/api
+          cp index.html Marketing.html style.css main.js deploy/
+          cp api/analyze.php deploy/api/
+
       - name: FTP Deploy
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
         with:
@@ -25,20 +31,6 @@ jobs:
           password: ${{ secrets.FTP_PASS || secrets.FTP_PASSWORD }}
           port: 21
           protocol: ftp
-          local-dir: ./
+          local-dir: ./deploy/
           server-dir: /www/
           dangerous-clean-slate: false
-          exclude: |
-            **/.git*
-            **/.github/**
-            **/.gitignore
-            **/.env*
-            **/.idx*
-            **/.vscode/**
-            **/node_modules/**
-            **/functions/**
-            **/README.md
-            **/GEMINI.md
-            **/blueprint.md
-            package.json
-            package-lock.json
