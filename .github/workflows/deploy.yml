@@ -4,6 +4,11 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
+
+concurrency:
+  group: cafe24-deploy
+  cancel-in-progress: true
 
 jobs:
   deploy:
@@ -12,19 +17,28 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: FTP Deploy to Cafe24
+      - name: Deploy public files to Cafe24 by FTP
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
         with:
-          server: ${{ secrets.FTP_SERVER }}
-          username: ${{ secrets.FTP_USERNAME }}
+          server: youngman-biz.com
+          username: nxnxqxx
           password: ${{ secrets.FTP_PASSWORD }}
-          server-dir: /www/ # 카페24의 일반적인 업로드 경로입니다. 다를 경우 수정이 필요합니다.
+          port: 21
+          protocol: ftp
+          local-dir: ./
+          server-dir: /www/
+          dangerous-clean-slate: false
           exclude: |
             **/.git*
+            **/.github/**
+            **/.gitignore
+            **/.env*
             **/.idx*
+            **/.vscode/**
             **/node_modules/**
+            **/functions/**
+            **/README.md
+            **/GEMINI.md
+            **/blueprint.md
             package.json
             package-lock.json
-            blueprint.md
-            GEMINI.md
-            functions/**
