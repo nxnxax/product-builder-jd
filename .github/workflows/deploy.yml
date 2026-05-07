@@ -19,6 +19,7 @@ jobs:
 
       - name: Prepare deploy files
         run: |
+          mkdir -p deploy
           cp index.html Marketing.html style.css main.js deploy/
           cp api/analyze.php deploy/analyze.php
 
