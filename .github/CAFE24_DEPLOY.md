@@ -8,10 +8,10 @@ GitHub 저장소에서 `Settings > Secrets and variables > Actions > New reposit
 
 | Secret name | Value |
 | --- | --- |
-| `FTP_SERVER` | `youngman-biz.com` |
-| `FTP_USER` | `nxnxqxx` |
-| `FTP_PASS` | 카페24 FTP/SSH 계정 `nxnxqxx`의 비밀번호 |
-| `FTP_PASSWORD` | 기존 설정과 호환하기 위한 FTP 비밀번호. `FTP_PASS`가 있으면 `FTP_PASS`를 우선 사용 |
+| `CAFE24_FTP_SERVER` | 카페24 FTP/SSH 주소 |
+| `CAFE24_FTP_USER` | 카페24 FTP/SSH 아이디 |
+| `CAFE24_FTP_PASSWORD` | 카페24 FTP/SSH 비밀번호 |
+| `CAFE24_FTP_PORT` | `21` |
 
 비밀번호는 저장소 파일에 직접 넣지 않습니다.
 
@@ -19,15 +19,24 @@ GitHub 저장소에서 `Settings > Secrets and variables > Actions > New reposit
 
 | 항목 | 값 |
 | --- | --- |
-| FTP/SSH 주소 | `youngman-biz.com` |
-| FTP/SSH 아이디 | `nxnxqxx` |
+| FTP/SSH 주소 | GitHub Secret `CAFE24_FTP_SERVER` |
+| FTP/SSH 아이디 | GitHub Secret `CAFE24_FTP_USER` |
 | FTP 포트 | `21` |
 | SSH 포트 | `22` |
 | 업로드 경로 | `./` |
 
 카페24 일반 웹호스팅 FTP는 로그인 직후 보이는 기본 위치가 웹 루트입니다. `server-dir`에 `/`, `/www/`, `/html/`, `/public_html/` 같은 절대경로를 지정하면 ProFTPD 보안 정책에 막힐 수 있으므로 상대경로 `./`로 업로드합니다.
 
-워크플로는 `deploy/` 폴더를 임시로 만든 뒤 실제 서비스에 필요한 파일만 업로드합니다. 카페24 FTP에서 새 폴더 생성이 막힐 수 있어 PHP API는 서버 루트의 `analyze.php`로 배포합니다.
+워크플로는 `deploy/` 폴더를 임시로 만든 뒤 실제 서비스에 필요한 파일만 업로드합니다.
+
+- `index.html`
+- `style.css`
+- `main.js`
+- `Marketing.html`
+- `kapp_premium.php`
+- `api/analyze.php` -> `analyze.php`
+
+카페24 FTP에서 새 폴더 생성이 막힐 수 있어 PHP API는 서버 루트의 `analyze.php`로 배포합니다. `Marketing.html`도 같은 루트의 `analyze.php`를 호출합니다.
 
 ## Database
 
@@ -36,7 +45,7 @@ GitHub 저장소에서 `Settings > Secrets and variables > Actions > New reposit
 | 항목 | 값 |
 | --- | --- |
 | DB 주소 | `localhost` |
-| DB 아이디 | `nxnxqxx` |
+| DB 아이디 | 카페24 DB 아이디 |
 | DB 포트 | `3306` |
 | DB 종류 | `MariaDB` |
 

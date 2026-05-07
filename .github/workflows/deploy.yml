@@ -19,16 +19,18 @@ jobs:
 
       - name: Prepare deploy files
         run: |
+          rm -rf deploy
           mkdir -p deploy
-          cp index.html style.css main.js kapp_premium.php deploy/
+          cp index.html style.css main.js Marketing.html kapp_premium.php deploy/
+          cp api/analyze.php deploy/analyze.php
 
       - name: FTP Deploy
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
         with:
-          server: ${{ secrets.FTP_SERVER || 'youngman-biz.com' }}
-          username: ${{ secrets.FTP_USER || 'nxnxqxx' }}
-          password: ${{ secrets.FTP_PASS || secrets.FTP_PASSWORD }}
-          port: 21
+          server: ${{ secrets.CAFE24_FTP_SERVER }}
+          username: ${{ secrets.CAFE24_FTP_USER }}
+          password: ${{ secrets.CAFE24_FTP_PASSWORD }}
+          port: ${{ secrets.CAFE24_FTP_PORT || 21 }}
           protocol: ftp
           local-dir: ./deploy/
           server-dir: ./
