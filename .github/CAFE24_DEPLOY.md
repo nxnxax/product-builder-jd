@@ -11,6 +11,7 @@ GitHub 저장소에서 `Settings > Secrets and variables > Actions > New reposit
 | `FTP_SERVER` | `youngman-biz.com` |
 | `FTP_USER` | `nxnxqxx` |
 | `FTP_PASS` | 카페24 FTP/SSH 계정 `nxnxqxx`의 비밀번호 |
+| `FTP_PASSWORD` | 기존 설정과 호환하기 위한 FTP 비밀번호. `FTP_PASS`가 있으면 `FTP_PASS`를 우선 사용 |
 
 비밀번호는 저장소 파일에 직접 넣지 않습니다.
 
