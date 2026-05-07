@@ -26,10 +26,15 @@ const authScreen = document.getElementById('auth-screen');
 const appHeader = document.getElementById('app-header');
 const appDashboard = document.getElementById('app-dashboard');
 const authForm = document.getElementById('auth-form');
+const signupFields = document.getElementById('signup-fields');
+const authName = document.getElementById('auth-name');
+const authPhone = document.getElementById('auth-phone');
 const authEmail = document.getElementById('auth-email');
 const authPassword = document.getElementById('auth-password');
 const authSubmit = document.getElementById('auth-submit');
 const authMessage = document.getElementById('auth-message');
+const identityVerifyBtn = document.getElementById('identity-verify-btn');
+const identityStatus = document.getElementById('identity-status');
 const loginTab = document.getElementById('login-tab');
 const signupTab = document.getElementById('signup-tab');
 const userMenu = document.getElementById('user-menu');
@@ -251,6 +256,7 @@ if (navMarketing) {
 
 loginTab.addEventListener('click', () => setAuthMode('login'));
 signupTab.addEventListener('click', () => setAuthMode('signup'));
+identityVerifyBtn.addEventListener('click', handleIdentityVerify);
 logoutBtn.addEventListener('click', signOut);
 authForm.addEventListener('submit', handleAuthSubmit);
 
@@ -258,9 +264,32 @@ function setAuthMode(mode) {
     authMode = mode;
     loginTab.classList.toggle('active', mode === 'login');
     signupTab.classList.toggle('active', mode === 'signup');
+    signupFields.classList.toggle('hidden', mode !== 'signup');
+    authName.required = mode === 'signup';
+    authPhone.required = mode === 'signup';
     authSubmit.textContent = mode === 'login' ? '로그인' : '회원가입';
     authPassword.autocomplete = mode === 'login' ? 'current-password' : 'new-password';
     setAuthMessage('', '');
+    setIdentityStatus('PASS/NICE/KCB 본인확인 연동 후 인증 완료 처리됩니다.', '');
+}
+
+function handleIdentityVerify() {
+    const name = authName.value.trim();
+    const phone = normalizeKoreanMobile(authPhone.value);
+
+    if (!name) {
+        setIdentityStatus('가입자 이름을 먼저 입력하세요.', 'error');
+        authName.focus();
+        return;
+    }
+
+    if (!phone) {
+        setIdentityStatus('올바른 휴대폰 번호를 입력하세요. 예: 010-1234-5678', 'error');
+        authPhone.focus();
+        return;
+    }
+
+    setIdentityStatus('외부 본인확인 사업자(PASS/NICE/KCB) 설정이 아직 없어 실명인증 요청을 보낼 수 없습니다.', 'error');
 }
 
 async function handleAuthSubmit(event) {
@@ -269,6 +298,22 @@ async function handleAuthSubmit(event) {
 
     const email = authEmail.value.trim();
     const password = authPassword.value;
+    const fullName = authName.value.trim();
+    const phone = normalizeKoreanMobile(authPhone.value);
+
+    if (authMode === 'signup') {
+        if (!fullName) {
+            setAuthMessage('가입자 이름을 입력하세요.', 'error');
+            authName.focus();
+            return;
+        }
+
+        if (!phone) {
+            setAuthMessage('올바른 휴대폰 번호를 입력하세요.', 'error');
+            authPhone.focus();
+            return;
+        }
+    }
 
     authSubmit.disabled = true;
     authSubmit.textContent = authMode === 'login' ? '로그인 중...' : '가입 중...';
@@ -276,7 +321,18 @@ async function handleAuthSubmit(event) {
 
     try {
         if (authMode === 'signup') {
-            const { data, error } = await supabaseClient.auth.signUp({ email, password });
+            const { data, error } = await supabaseClient.auth.signUp({
+                email,
+                password,
+                options: {
+                    data: {
+                        full_name: fullName,
+                        phone,
+                        phone_verified: false,
+                        identity_verified: false
+                    }
+                }
+            });
             if (error) throw error;
             if (!data.session) {
                 setAuthMessage('가입 확인 메일을 보냈습니다. 메일 인증 후 로그인하세요.', 'success');
@@ -303,6 +359,20 @@ function setAuthMessage(message, type) {
     authMessage.textContent = message;
     authMessage.classList.toggle('error', type === 'error');
     authMessage.classList.toggle('success', type === 'success');
+}
+
+function setIdentityStatus(message, type) {
+    identityStatus.textContent = message;
+    identityStatus.classList.toggle('error', type === 'error');
+    identityStatus.classList.toggle('success', type === 'success');
+}
+
+function normalizeKoreanMobile(value) {
+    const digits = String(value || '').replace(/\D/g, '');
+    if (/^010\d{8}$/.test(digits)) return `+82${digits.slice(1)}`;
+    if (/^8210\d{8}$/.test(digits)) return `+${digits}`;
+    if (/^\+8210\d{8}$/.test(String(value || '').trim())) return String(value).trim();
+    return '';
 }
 
 // --- CRUD Operations ---

@@ -116,6 +116,37 @@ body {
     width: 100%;
 }
 
+.signup-fields {
+    margin-bottom: 0.25rem;
+}
+
+.verify-row {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 0.6rem;
+}
+
+.verify-row .secondary-btn {
+    white-space: nowrap;
+    padding-left: 1rem;
+    padding-right: 1rem;
+}
+
+.identity-status {
+    margin-top: 0.55rem;
+    color: var(--text-muted);
+    font-size: 0.8rem;
+    line-height: 1.45;
+}
+
+.identity-status.error {
+    color: var(--danger-color);
+}
+
+.identity-status.success {
+    color: var(--success-color);
+}
+
 .auth-message {
     min-height: 1.4rem;
     margin-top: 1rem;
@@ -498,6 +529,9 @@ body {
     .user-menu {
         width: 100%;
         justify-content: center;
+    }
+    .verify-row {
+        grid-template-columns: 1fr;
     }
     .dashboard {
         margin: 1.5rem auto;

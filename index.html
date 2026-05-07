@@ -25,6 +25,20 @@
                 <button type="button" id="signup-tab" class="auth-tab">회원가입</button>
             </div>
             <form id="auth-form" class="auth-form">
+                <div id="signup-fields" class="signup-fields hidden">
+                    <div class="form-group">
+                        <label for="auth-name">가입자 이름</label>
+                        <input type="text" id="auth-name" autocomplete="name" placeholder="실명을 입력하세요">
+                    </div>
+                    <div class="form-group">
+                        <label for="auth-phone">휴대폰 번호</label>
+                        <div class="verify-row">
+                            <input type="tel" id="auth-phone" autocomplete="tel" placeholder="010-0000-0000">
+                            <button type="button" id="identity-verify-btn" class="secondary-btn">실명인증</button>
+                        </div>
+                        <p id="identity-status" class="identity-status">PASS/NICE/KCB 본인확인 연동 후 인증 완료 처리됩니다.</p>
+                    </div>
+                </div>
                 <div class="form-group">
                     <label for="auth-email">이메일</label>
                     <input type="email" id="auth-email" autocomplete="email" required placeholder="name@example.com">
@@ -222,6 +236,6 @@
             if (frame) frame.addEventListener('load', resizeMarketingFrame);
         });
     </script>
-    <script src="main.js?v=20260507-auth" type="module"></script>
+    <script src="main.js?v=20260507-identity" type="module"></script>
 </body>
 </html>
