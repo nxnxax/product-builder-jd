@@ -38,6 +38,10 @@ const confirmPasswordField = document.getElementById('confirm-password-field');
 const authPasswordConfirm = document.getElementById('auth-password-confirm');
 const authSubmit = document.getElementById('auth-submit');
 const authMessage = document.getElementById('auth-message');
+const authNotice = document.getElementById('auth-notice');
+const authNoticeText = document.getElementById('auth-notice-text');
+const authNoticeAccept = document.getElementById('auth-notice-accept');
+const authNoticeCancel = document.getElementById('auth-notice-cancel');
 const identityVerifyBtn = document.getElementById('identity-verify-btn');
 const identityStatus = document.getElementById('identity-status');
 const googleLoginBtn = document.getElementById('google-login-btn');
@@ -203,8 +207,9 @@ function showPendingAuthNotice() {
 
     localStorage.removeItem(AUTH_NOTICE_KEY);
     setTimeout(() => {
-        openAuthPanel('signup');
-        setAuthMessage(notice, 'error');
+        if (googleLoginBtn) googleLoginBtn.disabled = false;
+        openAuthPanel('login');
+        showAuthNotice(notice);
     }, 0);
 }
 
@@ -214,6 +219,7 @@ function renderSignedOut() {
     appDashboard.classList.remove('hidden');
     openLoginBtn.classList.remove('hidden');
     userMenu.classList.add('hidden');
+    if (googleLoginBtn) googleLoginBtn.disabled = false;
     setAuthMessage('', '');
 }
 
@@ -361,6 +367,8 @@ loginTab.addEventListener('click', () => setAuthMode('login'));
 signupTab.addEventListener('click', () => setAuthMode('signup'));
 identityVerifyBtn.addEventListener('click', handleIdentityVerify);
 googleLoginBtn.addEventListener('click', handleGoogleLogin);
+authNoticeAccept.addEventListener('click', handleAuthNoticeAccept);
+authNoticeCancel.addEventListener('click', handleAuthNoticeCancel);
 logoutBtn.addEventListener('click', signOut);
 authForm.addEventListener('submit', handleAuthSubmit);
 
@@ -379,6 +387,7 @@ function setAuthMode(mode) {
     authPassword.autocomplete = mode === 'login' ? 'current-password' : 'new-password';
     authSwitchText.textContent = mode === 'login' ? '아직 회원이 아니신가요?' : '이미 회원이신가요?';
     setAuthMessage('', '');
+    hideAuthNotice();
     setIdentityStatus('PASS/NICE/KCB 본인확인 연동 후 인증 완료 처리됩니다.', '');
 }
 
@@ -390,6 +399,7 @@ function openAuthPanel(mode = 'login') {
 
 function closeAuthPanel() {
     authScreen.classList.add('hidden');
+    hideAuthNotice();
 }
 
 function handleIdentityVerify() {
@@ -509,6 +519,27 @@ function setAuthMessage(message, type) {
     authMessage.textContent = message;
     authMessage.classList.toggle('error', type === 'error');
     authMessage.classList.toggle('success', type === 'success');
+}
+
+function showAuthNotice(message) {
+    authNoticeText.textContent = message;
+    authNotice.classList.remove('hidden');
+    setAuthMessage('', '');
+}
+
+function hideAuthNotice() {
+    authNotice.classList.add('hidden');
+    authNoticeText.textContent = '';
+}
+
+function handleAuthNoticeAccept() {
+    hideAuthNotice();
+    openAuthPanel('signup');
+}
+
+function handleAuthNoticeCancel() {
+    hideAuthNotice();
+    closeAuthPanel();
 }
 
 function setIdentityStatus(message, type) {

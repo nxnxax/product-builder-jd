@@ -233,6 +233,33 @@ body {
     color: var(--success-color);
 }
 
+.auth-notice {
+    margin-top: 1rem;
+    padding: 1rem;
+    border: 1px solid rgba(220, 38, 38, 0.28);
+    border-radius: 8px;
+    background: rgba(254, 242, 242, 0.96);
+}
+
+.auth-notice p {
+    margin: 0 0 0.85rem;
+    color: var(--danger-color);
+    font-size: 0.9rem;
+    font-weight: 800;
+    line-height: 1.45;
+}
+
+.auth-notice-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.6rem;
+}
+
+.auth-notice-actions button {
+    min-height: 40px;
+    padding: 0.65rem 0.9rem;
+}
+
 /* Header Redesign: Deep & Professional */
 .app-header {
     background-color: var(--primary-color);

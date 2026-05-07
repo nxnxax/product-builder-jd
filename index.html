@@ -60,6 +60,13 @@
                     <span id="google-login-label">Google로 로그인</span>
                 </button>
                 <p id="auth-message" class="auth-message" aria-live="polite"></p>
+                <div id="auth-notice" class="auth-notice hidden" role="alertdialog" aria-live="assertive">
+                    <p id="auth-notice-text"></p>
+                    <div class="auth-notice-actions">
+                        <button type="button" id="auth-notice-accept" class="primary-btn">승인</button>
+                        <button type="button" id="auth-notice-cancel" class="secondary-btn">취소</button>
+                    </div>
+                </div>
                 <div class="auth-switch">
                     <span id="auth-switch-text">아직 회원이 아니신가요?</span>
                     <button type="button" id="signup-tab">회원가입</button>
@@ -254,6 +261,6 @@
             if (frame) frame.addEventListener('load', resizeMarketingFrame);
         });
     </script>
-    <script src="main.js?v=20260507-auth-notice" type="module"></script>
+    <script src="main.js?v=20260507-auth-confirm" type="module"></script>
 </body>
 </html>
