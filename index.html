@@ -52,6 +52,11 @@
                     <input type="password" id="auth-password-confirm" autocomplete="new-password" minlength="6" placeholder="비밀번호를 한 번 더 입력">
                 </div>
                 <button type="submit" id="auth-submit" class="primary-btn">로그인</button>
+                <div class="auth-divider"><span>또는</span></div>
+                <button type="button" id="google-login-btn" class="google-btn">
+                    <span class="google-mark" aria-hidden="true">G</span>
+                    Google로 계속하기
+                </button>
                 <p id="auth-message" class="auth-message" aria-live="polite"></p>
             </form>
         </div>
@@ -240,6 +245,6 @@
             if (frame) frame.addEventListener('load', resizeMarketingFrame);
         });
     </script>
-    <script src="main.js?v=20260507-password-confirm" type="module"></script>
+    <script src="main.js?v=20260507-google" type="module"></script>
 </body>
 </html>

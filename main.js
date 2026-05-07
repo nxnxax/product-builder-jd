@@ -37,6 +37,7 @@ const authSubmit = document.getElementById('auth-submit');
 const authMessage = document.getElementById('auth-message');
 const identityVerifyBtn = document.getElementById('identity-verify-btn');
 const identityStatus = document.getElementById('identity-status');
+const googleLoginBtn = document.getElementById('google-login-btn');
 const loginTab = document.getElementById('login-tab');
 const signupTab = document.getElementById('signup-tab');
 const userMenu = document.getElementById('user-menu');
@@ -259,6 +260,7 @@ if (navMarketing) {
 loginTab.addEventListener('click', () => setAuthMode('login'));
 signupTab.addEventListener('click', () => setAuthMode('signup'));
 identityVerifyBtn.addEventListener('click', handleIdentityVerify);
+googleLoginBtn.addEventListener('click', handleGoogleLogin);
 logoutBtn.addEventListener('click', signOut);
 authForm.addEventListener('submit', handleAuthSubmit);
 
@@ -359,6 +361,26 @@ async function handleAuthSubmit(event) {
     } finally {
         authSubmit.disabled = false;
         authSubmit.textContent = authMode === 'login' ? '로그인' : '회원가입';
+    }
+}
+
+async function handleGoogleLogin() {
+    if (!supabaseClient) return;
+
+    googleLoginBtn.disabled = true;
+    setAuthMessage('', '');
+
+    try {
+        const { error } = await supabaseClient.auth.signInWithOAuth({
+            provider: 'google',
+            options: {
+                redirectTo: window.location.origin + window.location.pathname
+            }
+        });
+        if (error) throw error;
+    } catch (error) {
+        googleLoginBtn.disabled = false;
+        setAuthMessage(error?.message || 'Google 로그인에 실패했습니다.', 'error');
     }
 }
 
