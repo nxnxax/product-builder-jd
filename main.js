@@ -192,7 +192,7 @@ async function handlePostOAuthSession() {
         return;
     }
 
-    localStorage.setItem(AUTH_NOTICE_KEY, '회원가입이 필요합니다. 먼저 회원가입을 진행해주세요.');
+    localStorage.setItem(AUTH_NOTICE_KEY, '회원가입이 필요합니다. 회원가입을 하시겠습니까?');
     await supabaseClient.auth.signOut();
     currentSession = null;
 }
