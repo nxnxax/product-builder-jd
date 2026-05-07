@@ -8,7 +8,9 @@ GitHub 저장소에서 `Settings > Secrets and variables > Actions > New reposit
 
 | Secret name | Value |
 | --- | --- |
-| `FTP_PASSWORD` | 카페24 FTP/SSH 계정 `nxnxqxx`의 비밀번호 |
+| `FTP_SERVER` | `youngman-biz.com` |
+| `FTP_USER` | `nxnxqxx` |
+| `FTP_PASS` | 카페24 FTP/SSH 계정 `nxnxqxx`의 비밀번호 |
 
 비밀번호는 저장소 파일에 직접 넣지 않습니다.
 
@@ -20,9 +22,9 @@ GitHub 저장소에서 `Settings > Secrets and variables > Actions > New reposit
 | FTP/SSH 아이디 | `nxnxqxx` |
 | FTP 포트 | `21` |
 | SSH 포트 | `22` |
-| 업로드 경로 | `/` |
+| 업로드 경로 | `/www/` |
 
-카페24 FTP 계정은 접속 위치가 웹 루트로 잡히는 경우가 많습니다. SSH에서 보이는 `/www/` 경로와 FTP에서 사용하는 업로드 경로가 다를 수 있습니다.
+카페24 웹호스팅 자동배포에서는 `server-dir`를 `/www/`로 지정합니다. 루트(`/`)로 지정하면 550 오류가 날 수 있습니다.
 
 ## Database
 

@@ -1,4 +1,4 @@
-name: Deploy to Cafe24
+name: Deploy via FTP
 
 on:
   push:
@@ -14,19 +14,19 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Code
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Deploy public files to Cafe24 by FTP
+      - name: FTP Deploy
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
         with:
-          server: youngman-biz.com
-          username: nxnxqxx
-          password: ${{ secrets.FTP_PASSWORD }}
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USER }}
+          password: ${{ secrets.FTP_PASS }}
           port: 21
           protocol: ftp
           local-dir: ./
-          server-dir: /
+          server-dir: /www/
           dangerous-clean-slate: false
           exclude: |
             **/.git*
