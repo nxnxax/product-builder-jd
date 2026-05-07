@@ -71,6 +71,7 @@ document.addEventListener('DOMContentLoaded', initApp);
 async function initApp() {
     try {
         await initAuth();
+        applyInitialHash();
         if (authEnabled && !currentSession) {
             renderSignedOut();
             renderAuthRequiredTables();
@@ -279,6 +280,14 @@ navCustomers.addEventListener('click', () => switchView('customers'));
 navEmployees.addEventListener('click', () => switchView('employees'));
 if (navMarketing) {
     navMarketing.addEventListener('click', () => switchView('marketing'));
+}
+window.addEventListener('hashchange', applyInitialHash);
+
+function applyInitialHash() {
+    const hash = window.location.hash.replace('#', '');
+    if (['customers', 'employees', 'marketing'].includes(hash)) {
+        switchView(hash);
+    }
 }
 
 openLoginBtn.addEventListener('click', () => openAuthPanel('login'));

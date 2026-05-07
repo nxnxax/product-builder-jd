@@ -6,6 +6,14 @@
 <title>AI 점집 사주 로또 추천</title>
 <style>
 body{margin:0;background:#0f0f0f;color:#fff;font-family:sans-serif;}
+.app-header{background:#1e293b;color:#fff;padding:12px 24px;position:sticky;top:0;z-index:100;box-shadow:0 4px 12px rgba(0,0,0,.25);}
+.header-container{max-width:1200px;margin:0 auto;display:flex;justify-content:space-between;align-items:center;gap:16px;}
+.header-container h1{font-size:17px;font-weight:800;letter-spacing:0;text-transform:uppercase;display:flex;align-items:center;gap:8px;margin:0;}
+.header-container h1 .accent{color:#38bdf8;background:rgba(56,189,248,.15);padding:2px 7px;border-radius:4px;font-size:12px;}
+.main-nav{display:flex;gap:4px;flex-wrap:wrap;}
+.nav-link{display:inline-flex;align-items:center;text-decoration:none;border:0;background:none;color:rgba(255,255,255,.72);font-size:14px;font-weight:700;padding:8px 14px;border-radius:4px;cursor:pointer;}
+.nav-link:hover{color:#fff;background:rgba(255,255,255,.1);}
+.nav-link.active{color:#fff;background:#2563eb;}
 .container{max-width:520px;margin:auto;padding:20px;}
 label{display:block;margin-top:16px;margin-bottom:6px;font-size:13px;color:#bbb;}
 input,select{width:100%;padding:13px;border-radius:10px;border:1px solid #333;background:#1a1a1a;color:#fff;box-sizing:border-box;font-size:15px;}
@@ -23,6 +31,10 @@ input,select{width:100%;padding:13px;border-radius:10px;border:1px solid #333;ba
 .yellow{background:#fbc400}.blue{background:#69c8f2}.red{background:#ff7272}.gray{background:#aaa}.green{background:#7bc043}
 .error{color:#ff5c5c;font-size:13px;margin-top:10px;}
 @media (max-width:440px){
+    .app-header{padding:14px;}
+    .header-container{align-items:flex-start;flex-direction:column;}
+    .main-nav{width:100%;}
+    .nav-link{flex:1;justify-content:center;padding:9px 8px;font-size:12px;}
     .calendar-row{grid-template-columns:1fr 1fr 1fr;}
     .calendar-row select{grid-column:1 / -1;}
 }
@@ -30,6 +42,18 @@ input,select{width:100%;padding:13px;border-radius:10px;border:1px solid #333;ba
 </head>
 
 <body>
+<header class="app-header">
+<div class="header-container">
+<h1>JDHOON <span class="accent">ERP CONSOLE</span></h1>
+<nav class="main-nav">
+<a class="nav-link" href="index.html#customers">CRM: 고객 관리</a>
+<a class="nav-link" href="index.html#employees">HRM: 직원 관리</a>
+<a class="nav-link" href="index.html#marketing">Marketing: 마케팅 분석</a>
+<a class="nav-link active" href="lotto2233.html">Lotto</a>
+</nav>
+</div>
+</header>
+
 <div class="container">
 
 <h2>🔮 AI 점집 사주 로또 추천</h2>
