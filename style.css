@@ -411,4 +411,175 @@ body {
         font-size: 0.7rem;
         text-transform: uppercase;
     }
+
+    /* Marketing Analyzer Native Styles */
+    .marketing-layout {
+        display: grid;
+        grid-template-columns: 340px 1fr;
+        gap: 2rem;
+        align-items: start;
+    }
+
+    .marketing-sidebar {
+        background-color: var(--surface-color);
+        border-radius: 20px;
+        padding: 2rem;
+        border: 1px solid var(--border-color);
+        box-shadow: var(--shadow-premium);
+    }
+
+    .marketing-sidebar .card-title {
+        font-size: 1.25rem;
+        font-weight: 800;
+        margin-bottom: 1.5rem;
+        color: var(--primary-color);
+    }
+
+    .marketing-sidebar textarea {
+        width: 100%;
+        min-height: 200px;
+        padding: 1rem;
+        border-radius: 12px;
+        border: 1px solid var(--border-color);
+        background-color: #f8fafc;
+        color: var(--text-main);
+        font-family: inherit;
+        font-size: 0.95rem;
+        line-height: 1.6;
+        resize: vertical;
+        outline: none;
+        transition: var(--transition-base);
+    }
+
+    .marketing-sidebar textarea:focus {
+        border-color: var(--accent-color);
+        box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.1);
+    }
+
+    .marketing-sidebar .notice {
+        margin-top: 1rem;
+        font-size: 0.8rem;
+        color: var(--text-muted);
+        line-height: 1.5;
+    }
+
+    .marketing-sidebar .speed-note {
+        color: var(--accent-color);
+        font-weight: 600;
+    }
+
+    .metrics-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 1.25rem;
+        margin-bottom: 2rem;
+    }
+
+    .metric-card {
+        background-color: var(--surface-color);
+        border: 1px solid var(--border-color);
+        border-radius: 16px;
+        padding: 1.5rem;
+        box-shadow: var(--shadow-soft);
+    }
+
+    .metric-card span {
+        display: block;
+        font-size: 0.75rem;
+        font-weight: 800;
+        color: var(--text-muted);
+        text-transform: uppercase;
+        margin-bottom: 0.5rem;
+    }
+
+    .metric-card strong {
+        font-size: 1.75rem;
+        font-weight: 800;
+        color: var(--primary-color);
+    }
+
+    .analysis-card {
+        background-color: var(--surface-color);
+        border: 1px solid var(--border-color);
+        border-radius: 20px;
+        padding: 2rem;
+        margin-bottom: 2rem;
+        box-shadow: var(--shadow-premium);
+        animation: fadeIn 0.5s ease;
+    }
+
+    .analysis-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1.5rem;
+    }
+
+    .analysis-header .main-kw {
+        font-size: 1.5rem;
+        font-weight: 900;
+        color: var(--primary-color);
+    }
+
+    .recommendation-pill {
+        background-color: #ecfeff;
+        color: #0e7490;
+        padding: 0.5rem 1rem;
+        border-radius: 999px;
+        font-size: 0.8rem;
+        font-weight: 800;
+    }
+
+    .summary-box {
+        background-color: #f8fbff;
+        border: 1px solid #e0e7ff;
+        border-radius: 16px;
+        padding: 1.5rem;
+        margin-bottom: 2rem;
+        line-height: 1.7;
+        font-size: 0.95rem;
+    }
+
+    .channel-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+        gap: 1.5rem;
+        margin-top: 2rem;
+    }
+
+    .channel-item {
+        border: 1px solid var(--border-color);
+        border-radius: 16px;
+        padding: 1.5rem;
+        background-color: #ffffff;
+    }
+
+    .channel-name {
+        font-weight: 800;
+        font-size: 1rem;
+        margin-bottom: 1rem;
+        display: flex;
+        justify-content: space-between;
+    }
+
+    .score-bar {
+        height: 8px;
+        background-color: #f1f5f9;
+        border-radius: 999px;
+        overflow: hidden;
+        margin-bottom: 1rem;
+    }
+
+    .score-fill {
+        height: 100%;
+        background: linear-gradient(90deg, #38bdf8, #10b981);
+        border-radius: 999px;
+    }
+
+    @media (max-width: 1024px) {
+        .marketing-layout {
+            grid-template-columns: 1fr;
+        }
+    }
+
 }

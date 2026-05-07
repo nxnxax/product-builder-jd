@@ -5,15 +5,18 @@
 // --- State Management ---
 let customers = JSON.parse(localStorage.getItem('customers')) || [];
 let employees = JSON.parse(localStorage.getItem('employees')) || [];
-let currentView = 'customers'; // 'customers' or 'employees'
+let currentView = 'customers'; // 'customers', 'employees', or 'marketing'
 let customerFilter = '';
 let employeeFilter = '';
 
 // --- DOM Elements ---
 const navCustomers = document.getElementById('nav-customers');
 const navEmployees = document.getElementById('nav-employees');
+const navMarketing = document.getElementById('nav-marketing');
+
 const customerSection = document.getElementById('customer-section');
 const employeeSection = document.getElementById('employee-section');
+const marketingSection = document.getElementById('marketing-section');
 
 const customerList = document.getElementById('customer-list');
 const employeeList = document.getElementById('employee-list');
@@ -36,21 +39,34 @@ document.addEventListener('DOMContentLoaded', () => {
 // --- Navigation Logic ---
 function switchView(view) {
     currentView = view;
+    
+    // Update Nav Buttons
+    [navCustomers, navEmployees, navMarketing].forEach(btn => {
+        if (btn) btn.classList.remove('active');
+    });
+    
+    // Update Sections
+    [customerSection, employeeSection, marketingSection].forEach(sec => {
+        if (sec) sec.classList.add('hidden');
+    });
+
     if (view === 'customers') {
         navCustomers.classList.add('active');
-        navEmployees.classList.remove('active');
         customerSection.classList.remove('hidden');
-        employeeSection.classList.add('hidden');
-    } else {
-        navCustomers.classList.remove('active');
+    } else if (view === 'employees') {
         navEmployees.classList.add('active');
-        customerSection.classList.add('hidden');
         employeeSection.classList.remove('hidden');
+    } else if (view === 'marketing') {
+        navMarketing.classList.add('active');
+        marketingSection.classList.remove('hidden');
     }
 }
 
 navCustomers.addEventListener('click', () => switchView('customers'));
 navEmployees.addEventListener('click', () => switchView('employees'));
+if (navMarketing) {
+    navMarketing.addEventListener('click', () => switchView('marketing'));
+}
 
 // --- CRUD Operations ---
 
