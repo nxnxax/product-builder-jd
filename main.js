@@ -31,6 +31,8 @@ const authName = document.getElementById('auth-name');
 const authPhone = document.getElementById('auth-phone');
 const authEmail = document.getElementById('auth-email');
 const authPassword = document.getElementById('auth-password');
+const confirmPasswordField = document.getElementById('confirm-password-field');
+const authPasswordConfirm = document.getElementById('auth-password-confirm');
 const authSubmit = document.getElementById('auth-submit');
 const authMessage = document.getElementById('auth-message');
 const identityVerifyBtn = document.getElementById('identity-verify-btn');
@@ -265,8 +267,11 @@ function setAuthMode(mode) {
     loginTab.classList.toggle('active', mode === 'login');
     signupTab.classList.toggle('active', mode === 'signup');
     signupFields.classList.toggle('hidden', mode !== 'signup');
+    confirmPasswordField.classList.toggle('hidden', mode !== 'signup');
     authName.required = mode === 'signup';
     authPhone.required = mode === 'signup';
+    authPasswordConfirm.required = mode === 'signup';
+    if (mode === 'login') authPasswordConfirm.value = '';
     authSubmit.textContent = mode === 'login' ? '로그인' : '회원가입';
     authPassword.autocomplete = mode === 'login' ? 'current-password' : 'new-password';
     setAuthMessage('', '');
@@ -298,6 +303,7 @@ async function handleAuthSubmit(event) {
 
     const email = authEmail.value.trim();
     const password = authPassword.value;
+    const passwordConfirm = authPasswordConfirm.value;
     const fullName = authName.value.trim();
     const phone = normalizeKoreanMobile(authPhone.value);
 
@@ -311,6 +317,12 @@ async function handleAuthSubmit(event) {
         if (!phone) {
             setAuthMessage('올바른 휴대폰 번호를 입력하세요.', 'error');
             authPhone.focus();
+            return;
+        }
+
+        if (password !== passwordConfirm) {
+            setAuthMessage('비밀번호와 비밀번호 확인이 일치하지 않습니다.', 'error');
+            authPasswordConfirm.focus();
             return;
         }
     }
