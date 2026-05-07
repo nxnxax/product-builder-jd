@@ -23,9 +23,9 @@ GitHub 저장소에서 `Settings > Secrets and variables > Actions > New reposit
 | FTP/SSH 아이디 | `nxnxqxx` |
 | FTP 포트 | `21` |
 | SSH 포트 | `22` |
-| 업로드 경로 | `/www/` |
+| 업로드 경로 | `./` |
 
-카페24 웹호스팅 자동배포에서는 `server-dir`를 `/www/`로 지정합니다. 루트(`/`)로 지정하면 550 오류가 날 수 있습니다.
+카페24 일반 웹호스팅 FTP는 로그인 직후 보이는 기본 위치가 웹 루트입니다. `server-dir`에 `/`, `/www/`, `/html/`, `/public_html/` 같은 절대경로를 지정하면 ProFTPD 보안 정책에 막힐 수 있으므로 상대경로 `./`로 업로드합니다.
 
 워크플로는 `deploy/` 폴더를 임시로 만든 뒤 실제 서비스에 필요한 파일만 업로드합니다. 카페24 FTP에서 새 폴더 생성이 막힐 수 있어 PHP API는 서버 루트의 `analyze.php`로 배포합니다.
 
