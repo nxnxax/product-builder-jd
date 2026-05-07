@@ -1,29 +1,44 @@
-# Cloudflare Pages용 네이버 키워드 마케팅 분석기
+# Cloudflare Pages 서브페이지용 Marketing.html
 
-PHP 없이 Cloudflare Pages에서 구동되는 버전입니다.
+기존 `index.html`은 삭제하거나 덮어쓰지 마세요.
 
-## 구조
-- `index.html` : 화면
-- `functions/api/analyze.js` : 네이버 검색광고 API / 네이버 Search Open API 처리
-- `package.json` : Wrangler 실행용
+## 올바른 구조
 
-## Cloudflare Pages 환경변수
+```text
+index.html                  ← 기존 메인화면 유지
+Marketing.html              ← 마케팅 분석 서브페이지
+functions/
+  api/
+    analyze.js              ← API 서버리스 함수
+package.json
+```
 
-Cloudflare Pages 프로젝트의 Settings > Environment variables 에 등록하세요.
+## 기존 index.html 메뉴에 추가
 
-필수:
-- `NAVER_SEARCHAD_API_KEY`
-- `NAVER_SEARCHAD_SECRET_KEY`
-- `NAVER_SEARCHAD_CUSTOMER_ID`
+```html
+<a href="/Marketing.html">Marketing · 마케팅 분석</a>
+```
 
-선택이지만 권장:
-- `NAVER_CLIENT_ID`
-- `NAVER_CLIENT_SECRET`
+## 중요
 
-API 키는 절대 `index.html`에 넣지 마세요.
+아래 구조가 있으면 삭제하세요.
 
-## 배포
-GitHub에 이 폴더 전체를 올리고 Cloudflare Pages에 연결하세요.
+```text
+api/
+  analyze/
+    index.html
+```
 
-Build command: 비워도 됩니다.
-Build output directory: `/` 또는 비워도 됩니다.
+`/api/analyze`는 일반 페이지가 아니라 Cloudflare Pages Function이어야 합니다.
+
+## 환경변수
+
+Cloudflare Pages > Settings > Variables and Secrets 에 추가:
+
+- NAVER_SEARCHAD_API_KEY
+- NAVER_SEARCHAD_SECRET_KEY
+- NAVER_SEARCHAD_CUSTOMER_ID
+- NAVER_CLIENT_ID
+- NAVER_CLIENT_SECRET
+
+저장 후 Deployments > Retry deployment 하세요.

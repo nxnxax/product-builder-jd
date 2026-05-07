@@ -1,0 +1,30 @@
+name: Deploy to Cafe24
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: FTP Deploy to Cafe24
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          server-dir: /www/ # 카페24의 일반적인 업로드 경로입니다. 다를 경우 수정이 필요합니다.
+          exclude: |
+            **/.git*
+            **/.idx*
+            **/node_modules/**
+            package.json
+            package-lock.json
+            blueprint.md
+            GEMINI.md
+            functions/**
