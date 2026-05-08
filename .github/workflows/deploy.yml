@@ -50,6 +50,7 @@ jobs:
           cp profile.html admin.html profile.js admin.js auth-shared.js deploy/
           cp api/analyze.php deploy/analyze.php
           cp api/records.php deploy/records.php
+          if [ -f .htaccess ]; then cp .htaccess deploy/.htaccess; fi
 
       - name: Deploy to Cafe24
         uses: appleboy/scp-action@v0.1.7
@@ -58,7 +59,7 @@ jobs:
           username: ${{ secrets.SFTP_USER || 'nxnxqxx' }}
           port: ${{ secrets.SFTP_PORT || 22 }}
           key: ${{ secrets.SFTP_PRIVATE_KEY }}
-          source: "deploy/*"
+          source: "deploy/*,deploy/.htaccess"
           target: ${{ secrets.SFTP_DIR || './' }}
           strip_components: 1
           overwrite: true
@@ -67,4 +68,4 @@ jobs:
       - name: Check HTTP status
         run: |
           set -euo pipefail
-          curl -I --fail http://youngman-biz.com/
+          curl -I --fail https://youngman-biz.com/
