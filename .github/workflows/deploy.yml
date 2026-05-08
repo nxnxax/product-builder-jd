@@ -69,6 +69,25 @@ jobs:
           fi
           echo "FTP password secret found."
 
+      - name: Assemble server .env from secrets
+        env:
+          OPENAI_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          set -e
+          {
+            echo "VITE_SUPABASE_URL=https://xktjucyijpkopkyvxovh.supabase.co/rest/v1/"
+            echo "VITE_SUPABASE_ANON_KEY=sb_publishable_Qg7NbgXvnIEchsjR18X8Mw_d8YsqVbS"
+            if [ -n "$OPENAI_KEY" ]; then
+              echo "OPENAI_API_KEY=$OPENAI_KEY"
+            else
+              echo "::warning::OPENAI_API_KEY GitHub secret is empty — AI endpoints will fail until set."
+            fi
+          } > deploy/.env
+          # Mask first 6 chars so log doesn't reveal the value but confirms presence.
+          if [ -n "$OPENAI_KEY" ]; then
+            echo "OPENAI_API_KEY length=${#OPENAI_KEY}, prefix=$(printf '%s' "$OPENAI_KEY" | head -c6)…"
+          fi
+
       - name: Deploy to Cafe24 (FTP)
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
         with:
@@ -82,11 +101,11 @@ jobs:
           dangerous-clean-slate: false
           log-level: standard
           # Don't try to delete remote files we don't own. We only push our set.
+          # NOTE: deploy/.env IS uploaded — it's assembled from GitHub Secrets above.
           exclude: |
             **/.git*
             **/.git*/**
             **/node_modules/**
-            **/.env
 
       - name: Verify deploy via HTTPS
         run: |

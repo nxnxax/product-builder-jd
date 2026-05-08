@@ -18,3 +18,11 @@ RewriteRule ^(.*)$ https://%{HTTP_HOST}/$1 [R=301,L]
         Header set Cache-Control "no-cache, must-revalidate"
     </FilesMatch>
 </IfModule>
+
+# Belt-and-braces: deny direct web access to dotfiles / env / secrets.
+<FilesMatch "^\.">
+    Require all denied
+</FilesMatch>
+<FilesMatch "(^|/)\.env(\.|$)">
+    Require all denied
+</FilesMatch>
