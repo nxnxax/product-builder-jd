@@ -29,12 +29,14 @@ jobs:
           test -f admin.js
           test -f auth-shared.js
           test -f upload.html
+          test -f card-builder.html
           grep -q 'main.js?v=' index.html
           grep -q 'profile.js?v=' profile.html
           grep -q 'admin.js?v=' admin.html
           php -l api/analyze.php
           php -l api/records.php
           php -l api/upload.php
+          php -l api/card-design.php
           php -l kapp_premium.php
 
       - name: Prepare deploy folder
@@ -45,9 +47,11 @@ jobs:
           cp index.html style.css main.js Marketing.html kapp_premium.php lotto2233.html deploy/
           cp profile.html admin.html profile.js admin.js auth-shared.js deploy/
           cp upload.html deploy/upload.html
+          cp card-builder.html deploy/card-builder.html
           cp api/analyze.php deploy/analyze.php
           cp api/records.php deploy/records.php
           cp api/upload.php deploy/upload.php
+          cp api/card-design.php deploy/card-design.php
           if [ -f .htaccess ]; then cp .htaccess deploy/.htaccess; fi
           ls -la deploy/
 

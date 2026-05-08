@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>온라인 명함 제작 · JDHOON Console</title>
+    <link rel="stylesheet" href="style.css?v=20260508-tight">
+    <style>
+        .cb-wrap { max-width: 760px; margin: 3rem auto 5rem; padding: 0 1.5rem; }
+        .cb-wrap h2 { margin: 0 0 .35rem; font-size: 1.6rem; letter-spacing: -.01em; }
+        .cb-wrap .subtitle { color: var(--fg-secondary); margin: 0 0 1.75rem; font-size: .95rem; line-height: 1.55; }
+
+        .cb-section { margin-bottom: 1.75rem; }
+        .cb-section h3 { margin: 0 0 .65rem; font-size: 1rem; font-weight: 600; letter-spacing: -.005em; }
+        .cb-section p.hint { color: var(--fg-tertiary); font-size: .8rem; margin: 0 0 .75rem; line-height: 1.5; }
+
+        .cb-capture-row { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem; }
+        @media (max-width: 480px) { .cb-capture-row { grid-template-columns: 1fr; } }
+
+        .cb-capture-btn,
+        .cb-upload-btn {
+            position: relative;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            gap: .5rem;
+            padding: 1.5rem 1rem;
+            border: 1.5px dashed var(--border-strong);
+            border-radius: var(--radius-lg);
+            background: var(--bg-subtle);
+            color: var(--fg-secondary);
+            font-family: inherit; font-size: .9rem; cursor: pointer;
+            transition: border-color .15s ease, background .15s ease, color .15s ease;
+        }
+        .cb-capture-btn:hover, .cb-upload-btn:hover, .cb-upload-btn.dragover {
+            border-color: var(--accent); background: var(--accent-soft); color: var(--accent);
+        }
+        .cb-capture-btn .ico, .cb-upload-btn .ico { font-size: 1.5rem; }
+        .cb-capture-btn .label { color: var(--fg); font-weight: 600; font-size: .95rem; }
+        .cb-capture-btn .sub, .cb-upload-btn .sub { font-size: .75rem; color: var(--fg-tertiary); }
+        .cb-capture-btn input,
+        .cb-upload-btn input { position: absolute; left: -9999px; }
+
+        .cb-preview {
+            margin-top: 1rem; display: none;
+            border: 1px solid var(--border); border-radius: var(--radius-md);
+            background: var(--bg); overflow: hidden;
+        }
+        .cb-preview.visible { display: block; }
+        .cb-preview img { display: block; width: 100%; max-height: 320px; object-fit: contain; background: var(--bg-muted); }
+        .cb-preview .meta {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: .5rem .75rem; font-size: .8rem; color: var(--fg-tertiary);
+        }
+        .cb-preview .meta button {
+            background: transparent; border: 1px solid var(--border-strong); color: var(--fg);
+            padding: .25rem .65rem; border-radius: var(--radius-sm); font-size: .75rem; cursor: pointer;
+        }
+
+        .cb-input { width: 100%; }
+        .cb-form-help { color: var(--fg-tertiary); font-size: .78rem; margin-top: .35rem; line-height: 1.5; }
+
+        .cb-actions { display: flex; gap: .65rem; margin-top: 1.5rem; }
+        .cb-actions .primary-btn { flex: 1 1 auto; height: 44px; font-size: .95rem; }
+        .cb-actions .secondary-btn { height: 44px; padding: 0 1.25rem; }
+
+        .cb-status {
+            margin-top: 1rem; padding: .85rem 1rem;
+            border-radius: var(--radius-md); font-size: .9rem;
+            background: var(--bg-subtle); color: var(--fg-secondary);
+            display: none; line-height: 1.55;
+        }
+        .cb-status.visible { display: block; }
+        .cb-status.error { background: var(--danger-soft); color: var(--danger); }
+        .cb-status.success { background: var(--success-soft); color: var(--success); }
+
+        .cb-result {
+            margin-top: 1.5rem; display: none;
+            border: 1px solid var(--border); border-radius: var(--radius-lg);
+            background: var(--bg); overflow: hidden;
+        }
+        .cb-result.visible { display: block; }
+        .cb-result-head { padding: 1rem 1.25rem; border-bottom: 1px solid var(--border); }
+        .cb-result-head h3 { margin: 0; font-size: 1rem; font-weight: 600; }
+        .cb-result-body { padding: 1.25rem; }
+        .cb-result-body img { max-width: 100%; border-radius: var(--radius-md); }
+
+        .back-link { display: inline-block; margin-bottom: 1rem; color: var(--fg-secondary); text-decoration: none; font-size: .9rem; }
+        .back-link:hover { color: var(--fg); }
+    </style>
+</head>
+<body>
+    <header id="app-header" class="app-header">
+        <div class="header-container">
+            <h1><a href="index.html" style="color:inherit;text-decoration:none">JDHOON <span class="accent">Console</span></a></h1>
+        </div>
+    </header>
+
+    <main class="cb-wrap">
+        <a class="back-link" href="index.html">← 대시보드로</a>
+        <h2>온라인 명함 제작</h2>
+        <p class="subtitle">기존 명함을 촬영하거나 이미지로 업로드하면 AI가 내용을 인식해 고급스러운 디자인으로 재구성합니다. 회사 사이트 주소를 함께 입력하면 사이트의 분위기와 정보를 반영합니다.</p>
+
+        <section class="cb-section">
+            <h3>1. 명함 이미지</h3>
+            <div class="cb-capture-row">
+                <label class="cb-capture-btn" for="cb-capture">
+                    <span class="ico">📷</span>
+                    <span class="label">명함 촬영</span>
+                    <span class="sub">스마트폰에서 카메라가 바로 열립니다</span>
+                    <input type="file" id="cb-capture" accept="image/*" capture="environment">
+                </label>
+                <label class="cb-upload-btn" id="cb-drop">
+                    <span class="ico">🖼️</span>
+                    <span class="label">이미지 업로드</span>
+                    <span class="sub">클릭 또는 드래그 · PNG/JPG, 최대 10MB</span>
+                    <input type="file" id="cb-file" accept="image/png,image/jpeg,image/webp">
+                </label>
+            </div>
+            <div id="cb-preview" class="cb-preview">
+                <img id="cb-preview-img" alt="명함 미리보기">
+                <div class="meta">
+                    <span id="cb-preview-name">—</span>
+                    <button type="button" id="cb-preview-clear">제거</button>
+                </div>
+            </div>
+        </section>
+
+        <section class="cb-section">
+            <h3>2. 회사 사이트 (선택)</h3>
+            <p class="hint">대표 사이트 주소를 입력하면 AI가 사이트의 톤·키워드·로고 색감을 반영해 디자인합니다.</p>
+            <div class="form-group">
+                <input type="url" id="cb-url" class="cb-input" placeholder="https://example.com" inputmode="url">
+                <p class="cb-form-help">예: https://yourcompany.co.kr · 비워두셔도 됩니다.</p>
+            </div>
+        </section>
+
+        <section class="cb-section">
+            <h3>3. 디자인 톤 (선택)</h3>
+            <div class="form-group">
+                <input type="text" id="cb-tone" class="cb-input" placeholder="예: 미니멀, 럭셔리, 따뜻한 톤, 한국 스타트업 분위기">
+                <p class="cb-form-help">한 줄로 자유롭게. 비워두면 AI가 사이트/이미지 내용을 보고 자동으로 결정합니다.</p>
+            </div>
+        </section>
+
+        <div class="cb-actions">
+            <button type="button" id="cb-generate" class="primary-btn">AI 디자인 생성</button>
+            <button type="button" id="cb-reset" class="secondary-btn">초기화</button>
+        </div>
+
+        <div id="cb-status" class="cb-status" aria-live="polite"></div>
+
+        <div id="cb-result" class="cb-result">
+            <div class="cb-result-head">
+                <h3>결과</h3>
+            </div>
+            <div class="cb-result-body" id="cb-result-body"></div>
+        </div>
+    </main>
+
+    <script>
+        const $ = (id) => document.getElementById(id);
+        const captureInput = $('cb-capture');
+        const fileInput = $('cb-file');
+        const dropZone = $('cb-drop');
+        const previewBox = $('cb-preview');
+        const previewImg = $('cb-preview-img');
+        const previewName = $('cb-preview-name');
+        const previewClear = $('cb-preview-clear');
+        const urlInput = $('cb-url');
+        const toneInput = $('cb-tone');
+        const generateBtn = $('cb-generate');
+        const resetBtn = $('cb-reset');
+        const statusEl = $('cb-status');
+        const resultBox = $('cb-result');
+        const resultBody = $('cb-result-body');
+
+        let currentFile = null;
+
+        function setStatus(text, type) {
+            statusEl.className = 'cb-status visible' + (type ? ' ' + type : '');
+            statusEl.textContent = text;
+        }
+        function clearStatus() {
+            statusEl.className = 'cb-status';
+            statusEl.textContent = '';
+        }
+        function showPreview(file) {
+            if (!file || !file.type.startsWith('image/')) {
+                setStatus('이미지 파일만 사용할 수 있습니다.', 'error');
+                return;
+            }
+            if (file.size > 10 * 1024 * 1024) {
+                setStatus('파일이 너무 큽니다. 최대 10MB.', 'error');
+                return;
+            }
+            currentFile = file;
+            previewImg.src = URL.createObjectURL(file);
+            previewName.textContent = `${file.name} · ${(file.size/1024).toFixed(0)} KB`;
+            previewBox.classList.add('visible');
+            clearStatus();
+        }
+        function clearPreview() {
+            currentFile = null;
+            previewImg.src = '';
+            previewName.textContent = '—';
+            previewBox.classList.remove('visible');
+            captureInput.value = '';
+            fileInput.value = '';
+        }
+
+        captureInput.addEventListener('change', () => showPreview(captureInput.files[0]));
+        fileInput.addEventListener('change', () => showPreview(fileInput.files[0]));
+        previewClear.addEventListener('click', clearPreview);
+
+        ['dragenter', 'dragover'].forEach(t => dropZone.addEventListener(t, (e) => {
+            e.preventDefault(); e.stopPropagation();
+            dropZone.classList.add('dragover');
+        }));
+        ['dragleave', 'drop'].forEach(t => dropZone.addEventListener(t, (e) => {
+            e.preventDefault(); e.stopPropagation();
+            dropZone.classList.remove('dragover');
+        }));
+        dropZone.addEventListener('drop', (e) => {
+            const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+            if (f) showPreview(f);
+        });
+
+        resetBtn.addEventListener('click', () => {
+            clearPreview();
+            urlInput.value = '';
+            toneInput.value = '';
+            resultBox.classList.remove('visible');
+            resultBody.innerHTML = '';
+            clearStatus();
+        });
+
+        generateBtn.addEventListener('click', async () => {
+            const url = urlInput.value.trim();
+            if (!currentFile && !url) {
+                setStatus('명함 이미지나 회사 사이트 주소 중 하나는 입력해 주세요.', 'error');
+                return;
+            }
+            if (url && !/^https?:\/\//i.test(url)) {
+                setStatus('사이트 주소는 https:// 또는 http:// 로 시작해야 합니다.', 'error');
+                return;
+            }
+            generateBtn.disabled = true;
+            generateBtn.textContent = '생성 중…';
+            setStatus('명함 정보를 분석하고 있습니다…', '');
+            try {
+                const fd = new FormData();
+                if (currentFile) fd.append('image', currentFile);
+                if (url) fd.append('siteUrl', url);
+                if (toneInput.value.trim()) fd.append('tone', toneInput.value.trim());
+                const res = await fetch('api/card-design.php', { method: 'POST', body: fd });
+                const data = await res.json().catch(() => null);
+                if (!res.ok || !data || data.ok === false) {
+                    throw new Error(data?.error || `요청 실패 (${res.status})`);
+                }
+                renderResult(data);
+                setStatus('디자인이 준비되었습니다.', 'success');
+            } catch (err) {
+                setStatus('오류: ' + (err.message || err), 'error');
+            } finally {
+                generateBtn.disabled = false;
+                generateBtn.textContent = 'AI 디자인 생성';
+            }
+        });
+
+        function renderResult(data) {
+            resultBox.classList.add('visible');
+            resultBody.innerHTML = '';
+
+            if (data.imageUrl) {
+                const img = document.createElement('img');
+                img.src = data.imageUrl;
+                img.alt = '생성된 명함';
+                resultBody.appendChild(img);
+            }
+            if (data.fields) {
+                const dl = document.createElement('dl');
+                dl.style.cssText = 'display:grid;grid-template-columns:auto 1fr;gap:.5rem 1rem;margin:1rem 0 0;font-size:.9rem;';
+                for (const [k, v] of Object.entries(data.fields)) {
+                    const dt = document.createElement('dt');
+                    dt.style.color = 'var(--fg-tertiary)';
+                    dt.textContent = k;
+                    const dd = document.createElement('dd');
+                    dd.style.margin = '0';
+                    dd.textContent = String(v ?? '');
+                    dl.appendChild(dt); dl.appendChild(dd);
+                }
+                resultBody.appendChild(dl);
+            }
+            if (data.note) {
+                const p = document.createElement('p');
+                p.style.cssText = 'margin:1rem 0 0;color:var(--fg-tertiary);font-size:.85rem;';
+                p.textContent = data.note;
+                resultBody.appendChild(p);
+            }
+        }
+    </script>
+</body>
+</html>
