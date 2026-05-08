@@ -318,6 +318,58 @@ function save_image_from_url(string $url): ?string {
 
 // === Main ===
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
+
+// Connectivity diagnostic — visit /card-design.php?test=connectivity to check
+// what hosts the cafe24 PHP environment can resolve and reach.
+if ($method === 'GET' && (($_GET['test'] ?? '') === 'connectivity')) {
+    $hosts = [
+        'api.openai.com',
+        'api.anthropic.com',
+        'generativelanguage.googleapis.com',
+        'xktjucyijpkopkyvxovh.supabase.co',
+        'example.com',
+    ];
+    $results = [];
+    foreach ($hosts as $h) {
+        $ip = @gethostbyname($h);
+        $resolved = $ip !== $h && $ip !== false;
+        $reach = null;
+        if ($resolved) {
+            $ch = curl_init('https://' . $h . '/');
+            curl_setopt_array($ch, [
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_NOBODY => true,
+                CURLOPT_TIMEOUT => 6,
+                CURLOPT_CONNECTTIMEOUT => 4,
+                CURLOPT_USERAGENT => 'connectivity-test/1.0',
+            ]);
+            curl_exec($ch);
+            $reach = [
+                'http_code' => (int)curl_getinfo($ch, CURLINFO_HTTP_CODE),
+                'connect_time' => (float)curl_getinfo($ch, CURLINFO_CONNECT_TIME),
+                'curl_error' => curl_error($ch) ?: null,
+            ];
+            curl_close($ch);
+        }
+        $results[] = [
+            'host' => $h,
+            'resolved_ip' => $resolved ? $ip : null,
+            'reach' => $reach,
+        ];
+    }
+    $envHasKey = load_env_value('OPENAI_API_KEY') !== '';
+    jout([
+        'ok' => true,
+        'hosts' => $results,
+        'env' => [
+            'OPENAI_API_KEY_present' => $envHasKey,
+            'php_version' => PHP_VERSION,
+            'allow_url_fopen' => (bool)ini_get('allow_url_fopen'),
+            'curl_loaded' => function_exists('curl_init'),
+        ],
+    ]);
+}
+
 if ($method !== 'POST') jout(['ok' => false, 'error' => 'POST only'], 405);
 
 $apiKey = load_env_value('OPENAI_API_KEY');
