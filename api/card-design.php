@@ -49,7 +49,9 @@ function openai_chat(string $apiKey, array $body, int $timeout = 60): array {
     return ['ok' => $status >= 200 && $status < 300, 'status' => $status, 'body' => $decoded, 'raw' => (string)$resp];
 }
 
-function generate_card_svg(string $apiKey, ?array $cardFields, ?array $siteMeta, string $tone): array {
+function generate_card_svg(string $apiKey, ?array $cardFields, ?array $siteMeta, string $tone, array $dims = ['width' => 1050, 'height' => 600]): array {
+    $w = max(300, min(2400, (int)$dims['width']));
+    $h = max(200, min(2400, (int)$dims['height']));
     $context = [];
     if ($cardFields) {
         $clean = [];
@@ -71,14 +73,19 @@ function generate_card_svg(string $apiKey, ?array $cardFields, ?array $siteMeta,
     if ($tone !== '') $context[] = "Design tone requested: $tone";
     if (!$context) $context[] = "No extracted info — design a clean placeholder card.";
 
-    $sys = "You are a senior brand designer. Output a SINGLE self-contained SVG business card. Rules:\n" .
-        "- viewBox=\"0 0 1050 600\" (3.5:2 ratio).\n" .
-        "- Pure SVG only. No external fonts, no <image>, no scripts. Use system fonts via font-family stack: -apple-system, 'SF Pro Text', 'Pretendard', 'Apple SD Gothic Neo', sans-serif.\n" .
-        "- Print every supplied field exactly as given — no spelling changes, no Romanization of Korean.\n" .
-        "- Premium, modern, Apple/Linear-quality typography. Plenty of whitespace. Clear visual hierarchy: name largest, then title/company, then contact details smaller.\n" .
-        "- Use the brand color (or a single tasteful accent) sparingly — one geometric mark or a thin accent line. No clip-art, no emojis, no fake QR codes.\n" .
-        "- Background can be solid or a subtle gradient. Do not put any placeholder text like 'Your name' or fake info.\n" .
-        "- Output ONLY the raw SVG starting with <svg> and ending with </svg>. No markdown, no commentary.";
+    $sys = "You are a senior brand designer creating premium business cards. Output a SINGLE self-contained SVG.\n" .
+        "Hard constraints:\n" .
+        "- viewBox=\"0 0 {$w} {$h}\" with width=\"{$w}\" height=\"{$h}\". Match this aspect ratio precisely.\n" .
+        "- Pure SVG only. No external fonts, no <image>, no scripts, no foreignObject. Use this font stack only: font-family=\"-apple-system, 'SF Pro Text', 'Pretendard', 'Apple SD Gothic Neo', 'Helvetica Neue', sans-serif\".\n" .
+        "- Print every supplied field exactly as given — no spelling changes, no Romanization of Korean characters, no fabricated info, no placeholders.\n" .
+        "Design direction:\n" .
+        "- Premium, modern, Apple/Linear/Stripe quality. Refined typography with deliberate hierarchy: name largest (bold), title/company medium, contact details smallest.\n" .
+        "- Use a real visual idea — one of: subtle linear gradient background, an offset color block, a thin accent line, a small minimalist monogram from initials, or a geometric watermark. Choose what fits the brand. Avoid generic centered layouts unless tone explicitly calls for symmetrical.\n" .
+        "- Color: use the supplied brand color(s) tastefully OR a sophisticated palette (deep navy/charcoal/cream/sand if tone is luxe; bright accent on white if tech). Limit to 2 colors + neutrals.\n" .
+        "- Asymmetric or grid-anchored layouts welcomed. Use generous whitespace, never crowd.\n" .
+        "- No clip-art, no emojis, no fake QR codes, no stock icons. Decorative elements must be pure geometry.\n" .
+        "- Render Korean text with proper line-height; do not letter-space CJK aggressively.\n" .
+        "Output ONLY the raw SVG starting with <svg ...> and ending with </svg>. No markdown fences, no commentary.";
 
     $user = implode("\n", $context);
 
@@ -304,6 +311,7 @@ if (!$hasImage && $siteUrl === '') {
 
 $cardFields = null;
 $ocrError = null;
+$inputDims = ['width' => 1050, 'height' => 600]; // default landscape 3.5:2
 if ($hasImage) {
     $tmp = $_FILES['image']['tmp_name'];
     $size = (int)$_FILES['image']['size'];
@@ -313,6 +321,19 @@ if ($hasImage) {
     $mime = function_exists('mime_content_type') ? (mime_content_type($tmp) ?: 'image/jpeg') : 'image/jpeg';
     if (!in_array($mime, ['image/jpeg', 'image/png', 'image/webp', 'image/gif'], true)) {
         jout(['ok' => false, 'error' => '지원되지 않는 이미지 형식: ' . $mime], 400);
+    }
+    $info = @getimagesize($tmp);
+    if ($info && (int)$info[0] > 0 && (int)$info[1] > 0) {
+        // Cap longest side at 2000 to keep SVG numbers reasonable, preserve aspect ratio.
+        $iw = (int)$info[0];
+        $ih = (int)$info[1];
+        $maxSide = max($iw, $ih);
+        if ($maxSide > 2000) {
+            $scale = 2000 / $maxSide;
+            $iw = (int)round($iw * $scale);
+            $ih = (int)round($ih * $scale);
+        }
+        $inputDims = ['width' => $iw, 'height' => $ih];
     }
     $b64 = base64_encode((string)file_get_contents($tmp));
     $ocr = ocr_business_card($apiKey, $b64, $mime);
@@ -331,7 +352,7 @@ if ($siteUrl !== '') {
     $siteMeta = fetch_site_meta($siteUrl);
 }
 
-$gen = generate_card_svg($apiKey, $cardFields, $siteMeta, $tone);
+$gen = generate_card_svg($apiKey, $cardFields, $siteMeta, $tone, $inputDims);
 
 if (!$gen['ok']) {
     jout([

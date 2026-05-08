@@ -291,6 +291,54 @@
             }
         });
 
+        async function downloadSvgAsPng(svgUrl, filename) {
+            try {
+                const res = await fetch(svgUrl);
+                const svgText = await res.text();
+                // Parse SVG to extract its declared dimensions; fall back to viewBox.
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(svgText, 'image/svg+xml');
+                const svgEl = doc.documentElement;
+                let w = parseFloat(svgEl.getAttribute('width')) || 0;
+                let h = parseFloat(svgEl.getAttribute('height')) || 0;
+                if (!w || !h) {
+                    const vb = (svgEl.getAttribute('viewBox') || '').split(/\s+/).map(Number);
+                    if (vb.length === 4) { w = vb[2]; h = vb[3]; }
+                }
+                if (!w || !h) { w = 1050; h = 600; }
+
+                // Render at 2x for crisp output.
+                const scale = 2;
+                const blob = new Blob([svgText], { type: 'image/svg+xml;charset=utf-8' });
+                const url = URL.createObjectURL(blob);
+                const img = new Image();
+                await new Promise((resolve, reject) => {
+                    img.onload = resolve;
+                    img.onerror = reject;
+                    img.src = url;
+                });
+                const canvas = document.createElement('canvas');
+                canvas.width = Math.round(w * scale);
+                canvas.height = Math.round(h * scale);
+                const ctx = canvas.getContext('2d');
+                ctx.fillStyle = '#fff';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                URL.revokeObjectURL(url);
+                canvas.toBlob((pngBlob) => {
+                    const a = document.createElement('a');
+                    a.href = URL.createObjectURL(pngBlob);
+                    a.download = filename;
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+                }, 'image/png');
+            } catch (e) {
+                setStatus('PNG 변환 실패: ' + (e.message || e), 'error');
+            }
+        }
+
         function renderResult(data) {
             resultBox.classList.add('visible');
             resultBody.innerHTML = '';
@@ -300,6 +348,39 @@
                 img.src = data.imageUrl;
                 img.alt = '생성된 명함';
                 resultBody.appendChild(img);
+
+                const dlRow = document.createElement('div');
+                dlRow.style.cssText = 'display:flex;gap:.5rem;flex-wrap:wrap;margin-top:1rem;';
+
+                const dlSvg = document.createElement('a');
+                dlSvg.href = data.imageUrl;
+                const isSvg = /\.svg(\?|$)/i.test(data.imageUrl);
+                dlSvg.download = (data.fields?.name || data.fields?.company || 'business-card') + (isSvg ? '.svg' : '.png');
+                dlSvg.textContent = isSvg ? 'SVG 다운로드' : '이미지 다운로드';
+                dlSvg.className = 'primary-btn';
+                dlSvg.style.cssText = 'flex:0 0 auto;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;height:38px;padding:0 1rem;';
+                dlRow.appendChild(dlSvg);
+
+                if (isSvg) {
+                    const dlPng = document.createElement('button');
+                    dlPng.type = 'button';
+                    dlPng.className = 'secondary-btn';
+                    dlPng.textContent = 'PNG로 다운로드';
+                    dlPng.style.cssText = 'height:38px;padding:0 1rem;';
+                    dlPng.addEventListener('click', () => downloadSvgAsPng(data.imageUrl, dlSvg.download.replace(/\.svg$/i, '.png')));
+                    dlRow.appendChild(dlPng);
+                }
+
+                const openNew = document.createElement('a');
+                openNew.href = data.imageUrl;
+                openNew.target = '_blank';
+                openNew.rel = 'noopener';
+                openNew.textContent = '새 창에서 열기';
+                openNew.className = 'secondary-btn';
+                openNew.style.cssText = 'height:38px;padding:0 1rem;text-decoration:none;display:inline-flex;align-items:center;';
+                dlRow.appendChild(openNew);
+
+                resultBody.appendChild(dlRow);
             }
             if (data.fields) {
                 const dl = document.createElement('dl');
