@@ -134,7 +134,7 @@ function create_member_from_google(PDO $pdo, $authUser, $data) {
     $fullName = clean($data['fullName'] ?? $data['name'] ?? null);
     $phone = clean($data['phone'] ?? null);
     if (!$fullName) respond(['ok' => false, 'error' => '가입자 이름은 필수입니다.'], 400);
-    if (!$phone) respond(['ok' => false, 'error' => '휴대폰 번호는 필수입니다.'], 400);
+    // Google 가입 시에는 휴대폰 번호를 필수가 아니게 변경 (사용자 요청: 구글 시스템 그대로 사용)
 
     $store = find_member_store($pdo);
     if (!$store) respond(['ok' => false, 'error' => 'members 또는 users 회원 테이블을 찾을 수 없습니다.'], 500);

@@ -316,7 +316,10 @@ async function handlePostOAuthSession() {
 
         if (intent === 'signup') {
             clearOAuthIntent();
-            startGoogleSignupFlow(user);
+            // Google 시스템 그대로 가입: 추가정보 입력 폼을 건너뛰고 Google 정보를 사용하여 자동 가입 처리
+            const fullName = user.user_metadata?.full_name || user.user_metadata?.name || '';
+            console.log('[Auth] Auto-registering Google user:', fullName);
+            await completeGoogleSignup({ fullName, phone: '' });
             return;
         }
 
@@ -797,7 +800,10 @@ async function handleGoogleLogin() {
         const { error } = await supabaseClient.auth.signInWithOAuth({
             provider: 'google',
             options: {
-                redirectTo: buildOAuthRedirectTo(intent)
+                redirectTo: buildOAuthRedirectTo(intent),
+                queryParams: {
+                    prompt: 'select_account'
+                }
             }
         });
         if (error) throw error;
