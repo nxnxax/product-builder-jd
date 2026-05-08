@@ -262,6 +262,9 @@ function create_member_from_google(PDO $pdo, $authUser, $data) {
     $updatedColumn = first_existing_column($columns, ['updated_at', 'modified_at']);
     if ($updatedColumn) $row[$updatedColumn] = $now;
 
+    // Drop null values so DB defaults (e.g. '') apply on NOT NULL columns.
+    $row = array_filter($row, function ($v) { return $v !== null; });
+
     $fieldSql = implode(', ', array_map('quote_identifier', array_keys($row)));
     $placeholderSql = implode(', ', array_map(function ($column) {
         return ':' . $column;
