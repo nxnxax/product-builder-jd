@@ -49,7 +49,8 @@ function openai_chat(string $apiKey, array $body, int $timeout = 60): array {
     return ['ok' => $status >= 200 && $status < 300, 'status' => $status, 'body' => $decoded, 'raw' => (string)$resp];
 }
 
-function research_design_brief(string $apiKey, ?array $cardFields, ?array $siteMeta, string $tone): string {
+function research_design_brief(string $apiKey, ?array $cardFields, ?array $siteMeta, string $tone, ?array &$diag = null): string {
+    $diag = ['attempted' => true, 'used_search' => false, 'http_status' => null, 'error' => null, 'model' => 'gpt-4o-search-preview'];
     $companyName = trim((string)($cardFields['company'] ?? ''));
     $title = trim((string)($cardFields['title'] ?? ''));
     $industryHint = $title ?: ($siteMeta['description'] ?? '') ?: 'advertising / marketing sales';
@@ -74,12 +75,76 @@ function research_design_brief(string $apiKey, ?array $cardFields, ?array $siteM
         'max_tokens' => 800,
     ], 45);
 
+    $diag['http_status'] = $resp['status'] ?? null;
     if (!$resp['ok']) {
-        // Soft-fail: return empty string and let SVG step proceed without research notes.
+        $diag['error'] = $resp['body']['error']['message'] ?? ($resp['error'] ?? 'unknown');
+
+        // Fallback: try the Responses API with web_search tool (different shape).
+        $fb = openai_responses_with_search($apiKey, $query);
+        if ($fb['ok'] && $fb['text'] !== '') {
+            $diag['used_search'] = true;
+            $diag['model'] = 'gpt-4o (responses API + web_search)';
+            $diag['error'] = null;
+            return trim($fb['text']);
+        }
+        // Final fallback: plain gpt-4o without search (better than nothing).
+        $plain = openai_chat($apiKey, [
+            'model' => 'gpt-4o',
+            'messages' => [['role' => 'user', 'content' => $query . "\n(You don't have live web access; use your training knowledge of 2024-25 design trends to synthesize the brief.)"]],
+            'max_tokens' => 800,
+            'temperature' => 0.7,
+        ], 30);
+        if ($plain['ok']) {
+            $diag['used_search'] = false;
+            $diag['model'] = 'gpt-4o (no search, training data only)';
+            $diag['error'] = $diag['error'] . ' → fell back to plain gpt-4o';
+            return trim((string)($plain['body']['choices'][0]['message']['content'] ?? ''));
+        }
         return '';
     }
+    $diag['used_search'] = true;
     $brief = (string)($resp['body']['choices'][0]['message']['content'] ?? '');
     return trim($brief);
+}
+
+function openai_responses_with_search(string $apiKey, string $input, int $timeout = 45): array {
+    $ch = curl_init('https://api.openai.com/v1/responses');
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST => true,
+        CURLOPT_POSTFIELDS => json_encode([
+            'model' => 'gpt-4o',
+            'tools' => [['type' => 'web_search_preview']],
+            'input' => $input,
+        ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+        CURLOPT_HTTPHEADER => [
+            'Authorization: Bearer ' . $apiKey,
+            'Content-Type: application/json',
+        ],
+        CURLOPT_TIMEOUT => $timeout,
+        CURLOPT_CONNECTTIMEOUT => 10,
+    ]);
+    $resp = curl_exec($ch);
+    $status = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    if ($resp === false || $status < 200 || $status >= 300) {
+        return ['ok' => false, 'text' => '', 'status' => $status];
+    }
+    $data = json_decode((string)$resp, true);
+    // Responses API output shape: output[].content[].text
+    $text = '';
+    if (is_array($data) && !empty($data['output']) && is_array($data['output'])) {
+        foreach ($data['output'] as $item) {
+            if (($item['type'] ?? '') === 'message' && !empty($item['content']) && is_array($item['content'])) {
+                foreach ($item['content'] as $c) {
+                    if (($c['type'] ?? '') === 'output_text' && !empty($c['text'])) {
+                        $text .= $c['text'];
+                    }
+                }
+            }
+        }
+    }
+    return ['ok' => $text !== '', 'text' => $text, 'status' => $status];
 }
 
 function generate_card_svg(string $apiKey, ?array $cardFields, ?array $siteMeta, string $tone, array $dims = ['width' => 1050, 'height' => 600], string $researchBrief = ''): array {
@@ -465,7 +530,8 @@ if ($siteUrl !== '') {
 }
 
 // Step 1: Web-search-augmented research call to extract a current design DNA brief.
-$researchBrief = research_design_brief($apiKey, $cardFields, $siteMeta, $tone);
+$researchDiag = null;
+$researchBrief = research_design_brief($apiKey, $cardFields, $siteMeta, $tone, $researchDiag);
 
 // Step 2: Generate the SVG card using OCR data + research brief.
 $gen = generate_card_svg($apiKey, $cardFields, $siteMeta, $tone, $inputDims, $researchBrief);
@@ -491,5 +557,6 @@ jout([
     'siteMeta' => $siteMeta,
     'imageUrl' => $savedUrl,
     'researchBrief' => $researchBrief !== '' ? $researchBrief : null,
+    'researchDiag' => $researchDiag,
     'note' => $ocrError ? ('OCR: ' . $ocrError) : null,
 ]);

@@ -402,6 +402,26 @@
                 p.textContent = data.note;
                 resultBody.appendChild(p);
             }
+
+            if (data.researchDiag || data.researchBrief) {
+                const diag = data.researchDiag || {};
+                const wrap = document.createElement('details');
+                wrap.style.cssText = 'margin-top:1rem;padding:.65rem .85rem;background:var(--bg-subtle);border:1px solid var(--border);border-radius:var(--radius-md);font-size:.82rem;';
+                const summary = document.createElement('summary');
+                summary.style.cssText = 'cursor:pointer;color:var(--fg-secondary);';
+                const used = diag.used_search === true;
+                summary.textContent = used
+                    ? `웹 검색 적용됨 (${diag.model || 'search'})`
+                    : `웹 검색 사용 안 됨${diag.error ? ' — ' + diag.error : ''}`;
+                wrap.appendChild(summary);
+                if (data.researchBrief) {
+                    const pre = document.createElement('pre');
+                    pre.style.cssText = 'white-space:pre-wrap;margin:.5rem 0 0;color:var(--fg-secondary);font-family:inherit;font-size:.78rem;line-height:1.5;';
+                    pre.textContent = data.researchBrief;
+                    wrap.appendChild(pre);
+                }
+                resultBody.appendChild(wrap);
+            }
         }
     </script>
 </body>
