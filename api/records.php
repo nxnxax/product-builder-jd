@@ -871,7 +871,10 @@ function verify_auth_token($auth) {
 }
 
 try {
-    $authUser = verify_auth_token($auth);
+    // Public resources (no auth) — keep narrow.
+    $publicResources = ['auth-availability'];
+    $peekedResource = strtolower(trim((string)($_GET['resource'] ?? '')));
+    $authUser = in_array($peekedResource, $publicResources, true) ? null : verify_auth_token($auth);
 
     $pdo = new PDO(
         sprintf(
