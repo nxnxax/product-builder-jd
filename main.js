@@ -43,6 +43,10 @@ const authEmail = document.getElementById('auth-email');
 const authPassword = document.getElementById('auth-password');
 const confirmPasswordField = document.getElementById('confirm-password-field');
 const authPasswordConfirm = document.getElementById('auth-password-confirm');
+const authNickname = document.getElementById('auth-nickname');
+const nicknameField = document.getElementById('nickname-field');
+const authNicknameStatus = document.getElementById('auth-nickname-status');
+const authEmailStatus = document.getElementById('auth-email-status');
 const authSubmit = document.getElementById('auth-submit');
 const authMessage = document.getElementById('auth-message');
 const authNotice = document.getElementById('auth-notice');
@@ -391,9 +395,12 @@ function startGoogleSignupFlow(user) {
     authPasswordConfirm.required = false;
     authPassword.closest('.form-group')?.classList.add('hidden');
     confirmPasswordField.classList.add('hidden');
+    if (nicknameField) nicknameField.classList.remove('hidden');
+    if (authNickname) authNickname.required = true;
+    if (user?.user_metadata?.full_name) authName.value = user.user_metadata.full_name;
     authSubmit.textContent = '회원가입 완료';
-    setAuthMessage('Google 계정 확인이 완료되었습니다. 추가정보를 입력하면 회원가입이 완료됩니다.', 'success');
-    setTimeout(() => authName.focus(), 0);
+    setAuthMessage('Google 계정 확인이 완료되었습니다. 닉네임을 입력하면 회원가입이 완료됩니다.', 'success');
+    setTimeout(() => (authNickname || authName)?.focus(), 0);
 }
 
 async function blockUnregisteredGoogleLogin(email) {
@@ -473,6 +480,112 @@ function renderSignedOut() {
     setAuthMessage('', '');
 }
 
+function isValidNickname(value) {
+    const v = String(value || '').trim();
+    if (v.length < 2 || v.length > 20) return false;
+    return /^[A-Za-z0-9_\-가-힣]+$/.test(v);
+}
+
+function setAvailabilityStatus(el, text, type) {
+    if (!el) return;
+    el.textContent = text || '';
+    el.classList.toggle('checking', type === 'checking');
+    el.classList.toggle('success', type === 'success');
+    el.classList.toggle('error', type === 'error');
+}
+
+let lastAvailabilityKey = '';
+async function checkAvailability({ email, nickname }) {
+    const params = new URLSearchParams();
+    if (email) params.set('email', email);
+    if (nickname) params.set('nickname', nickname);
+    if (![...params.keys()].length) return null;
+    try {
+        const res = await fetch(`${API_URL}?resource=auth-availability&${params.toString()}`);
+        if (!res.ok) return null;
+        return await res.json();
+    } catch {
+        return null;
+    }
+}
+
+function debounce(fn, ms) {
+    let t = null;
+    return (...args) => {
+        if (t) clearTimeout(t);
+        t = setTimeout(() => fn(...args), ms);
+    };
+}
+
+const liveCheckEmail = debounce(async () => {
+    const email = authEmail.value.trim();
+    if (authMode !== 'signup' && !oauthSignupPending) { setAvailabilityStatus(authEmailStatus, '', ''); return; }
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { setAvailabilityStatus(authEmailStatus, '', ''); return; }
+    if (oauthSignupPending) { setAvailabilityStatus(authEmailStatus, '', ''); return; } // email is fixed via Google
+    const key = 'e:' + email;
+    lastAvailabilityKey = key;
+    setAvailabilityStatus(authEmailStatus, '확인 중…', 'checking');
+    const r = await checkAvailability({ email });
+    if (lastAvailabilityKey !== key) return;
+    if (!r || !r.ok) { setAvailabilityStatus(authEmailStatus, '확인 실패 — 가입 진행 시 서버에서 재검증됩니다.', ''); return; }
+    setAvailabilityStatus(authEmailStatus,
+        r.email_taken ? '이미 가입된 이메일입니다.' : '사용 가능한 이메일입니다.',
+        r.email_taken ? 'error' : 'success');
+}, 400);
+
+const liveCheckNickname = debounce(async () => {
+    if (!authNickname) return;
+    const nickname = authNickname.value.trim();
+    if (authMode !== 'signup' && !oauthSignupPending) { setAvailabilityStatus(authNicknameStatus, '', ''); return; }
+    if (!nickname) { setAvailabilityStatus(authNicknameStatus, '', ''); return; }
+    if (!isValidNickname(nickname)) {
+        setAvailabilityStatus(authNicknameStatus, '2~20자, 한글/영문/숫자/_/- 만 가능', 'error');
+        return;
+    }
+    const key = 'n:' + nickname;
+    lastAvailabilityKey = key;
+    setAvailabilityStatus(authNicknameStatus, '확인 중…', 'checking');
+    const r = await checkAvailability({ nickname });
+    if (lastAvailabilityKey !== key) return;
+    if (!r || !r.ok) { setAvailabilityStatus(authNicknameStatus, '확인 실패 — 가입 진행 시 서버에서 재검증됩니다.', ''); return; }
+    setAvailabilityStatus(authNicknameStatus,
+        r.nickname_taken ? '이미 사용 중인 닉네임입니다.' : '사용 가능한 닉네임입니다.',
+        r.nickname_taken ? 'error' : 'success');
+}, 400);
+
+authEmail.addEventListener('input', liveCheckEmail);
+if (authNickname) authNickname.addEventListener('input', liveCheckNickname);
+
+async function resolveDisplayName() {
+    if (!currentSession?.user) return '';
+    const meta = currentSession.user.user_metadata || {};
+    const nick = String(meta.nickname || '').trim();
+    if (nick) return nick;
+    const fullName = String(meta.full_name || meta.name || '').trim();
+    if (fullName) return fullName;
+
+    // Fallback: ask backend (auth-profile returns nickname/name from members row)
+    try {
+        const token = await getApiAuthToken({ forceRefresh: false });
+        if (!token) return currentSession.user.email || '';
+        const res = await fetch(`${API_URL}?resource=auth-profile`, {
+            headers: { Authorization: `Bearer ${token}` }
+        });
+        if (!res.ok) return currentSession.user.email || '';
+        const data = await res.json().catch(() => null);
+        const profile = data?.profile || {};
+        const profileNick = String(profile.nickname || '').trim();
+        if (profileNick) {
+            // Cache into user_metadata for next time
+            try { await supabaseClient.auth.updateUser({ data: { nickname: profileNick } }); } catch {}
+            return profileNick;
+        }
+        const profileName = String(profile.name || '').trim();
+        if (profileName) return profileName;
+    } catch {}
+    return currentSession.user.email || '';
+}
+
 let adminBootstrapTried = false;
 async function ensureAdminBootstrap() {
     if (adminBootstrapTried) return;
@@ -515,6 +628,10 @@ function renderSignedIn() {
 
     if (authEnabled && currentSession?.user?.email) {
         userEmail.textContent = currentSession.user.email;
+        userEmail.title = currentSession.user.email;
+        resolveDisplayName().then((label) => {
+            if (currentSession?.user?.email) userEmail.textContent = label || currentSession.user.email;
+        });
         userMenu.classList.remove('hidden');
         openLoginBtn.classList.add('hidden');
 
@@ -654,9 +771,7 @@ function applyInitialHash() {
 
 openLoginBtn.addEventListener('click', () => openAuthPanel('login'));
 closeAuthBtn.addEventListener('click', closeAuthPanel);
-authScreen.addEventListener('click', (event) => {
-    if (event.target === authScreen) closeAuthPanel();
-});
+// Modal closes only via the X button — backdrop clicks (incl. drag-end) ignored.
 loginTab.addEventListener('click', () => setAuthMode('login'));
 signupTab.addEventListener('click', () => setAuthMode('signup'));
 identityVerifyBtn.addEventListener('click', handleIdentityVerify);
@@ -672,14 +787,18 @@ function setAuthMode(mode) {
     signupTab.classList.toggle('hidden', mode === 'signup');
     signupFields.classList.toggle('hidden', mode !== 'signup');
     confirmPasswordField.classList.toggle('hidden', mode !== 'signup');
+    if (nicknameField) nicknameField.classList.toggle('hidden', mode !== 'signup');
     authName.required = mode === 'signup';
     authPhone.required = mode === 'signup';
+    if (authNickname) authNickname.required = mode === 'signup';
     authPassword.required = true;
     authPassword.readOnly = false;
     authPassword.closest('.form-group')?.classList.remove('hidden');
     authPasswordConfirm.required = mode === 'signup';
     authEmail.readOnly = false;
     if (mode === 'login') authPasswordConfirm.value = '';
+    if (authEmailStatus) setAvailabilityStatus(authEmailStatus, '', '');
+    if (authNicknameStatus) setAvailabilityStatus(authNicknameStatus, '', '');
     authSubmit.textContent = mode === 'login' ? '로그인' : '회원가입';
     if (googleLoginLabel) googleLoginLabel.textContent = mode === 'login' ? 'Google로 로그인' : 'Google로 회원가입';
     authPassword.autocomplete = mode === 'login' ? 'current-password' : 'new-password';
@@ -697,6 +816,8 @@ function setAuthMode(mode) {
         authPasswordConfirm.required = false;
         authPassword.closest('.form-group')?.classList.add('hidden');
         confirmPasswordField.classList.add('hidden');
+        if (nicknameField) nicknameField.classList.remove('hidden');
+        if (authNickname) authNickname.required = true;
         authSubmit.textContent = '회원가입 완료';
     }
 }
@@ -759,8 +880,17 @@ async function handleAuthSubmit(event) {
     const passwordConfirm = authPasswordConfirm.value;
     const fullName = authName.value.trim();
     const phone = normalizeKoreanMobile(authPhone.value);
+    const nickname = (authNickname?.value || '').trim();
 
-    if (authMode === 'signup') {
+    if (authMode === 'signup' || oauthSignupPending) {
+        if (!isValidNickname(nickname)) {
+            setAuthMessage('닉네임은 2~20자, 한글/영문/숫자/_/- 만 가능합니다.', 'error');
+            authNickname?.focus();
+            return;
+        }
+    }
+
+    if (authMode === 'signup' && !oauthSignupPending) {
         if (!fullName) {
             setAuthMessage('가입자 이름을 입력하세요.', 'error');
             authName.focus();
@@ -778,6 +908,20 @@ async function handleAuthSubmit(event) {
             authPasswordConfirm.focus();
             return;
         }
+
+        const avail = await checkAvailability({ email, nickname });
+        if (avail && avail.ok) {
+            if (avail.email_taken) {
+                setAuthMessage('이미 가입된 이메일입니다.', 'error');
+                authEmail.focus();
+                return;
+            }
+            if (avail.nickname_taken) {
+                setAuthMessage('이미 사용 중인 닉네임입니다.', 'error');
+                authNickname?.focus();
+                return;
+            }
+        }
     }
 
     authSubmit.disabled = true;
@@ -786,7 +930,7 @@ async function handleAuthSubmit(event) {
 
     try {
         if (oauthSignupPending) {
-            await completeGoogleSignup({ fullName, phone });
+            await completeGoogleSignup({ fullName, phone, nickname });
             return;
         }
 
@@ -798,6 +942,7 @@ async function handleAuthSubmit(event) {
                     data: {
                         full_name: fullName,
                         phone,
+                        nickname,
                         phone_verified: false,
                         identity_verified: false,
                         app_registered: true,
@@ -810,6 +955,18 @@ async function handleAuthSubmit(event) {
                 setAuthMessage('가입 확인 메일을 보냈습니다. 메일 인증 후 로그인하세요.', 'success');
                 return;
             }
+            // Persist member row so nickname / profile lookups work for email signups too.
+            try {
+                const token = data.session.access_token;
+                await fetch(`${API_URL}?resource=auth-member`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                    body: JSON.stringify({
+                        resource: 'auth-member',
+                        email, fullName, phone, nickname, provider: 'email'
+                    })
+                });
+            } catch { /* non-fatal — backend may already have it via trigger */ }
         } else {
             const { error } = await supabaseClient.auth.signInWithPassword({ email, password });
             if (error) throw error;
@@ -822,7 +979,7 @@ async function handleAuthSubmit(event) {
     }
 }
 
-async function completeGoogleSignup({ fullName, phone }) {
+async function completeGoogleSignup({ fullName, phone, nickname }) {
     const user = currentSession?.user;
     const email = String(user?.email || authEmail.value || '').trim().toLowerCase();
     if (!user || !email) throw new Error('Google 인증 세션이 없습니다. 다시 시도하세요.');
@@ -841,6 +998,7 @@ async function completeGoogleSignup({ fullName, phone }) {
             email,
             fullName: fullName || user.user_metadata?.full_name || user.user_metadata?.name || email.split('@')[0],
             phone,
+            nickname,
             provider: 'google'
         })
     });
@@ -852,6 +1010,7 @@ async function completeGoogleSignup({ fullName, phone }) {
     const userData = {
         full_name: fullName,
         phone,
+        nickname,
         phone_verified: false,
         identity_verified: false,
         app_registered: true,

@@ -119,6 +119,25 @@ function is_admin_email($email) {
     return in_array($normalized, admin_email_allowlist(), true);
 }
 
+function is_valid_nickname($value) {
+    $v = trim((string)$value);
+    $len = mb_strlen($v, 'UTF-8');
+    if ($len < 2 || $len > 20) return false;
+    return (bool)preg_match('/^[A-Za-z0-9_\-가-힣]+$/u', $v);
+}
+
+function nickname_taken(PDO $pdo, $store, $nickname) {
+    $columns = $store['columns'];
+    $col = first_existing_column($columns, ['nickname', 'nick', 'display_name']);
+    if (!$col) return false; // no column = nothing to dedupe on
+    $stmt = $pdo->prepare(
+        "SELECT 1 FROM " . quote_identifier($store['table']) .
+        " WHERE LOWER(" . quote_identifier($col) . ") = :nick LIMIT 1"
+    );
+    $stmt->execute([':nick' => mb_strtolower(trim((string)$nickname), 'UTF-8')]);
+    return (bool)$stmt->fetchColumn();
+}
+
 function make_client_id() {
     return (string)round(microtime(true) * 1000) . bin2hex(random_bytes(3));
 }
@@ -158,6 +177,7 @@ function ensure_members_table(PDO $pdo) {
         $pdo->exec("CREATE TABLE IF NOT EXISTS `members` (
             `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
             `email` VARCHAR(255) NOT NULL,
+            `nickname` VARCHAR(60) NULL DEFAULT NULL,
             `name` VARCHAR(120) NOT NULL DEFAULT '',
             `phone` VARCHAR(40) NOT NULL DEFAULT '',
             `provider` VARCHAR(40) NOT NULL DEFAULT 'email',
@@ -169,16 +189,36 @@ function ensure_members_table(PDO $pdo) {
             `last_login_at` DATETIME NULL DEFAULT NULL,
             PRIMARY KEY (`id`),
             UNIQUE KEY `uniq_email` (`email`),
+            UNIQUE KEY `uniq_nickname` (`nickname`),
             KEY `idx_supabase_id` (`supabase_id`),
             KEY `idx_role` (`role`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
         auth_log('members table ensured');
+
+        // Ensure nickname column + unique index exist on pre-existing tables.
+        $cols = table_columns($pdo, 'members');
+        if (!in_array('nickname', $cols, true)) {
+            try {
+                $pdo->exec("ALTER TABLE `members` ADD COLUMN `nickname` VARCHAR(60) NULL DEFAULT NULL");
+                auth_log('members.nickname column added');
+            } catch (Throwable $e) {
+                auth_log('members.nickname add failed', ['error' => $e->getMessage()]);
+            }
+            try {
+                $pdo->exec("ALTER TABLE `members` ADD UNIQUE KEY `uniq_nickname` (`nickname`)");
+            } catch (Throwable $e) {
+                /* unique key may already exist or duplicates may block add — non-fatal */
+            }
+        }
     } catch (Throwable $e) {
         auth_log('members table create failed', ['error' => $e->getMessage()]);
     }
 }
 
 function find_member_store(PDO $pdo) {
+    // Idempotent: creates members if missing, ensures nickname column on existing tables.
+    ensure_members_table($pdo);
+
     foreach (['members', 'users'] as $table) {
         if (!table_exists($pdo, $table)) continue;
 
@@ -187,15 +227,6 @@ function find_member_store(PDO $pdo) {
             if (in_array($emailColumn, $columns, true)) {
                 return ['table' => $table, 'email_column' => $emailColumn, 'columns' => $columns];
             }
-        }
-    }
-
-    // Neither members nor users exists — auto-create members on cafe24.
-    ensure_members_table($pdo);
-    if (table_exists($pdo, 'members')) {
-        $columns = table_columns($pdo, 'members');
-        if (in_array('email', $columns, true)) {
-            return ['table' => 'members', 'email_column' => 'email', 'columns' => $columns];
         }
     }
 
@@ -237,13 +268,20 @@ function create_member_from_google(PDO $pdo, $authUser, $data) {
 
     $fullName = clean($data['fullName'] ?? $data['name'] ?? null);
     $phone = clean($data['phone'] ?? null);
+    $nickname = clean($data['nickname'] ?? null);
     if (!$fullName) respond(['ok' => false, 'error' => '가입자 이름은 필수입니다.'], 400);
+    if ($nickname !== null && !is_valid_nickname($nickname)) {
+        respond(['ok' => false, 'error' => '닉네임 형식이 올바르지 않습니다.'], 400);
+    }
     // Google 가입 시에는 휴대폰 번호를 필수가 아니게 변경 (사용자 요청: 구글 시스템 그대로 사용)
 
     $store = find_member_store($pdo);
     if (!$store) respond(['ok' => false, 'error' => 'members 또는 users 회원 테이블을 찾을 수 없습니다.'], 500);
     if (member_exists_by_email($pdo, $email) === true) {
         respond(['ok' => false, 'error' => '이미 가입된 계정입니다.'], 409);
+    }
+    if ($nickname !== null && nickname_taken($pdo, $store, $nickname)) {
+        respond(['ok' => false, 'error' => '이미 사용 중인 닉네임입니다.'], 409);
     }
 
     $columns = $store['columns'];
@@ -256,6 +294,9 @@ function create_member_from_google(PDO $pdo, $authUser, $data) {
 
     $phoneColumn = first_existing_column($columns, ['phone', 'mobile', 'tel', 'contact', 'user_phone', 'mb_hp']);
     if ($phoneColumn) $row[$phoneColumn] = $phone;
+
+    $nicknameColumn = first_existing_column($columns, ['nickname', 'nick', 'display_name']);
+    if ($nicknameColumn && $nickname !== null) $row[$nicknameColumn] = $nickname;
 
     $providerColumn = first_existing_column($columns, ['provider', 'signup_method', 'oauth_provider']);
     if ($providerColumn) $row[$providerColumn] = 'google';
@@ -318,6 +359,7 @@ function member_row_from_store($store, $row) {
     $cols = $store['columns'];
     $emailCol = $store['email_column'];
     $nameCol = first_existing_column($cols, ['name', 'full_name', 'user_name', 'username', 'mb_name']);
+    $nicknameCol = first_existing_column($cols, ['nickname', 'nick', 'display_name']);
     $phoneCol = first_existing_column($cols, ['phone', 'mobile', 'tel', 'contact', 'user_phone', 'mb_hp']);
     $providerCol = first_existing_column($cols, ['provider', 'signup_method', 'oauth_provider']);
     $statusCol = first_existing_column($cols, ['status', 'member_status']);
@@ -332,6 +374,7 @@ function member_row_from_store($store, $row) {
     return [
         'email' => $row[$emailCol] ?? '',
         'name' => $nameCol ? ($row[$nameCol] ?? '') : '',
+        'nickname' => $nicknameCol ? ($row[$nicknameCol] ?? '') : '',
         'phone' => $phoneCol ? ($row[$phoneCol] ?? '') : '',
         'provider' => $providerCol ? ($row[$providerCol] ?? 'email') : 'email',
         'status' => $status === '' ? 'active' : strtolower($status),
@@ -871,6 +914,43 @@ try {
     if ($resource === 'auth-member') {
         if ($method !== 'POST') respond(['ok' => false, 'error' => '지원하지 않는 요청 방식입니다.'], 405);
         create_member_from_google($pdo, $authUser, $body);
+    }
+
+    if ($resource === 'auth-availability') {
+        if ($method !== 'GET') respond(['ok' => false, 'error' => '지원하지 않는 요청 방식입니다.'], 405);
+
+        $email = clean($_GET['email'] ?? null);
+        $nickname = clean($_GET['nickname'] ?? null);
+        if ($email === null && $nickname === null) {
+            respond(['ok' => false, 'error' => 'email 또는 nickname 중 하나는 필요합니다.'], 400);
+        }
+
+        $store = find_member_store($pdo);
+        $result = ['ok' => true];
+
+        if ($email !== null) {
+            if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                $result['email_taken'] = false;
+                $result['email_invalid'] = true;
+            } else if ($store) {
+                $result['email_taken'] = (member_exists_by_email($pdo, $email) === true);
+            } else {
+                $result['email_taken'] = false;
+            }
+        }
+
+        if ($nickname !== null) {
+            if (!is_valid_nickname($nickname)) {
+                $result['nickname_taken'] = false;
+                $result['nickname_invalid'] = true;
+            } else if ($store) {
+                $result['nickname_taken'] = nickname_taken($pdo, $store, $nickname);
+            } else {
+                $result['nickname_taken'] = false;
+            }
+        }
+
+        respond($result);
     }
 
     if ($resource === 'admin-bootstrap') {

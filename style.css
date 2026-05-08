@@ -774,7 +774,47 @@ select:focus {
 .google-btn:hover { background: var(--bg-muted); }
 .google-btn:disabled { opacity: 0.5; cursor: wait; }
 
-.google-mark { width: 16px; height: 16px; flex: 0 0 auto; }
+.google-mark { width: 18px; height: 18px; flex: 0 0 auto; }
+
+/* Pretty pill-style Google button (used in auth panel top) */
+.google-btn-pill {
+    height: 48px;
+    border-radius: 999px;
+    border: 1px solid rgba(0, 0, 0, 0.1);
+    background: #fff;
+    color: #1f1f1f;
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: -0.005em;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 1px 3px rgba(0, 0, 0, 0.06);
+    transition: transform 0.12s ease, box-shadow 0.18s ease, background 0.15s ease, border-color 0.15s ease;
+}
+
+.google-btn-pill:hover {
+    background: #fafafa;
+    border-color: rgba(0, 0, 0, 0.18);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.06), 0 4px 12px rgba(0, 0, 0, 0.08);
+    transform: translateY(-1px);
+}
+
+.google-btn-pill:active {
+    transform: translateY(0);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+
+.google-btn-pill .google-mark { width: 20px; height: 20px; }
+
+/* Availability indicator (email/nickname duplicate check) */
+.availability-status {
+    margin: 6px 0 0;
+    font-size: 12px;
+    line-height: 1.4;
+    color: var(--fg-tertiary);
+    min-height: 1.2em;
+}
+.availability-status.checking { color: var(--fg-tertiary); }
+.availability-status.success { color: var(--success); }
+.availability-status.error { color: var(--danger); }
 
 .auth-switch {
     display: flex;
