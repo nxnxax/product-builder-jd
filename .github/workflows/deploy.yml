@@ -52,20 +52,63 @@ jobs:
           cp api/records.php deploy/records.php
           if [ -f .htaccess ]; then cp .htaccess deploy/.htaccess; fi
 
-      - name: Deploy to Cafe24
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.SFTP_HOST || 'youngman-biz.com' }}
-          username: ${{ secrets.SFTP_USER || 'nxnxqxx' }}
-          port: ${{ secrets.SFTP_PORT || 22 }}
-          key: ${{ secrets.SFTP_PRIVATE_KEY }}
-          source: "deploy/*,deploy/.htaccess"
-          target: ${{ secrets.SFTP_DIR || './' }}
-          strip_components: 1
-          overwrite: true
-          debug: true
-
-      - name: Check HTTP status
+      - name: Deploy to Cafe24 (verbose scp)
+        env:
+          SFTP_HOST: ${{ secrets.SFTP_HOST || 'youngman-biz.com' }}
+          SFTP_USER: ${{ secrets.SFTP_USER || 'nxnxqxx' }}
+          SFTP_PORT: ${{ secrets.SFTP_PORT || '22' }}
+          SFTP_DIR: ${{ secrets.SFTP_DIR || '.' }}
+          SFTP_KEY: ${{ secrets.SFTP_PRIVATE_KEY }}
         run: |
           set -euo pipefail
-          curl -I --fail https://youngman-biz.com/
+
+          if [ -z "${SFTP_KEY}" ]; then
+            echo "::error::SFTP_PRIVATE_KEY secret is not set"; exit 1
+          fi
+
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$SFTP_KEY" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+
+          SSH="ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o BatchMode=yes -i ~/.ssh/id_deploy -p ${SFTP_PORT}"
+          SCP="scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o BatchMode=yes -i ~/.ssh/id_deploy -P ${SFTP_PORT} -p"
+
+          echo "==== Remote pwd / target listing BEFORE upload ===="
+          $SSH "${SFTP_USER}@${SFTP_HOST}" "echo HOME=\$HOME && pwd && echo '---target listing---' && ls -la '${SFTP_DIR}' 2>&1 | head -40 || true"
+
+          echo "==== deploy/ contents to upload ===="
+          ls -la deploy/
+
+          echo "==== Uploading every file individually (will FAIL LOUDLY on error) ===="
+          # shellcheck disable=SC2012
+          for f in $(ls -A deploy/); do
+            echo ">> $f"
+            $SCP "deploy/$f" "${SFTP_USER}@${SFTP_HOST}:${SFTP_DIR}/$f"
+          done
+
+          echo "==== Remote target listing AFTER upload ===="
+          $SSH "${SFTP_USER}@${SFTP_HOST}" "ls -la '${SFTP_DIR}' | head -60"
+
+          echo "==== Verifying key new files exist on the server ===="
+          $SSH "${SFTP_USER}@${SFTP_HOST}" "for f in index.html style.css main.js admin.html admin.js profile.html profile.js auth-shared.js .htaccess records.php; do \
+            if [ -f '${SFTP_DIR}'/\$f ]; then \
+              echo \"OK \$f \$(stat -c '%s bytes %y' '${SFTP_DIR}'/\$f 2>/dev/null || wc -c < '${SFTP_DIR}'/\$f)\"; \
+            else \
+              echo \"MISSING \$f\"; \
+            fi; \
+          done"
+
+      - name: Verify deploy via HTTPS
+        run: |
+          set -euo pipefail
+          echo "==== HTTPS spot check (cache-busted) ===="
+          CB="$(date +%s)"
+          for f in index.html style.css main.js admin.html admin.js profile.html profile.js auth-shared.js records.php; do
+            code=$(curl -sk -o /dev/null -w "%{http_code} %{size_download}B" "https://youngman-biz.com/${f}?cb=${CB}")
+            echo "  ${f}: ${code}"
+          done
+          echo "==== root / ===="
+          curl -sk -o /dev/null -w "/ %{http_code}\n" "https://youngman-biz.com/?cb=${CB}"
+          echo "==== HTML title sanity check ===="
+          curl -sk "https://youngman-biz.com/?cb=${CB}" | grep -E '<title>|main\.js\?v=' | head -4 || true
