@@ -91,11 +91,24 @@
     <header id="app-header" class="app-header">
         <div class="header-container">
             <h1><a href="index.html" style="color:inherit;text-decoration:none">JDHOON <span class="accent">Console</span></a></h1>
+            <nav class="main-nav">
+                <a class="nav-link" href="index.html#customers">고객</a>
+                <a class="nav-link" href="index.html#employees">직원</a>
+                <a class="nav-link" href="index.html#marketing">마케팅</a>
+                <a class="nav-link" href="lotto2233.html">Lotto</a>
+                <a class="nav-link active" href="card-builder.html">온라인 명함 제작</a>
+                <a class="nav-link" href="upload.html">업로드</a>
+            </nav>
+            <div id="user-menu" class="user-menu hidden">
+                <a href="profile.html" id="profile-link" title="내 정보">내 정보</a>
+                <a href="admin.html" id="admin-link" class="hidden" title="관리자">관리자</a>
+                <span id="user-email"></span>
+                <button type="button" id="logout-btn">로그아웃</button>
+            </div>
         </div>
     </header>
 
     <main class="cb-wrap">
-        <a class="back-link" href="index.html">← 대시보드로</a>
         <h2>온라인 명함 제작</h2>
         <p class="subtitle">기존 명함을 촬영하거나 이미지로 업로드하면 AI가 내용을 인식해 고급스러운 디자인으로 재구성합니다. 회사 사이트 주소를 함께 입력하면 사이트의 분위기와 정보를 반영합니다.</p>
 
@@ -156,6 +169,18 @@
         </div>
     </main>
 
+    <script type="module">
+        import { initSupabase, setupHeaderUser } from './auth-shared.js?v=20260508-tight';
+        try {
+            await initSupabase();
+            setupHeaderUser({
+                userMenu: document.getElementById('user-menu'),
+                userEmail: document.getElementById('user-email'),
+                adminLink: document.getElementById('admin-link'),
+                logoutBtn: document.getElementById('logout-btn'),
+            });
+        } catch (e) { /* unauthenticated browsing OK */ }
+    </script>
     <script>
         const $ = (id) => document.getElementById(id);
         const captureInput = $('cb-capture');

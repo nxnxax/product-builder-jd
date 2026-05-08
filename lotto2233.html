@@ -52,17 +52,28 @@ input:focus,select:focus{border-color:rgba(0,0,0,0.85);box-shadow:0 0 0 3px rgba
 </head>
 
 <body>
-<header class="app-header">
+<header id="app-header" class="app-header">
 <div class="header-container">
-<h1>JDHOON <span class="accent">Console</span></h1>
+<h1><a href="index.html" style="color:inherit;text-decoration:none">JDHOON <span class="accent">Console</span></a></h1>
 <nav class="main-nav">
 <a class="nav-link" href="index.html#customers">고객</a>
 <a class="nav-link" href="index.html#employees">직원</a>
 <a class="nav-link" href="index.html#marketing">마케팅</a>
 <a class="nav-link active" href="lotto2233.html">Lotto</a>
+<a class="nav-link" href="card-builder.html">온라인 명함 제작</a>
+<a class="nav-link" href="upload.html">업로드</a>
 </nav>
+<div id="user-menu" class="user-menu hidden" style="display:flex;align-items:center;gap:12px;">
+<a href="profile.html" id="profile-link" title="내 정보" style="color:var(--secondary);text-decoration:none;font-size:13.5px;">내 정보</a>
+<a href="admin.html" id="admin-link" class="hidden" title="관리자" style="color:var(--secondary);text-decoration:none;font-size:13.5px;">관리자</a>
+<span id="user-email" style="color:var(--muted);font-size:13px;"></span>
+<button type="button" id="logout-btn" style="background:transparent;border:1px solid var(--line-strong);color:var(--secondary);padding:5px 10px;border-radius:6px;font-size:12px;cursor:pointer;">로그아웃</button>
+</div>
 </div>
 </header>
+<style>
+#user-menu.hidden { display: none !important; }
+</style>
 
 <div class="container">
 
@@ -534,6 +545,18 @@ function generate(){
 
     result.innerHTML=html;
 }
+</script>
+<script type="module">
+  import { initSupabase, setupHeaderUser } from './auth-shared.js?v=20260508-tight';
+  try {
+    await initSupabase();
+    setupHeaderUser({
+      userMenu: document.getElementById('user-menu'),
+      userEmail: document.getElementById('user-email'),
+      adminLink: document.getElementById('admin-link'),
+      logoutBtn: document.getElementById('logout-btn'),
+    });
+  } catch (e) { /* anonymous browse OK */ }
 </script>
 </body>
 </html>

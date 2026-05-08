@@ -13,11 +13,43 @@ function jout(array $payload, int $code = 200): void {
 
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 $uploadsDir = __DIR__ . '/uploads';
-$allowed = ['image/png' => 'png', 'image/jpeg' => 'jpg', 'image/gif' => 'gif', 'image/webp' => 'webp'];
-$listExts = ['png', 'jpg', 'jpeg', 'gif', 'webp'];
+
+$allowedImage = ['image/png' => 'png', 'image/jpeg' => 'jpg', 'image/gif' => 'gif', 'image/webp' => 'webp'];
+$allowedVideo = ['video/mp4' => 'mp4', 'video/webm' => 'webm', 'video/quicktime' => 'mov'];
+$allowed = $allowedImage + $allowedVideo;
+$listExts = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'mp4', 'webm', 'mov'];
+
+$action = strtolower(trim((string)($_GET['action'] ?? '')));
 
 if ($method === 'OPTIONS') jout(['ok' => true]);
 
+// === DELETE ===
+if ($method === 'DELETE' || $action === 'delete') {
+    $name = (string)($_GET['name'] ?? $_POST['name'] ?? '');
+    $name = basename($name); // strip any path components
+    if ($name === '' || $name === '.' || $name === '..' || strpos($name, '/') !== false || strpos($name, '\\') !== false) {
+        jout(['ok' => false, 'error' => '파일명이 올바르지 않습니다.'], 400);
+    }
+    if ($name[0] === '.') {
+        jout(['ok' => false, 'error' => '숨김 파일은 삭제할 수 없습니다.'], 400);
+    }
+    $ext = strtolower(pathinfo($name, PATHINFO_EXTENSION));
+    if (!in_array($ext, $listExts, true)) {
+        jout(['ok' => false, 'error' => '허용되지 않는 파일 종류입니다.'], 400);
+    }
+    $path = $uploadsDir . '/' . $name;
+    $real = @realpath($path);
+    $rootReal = @realpath($uploadsDir);
+    if (!$real || !$rootReal || strpos($real, $rootReal . DIRECTORY_SEPARATOR) !== 0) {
+        jout(['ok' => false, 'error' => '파일을 찾을 수 없습니다.'], 404);
+    }
+    if (!@unlink($real)) {
+        jout(['ok' => false, 'error' => '삭제 실패 (권한 또는 파일 잠김 가능).'], 500);
+    }
+    jout(['ok' => true, 'deleted' => $name]);
+}
+
+// === LIST ===
 if ($method === 'GET') {
     $files = [];
     if (is_dir($uploadsDir)) {
@@ -28,30 +60,30 @@ if ($method === 'GET') {
             if (!in_array($ext, $listExts, true)) continue;
             $p = $uploadsDir . '/' . $f;
             if (!is_file($p)) continue;
+            $isVideo = in_array($ext, ['mp4', 'webm', 'mov'], true);
             $files[] = [
                 'name' => $f,
                 'mtime' => filemtime($p),
                 'size' => filesize($p),
+                'kind' => $isVideo ? 'video' : 'image',
             ];
         }
         usort($files, function($a, $b) { return $b['mtime'] <=> $a['mtime']; });
     }
-    jout(['ok' => true, 'files' => array_slice($files, 0, 30)]);
+    jout(['ok' => true, 'files' => array_slice($files, 0, 60)]);
 }
 
 if ($method !== 'POST') jout(['ok' => false, 'error' => 'method not allowed'], 405);
 
-if (empty($_FILES['image']) || !is_array($_FILES['image'])) {
-    jout(['ok' => false, 'error' => '"image" 필드에 파일이 없습니다.'], 400);
-}
-$file = $_FILES['image'];
+// === UPLOAD ===
+// Accept either "file" (new) or "image" (legacy) field for backward compat.
+$file = null;
+if (!empty($_FILES['file']) && is_array($_FILES['file'])) $file = $_FILES['file'];
+elseif (!empty($_FILES['image']) && is_array($_FILES['image'])) $file = $_FILES['image'];
+
+if (!$file) jout(['ok' => false, 'error' => '"file" 필드에 파일이 없습니다.'], 400);
 if ((int)($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
     jout(['ok' => false, 'error' => '업로드 에러 (코드: ' . (int)$file['error'] . ')'], 400);
-}
-
-$maxBytes = 10 * 1024 * 1024;
-if ((int)$file['size'] > $maxBytes) {
-    jout(['ok' => false, 'error' => '파일이 너무 큽니다. 최대 10MB.'], 400);
 }
 
 $mime = '';
@@ -68,7 +100,13 @@ if ($mime === '' && function_exists('finfo_open')) {
     }
 }
 if (!isset($allowed[$mime])) {
-    jout(['ok' => false, 'error' => '지원하지 않는 형식입니다 (' . ($mime ?: 'unknown') . '). PNG/JPG/GIF/WebP만 가능.'], 400);
+    jout(['ok' => false, 'error' => '지원하지 않는 형식입니다 (' . ($mime ?: 'unknown') . '). PNG/JPG/GIF/WebP/MP4/WebM/MOV만 가능.'], 400);
+}
+
+$isVideo = isset($allowedVideo[$mime]);
+$maxBytes = $isVideo ? 30 * 1024 * 1024 : 10 * 1024 * 1024;
+if ((int)$file['size'] > $maxBytes) {
+    jout(['ok' => false, 'error' => '파일이 너무 큽니다. ' . ($isVideo ? '동영상은 최대 30MB' : '이미지는 최대 10MB')], 400);
 }
 
 $ext = $allowed[$mime];
@@ -114,4 +152,5 @@ jout([
     'name' => $basename,
     'size' => (int)$file['size'],
     'mime' => $mime,
+    'kind' => $isVideo ? 'video' : 'image',
 ]);

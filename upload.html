@@ -76,18 +76,31 @@
   <header id="app-header" class="app-header">
     <div class="header-container">
       <h1><a href="index.html" style="color:inherit;text-decoration:none">JDHOON <span class="accent">Console</span></a></h1>
+      <nav class="main-nav">
+        <a class="nav-link" href="index.html#customers">고객</a>
+        <a class="nav-link" href="index.html#employees">직원</a>
+        <a class="nav-link" href="index.html#marketing">마케팅</a>
+        <a class="nav-link" href="lotto2233.html">Lotto</a>
+        <a class="nav-link" href="card-builder.html">온라인 명함 제작</a>
+        <a class="nav-link active" href="upload.html">업로드</a>
+      </nav>
+      <div id="user-menu" class="user-menu hidden">
+        <a href="profile.html" id="profile-link" title="내 정보">내 정보</a>
+        <a href="admin.html" id="admin-link" class="hidden" title="관리자">관리자</a>
+        <span id="user-email"></span>
+        <button type="button" id="logout-btn">로그아웃</button>
+      </div>
     </div>
   </header>
 
   <main class="upload-wrap">
-    <a class="back-link" href="index.html">← 대시보드로</a>
-    <h2>이미지 업로드</h2>
-    <p class="subtitle">스크린샷을 드래그하거나 클릭해서 선택. 클립보드에서 <kbd>Ctrl/Cmd</kbd>+<kbd>V</kbd>로 붙여넣기도 됩니다. PNG / JPG / GIF / WebP, 최대 10MB.</p>
+    <h2>업로드</h2>
+    <p class="subtitle">이미지/동영상을 드래그하거나 클릭해서 선택. 이미지는 클립보드에서 <kbd>Ctrl/Cmd</kbd>+<kbd>V</kbd>로 붙여넣기도 됩니다. 이미지 ≤ 10MB · 동영상 ≤ 30MB · MP4 / WebM / MOV.</p>
 
     <label class="drop-zone" id="drop-zone" for="file-input">
       <p class="primary">클릭하거나 드래그해서 업로드</p>
-      <p>또는 이 화면에서 Ctrl/Cmd+V</p>
-      <input type="file" id="file-input" accept="image/png,image/jpeg,image/gif,image/webp">
+      <p>이미지 또는 동영상 (이미지 ≤ 10MB · 동영상 ≤ 30MB)</p>
+      <input type="file" id="file-input" accept="image/png,image/jpeg,image/gif,image/webp,video/mp4,video/webm,video/quicktime">
     </label>
 
     <div id="status" class="upload-status"></div>
@@ -119,17 +132,20 @@
 
     async function upload(file) {
       if (!file) return;
-      if (!file.type.startsWith('image/')) {
-        setStatus('이미지 파일만 가능합니다 (' + file.type + ')', 'error');
+      const isImage = file.type.startsWith('image/');
+      const isVideo = file.type.startsWith('video/');
+      if (!isImage && !isVideo) {
+        setStatus('이미지 또는 동영상만 업로드 가능합니다 (' + file.type + ')', 'error');
         return;
       }
-      if (file.size > 10 * 1024 * 1024) {
-        setStatus('파일이 너무 큽니다. 최대 10MB.', 'error');
+      const maxBytes = isVideo ? 30 * 1024 * 1024 : 10 * 1024 * 1024;
+      if (file.size > maxBytes) {
+        setStatus(`파일이 너무 큽니다. ${isVideo ? '동영상은 최대 30MB' : '이미지는 최대 10MB'}.`, 'error');
         return;
       }
       setStatus('업로드 중…', 'success');
       const fd = new FormData();
-      fd.append('image', file);
+      fd.append('file', file);
       try {
         const res = await fetch('upload.php', { method: 'POST', body: fd });
         const data = await res.json();
@@ -159,43 +175,75 @@
         if (!data.ok) throw new Error(data.error);
         const files = data.files || [];
         if (!files.length) {
-          recentEl.innerHTML = '<div class="recent-empty">아직 업로드된 이미지가 없습니다.</div>';
+          recentEl.innerHTML = '<div class="recent-empty">아직 업로드된 파일이 없습니다.</div>';
           return;
         }
         recentEl.innerHTML = '';
         for (const f of files) {
           const item = document.createElement('div');
           item.className = 'recent-item';
-          const a = document.createElement('a');
-          a.className = 'thumb';
-          a.href = '/uploads/' + encodeURIComponent(f.name);
-          a.target = '_blank';
-          const img = document.createElement('img');
-          img.src = '/uploads/' + encodeURIComponent(f.name);
-          img.loading = 'lazy';
-          img.alt = f.name;
-          a.appendChild(img);
+          const url = '/uploads/' + encodeURIComponent(f.name);
+          const isVideo = /\.(mp4|webm|mov)$/i.test(f.name);
+
+          const thumb = document.createElement('a');
+          thumb.className = 'thumb';
+          thumb.href = url;
+          thumb.target = '_blank';
+          if (isVideo) {
+            const v = document.createElement('video');
+            v.src = url; v.muted = true; v.playsInline = true; v.preload = 'metadata';
+            v.style.cssText = 'width:100%;height:100%;object-fit:cover;display:block;background:#000;';
+            thumb.appendChild(v);
+          } else {
+            const img = document.createElement('img');
+            img.src = url; img.loading = 'lazy'; img.alt = f.name;
+            thumb.appendChild(img);
+          }
+
           const meta = document.createElement('div');
           meta.className = 'meta';
           const link = document.createElement('a');
-          link.href = '/uploads/' + encodeURIComponent(f.name);
-          link.target = '_blank';
-          link.textContent = f.name;
-          link.title = f.name;
+          link.href = url; link.target = '_blank';
+          link.textContent = f.name; link.title = f.name;
+
+          const actions = document.createElement('div');
+          actions.style.cssText = 'display:flex;gap:.25rem;flex-shrink:0;';
+
           const cp = document.createElement('button');
           cp.className = 'copy-btn';
           cp.type = 'button';
           cp.textContent = '복사';
-          cp.style.padding = '0 .4rem';
-          cp.style.fontSize = '.7rem';
+          cp.style.cssText = 'padding:0 .4rem;font-size:.7rem;';
           cp.addEventListener('click', (ev) => {
             ev.preventDefault();
-            const url = location.origin + '/uploads/' + f.name;
-            copyText(url, cp);
+            copyText(location.origin + '/uploads/' + f.name, cp);
           });
+
+          const del = document.createElement('button');
+          del.className = 'copy-btn';
+          del.type = 'button';
+          del.textContent = '삭제';
+          del.style.cssText = 'padding:0 .4rem;font-size:.7rem;color:var(--danger);border-color:var(--danger);';
+          del.addEventListener('click', async (ev) => {
+            ev.preventDefault();
+            if (!confirm(`"${f.name}" 을(를) 삭제할까요? 되돌릴 수 없습니다.`)) return;
+            del.disabled = true; del.textContent = '삭제 중…';
+            try {
+              const res = await fetch('upload.php?action=delete&name=' + encodeURIComponent(f.name), { method: 'DELETE' });
+              const data = await res.json().catch(() => null);
+              if (!res.ok || !data?.ok) throw new Error(data?.error || ('실패 ' + res.status));
+              loadRecent();
+            } catch (e) {
+              del.disabled = false; del.textContent = '삭제';
+              setStatus('삭제 실패: ' + (e.message || e), 'error');
+            }
+          });
+
+          actions.appendChild(cp);
+          actions.appendChild(del);
           meta.appendChild(link);
-          meta.appendChild(cp);
-          item.appendChild(a);
+          meta.appendChild(actions);
+          item.appendChild(thumb);
           item.appendChild(meta);
           recentEl.appendChild(item);
         }
@@ -228,6 +276,18 @@
     });
 
     loadRecent();
+  </script>
+  <script type="module">
+    import { initSupabase, setupHeaderUser } from './auth-shared.js?v=20260508-tight';
+    try {
+      await initSupabase();
+      setupHeaderUser({
+        userMenu: document.getElementById('user-menu'),
+        userEmail: document.getElementById('user-email'),
+        adminLink: document.getElementById('admin-link'),
+        logoutBtn: document.getElementById('logout-btn'),
+      });
+    } catch (e) { /* no-op for unauthenticated browse */ }
   </script>
 </body>
 </html>
