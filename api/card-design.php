@@ -266,17 +266,37 @@ function build_ideogram_card_prompt(?array $cardFields, ?array $siteMeta, string
         if ($line !== '') $textBlock .= "Small line: \"$line\". ";
     }
 
-    $prompt =
-        "Premium business card design — flat graphic, NOT a photo of a card on a desk. The image IS the card itself, edge-to-edge. " .
-        "{$industryHint}. " .
-        "Palette: background {$bg}, foreground text {$fg}, accent color {$accent}. " .
-        "Decorative element: {$deco}. " .
-        ($designNote !== '' ? "Mood: {$designNote}. " : '') .
-        ($tone !== '' ? "Brief: " . mb_substr($tone, 0, 120, 'UTF-8') . ". " : '') .
-        "Render Hangul (Korean characters) precisely with perfect spelling — no romanization, no translation. " .
-        "{$textBlock}" .
-        "Single-side card front, asymmetric editorial layout, clear typographic hierarchy (hero significantly larger than rest), generous margins, no clip art, no fake QR code, no stock icon.";
+    // Ideogram works best with concise, structured prompts. Tight, declarative.
+    // Korean text strategy: lead with "graphic design business card with Korean text",
+    // then quote each Korean string literally so the tokenizer treats them as text-to-render.
+    $parts = [];
+    $parts[] = 'Graphic design of a business card with Korean text';
+    $parts[] = 'flat 2D vector style';
+    $parts[] = $industryHint;
+    $parts[] = "background color {$bg}";
+    $parts[] = "primary text color {$fg}";
+    $parts[] = "accent color {$accent}";
+    $parts[] = $deco;
+    if ($designNote !== '') $parts[] = mb_substr($designNote, 0, 80, 'UTF-8');
 
+    // Hierarchy lines as Ideogram-friendly text instructions.
+    if ($hero !== '')      $parts[] = "large bold headline reading \"{$hero}\"";
+    if ($secondary !== '') $parts[] = "medium subline reading \"{$secondary}\"";
+    if ($emphPhone && $phone !== '') $parts[] = "prominent bold phone number reading \"{$phone}\"";
+    elseif ($phone !== '') $tertiary[] = $phone;
+    foreach ($tertiary as $line) {
+        $line = trim((string)$line);
+        if ($line !== '') $parts[] = "small caption reading \"{$line}\"";
+    }
+
+    $parts[] = 'asymmetric editorial layout with clear hierarchy';
+    $parts[] = 'generous whitespace';
+    $parts[] = 'no photo no mockup no card on a desk no perspective no shadow no environment';
+    $parts[] = 'edge-to-edge composition';
+    $parts[] = 'single-side card design only';
+    $parts[] = 'no clip art no emoji no stock icons no fake QR codes';
+
+    $prompt = implode(', ', $parts);
     return mb_substr($prompt, 0, 1500, 'UTF-8');
 }
 

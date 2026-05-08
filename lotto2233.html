@@ -520,10 +520,13 @@ function generate(){
         </div>`;
     }
 
+    const readingId = 'reading-' + Math.random().toString(36).slice(2, 9);
     html+=`
     <div class="box">
-    <h3 style="margin-top:0;">🔮 AI식 종합 운세 해석</h3>
-    ${aiReading(nm,str,ge,geStatus,cl,ys,lucky,dw,sw,ww,rel)}
+    <h3 style="margin-top:0;">🔮 도사가 풀어주는 운세</h3>
+    <div id="${readingId}" style="white-space:pre-line;line-height:1.85;color:#1a1a1a;font-size:14px;">
+        <em style="color:#888;">도사가 사주를 들여다보고 있습니다…</em>
+    </div>
     </div>
 
     <div class="box">
@@ -544,6 +547,40 @@ function generate(){
     </div>`;
 
     result.innerHTML=html;
+
+    // Async fetch the AI dosa reading (replaces the canned aiReading text).
+    fetchDosaReading({
+        readingId,
+        name: nm,
+        gender: selectedGender === 'female' ? '여성' : (selectedGender === 'male' ? '남성' : ''),
+        birthLabel,
+        drawDate: `${dy}년 ${dm}월 ${dd}일`,
+        ge, geStatus, str, cl,
+        ys: elementKor[ys] || ys,
+        lucky: elementKor[lucky] || lucky,
+        daewoon: dw, sewoon: sw, wolwoon: ww,
+        relations: rel,
+    });
+}
+
+async function fetchDosaReading(payload) {
+    const target = document.getElementById(payload.readingId);
+    if (!target) return;
+    try {
+        const res = await fetch('saju-reading.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        });
+        const data = await res.json().catch(() => null);
+        if (!res.ok || !data?.ok) {
+            target.innerHTML = `<em style="color:#888;">도사의 풀이를 가져오지 못했습니다 (${data?.error || res.status}). 다시 시도해 주세요.</em>`;
+            return;
+        }
+        target.textContent = data.reading;
+    } catch (e) {
+        target.innerHTML = `<em style="color:#888;">도사의 풀이를 가져오지 못했습니다 (${(e && e.message) || e}). 다시 시도해 주세요.</em>`;
+    }
 }
 </script>
 <script type="module">

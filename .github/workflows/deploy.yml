@@ -37,6 +37,7 @@ jobs:
           php -l api/records.php
           php -l api/upload.php
           php -l api/card-design.php
+          php -l api/saju-reading.php
           php -l kapp_premium.php
 
       - name: Prepare deploy folder
@@ -52,6 +53,7 @@ jobs:
           cp api/records.php deploy/records.php
           cp api/upload.php deploy/upload.php
           cp api/card-design.php deploy/card-design.php
+          cp api/saju-reading.php deploy/saju-reading.php
           mkdir -p deploy/templates/cards
           cp templates/cards/*.html deploy/templates/cards/
           if [ -f .htaccess ]; then cp .htaccess deploy/.htaccess; fi
