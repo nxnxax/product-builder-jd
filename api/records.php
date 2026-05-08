@@ -28,31 +28,36 @@ $auth = is_file($authConfigPath) ? require $authConfigPath : ['require_auth' => 
 // Lets the new-format token verification work without forcing operators to update
 // supabase_config.php right away.
 (function () use (&$auth) {
-    $rootDir = dirname(__DIR__);
+    // records.php may be deployed alongside supabase_config.js (webroot) or one level
+    // below it (api/ subdir). Search both __DIR__ and its parent so hydration works
+    // regardless of layout.
+    $searchDirs = [__DIR__, dirname(__DIR__)];
     $sources = [];
 
-    $envPath = $rootDir . '/.env';
-    if (is_file($envPath)) {
-        $envSource = [];
-        foreach (file($envPath, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as $line) {
-            if (preg_match('/^\s*(?:export\s+)?([A-Z0-9_]+)\s*=\s*(.*)$/i', $line, $m)) {
-                $envSource[$m[1]] = trim($m[2], "\"' ");
+    foreach ($searchDirs as $dir) {
+        $envPath = $dir . '/.env';
+        if (is_file($envPath)) {
+            $envSource = [];
+            foreach (file($envPath, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as $line) {
+                if (preg_match('/^\s*(?:export\s+)?([A-Z0-9_]+)\s*=\s*(.*)$/i', $line, $m)) {
+                    $envSource[$m[1]] = trim($m[2], "\"' ");
+                }
             }
+            if (!empty($envSource)) $sources[] = $envSource;
         }
-        $sources[] = $envSource;
-    }
 
-    $jsPath = $rootDir . '/supabase_config.js';
-    if (is_file($jsPath)) {
-        $jsSource = [];
-        $contents = (string)file_get_contents($jsPath);
-        if (preg_match('/SUPABASE_URL\s*=\s*[\'\"]([^\'\"]+)[\'\"]/', $contents, $m)) {
-            $jsSource['SUPABASE_URL'] = $m[1];
+        $jsPath = $dir . '/supabase_config.js';
+        if (is_file($jsPath)) {
+            $jsSource = [];
+            $contents = (string)file_get_contents($jsPath);
+            if (preg_match('/SUPABASE_URL\s*=\s*[\'\"]([^\'\"]+)[\'\"]/', $contents, $m)) {
+                $jsSource['SUPABASE_URL'] = $m[1];
+            }
+            if (preg_match('/SUPABASE_ANON_KEY\s*=\s*[\'\"]([^\'\"]+)[\'\"]/', $contents, $m)) {
+                $jsSource['SUPABASE_ANON_KEY'] = $m[1];
+            }
+            if (!empty($jsSource)) $sources[] = $jsSource;
         }
-        if (preg_match('/SUPABASE_ANON_KEY\s*=\s*[\'\"]([^\'\"]+)[\'\"]/', $contents, $m)) {
-            $jsSource['SUPABASE_ANON_KEY'] = $m[1];
-        }
-        if (!empty($jsSource)) $sources[] = $jsSource;
     }
 
     foreach ($sources as $source) {
