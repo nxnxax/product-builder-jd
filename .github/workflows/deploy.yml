@@ -1,4 +1,4 @@
-name: Deploy via FTP
+name: Deploy to Cafe24 via SFTP
 
 on:
   push:
@@ -14,25 +14,48 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
+      - name: Checkout source
         uses: actions/checkout@v4
+
+      - name: Validate source files
+        run: |
+          set -euo pipefail
+          test -f index.html
+          test -f main.js
+          test -f style.css
+          grep -q 'main.js?v=' index.html
+          php -l api/analyze.php
+          php -l api/records.php
+          php -l kapp_premium.php
+          if [ -f .htaccess ]; then
+            echo ".htaccess found; checking for rewrite rules"
+            grep -nE 'RewriteEngine|RewriteRule|RewriteCond' .htaccess || true
+          else
+            echo "No .htaccess file in repository"
+          fi
 
       - name: Prepare deploy files
         run: |
+          set -euo pipefail
           rm -rf deploy
           mkdir -p deploy
           cp index.html style.css main.js Marketing.html kapp_premium.php lotto2233.html deploy/
           cp api/analyze.php deploy/analyze.php
           cp api/records.php deploy/records.php
 
-      - name: FTP Deploy
-        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+      - name: Deploy to Cafe24
+        uses: appleboy/scp-action@v0.1.7
         with:
-          server: ${{ secrets.CAFE24_FTP_SERVER || secrets.FTP_SERVER || 'youngman-biz.com' }}
-          username: ${{ secrets.CAFE24_FTP_USER || secrets.FTP_USER || 'nxnxqxx' }}
-          password: ${{ secrets.CAFE24_FTP_PASSWORD || secrets.FTP_PASS || secrets.FTP_PASSWORD }}
-          port: ${{ secrets.CAFE24_FTP_PORT || 21 }}
-          protocol: ftp
-          local-dir: ./deploy/
-          server-dir: ./
-          dangerous-clean-slate: false
+          host: ${{ secrets.SFTP_HOST }}
+          username: ${{ secrets.SFTP_USER }}
+          port: ${{ secrets.SFTP_PORT }}
+          key: ${{ secrets.SFTP_PRIVATE_KEY }}
+          source: "deploy/*"
+          target: ${{ secrets.SFTP_DIR }}
+          strip_components: 1
+          overwrite: true
+
+      - name: Check HTTP status
+        run: |
+          set -euo pipefail
+          curl -I --fail http://youngman-biz.com/
