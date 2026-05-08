@@ -167,7 +167,10 @@ function build_recraft_prompt(?array $cardFields, ?array $siteMeta, string $tone
         : '';
 
     $prompt =
-        "Horizontal landscape business card design, single side, on a clean studio background. " .
+        "FLAT 2D GRAPHIC DESIGN of a business card, NOT a photo, NOT a 3D mockup, NOT a card on a desk. " .
+        "The output IS the card itself — edge-to-edge, full bleed. " .
+        "No drop shadows, no perspective, no paper texture, no studio background, no holding hand, no isometric view. " .
+        "Treat this like a print-ready Adobe Illustrator artboard. " .
         $stylePhrase . ". " .
         $userTone .
         $textPart .
@@ -176,7 +179,8 @@ function build_recraft_prompt(?array $cardFields, ?array $siteMeta, string $tone
         "Use Korean-aware sans typeface like Pretendard for Korean text. " .
         "No clip art, no emoji, no fake QR codes, no stock icons, no logos you did not invent. " .
         "Generous margins around all edges (at least 6%). " .
-        "Avoid centered-everything layouts. Asymmetric or grid-anchored compositions strongly preferred.";
+        "Asymmetric or grid-anchored compositions strongly preferred. " .
+        "Single-side card front only. The entire image area is the card surface, filling the frame edge to edge.";
 
     // Cap length — Recraft has prompt length limits.
     return mb_substr($prompt, 0, 1000);
@@ -321,10 +325,13 @@ if (!$cardFields) $cardFields = [];
 $sizePick = pick_recraft_size($inputDims);
 $prompt = build_recraft_prompt($cardFields, $siteMeta, $tone);
 
-// Default style for premium business cards: realistic_image gives best
-// professional look with text. vector_illustration is cleaner for simple
-// icons but text rendering can be weaker for Korean.
-$style = 'realistic_image';
+// Default style: digital_illustration produces flat graphic-design output
+// (the actual card as a flat artwork) instead of a photo of a card.
+// realistic_image makes Recraft compose a studio shot of a card on a desk —
+// not what we want. vector_illustration is even flatter but text rendering
+// can be weaker. digital_illustration is the sweet spot for premium card
+// graphics with legible Korean text.
+$style = 'digital_illustration';
 if (mb_stripos($tone, '벡터') !== false || mb_stripos($tone, 'vector') !== false || mb_stripos($tone, '일러스트') !== false) {
     $style = 'vector_illustration';
 }
