@@ -49,218 +49,6 @@ function openai_chat(string $apiKey, array $body, int $timeout = 60): array {
     return ['ok' => $status >= 200 && $status < 300, 'status' => $status, 'body' => $decoded, 'raw' => (string)$resp];
 }
 
-function research_design_brief(string $apiKey, ?array $cardFields, ?array $siteMeta, string $tone, ?array &$diag = null): string {
-    $diag = ['attempted' => true, 'used_search' => false, 'http_status' => null, 'error' => null, 'model' => 'gpt-4o-search-preview'];
-    $companyName = trim((string)($cardFields['company'] ?? ''));
-    $title = trim((string)($cardFields['title'] ?? ''));
-    $industryHint = $title ?: ($siteMeta['description'] ?? '') ?: 'advertising / marketing sales';
-    $effectiveTone = $tone !== '' ? $tone : '광고영업이미지로 마케팅 명함 멋지게 만들어줘 (slick advertising/marketing-sales business card, bold and confident, ad-poster energy)';
-
-    $query =
-        "I'm designing a business card for: " . ($companyName ? "company \"$companyName\", " : '') .
-        "industry/role: $industryHint. Tone brief: $effectiveTone.\n\n" .
-        "Search the web for the top 2025 premium business card design references — specifically for marketing/advertising/sales professionals. " .
-        "Look at award-winning portfolios (Behance, Awwwards, It's Nice That, Dieline) and current trends in editorial design. " .
-        "Then synthesize a concrete DESIGN DNA in 4–6 sentences: " .
-        "(a) Layout pattern (e.g. 'oversized name bleeding off the right edge with a thin horizontal accent line at top-third'), " .
-        "(b) Exact color palette (3 hex codes max, name them), " .
-        "(c) Typography hierarchy (which element is the hero, weight contrast), " .
-        "(d) One distinctive graphic device (e.g. 'thick diagonal slash at bottom-left', 'oversized number 2025 as watermark', 'asterisk monogram'). " .
-        "Be specific and opinionated — no generic advice. Output only the design DNA prose, no preamble, no URLs.";
-
-    $resp = openai_chat($apiKey, [
-        'model' => 'gpt-4o-search-preview',
-        'web_search_options' => new \stdClass(),
-        'messages' => [['role' => 'user', 'content' => $query]],
-        'max_tokens' => 800,
-    ], 45);
-
-    $diag['http_status'] = $resp['status'] ?? null;
-    if (!$resp['ok']) {
-        $diag['error'] = $resp['body']['error']['message'] ?? ($resp['error'] ?? 'unknown');
-
-        // Fallback: try the Responses API with web_search tool (different shape).
-        $fb = openai_responses_with_search($apiKey, $query);
-        if ($fb['ok'] && $fb['text'] !== '') {
-            $diag['used_search'] = true;
-            $diag['model'] = 'gpt-4o (responses API + web_search)';
-            $diag['error'] = null;
-            return trim($fb['text']);
-        }
-        // Final fallback: plain gpt-4o without search (better than nothing).
-        $plain = openai_chat($apiKey, [
-            'model' => 'gpt-4o',
-            'messages' => [['role' => 'user', 'content' => $query . "\n(You don't have live web access; use your training knowledge of 2024-25 design trends to synthesize the brief.)"]],
-            'max_tokens' => 800,
-            'temperature' => 0.7,
-        ], 30);
-        if ($plain['ok']) {
-            $diag['used_search'] = false;
-            $diag['model'] = 'gpt-4o (no search, training data only)';
-            $diag['error'] = $diag['error'] . ' → fell back to plain gpt-4o';
-            return trim((string)($plain['body']['choices'][0]['message']['content'] ?? ''));
-        }
-        return '';
-    }
-    $diag['used_search'] = true;
-    $brief = (string)($resp['body']['choices'][0]['message']['content'] ?? '');
-    return trim($brief);
-}
-
-function openai_responses_with_search(string $apiKey, string $input, int $timeout = 45): array {
-    $ch = curl_init('https://api.openai.com/v1/responses');
-    curl_setopt_array($ch, [
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_POST => true,
-        CURLOPT_POSTFIELDS => json_encode([
-            'model' => 'gpt-4o',
-            'tools' => [['type' => 'web_search_preview']],
-            'input' => $input,
-        ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
-        CURLOPT_HTTPHEADER => [
-            'Authorization: Bearer ' . $apiKey,
-            'Content-Type: application/json',
-        ],
-        CURLOPT_TIMEOUT => $timeout,
-        CURLOPT_CONNECTTIMEOUT => 10,
-    ]);
-    $resp = curl_exec($ch);
-    $status = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    curl_close($ch);
-    if ($resp === false || $status < 200 || $status >= 300) {
-        return ['ok' => false, 'text' => '', 'status' => $status];
-    }
-    $data = json_decode((string)$resp, true);
-    // Responses API output shape: output[].content[].text
-    $text = '';
-    if (is_array($data) && !empty($data['output']) && is_array($data['output'])) {
-        foreach ($data['output'] as $item) {
-            if (($item['type'] ?? '') === 'message' && !empty($item['content']) && is_array($item['content'])) {
-                foreach ($item['content'] as $c) {
-                    if (($c['type'] ?? '') === 'output_text' && !empty($c['text'])) {
-                        $text .= $c['text'];
-                    }
-                }
-            }
-        }
-    }
-    return ['ok' => $text !== '', 'text' => $text, 'status' => $status];
-}
-
-function generate_card_svg(string $apiKey, ?array $cardFields, ?array $siteMeta, string $tone, array $dims = ['width' => 1050, 'height' => 600], string $researchBrief = ''): array {
-    $w = max(300, min(2400, (int)$dims['width']));
-    $h = max(200, min(2400, (int)$dims['height']));
-    $context = [];
-    if ($cardFields) {
-        $clean = [];
-        foreach (['name','title','company','email','phone','mobile','address','website','tagline'] as $k) {
-            $v = trim((string)($cardFields[$k] ?? ''));
-            if ($v !== '') $clean[$k] = $v;
-        }
-        if (!empty($cardFields['colors']) && is_array($cardFields['colors'])) {
-            $clean['brand_colors'] = array_slice(array_filter(array_map('strval', $cardFields['colors'])), 0, 3);
-        }
-        if (!empty($cardFields['language'])) $clean['language'] = $cardFields['language'];
-        if ($clean) $context[] = "OCR'd fields from the original card: " . json_encode($clean, JSON_UNESCAPED_UNICODE);
-    }
-    if ($siteMeta) {
-        $hint = $siteMeta['og_description'] ?: $siteMeta['description'];
-        if ($hint !== '') $context[] = "Brand context from website: " . mb_substr($hint, 0, 240);
-        if (!empty($siteMeta['theme_color'])) $context[] = "Brand color hint: " . $siteMeta['theme_color'];
-    }
-    if ($tone !== '') {
-        $context[] = "Design tone requested by user: $tone";
-    } else {
-        $context[] = "Default brief from the operator: 광고영업이미지로 마케팅 명함 멋지게 만들어줘 (design a slick MARKETING / ADVERTISING-SALES business card — bold, confident, attention-grabbing, energetic). This is for someone who sells visibility for a living; the card itself must look like an ad worth keeping.";
-    }
-    if (!$cardFields && !$siteMeta) $context[] = "No extracted info available — invent nothing; instead create a tasteful placeholder layout that demonstrates the design system, using the literal label 'Sample' if absolutely necessary.";
-
-    if ($researchBrief !== '') {
-        $context[] = "REAL-WORLD DESIGN DNA (synthesized from current 2025 references via web search) — follow this closely:\n" . $researchBrief;
-    }
-
-    $sys = "You are the lead brand designer at a top-tier studio (Pentagram-caliber). Your output is a print-ready SVG business card that looks like it came from a premium design house — never a template, never generic.\n" .
-        "\n" .
-        "MANDATORY 3-STAGE THINKING — work through these silently in order before writing any SVG. DO NOT output the prose; only the final SVG. But you MUST think this through:\n" .
-        "\n" .
-        "STAGE 1 · 초안구성 (Concept draft)\n" .
-        "  - What is this person/company really selling? (Real estate premium → trust, status, prestige. Marketing/Ads → visibility, energy. Tech → forward motion. F&B → warmth, taste.)\n" .
-        "  - Who carries this card and to whom? (B2B exec? Sales agent meeting affluent buyers? Creative pitching ad agencies?)\n" .
-        "  - What single emotion should the card project in 1 second? Pick one word: trustworthy / confident / refined / bold / warm / authoritative / playful.\n" .
-        "  - Pick a design vocabulary: editorial-magazine / Swiss-grid / luxe-monogram / poster-typography / asymmetric-block / minimal-whitespace.\n" .
-        "\n" .
-        "STAGE 2 · 장면구성 (Composition / scene blocking)\n" .
-        "  - Lay out the canvas in mental coordinates (viewBox 0 0 {$w} {$h}). Decide which third the visual hero anchors to (top-left? center-right? bottom-strip?). Decide the rhythm of negative space (≥35% should be empty).\n" .
-        "  - Choose the hero element: oversized name? oversized company? monogram? color block? Decide its exact rough size in viewBox units.\n" .
-        "  - Pick a 2-color palette + neutral. Specify hex codes. Examples: real-estate premium → #0f172a (charcoal) + #5a1e2e (deep burgundy) + #f8f6f1 (warm cream). Marketing → #0a0a0a + #ff5a3c + white. Use brand colors from OCR if supplied.\n" .
-        "  - Decide one decorative geometric device (NOT clip art): hairline divider, vertical accent bar, thin rectangle frame, oversized number/letter as watermark, diagonal slash. Place it precisely.\n" .
-        "  - Decide font hierarchy: hero (display weight 700-900, e.g. 64-96 viewBox units), secondary (medium, 24-32), tertiary (regular, 14-18). Korean uses same numeric weights via Pretendard fallback.\n" .
-        "\n" .
-        "STAGE 3 · 세부묘사 (Detail render → SVG)\n" .
-        "  - Translate the composition into clean SVG. Use <text> for all text (no <image>, no <foreignObject>).\n" .
-        "  - Use <linearGradient> or <radialGradient> ONLY if it adds something — otherwise solid fills. If a gradient, make it subtle (≤ 8% lightness shift) and tasteful, never rainbow.\n" .
-        "  - Add micro-details: hairline rules at 1-1.5 px, generous letter-spacing on uppercase labels, lowercase for body if elegant, all-caps for tags. Korean text MUST stay natural — no forced letter-spacing on CJK.\n" .
-        "  - Verify mentally: name is biggest? everything fits with ≥5% edge padding? color pair is sophisticated (no neon-on-neon)? composition is unmistakably non-template?\n" .
-        "\n" .
-        "INDUSTRY HINTS (use as starting point, brand colors override):\n" .
-        "  - Real estate / 분양 / 부동산 (premium) → charcoal/black + burgundy/deep navy + warm cream. Editorial Swiss grid. Hairline rules. Restrained, like a 5-star hotel imprint. References: 현대건설, 자이, 푸르지오, 디에이치.\n" .
-        "  - Marketing / 광고 / 영업 (default) → bold display type, saturated single accent (signal red, hot orange, electric blue), oversized hero, magazine-cover treatment. Wieden+Kennedy energy.\n" .
-        "  - Tech/SaaS → geometric sans, asymmetric, single accent on near-black or off-white.\n" .
-        "  - Law/Finance → conservative serif or refined neo-grotesk, deep navy + cream, monogram.\n" .
-        "  - F&B/Hospitality → warm cream/terracotta/forest, elegant display serif.\n" .
-        "  - Beauty/Fashion → ultra-minimal, oversized thin display serif, photo-like color block.\n" .
-        "  - Studio/Creative → expressive type, unconventional grid.\n" .
-        "  - Korean SMEs → premium sans-serif (Pretendard), restrained accent.\n" .
-        "\n" .
-        "HARD CONSTRAINTS — violating these is a hard fail:\n" .
-        "  - viewBox=\"0 0 {$w} {$h}\" with width=\"{$w}\" height=\"{$h}\". Match aspect ratio exactly.\n" .
-        "  - Pure SVG. No <image>, no scripts, no foreignObject, no external fonts. Font stack: font-family=\"-apple-system, 'SF Pro Display', 'SF Pro Text', 'Pretendard', 'Apple SD Gothic Neo', 'Helvetica Neue', sans-serif\".\n" .
-        "  - Print every supplied field EXACTLY (no spelling changes, no romanization of Korean, no invented info, no 'Your name' placeholders).\n" .
-        "  - ALL text must fit inside ≥ 5% padding from every edge. NEVER let text overflow.\n" .
-        "  - Hierarchy is mandatory: ONE element is the unmistakable visual hero (≥ 1.8x the size of the next-biggest text).\n" .
-        "  - Decorative elements are pure geometry (rect/line/circle/path). NO clip art, NO emoji, NO fake QR codes, NO stock icons.\n" .
-        "  - Generous whitespace. ≥ 35% of the canvas is breathing room. Crowded = fail.\n" .
-        "  - DO NOT produce centered text on white as a default. If you can only think of that, you have failed Stage 1; restart Stage 1.\n" .
-        "\n" .
-        "OUTPUT: ONLY the raw SVG, starting with <svg ...> and ending with </svg>. No markdown fences, no prose commentary, no `<!-- -->` comments outside the svg root.";
-
-    $user = implode("\n", $context);
-
-    $resp = openai_chat($apiKey, [
-        'model' => 'gpt-4o',
-        'messages' => [
-            ['role' => 'system', 'content' => $sys],
-            ['role' => 'user', 'content' => $user],
-        ],
-        'max_tokens' => 4000,
-        'temperature' => 0.85,
-    ], 60);
-
-    if (!$resp['ok']) {
-        $msg = $resp['body']['error']['message'] ?? ($resp['error'] ?? 'OpenAI 호출 실패');
-        return ['ok' => false, 'error' => $msg, 'status' => $resp['status']];
-    }
-
-    $content = (string)($resp['body']['choices'][0]['message']['content'] ?? '');
-    // Strip optional ``` fences if the model still wraps.
-    $content = preg_replace('/^\s*```(?:svg|xml)?\s*/i', '', $content);
-    $content = preg_replace('/\s*```\s*$/', '', $content);
-    $content = trim((string)$content);
-
-    if (stripos($content, '<svg') === false) {
-        return ['ok' => false, 'error' => 'SVG 응답이 비어있습니다.', 'preview' => mb_substr($content, 0, 200)];
-    }
-    // Trim anything before <svg
-    $svgStart = stripos($content, '<svg');
-    $svgEnd = strripos($content, '</svg>');
-    if ($svgEnd === false) {
-        return ['ok' => false, 'error' => 'SVG 끝 태그가 없습니다.', 'preview' => mb_substr($content, 0, 200)];
-    }
-    $svg = substr($content, $svgStart, $svgEnd - $svgStart + 6);
-
-    return ['ok' => true, 'svg' => $svg];
-}
-
 function ocr_business_card(string $apiKey, string $imageBase64, string $mime): array {
     $resp = openai_chat($apiKey, [
         'model' => 'gpt-4o',
@@ -270,27 +58,23 @@ function ocr_business_card(string $apiKey, string $imageBase64, string $mime): a
                 ['type' => 'text', 'text' =>
                     "이 이미지가 명함이라면 다음 필드를 JSON으로 추출해줘: " .
                     "name(이름), title(직책/직함), company(회사명), email, phone, mobile, address, website, " .
-                    "tagline(슬로건/한 줄 소개), other(기타 줄들 배열). " .
-                    "값을 못 찾은 필드는 빈 문자열 또는 빈 배열. " .
-                    "추가로 colors(이미지에서 추출한 주요 색상 hex 코드 1~3개 배열), " .
-                    "language('ko' 또는 'en' 등)도 함께 반환. " .
-                    "명함이 아니면 {\"error\":\"not_a_business_card\"}."],
+                    "tagline(슬로건/한 줄 소개), industry(추정 업종 — '부동산','건설','마케팅','광고','테크','법무','의료','F&B','뷰티','교육','금융','일반' 중 하나), " .
+                    "language('ko' 또는 'en' 등). " .
+                    "값을 못 찾은 필드는 빈 문자열. 명함이 아니면 {\"error\":\"not_a_business_card\"}."],
                 ['type' => 'image_url', 'image_url' => ['url' => 'data:' . $mime . ';base64,' . $imageBase64]],
             ],
         ]],
         'response_format' => ['type' => 'json_object'],
-        'max_tokens' => 800,
+        'max_tokens' => 700,
         'temperature' => 0.1,
     ], 45);
 
     if (!$resp['ok']) {
-        return ['ok' => false, 'status' => $resp['status'], 'error' => $resp['body']['error']['message'] ?? ($resp['error'] ?? 'OpenAI 호출 실패')];
+        return ['ok' => false, 'error' => $resp['body']['error']['message'] ?? ($resp['error'] ?? 'OpenAI 호출 실패')];
     }
     $content = $resp['body']['choices'][0]['message']['content'] ?? '';
     $parsed = json_decode((string)$content, true);
-    if (!is_array($parsed)) {
-        return ['ok' => false, 'error' => '응답을 파싱하지 못했습니다.'];
-    }
+    if (!is_array($parsed)) return ['ok' => false, 'error' => '응답 파싱 실패'];
     if (!empty($parsed['error']) && $parsed['error'] === 'not_a_business_card') {
         return ['ok' => false, 'error' => '명함으로 보이지 않는 이미지입니다.'];
     }
@@ -319,113 +103,169 @@ function fetch_site_meta(string $url): ?array {
     $description = '';
     if (preg_match('/<meta[^>]+name=["\']description["\'][^>]+content=["\']([^"\']+)["\']/i', $html, $m)) $description = trim($m[1]);
     elseif (preg_match('/<meta[^>]+content=["\']([^"\']+)["\'][^>]+name=["\']description["\']/i', $html, $m)) $description = trim($m[1]);
-    $ogTitle = '';
-    if (preg_match('/<meta[^>]+property=["\']og:title["\'][^>]+content=["\']([^"\']+)["\']/i', $html, $m)) $ogTitle = trim($m[1]);
-    $ogDescription = '';
-    if (preg_match('/<meta[^>]+property=["\']og:description["\'][^>]+content=["\']([^"\']+)["\']/i', $html, $m)) $ogDescription = trim($m[1]);
     $themeColor = '';
     if (preg_match('/<meta[^>]+name=["\']theme-color["\'][^>]+content=["\']([^"\']+)["\']/i', $html, $m)) $themeColor = trim($m[1]);
 
+    return ['title' => mb_substr($title, 0, 200), 'description' => mb_substr($description, 0, 400), 'theme_color' => $themeColor];
+}
+
+function template_palette_decision(string $apiKey, ?array $cardFields, ?array $siteMeta, string $tone): array {
+    $availableTemplates = [
+        'luxury_01'           => '럭셔리/프리미엄 (부동산, 건설, 호텔, 고급 서비스). 좌우 분할, 차콜+버건디+크림, 코너 마크.',
+        'black_gold'          => '하이엔드 임원/전문직 (법무, 금융, 컨설팅). 다크 배경 + 골드/크림 텍스트, 모노그램.',
+        'modern_corporate'    => '테크/SaaS/현대적 기업. 좌측 액센트 바, 깔끔한 그리드, 라벨링된 메타데이터.',
+        'minimal_01'          => '미니멀/디자이너/예술 (스튜디오, 사진가, 작가). 흰 배경, 큰 여백, 얇은 디바이더.',
+        'editorial_marketing' => '광고/마케팅/영업/엔터테인먼트. 오버사이즈 이름, 시그널 컬러 액센트 블록, 매거진 톤.',
+    ];
+
+    $palettes = [
+        ['name' => 'real_estate_premium', 'primary' => '#7a0026', 'fg' => '#1a1a1a', 'neutral' => '#f8f6f1', 'secondary' => '#5a5a5a', 'mood' => '럭셔리 부동산 (버건디+크림+차콜)'],
+        ['name' => 'construction_navy',   'primary' => '#0a2940', 'fg' => '#1a1a1a', 'neutral' => '#fafafa', 'secondary' => '#5a5a5a', 'mood' => '건설/엔지니어링 (네이비+화이트)'],
+        ['name' => 'black_warm_gold',     'primary' => '#c9a567', 'fg' => '#f5f0e6', 'neutral' => '#0f0f0f', 'secondary' => '#a89d87', 'mood' => '하이엔드 임원 (블랙+웜골드)'],
+        ['name' => 'editorial_red',       'primary' => '#e63946', 'fg' => '#0a0a0a', 'neutral' => '#fafafa', 'secondary' => '#666',    'mood' => '광고/마케팅 (시그널 레드)'],
+        ['name' => 'tech_electric',       'primary' => '#0066ff', 'fg' => '#0a0a0a', 'neutral' => '#ffffff', 'secondary' => '#525252', 'mood' => '테크/SaaS (일렉트릭 블루)'],
+        ['name' => 'forest_cream',        'primary' => '#1f4d3a', 'fg' => '#1a1a1a', 'neutral' => '#f4f1ea', 'secondary' => '#666',    'mood' => 'F&B/호스피탈리티 (포레스트+크림)'],
+        ['name' => 'soft_charcoal',       'primary' => '#2c2c2c', 'fg' => '#1a1a1a', 'neutral' => '#f8f8f8', 'secondary' => '#777',    'mood' => '미니멀 (소프트 차콜)'],
+    ];
+
+    $brief = [];
+    if ($cardFields) {
+        $b = [];
+        foreach (['name','title','company','industry','tagline'] as $k) {
+            $v = trim((string)($cardFields[$k] ?? ''));
+            if ($v !== '') $b[$k] = $v;
+        }
+        if ($b) $brief[] = "OCR fields: " . json_encode($b, JSON_UNESCAPED_UNICODE);
+    }
+    if ($siteMeta) {
+        $hint = $siteMeta['description'] ?: $siteMeta['title'];
+        if ($hint !== '') $brief[] = "Site context: " . mb_substr($hint, 0, 240);
+    }
+    if ($tone !== '') $brief[] = "User tone brief: " . $tone;
+    if (!$brief) $brief[] = "No info — pick a clean default (minimal_01 with soft_charcoal).";
+
+    $sys =
+        "You are a brand designer routing a business card to one of {N} pre-built templates and one of {M} curated palettes. " .
+        "Read the brief, decide the template_id and palette_name. Optionally suggest tweaks. " .
+        "Available templates:\n";
+    foreach ($availableTemplates as $id => $desc) $sys .= "- $id: $desc\n";
+    $sys .= "\nAvailable palettes (use exact name):\n";
+    foreach ($palettes as $p) $sys .= "- {$p['name']}: {$p['mood']} — primary {$p['primary']}, neutral {$p['neutral']}\n";
+    $sys .= "\nReturn STRICT JSON: { \"template_id\": \"...\", \"palette_name\": \"...\", \"primary_override\": \"#hex or empty\", \"reasoning\": \"1 sentence\" }. " .
+        "Choose template_id ONLY from the above list. palette_name ONLY from the above list. primary_override is empty unless the brief explicitly demands a different brand color. " .
+        "Match korean realestate/construction businesses to luxury_01 + real_estate_premium UNLESS the brief says otherwise. Match marketing/advertising businesses to editorial_marketing + editorial_red.";
+
+    $resp = openai_chat($apiKey, [
+        'model' => 'gpt-4o',
+        'messages' => [
+            ['role' => 'system', 'content' => $sys],
+            ['role' => 'user', 'content' => implode("\n", $brief)],
+        ],
+        'response_format' => ['type' => 'json_object'],
+        'max_tokens' => 300,
+        'temperature' => 0.4,
+    ], 30);
+
+    $defaultPalette = $palettes[6]; // soft_charcoal as ultimate fallback
+    if (!$resp['ok']) {
+        return [
+            'template_id' => 'minimal_01',
+            'palette' => $defaultPalette,
+            'reasoning' => 'fallback — OpenAI 호출 실패: ' . ($resp['body']['error']['message'] ?? 'unknown'),
+        ];
+    }
+    $decision = json_decode((string)($resp['body']['choices'][0]['message']['content'] ?? ''), true);
+    if (!is_array($decision)) {
+        return ['template_id' => 'minimal_01', 'palette' => $defaultPalette, 'reasoning' => 'fallback — JSON parse failed'];
+    }
+
+    $tplId = (string)($decision['template_id'] ?? '');
+    if (!isset($availableTemplates[$tplId])) $tplId = 'minimal_01';
+
+    $palette = $defaultPalette;
+    foreach ($palettes as $p) {
+        if ($p['name'] === ($decision['palette_name'] ?? '')) { $palette = $p; break; }
+    }
+
+    $override = trim((string)($decision['primary_override'] ?? ''));
+    if (preg_match('/^#[0-9a-f]{6}$/i', $override)) {
+        $palette = array_merge($palette, ['primary' => strtolower($override)]);
+    }
+
     return [
-        'title' => mb_substr($title, 0, 200),
-        'description' => mb_substr($description, 0, 400),
-        'og_title' => mb_substr($ogTitle, 0, 200),
-        'og_description' => mb_substr($ogDescription, 0, 400),
-        'theme_color' => $themeColor,
+        'template_id' => $tplId,
+        'palette'     => $palette,
+        'reasoning'   => (string)($decision['reasoning'] ?? ''),
     ];
 }
 
-function save_svg_string(string $svg): ?string {
-    $dir = __DIR__ . '/uploads/cards';
-    if (!is_dir($dir)) {
-        if (!@mkdir($dir, 0755, true) && !is_dir($dir)) return null;
+function build_monogram(?array $fields): string {
+    if (!$fields) return 'JD';
+    $candidate = trim((string)($fields['company'] ?? '')) ?: trim((string)($fields['name'] ?? ''));
+    if ($candidate === '') return 'JD';
+    // Use first letter of each word, max 2 chars. For Korean fall back to first char.
+    $clean = preg_replace('/[^A-Za-z가-힣\s]/u', '', $candidate);
+    $parts = preg_split('/\s+/', trim((string)$clean));
+    $letters = '';
+    foreach ($parts as $p) {
+        if ($p === '') continue;
+        $letters .= mb_substr($p, 0, 1, 'UTF-8');
+        if (mb_strlen($letters, 'UTF-8') >= 2) break;
     }
-    try {
-        $rand = bin2hex(random_bytes(5));
-    } catch (Throwable $e) {
-        $rand = substr(sha1(uniqid('', true)), 0, 10);
-    }
-    $name = date('Ymd-His') . '-' . $rand . '.svg';
-    $path = $dir . '/' . $name;
-    if (@file_put_contents($path, $svg) === false) return null;
-    @chmod($path, 0644);
-    $proto = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
-    $host = $_SERVER['HTTP_HOST'] ?? 'youngman-biz.com';
-    return $proto . '://' . $host . '/uploads/cards/' . $name;
+    if ($letters === '') $letters = mb_substr($candidate, 0, 2, 'UTF-8');
+    return mb_strtoupper($letters, 'UTF-8');
 }
 
-function build_dalle_prompt(?array $cardFields, ?array $siteMeta, string $tone): string {
-    $parts = [];
-    $parts[] = "Design an elegant, premium-quality business card front. Photorealistic studio mockup on a clean neutral background, soft shadows, sharp typography. Composition is exactly a horizontal business card (3.5:2 aspect ratio).";
-
-    if ($cardFields) {
-        $name = trim((string)($cardFields['name'] ?? ''));
-        $title = trim((string)($cardFields['title'] ?? ''));
-        $company = trim((string)($cardFields['company'] ?? ''));
-        $email = trim((string)($cardFields['email'] ?? ''));
-        $phone = trim((string)($cardFields['phone'] ?? $cardFields['mobile'] ?? ''));
-        $tagline = trim((string)($cardFields['tagline'] ?? ''));
-
-        $details = [];
-        if ($name !== '') $details[] = "name: $name";
-        if ($title !== '') $details[] = "title: $title";
-        if ($company !== '') $details[] = "company: $company";
-        if ($email !== '') $details[] = "email: $email";
-        if ($phone !== '') $details[] = "phone: $phone";
-        if ($tagline !== '') $details[] = "tagline: $tagline";
-        if ($details) $parts[] = "Print these on the card exactly as written, do not change spelling: " . implode(' | ', $details) . ".";
-
-        if (!empty($cardFields['colors']) && is_array($cardFields['colors'])) {
-            $colors = array_filter(array_map('strval', $cardFields['colors']));
-            if ($colors) $parts[] = "Brand colors to use sparingly as accents: " . implode(', ', array_slice($colors, 0, 3)) . ".";
+function render_template(string $templateId, array $fields, array $palette, array $dims): array {
+    $path = dirname(__DIR__) . '/templates/cards/' . $templateId . '.html';
+    if (!is_file($path)) {
+        $path = __DIR__ . '/../templates/cards/' . $templateId . '.html';
+        if (!is_file($path)) {
+            $path = __DIR__ . '/templates/cards/' . $templateId . '.html';
         }
     }
+    if (!is_file($path)) {
+        return ['ok' => false, 'error' => 'Template file not found: ' . $templateId];
+    }
+    $html = (string)file_get_contents($path);
 
-    if ($siteMeta) {
-        $tagline = $siteMeta['og_description'] ?: $siteMeta['description'];
-        if ($tagline !== '') $parts[] = "Reference brand context (do not print this verbatim): \"" . mb_substr($tagline, 0, 200) . "\".";
-        if (!empty($siteMeta['theme_color'])) $parts[] = "Brand accent color hint: " . $siteMeta['theme_color'] . ".";
+    $repl = [
+        '{{width}}'     => (string)$dims['width'],
+        '{{height}}'    => (string)$dims['height'],
+        '{{primary}}'   => $palette['primary'],
+        '{{fg}}'        => $palette['fg'],
+        '{{neutral}}'   => $palette['neutral'],
+        '{{secondary}}' => $palette['secondary'],
+        '{{name}}'      => htmlspecialchars((string)($fields['name'] ?? ''), ENT_QUOTES, 'UTF-8'),
+        '{{title}}'     => htmlspecialchars((string)($fields['title'] ?? ''), ENT_QUOTES, 'UTF-8'),
+        '{{company}}'   => htmlspecialchars((string)($fields['company'] ?? ''), ENT_QUOTES, 'UTF-8'),
+        '{{phone}}'     => htmlspecialchars((string)($fields['phone'] ?? $fields['mobile'] ?? ''), ENT_QUOTES, 'UTF-8'),
+        '{{email}}'     => htmlspecialchars((string)($fields['email'] ?? ''), ENT_QUOTES, 'UTF-8'),
+        '{{address}}'   => htmlspecialchars((string)($fields['address'] ?? ''), ENT_QUOTES, 'UTF-8'),
+        '{{tagline}}'   => htmlspecialchars((string)($fields['tagline'] ?? ''), ENT_QUOTES, 'UTF-8'),
+        '{{monogram}}'  => htmlspecialchars(build_monogram($fields), ENT_QUOTES, 'UTF-8'),
+    ];
+
+    // Conditional empty-class flags so the template can hide blanks via CSS class.
+    foreach (['name','title','company','phone','email','address','tagline'] as $k) {
+        $val = trim((string)($fields[$k] ?? ($k === 'phone' ? ($fields['mobile'] ?? '') : '')));
+        $repl["{{{$k}_empty}}"] = $val === '' ? 'empty' : '';
     }
 
-    if ($tone !== '') {
-        $parts[] = "Design tone: $tone.";
-    } else {
-        $parts[] = "Design tone: minimal, modern, premium — Apple/Linear-quality typography.";
-    }
-
-    $parts[] = "Use only Latin and Korean characters as appropriate for the names. Ensure all printed text is fully legible and correctly spelled. Return only the business card image, centered, no extra UI or annotations.";
-
-    return implode(' ', $parts);
+    $rendered = strtr($html, $repl);
+    return ['ok' => true, 'html' => $rendered];
 }
 
-function save_image_from_url(string $url): ?string {
+function save_html(string $html): ?string {
     $dir = __DIR__ . '/uploads/cards';
     if (!is_dir($dir)) {
         if (!@mkdir($dir, 0755, true) && !is_dir($dir)) return null;
     }
-    $ch = curl_init($url);
-    curl_setopt_array($ch, [
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_TIMEOUT => 30,
-        CURLOPT_CONNECTTIMEOUT => 8,
-        CURLOPT_FOLLOWLOCATION => true,
-        CURLOPT_MAXREDIRS => 3,
-    ]);
-    $bytes = curl_exec($ch);
-    $status = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    curl_close($ch);
-    if ($bytes === false || $status < 200 || $status >= 300) return null;
-
-    try {
-        $rand = bin2hex(random_bytes(5));
-    } catch (Throwable $e) {
-        $rand = substr(sha1(uniqid('', true)), 0, 10);
-    }
-    $name = date('Ymd-His') . '-' . $rand . '.png';
+    try { $rand = bin2hex(random_bytes(5)); } catch (Throwable $e) { $rand = substr(sha1(uniqid('', true)), 0, 10); }
+    $name = date('Ymd-His') . '-' . $rand . '.html';
     $path = $dir . '/' . $name;
-    if (@file_put_contents($path, $bytes) === false) return null;
+    if (@file_put_contents($path, $html) === false) return null;
     @chmod($path, 0644);
-
     $proto = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
     $host = $_SERVER['HTTP_HOST'] ?? 'youngman-biz.com';
     return $proto . '://' . $host . '/uploads/cards/' . $name;
@@ -434,54 +274,22 @@ function save_image_from_url(string $url): ?string {
 // === Main ===
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 
-// Connectivity diagnostic — visit /card-design.php?test=connectivity to check
-// what hosts the cafe24 PHP environment can resolve and reach.
 if ($method === 'GET' && (($_GET['test'] ?? '') === 'connectivity')) {
-    $hosts = [
-        'api.openai.com',
-        'api.anthropic.com',
-        'generativelanguage.googleapis.com',
-        'xktjucyijpkopkyvxovh.supabase.co',
-        'example.com',
-    ];
+    $hosts = ['api.openai.com', 'example.com'];
     $results = [];
     foreach ($hosts as $h) {
         $ip = @gethostbyname($h);
         $resolved = $ip !== $h && $ip !== false;
-        $reach = null;
-        if ($resolved) {
-            $ch = curl_init('https://' . $h . '/');
-            curl_setopt_array($ch, [
-                CURLOPT_RETURNTRANSFER => true,
-                CURLOPT_NOBODY => true,
-                CURLOPT_TIMEOUT => 6,
-                CURLOPT_CONNECTTIMEOUT => 4,
-                CURLOPT_USERAGENT => 'connectivity-test/1.0',
-            ]);
-            curl_exec($ch);
-            $reach = [
-                'http_code' => (int)curl_getinfo($ch, CURLINFO_HTTP_CODE),
-                'connect_time' => (float)curl_getinfo($ch, CURLINFO_CONNECT_TIME),
-                'curl_error' => curl_error($ch) ?: null,
-            ];
-            curl_close($ch);
-        }
-        $results[] = [
-            'host' => $h,
-            'resolved_ip' => $resolved ? $ip : null,
-            'reach' => $reach,
-        ];
+        $results[] = ['host' => $h, 'resolved_ip' => $resolved ? $ip : null];
     }
-    $envHasKey = load_env_value('OPENAI_API_KEY') !== '';
     jout([
         'ok' => true,
         'hosts' => $results,
         'env' => [
-            'OPENAI_API_KEY_present' => $envHasKey,
+            'OPENAI_API_KEY_present' => load_env_value('OPENAI_API_KEY') !== '',
             'php_version' => PHP_VERSION,
-            'allow_url_fopen' => (bool)ini_get('allow_url_fopen'),
-            'curl_loaded' => function_exists('curl_init'),
         ],
+        'templates' => array_values(array_map(function ($p) { return basename($p, '.html'); }, glob(dirname(__DIR__) . '/templates/cards/*.html') ?: [])),
     ]);
 }
 
@@ -494,81 +302,56 @@ $siteUrl = trim((string)($_POST['siteUrl'] ?? ''));
 $tone = trim((string)($_POST['tone'] ?? ''));
 $hasImage = !empty($_FILES['image']) && is_array($_FILES['image']) && (int)($_FILES['image']['error'] ?? 1) === UPLOAD_ERR_OK;
 
-if (!$hasImage && $siteUrl === '') {
-    jout(['ok' => false, 'error' => '명함 이미지 또는 사이트 주소가 필요합니다.'], 400);
+if (!$hasImage && $siteUrl === '' && $tone === '') {
+    jout(['ok' => false, 'error' => '명함 이미지 / 사이트 주소 / 톤 설명 중 하나는 필요합니다.'], 400);
 }
 
 $cardFields = null;
 $ocrError = null;
-$inputDims = ['width' => 1050, 'height' => 600]; // default landscape 3.5:2
+$inputDims = ['width' => 1050, 'height' => 600];
 if ($hasImage) {
     $tmp = $_FILES['image']['tmp_name'];
-    $size = (int)$_FILES['image']['size'];
-    if ($size > 8 * 1024 * 1024) {
-        jout(['ok' => false, 'error' => '이미지가 너무 큽니다. 최대 8MB.'], 400);
-    }
+    if ((int)$_FILES['image']['size'] > 8 * 1024 * 1024) jout(['ok' => false, 'error' => '이미지가 너무 큽니다. 최대 8MB.'], 400);
     $mime = function_exists('mime_content_type') ? (mime_content_type($tmp) ?: 'image/jpeg') : 'image/jpeg';
     if (!in_array($mime, ['image/jpeg', 'image/png', 'image/webp', 'image/gif'], true)) {
         jout(['ok' => false, 'error' => '지원되지 않는 이미지 형식: ' . $mime], 400);
     }
     $info = @getimagesize($tmp);
     if ($info && (int)$info[0] > 0 && (int)$info[1] > 0) {
-        // Cap longest side at 2000 to keep SVG numbers reasonable, preserve aspect ratio.
-        $iw = (int)$info[0];
-        $ih = (int)$info[1];
+        $iw = (int)$info[0]; $ih = (int)$info[1];
         $maxSide = max($iw, $ih);
-        if ($maxSide > 2000) {
-            $scale = 2000 / $maxSide;
-            $iw = (int)round($iw * $scale);
-            $ih = (int)round($ih * $scale);
-        }
+        if ($maxSide > 2000) { $s = 2000 / $maxSide; $iw = (int)round($iw * $s); $ih = (int)round($ih * $s); }
         $inputDims = ['width' => $iw, 'height' => $ih];
     }
     $b64 = base64_encode((string)file_get_contents($tmp));
     $ocr = ocr_business_card($apiKey, $b64, $mime);
-    if ($ocr['ok']) {
-        $cardFields = $ocr['fields'];
-    } else {
-        $ocrError = $ocr['error'] ?? 'OCR 실패';
-    }
+    if ($ocr['ok']) $cardFields = $ocr['fields']; else $ocrError = $ocr['error'] ?? 'OCR 실패';
 }
 
 $siteMeta = null;
 if ($siteUrl !== '') {
-    if (!preg_match('#^https?://#i', $siteUrl)) {
-        jout(['ok' => false, 'error' => '사이트 주소는 http:// 또는 https:// 로 시작해야 합니다.'], 400);
-    }
+    if (!preg_match('#^https?://#i', $siteUrl)) jout(['ok' => false, 'error' => '사이트 주소는 http:// 또는 https:// 로 시작해야 합니다.'], 400);
     $siteMeta = fetch_site_meta($siteUrl);
 }
 
-// Step 1: Web-search-augmented research call to extract a current design DNA brief.
-$researchDiag = null;
-$researchBrief = research_design_brief($apiKey, $cardFields, $siteMeta, $tone, $researchDiag);
+// Merge user-provided tone into fields so it can flow into decision context
+if (!$cardFields) $cardFields = [];
+if (!empty($tone) && empty($cardFields['tagline'])) $cardFields['tagline'] = '';
 
-// Step 2: Generate the SVG card using OCR data + research brief.
-$gen = generate_card_svg($apiKey, $cardFields, $siteMeta, $tone, $inputDims, $researchBrief);
-
-if (!$gen['ok']) {
-    jout([
-        'ok' => false,
-        'error' => $gen['error'] ?? 'SVG 생성 실패',
-        'fields' => $cardFields,
-        'ocr_error' => $ocrError,
-        'site_meta' => $siteMeta,
-    ], 502);
+$decision = template_palette_decision($apiKey, $cardFields, $siteMeta, $tone);
+$render = render_template($decision['template_id'], $cardFields, $decision['palette'], $inputDims);
+if (!$render['ok']) {
+    jout(['ok' => false, 'error' => $render['error'], 'decision' => $decision], 500);
 }
 
-$savedUrl = save_svg_string($gen['svg']);
-if ($savedUrl === null) {
-    jout(['ok' => false, 'error' => 'SVG 저장 실패', 'fields' => $cardFields], 500);
-}
+$savedUrl = save_html($render['html']);
+if ($savedUrl === null) jout(['ok' => false, 'error' => '결과 저장 실패'], 500);
 
 jout([
     'ok' => true,
     'fields' => $cardFields,
     'siteMeta' => $siteMeta,
-    'imageUrl' => $savedUrl,
-    'researchBrief' => $researchBrief !== '' ? $researchBrief : null,
-    'researchDiag' => $researchDiag,
+    'htmlUrl' => $savedUrl,
+    'decision' => $decision,
     'note' => $ocrError ? ('OCR: ' . $ocrError) : null,
 ]);

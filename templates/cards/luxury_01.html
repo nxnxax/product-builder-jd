@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>Card · luxury_01</title>
+<link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
+<style>
+:root {
+  --bg: {{neutral}};
+  --fg: {{fg}};
+  --accent: {{primary}};
+  --secondary: {{secondary}};
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { background: #ececec; }
+body { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 40px; font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, sans-serif; }
+.card {
+  width: {{width}}px; height: {{height}}px;
+  background: var(--bg);
+  color: var(--fg);
+  position: relative;
+  display: grid;
+  grid-template-columns: 1.1fr 1fr;
+  gap: 4%;
+  padding: 9% 8%;
+  box-shadow: 0 16px 48px rgba(0,0,0,0.10), 0 2px 6px rgba(0,0,0,0.06);
+  overflow: hidden;
+}
+.col-left { display: flex; flex-direction: column; justify-content: space-between; min-width: 0; }
+.col-right { display: flex; flex-direction: column; justify-content: space-between; align-items: flex-end; text-align: right; min-width: 0; }
+.name { font-size: 2.05em; font-weight: 700; letter-spacing: -0.024em; line-height: 1.05; word-break: keep-all; }
+.title { font-size: 0.85em; color: var(--accent); margin-top: 0.45em; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }
+.company {
+  font-size: 1.5em; font-weight: 600; letter-spacing: -0.012em; line-height: 1.18;
+  word-break: keep-all;
+}
+.tagline { font-size: 0.72em; color: var(--secondary); margin-top: 0.35em; letter-spacing: 0.02em; }
+.divider { width: 28px; height: 1.5px; background: var(--accent); margin: 0.9em 0; }
+.contact { font-size: 0.72em; line-height: 1.7; color: var(--secondary); letter-spacing: 0; }
+.contact div + div { margin-top: 1px; }
+.corner-mark {
+  position: absolute; bottom: 7%; right: 8%;
+  width: 22px; height: 1px; background: var(--accent);
+}
+.corner-mark::after {
+  content: ''; position: absolute; right: 0; top: 0;
+  width: 1px; height: 22px; background: var(--accent);
+}
+.empty { display: none; }
+</style>
+</head>
+<body>
+  <article class="card" aria-label="business card">
+    <div class="col-left">
+      <header>
+        <div class="name">{{name}}</div>
+        <div class="title{{title_empty}}">{{title}}</div>
+      </header>
+      <div class="contact">
+        <div class="{{phone_empty}}">{{phone}}</div>
+        <div class="{{email_empty}}">{{email}}</div>
+      </div>
+    </div>
+    <div class="col-right">
+      <div>
+        <div class="company">{{company}}</div>
+        <div class="tagline {{tagline_empty}}">{{tagline}}</div>
+      </div>
+      <div>
+        <div class="divider"></div>
+        <div class="contact {{address_empty}}"><div>{{address}}</div></div>
+      </div>
+    </div>
+    <div class="corner-mark" aria-hidden="true"></div>
+  </article>
+</body>
+</html>

@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>Card · black_gold</title>
+<link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
+<style>
+:root {
+  --bg: {{neutral}};
+  --fg: {{fg}};
+  --accent: {{primary}};
+  --secondary: {{secondary}};
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { background: #1a1a1a; }
+body { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 40px; font-family: 'Pretendard', -apple-system, sans-serif; }
+.card {
+  width: {{width}}px; height: {{height}}px;
+  background: var(--bg);
+  color: var(--fg);
+  position: relative;
+  padding: 8% 7%;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  box-shadow: 0 24px 64px rgba(0,0,0,0.40), 0 4px 12px rgba(0,0,0,0.20);
+  overflow: hidden;
+}
+.top { display: flex; justify-content: space-between; align-items: flex-start; }
+.monogram {
+  font-size: 1.5em; font-weight: 700; color: var(--accent);
+  letter-spacing: 0.18em; border: 1px solid var(--accent);
+  padding: 0.35em 0.7em; line-height: 1; align-self: flex-start;
+}
+.company-tag { font-size: 0.65em; letter-spacing: 0.32em; color: var(--accent); text-transform: uppercase; padding-top: 0.5em; text-align: right; word-break: keep-all; }
+.middle { display: flex; flex-direction: column; justify-content: center; padding: 6% 0; }
+.name { font-size: 2.4em; font-weight: 700; letter-spacing: -0.025em; color: var(--fg); line-height: 1.05; word-break: keep-all; }
+.title { font-size: 0.78em; color: var(--secondary); margin-top: 0.7em; letter-spacing: 0.16em; text-transform: uppercase; font-weight: 500; }
+.hairline { width: 100%; height: 1px; background: var(--accent); opacity: 0.55; }
+.bottom { display: grid; grid-template-columns: 1fr auto; gap: 1em; padding-top: 5%; align-items: end; }
+.contact { font-size: 0.7em; line-height: 1.7; color: var(--secondary); letter-spacing: 0.01em; }
+.contact div + div { margin-top: 1px; }
+.address { font-size: 0.66em; line-height: 1.65; color: var(--secondary); text-align: right; max-width: 50%; word-break: keep-all; }
+.empty { display: none; }
+</style>
+</head>
+<body>
+  <article class="card">
+    <div class="top">
+      <div class="monogram">{{monogram}}</div>
+      <div class="company-tag {{company_empty}}">{{company}}</div>
+    </div>
+    <div class="middle">
+      <div class="name">{{name}}</div>
+      <div class="title {{title_empty}}">{{title}}</div>
+    </div>
+    <div class="bottom">
+      <div class="contact">
+        <div class="{{phone_empty}}">{{phone}}</div>
+        <div class="{{email_empty}}">{{email}}</div>
+      </div>
+      <div class="address {{address_empty}}">{{address}}</div>
+    </div>
+  </article>
+</body>
+</html>

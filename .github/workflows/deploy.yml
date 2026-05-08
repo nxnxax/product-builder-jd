@@ -52,6 +52,8 @@ jobs:
           cp api/records.php deploy/records.php
           cp api/upload.php deploy/upload.php
           cp api/card-design.php deploy/card-design.php
+          mkdir -p deploy/templates/cards
+          cp templates/cards/*.html deploy/templates/cards/
           if [ -f .htaccess ]; then cp .htaccess deploy/.htaccess; fi
           ls -la deploy/
 

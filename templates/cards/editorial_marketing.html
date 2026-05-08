@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>Card · editorial_marketing</title>
+<link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
+<style>
+:root {
+  --bg: {{neutral}};
+  --fg: {{fg}};
+  --accent: {{primary}};
+  --secondary: {{secondary}};
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { background: #ececec; }
+body { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 40px; font-family: 'Pretendard', -apple-system, sans-serif; }
+.card {
+  width: {{width}}px; height: {{height}}px;
+  background: var(--bg);
+  color: var(--fg);
+  position: relative;
+  padding: 7% 8%;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  box-shadow: 0 16px 44px rgba(0,0,0,0.10), 0 2px 6px rgba(0,0,0,0.05);
+  overflow: hidden;
+}
+.card::before {
+  content: ''; position: absolute; top: 0; right: 0;
+  width: 35%; height: 5%; background: var(--accent);
+}
+.tag-row { display: flex; justify-content: space-between; align-items: center; }
+.brand-tag { font-size: 0.7em; letter-spacing: 0.32em; text-transform: uppercase; font-weight: 700; color: var(--accent); word-break: keep-all; }
+.year-mark { font-size: 0.6em; letter-spacing: 0.18em; color: var(--secondary); }
+.hero { display: flex; align-items: center; padding: 4% 0; }
+.name {
+  font-size: 3.6em; font-weight: 800; letter-spacing: -0.036em;
+  line-height: 0.92; color: var(--fg); word-break: keep-all;
+}
+.bottom { display: grid; grid-template-columns: auto 1fr; gap: 1.5em; align-items: end; padding-top: 4%; border-top: 1.5px solid var(--accent); }
+.left-block { display: flex; flex-direction: column; gap: 0.4em; }
+.title { font-size: 0.82em; font-weight: 600; color: var(--accent); letter-spacing: 0.02em; }
+.tagline { font-size: 0.68em; color: var(--secondary); letter-spacing: 0.02em; max-width: 18em; line-height: 1.5; }
+.right-block { text-align: right; font-size: 0.68em; color: var(--secondary); line-height: 1.7; }
+.right-block .phone { font-weight: 600; color: var(--fg); font-size: 1.05em; letter-spacing: 0.01em; }
+.empty { display: none; }
+</style>
+</head>
+<body>
+  <article class="card">
+    <div class="tag-row">
+      <div class="brand-tag {{company_empty}}">{{company}}</div>
+      <div class="year-mark {{tagline_empty}}">{{tagline}}</div>
+    </div>
+    <div class="hero">
+      <div class="name">{{name}}</div>
+    </div>
+    <div class="bottom">
+      <div class="left-block">
+        <div class="title {{title_empty}}">{{title}}</div>
+      </div>
+      <div class="right-block">
+        <div class="phone {{phone_empty}}">{{phone}}</div>
+        <div class="{{email_empty}}">{{email}}</div>
+        <div class="{{address_empty}}">{{address}}</div>
+      </div>
+    </div>
+  </article>
+</body>
+</html>

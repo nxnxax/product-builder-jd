@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>Card · modern_corporate</title>
+<link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
+<style>
+:root {
+  --bg: {{neutral}};
+  --fg: {{fg}};
+  --accent: {{primary}};
+  --secondary: {{secondary}};
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { background: #ececec; }
+body { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 40px; font-family: 'Pretendard', -apple-system, sans-serif; }
+.card {
+  width: {{width}}px; height: {{height}}px;
+  background: var(--bg);
+  color: var(--fg);
+  position: relative;
+  display: grid;
+  grid-template-columns: 6px 1fr;
+  box-shadow: 0 16px 44px rgba(0,0,0,0.10), 0 2px 6px rgba(0,0,0,0.05);
+  overflow: hidden;
+}
+.accent-bar { background: var(--accent); height: 100%; }
+.body { padding: 8% 8%; display: grid; grid-template-rows: auto 1fr auto; gap: 4%; }
+.top { display: flex; justify-content: space-between; align-items: flex-start; }
+.company { font-size: 0.78em; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; color: var(--accent); word-break: keep-all; }
+.tag { font-size: 0.62em; letter-spacing: 0.16em; color: var(--secondary); text-transform: uppercase; padding-top: 0.25em; }
+.hero { display: flex; flex-direction: column; justify-content: center; }
+.name { font-size: 2.2em; font-weight: 700; letter-spacing: -0.024em; line-height: 1.05; color: var(--fg); word-break: keep-all; }
+.title { font-size: 0.85em; color: var(--secondary); margin-top: 0.55em; font-weight: 500; }
+.bottom { display: grid; grid-template-columns: 1fr 1fr; gap: 1em; }
+.contact-block { font-size: 0.7em; line-height: 1.7; color: var(--secondary); letter-spacing: 0.01em; }
+.contact-block .label { font-size: 0.65em; letter-spacing: 0.18em; text-transform: uppercase; color: var(--accent); margin-bottom: 0.4em; font-weight: 600; }
+.contact-block .value { color: var(--fg); }
+.right-block { text-align: right; }
+.empty { display: none; }
+</style>
+</head>
+<body>
+  <article class="card">
+    <div class="accent-bar"></div>
+    <div class="body">
+      <div class="top">
+        <div class="company {{company_empty}}">{{company}}</div>
+        <div class="tag {{tagline_empty}}">{{tagline}}</div>
+      </div>
+      <div class="hero">
+        <div class="name">{{name}}</div>
+        <div class="title {{title_empty}}">{{title}}</div>
+      </div>
+      <div class="bottom">
+        <div class="contact-block {{phone_empty}}">
+          <div class="label">CONTACT</div>
+          <div class="value">{{phone}}</div>
+          <div class="value {{email_empty}}">{{email}}</div>
+        </div>
+        <div class="contact-block right-block {{address_empty}}">
+          <div class="label">ADDRESS</div>
+          <div class="value">{{address}}</div>
+        </div>
+      </div>
+    </div>
+  </article>
+</body>
+</html>

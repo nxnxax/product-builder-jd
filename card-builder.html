@@ -291,43 +291,100 @@
             }
         });
 
-        async function downloadSvgAsPng(svgUrl, filename) {
-            try {
-                const res = await fetch(svgUrl);
-                const svgText = await res.text();
-                // Parse SVG to extract its declared dimensions; fall back to viewBox.
-                const parser = new DOMParser();
-                const doc = parser.parseFromString(svgText, 'image/svg+xml');
-                const svgEl = doc.documentElement;
-                let w = parseFloat(svgEl.getAttribute('width')) || 0;
-                let h = parseFloat(svgEl.getAttribute('height')) || 0;
-                if (!w || !h) {
-                    const vb = (svgEl.getAttribute('viewBox') || '').split(/\s+/).map(Number);
-                    if (vb.length === 4) { w = vb[2]; h = vb[3]; }
-                }
-                if (!w || !h) { w = 1050; h = 600; }
+        function renderResult(data) {
+            resultBox.classList.add('visible');
+            resultBody.innerHTML = '';
 
-                // Render at 2x for crisp output.
-                const scale = 2;
-                const blob = new Blob([svgText], { type: 'image/svg+xml;charset=utf-8' });
-                const url = URL.createObjectURL(blob);
-                const img = new Image();
-                await new Promise((resolve, reject) => {
-                    img.onload = resolve;
-                    img.onerror = reject;
-                    img.src = url;
+            if (data.htmlUrl) {
+                const iframe = document.createElement('iframe');
+                iframe.src = data.htmlUrl;
+                iframe.style.cssText = 'width:100%;height:520px;border:1px solid var(--border);border-radius:var(--radius-md);background:#ececec;';
+                iframe.setAttribute('sandbox', 'allow-same-origin');
+                iframe.title = '생성된 명함';
+                resultBody.appendChild(iframe);
+
+                const baseName = (data.fields?.name || data.fields?.company || 'business-card').replace(/[^A-Za-z0-9가-힣\-_]+/g, '_');
+
+                const dlRow = document.createElement('div');
+                dlRow.style.cssText = 'display:flex;gap:.5rem;flex-wrap:wrap;margin-top:1rem;';
+
+                const dlPng = document.createElement('button');
+                dlPng.type = 'button';
+                dlPng.textContent = 'PNG 다운로드 (2x)';
+                dlPng.className = 'primary-btn';
+                dlPng.style.cssText = 'height:40px;padding:0 1.1rem;';
+                dlPng.addEventListener('click', () => downloadFromIframeAsPng(iframe, baseName + '.png', 2));
+                dlRow.appendChild(dlPng);
+
+                const dlHtml = document.createElement('a');
+                dlHtml.href = data.htmlUrl;
+                dlHtml.download = baseName + '.html';
+                dlHtml.textContent = 'HTML 다운로드';
+                dlHtml.className = 'secondary-btn';
+                dlHtml.style.cssText = 'height:40px;padding:0 1.1rem;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;';
+                dlRow.appendChild(dlHtml);
+
+                const openNew = document.createElement('a');
+                openNew.href = data.htmlUrl;
+                openNew.target = '_blank';
+                openNew.rel = 'noopener';
+                openNew.textContent = '새 창에서 열기';
+                openNew.className = 'secondary-btn';
+                openNew.style.cssText = 'height:40px;padding:0 1.1rem;text-decoration:none;display:inline-flex;align-items:center;';
+                dlRow.appendChild(openNew);
+
+                resultBody.appendChild(dlRow);
+            }
+
+            if (data.decision) {
+                const meta = document.createElement('div');
+                meta.style.cssText = 'margin-top:1rem;padding:.6rem .8rem;background:var(--bg-subtle);border-radius:var(--radius-md);font-size:.82rem;color:var(--fg-secondary);line-height:1.5;';
+                meta.innerHTML = `<strong style="color:var(--fg);">템플릿:</strong> ${data.decision.template_id} · <strong style="color:var(--fg);">컬러:</strong> ${data.decision.palette?.name || '—'} (${data.decision.palette?.primary || ''})${data.decision.reasoning ? '<br><span style="font-size:.78rem;">' + data.decision.reasoning + '</span>' : ''}`;
+                resultBody.appendChild(meta);
+            }
+
+            if (data.fields) {
+                const dl = document.createElement('dl');
+                dl.style.cssText = 'display:grid;grid-template-columns:auto 1fr;gap:.4rem 1rem;margin:1rem 0 0;font-size:.85rem;';
+                for (const [k, v] of Object.entries(data.fields)) {
+                    if (!v || (typeof v === 'string' && !v.trim())) continue;
+                    const dt = document.createElement('dt');
+                    dt.style.color = 'var(--fg-tertiary)';
+                    dt.textContent = k;
+                    const dd = document.createElement('dd');
+                    dd.style.margin = '0';
+                    dd.textContent = String(v);
+                    dl.appendChild(dt); dl.appendChild(dd);
+                }
+                resultBody.appendChild(dl);
+            }
+
+            if (data.note) {
+                const p = document.createElement('p');
+                p.style.cssText = 'margin:1rem 0 0;color:var(--fg-tertiary);font-size:.85rem;';
+                p.textContent = data.note;
+                resultBody.appendChild(p);
+            }
+        }
+
+        async function downloadFromIframeAsPng(iframe, filename, scale = 2) {
+            try {
+                if (!window.html2canvas) {
+                    await new Promise((resolve, reject) => {
+                        const s = document.createElement('script');
+                        s.src = 'https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js';
+                        s.onload = resolve; s.onerror = reject;
+                        document.head.appendChild(s);
+                    });
+                }
+                const inner = iframe.contentDocument || iframe.contentWindow.document;
+                const card = inner.querySelector('.card') || inner.body;
+                const canvas = await window.html2canvas(card, {
+                    backgroundColor: null, scale, useCORS: true, allowTaint: true,
                 });
-                const canvas = document.createElement('canvas');
-                canvas.width = Math.round(w * scale);
-                canvas.height = Math.round(h * scale);
-                const ctx = canvas.getContext('2d');
-                ctx.fillStyle = '#fff';
-                ctx.fillRect(0, 0, canvas.width, canvas.height);
-                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-                URL.revokeObjectURL(url);
-                canvas.toBlob((pngBlob) => {
+                canvas.toBlob((blob) => {
                     const a = document.createElement('a');
-                    a.href = URL.createObjectURL(pngBlob);
+                    a.href = URL.createObjectURL(blob);
                     a.download = filename;
                     document.body.appendChild(a);
                     a.click();
@@ -336,91 +393,6 @@
                 }, 'image/png');
             } catch (e) {
                 setStatus('PNG 변환 실패: ' + (e.message || e), 'error');
-            }
-        }
-
-        function renderResult(data) {
-            resultBox.classList.add('visible');
-            resultBody.innerHTML = '';
-
-            if (data.imageUrl) {
-                const img = document.createElement('img');
-                img.src = data.imageUrl;
-                img.alt = '생성된 명함';
-                resultBody.appendChild(img);
-
-                const dlRow = document.createElement('div');
-                dlRow.style.cssText = 'display:flex;gap:.5rem;flex-wrap:wrap;margin-top:1rem;';
-
-                const dlSvg = document.createElement('a');
-                dlSvg.href = data.imageUrl;
-                const isSvg = /\.svg(\?|$)/i.test(data.imageUrl);
-                dlSvg.download = (data.fields?.name || data.fields?.company || 'business-card') + (isSvg ? '.svg' : '.png');
-                dlSvg.textContent = isSvg ? 'SVG 다운로드' : '이미지 다운로드';
-                dlSvg.className = 'primary-btn';
-                dlSvg.style.cssText = 'flex:0 0 auto;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;height:38px;padding:0 1rem;';
-                dlRow.appendChild(dlSvg);
-
-                if (isSvg) {
-                    const dlPng = document.createElement('button');
-                    dlPng.type = 'button';
-                    dlPng.className = 'secondary-btn';
-                    dlPng.textContent = 'PNG로 다운로드';
-                    dlPng.style.cssText = 'height:38px;padding:0 1rem;';
-                    dlPng.addEventListener('click', () => downloadSvgAsPng(data.imageUrl, dlSvg.download.replace(/\.svg$/i, '.png')));
-                    dlRow.appendChild(dlPng);
-                }
-
-                const openNew = document.createElement('a');
-                openNew.href = data.imageUrl;
-                openNew.target = '_blank';
-                openNew.rel = 'noopener';
-                openNew.textContent = '새 창에서 열기';
-                openNew.className = 'secondary-btn';
-                openNew.style.cssText = 'height:38px;padding:0 1rem;text-decoration:none;display:inline-flex;align-items:center;';
-                dlRow.appendChild(openNew);
-
-                resultBody.appendChild(dlRow);
-            }
-            if (data.fields) {
-                const dl = document.createElement('dl');
-                dl.style.cssText = 'display:grid;grid-template-columns:auto 1fr;gap:.5rem 1rem;margin:1rem 0 0;font-size:.9rem;';
-                for (const [k, v] of Object.entries(data.fields)) {
-                    const dt = document.createElement('dt');
-                    dt.style.color = 'var(--fg-tertiary)';
-                    dt.textContent = k;
-                    const dd = document.createElement('dd');
-                    dd.style.margin = '0';
-                    dd.textContent = String(v ?? '');
-                    dl.appendChild(dt); dl.appendChild(dd);
-                }
-                resultBody.appendChild(dl);
-            }
-            if (data.note) {
-                const p = document.createElement('p');
-                p.style.cssText = 'margin:1rem 0 0;color:var(--fg-tertiary);font-size:.85rem;';
-                p.textContent = data.note;
-                resultBody.appendChild(p);
-            }
-
-            if (data.researchDiag || data.researchBrief) {
-                const diag = data.researchDiag || {};
-                const wrap = document.createElement('details');
-                wrap.style.cssText = 'margin-top:1rem;padding:.65rem .85rem;background:var(--bg-subtle);border:1px solid var(--border);border-radius:var(--radius-md);font-size:.82rem;';
-                const summary = document.createElement('summary');
-                summary.style.cssText = 'cursor:pointer;color:var(--fg-secondary);';
-                const used = diag.used_search === true;
-                summary.textContent = used
-                    ? `웹 검색 적용됨 (${diag.model || 'search'})`
-                    : `웹 검색 사용 안 됨${diag.error ? ' — ' + diag.error : ''}`;
-                wrap.appendChild(summary);
-                if (data.researchBrief) {
-                    const pre = document.createElement('pre');
-                    pre.style.cssText = 'white-space:pre-wrap;margin:.5rem 0 0;color:var(--fg-secondary);font-family:inherit;font-size:.78rem;line-height:1.5;';
-                    pre.textContent = data.researchBrief;
-                    wrap.appendChild(pre);
-                }
-                resultBody.appendChild(wrap);
             }
         }
     </script>
