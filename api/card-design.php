@@ -70,22 +70,44 @@ function generate_card_svg(string $apiKey, ?array $cardFields, ?array $siteMeta,
         if ($hint !== '') $context[] = "Brand context from website: " . mb_substr($hint, 0, 240);
         if (!empty($siteMeta['theme_color'])) $context[] = "Brand color hint: " . $siteMeta['theme_color'];
     }
-    if ($tone !== '') $context[] = "Design tone requested: $tone";
-    if (!$context) $context[] = "No extracted info — design a clean placeholder card.";
+    if ($tone !== '') {
+        $context[] = "Design tone requested by user: $tone";
+    } else {
+        $context[] = "Default brief: 해당 회사 이미지로 고급스럽게 디자인해줘 (design luxuriously, reflecting the company's identity). Aim for premium, distinctive, magazine-cover-worthy.";
+    }
+    if (!$cardFields && !$siteMeta) $context[] = "No extracted info available — invent nothing; instead create a tasteful placeholder layout that demonstrates the design system, using the literal label 'Sample' if absolutely necessary.";
 
-    $sys = "You are a senior brand designer creating premium business cards. Output a SINGLE self-contained SVG.\n" .
-        "Hard constraints:\n" .
+    $sys = "You are the lead brand designer at a top-tier studio (think Pentagram, Mucca, COLLINS). Your task: design a luxurious, distinctive business card SVG that captures the company's brand identity.\n" .
+        "\n" .
+        "PROCESS — execute internally before writing SVG:\n" .
+        "1. Infer the company's brand essence from name + industry + tagline. What kind of business is this? (Tech startup? Law firm? Cafe? Designer studio? Real estate? Medical?). What are its likely values, customer demographic, and emotional tone?\n" .
+        "2. Choose a sophisticated visual identity that matches:\n" .
+        "   - Tech/SaaS → bold geometric sans, single saturated accent on near-black or off-white, asymmetric composition.\n" .
+        "   - Law/Finance → conservative serif or refined neo-grotesk, deep navy/charcoal + cream, classic centered or hierarchy-grid layout, monogram.\n" .
+        "   - F&B/Hospitality → warm cream/terracotta/forest, elegant display serif, generous letterpress feel.\n" .
+        "   - Beauty/Fashion → ultra-minimal, oversized thin display serif, single elegant photo-like color block or gradient, lots of whitespace.\n" .
+        "   - Studio/Creative → expressive type, unconventional grid, maybe one bold rotated element.\n" .
+        "   - Korean SMEs → premium sans-serif Korean type pairing (Pretendard) with restrained accents, subtle gradient possible.\n" .
+        "3. Pick the layout that elevates the identity (NOT a generic centered card with everything in the middle). Acceptable patterns:\n" .
+        "   a. Big monogram top-left + tiny info column bottom-right.\n" .
+        "   b. Full-bleed gradient/color half + clean info on the other half.\n" .
+        "   c. Oversized company name as the design hero, contact details a thin column.\n" .
+        "   d. Tall vertical accent bar with company name climbing it.\n" .
+        "   e. Thick sans display name with tiny labelled metadata (Title · Email · Phone) in a baseline grid below.\n" .
+        "4. Use a SOPHISTICATED color pair. Avoid pure black on white unless the brand demands it. Examples: charcoal #1f2937 + warm cream #f7f3ec; deep emerald #064e3b + ivory; midnight navy #0f172a + warm gold #d4a87b; soft sand #ecdfca + espresso #3a2515. Brand colors from OCR override this if present.\n" .
+        "\n" .
+        "HARD CONSTRAINTS:\n" .
         "- viewBox=\"0 0 {$w} {$h}\" with width=\"{$w}\" height=\"{$h}\". Match this aspect ratio precisely.\n" .
-        "- Pure SVG only. No external fonts, no <image>, no scripts, no foreignObject. Use this font stack only: font-family=\"-apple-system, 'SF Pro Text', 'Pretendard', 'Apple SD Gothic Neo', 'Helvetica Neue', sans-serif\".\n" .
-        "- Print every supplied field exactly as given — no spelling changes, no Romanization of Korean characters, no fabricated info, no placeholders.\n" .
-        "Design direction:\n" .
-        "- Premium, modern, Apple/Linear/Stripe quality. Refined typography with deliberate hierarchy: name largest (bold), title/company medium, contact details smallest.\n" .
-        "- Use a real visual idea — one of: subtle linear gradient background, an offset color block, a thin accent line, a small minimalist monogram from initials, or a geometric watermark. Choose what fits the brand. Avoid generic centered layouts unless tone explicitly calls for symmetrical.\n" .
-        "- Color: use the supplied brand color(s) tastefully OR a sophisticated palette (deep navy/charcoal/cream/sand if tone is luxe; bright accent on white if tech). Limit to 2 colors + neutrals.\n" .
-        "- Asymmetric or grid-anchored layouts welcomed. Use generous whitespace, never crowd.\n" .
-        "- No clip-art, no emojis, no fake QR codes, no stock icons. Decorative elements must be pure geometry.\n" .
-        "- Render Korean text with proper line-height; do not letter-space CJK aggressively.\n" .
-        "Output ONLY the raw SVG starting with <svg ...> and ending with </svg>. No markdown fences, no commentary.";
+        "- Pure SVG only. No external fonts, no <image>, no scripts, no foreignObject. Font stack: font-family=\"-apple-system, 'SF Pro Display', 'SF Pro Text', 'Pretendard', 'Apple SD Gothic Neo', 'Helvetica Neue', sans-serif\".\n" .
+        "- Print every supplied field EXACTLY as given. No spelling changes. No Romanization of Korean. No invented info. No placeholders like 'Your name'.\n" .
+        "- All text must fit inside the card with healthy padding (≥ 5% from each edge). Never let text touch or overflow the edge.\n" .
+        "- Hierarchy is mandatory: ONE element should be the visual hero — typically the name OR the company name OR a monogram — significantly larger/bolder than everything else. The eye must know where to land first.\n" .
+        "- Decorative elements must be pure geometry (rect, line, circle, path with simple commands). NO clip-art, NO emoji, NO fake QR codes, NO stock icons, NO faux Lorem.\n" .
+        "- Use generous whitespace. Crowded cards are forbidden.\n" .
+        "- For Korean text, use natural CJK tracking (letter-spacing 0 or slightly negative). Don't space-out individual Korean characters.\n" .
+        "- DO NOT produce a generic, centered, plain layout. If the only safe move you can think of is centered black text on white, you have failed; pick a more committed layout.\n" .
+        "\n" .
+        "OUTPUT: ONLY the raw SVG, starting with <svg ...> and ending with </svg>. No markdown fences. No commentary. No <!-- comments --> outside the svg.";
 
     $user = implode("\n", $context);
 
@@ -96,7 +118,7 @@ function generate_card_svg(string $apiKey, ?array $cardFields, ?array $siteMeta,
             ['role' => 'user', 'content' => $user],
         ],
         'max_tokens' => 4000,
-        'temperature' => 0.55,
+        'temperature' => 0.85,
     ], 60);
 
     if (!$resp['ok']) {
