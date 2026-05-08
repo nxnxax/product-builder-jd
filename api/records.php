@@ -94,9 +94,10 @@ function normalize_resource($value) {
     if ($resource === 'employee') $resource = 'employees';
     $allowed = [
         'customers', 'employees',
-        'auth-membership', 'auth-member',
+        'auth-membership', 'auth-member', 'auth-availability',
         'auth-profile',
         'admin-members', 'admin-stats', 'admin-logs', 'admin-settings',
+        'admin-bootstrap',
     ];
     if (!in_array($resource, $allowed, true)) {
         respond(['ok' => false, 'error' => '지원하지 않는 리소스입니다.'], 400);
