@@ -46,14 +46,15 @@ jobs:
       - name: Deploy to Cafe24
         uses: appleboy/scp-action@v0.1.7
         with:
-          host: ${{ secrets.SFTP_HOST }}
-          username: ${{ secrets.SFTP_USER }}
-          port: ${{ secrets.SFTP_PORT }}
+          host: ${{ secrets.SFTP_HOST || 'youngman-biz.com' }}
+          username: ${{ secrets.SFTP_USER || 'nxnxqxx' }}
+          port: ${{ secrets.SFTP_PORT || 22 }}
           key: ${{ secrets.SFTP_PRIVATE_KEY }}
           source: "deploy/*"
-          target: ${{ secrets.SFTP_DIR }}
+          target: ${{ secrets.SFTP_DIR || './' }}
           strip_components: 1
           overwrite: true
+          debug: true
 
       - name: Check HTTP status
         run: |
