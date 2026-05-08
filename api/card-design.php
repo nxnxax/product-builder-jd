@@ -212,51 +212,53 @@ function build_recraft_prompt(?array $cardFields, ?array $siteMeta, string $tone
     }
 
     $hierarchyLines = [];
-    if ($hero      !== '') $hierarchyLines[] = "1. HERO (largest text on the card, extra-bold display weight): \"$hero\"";
-    if ($secondary !== '') $hierarchyLines[] = "2. SECONDARY (medium weight, ~40% of hero size): \"$secondary\"";
+    if ($hero      !== '') $hierarchyLines[] = "HERO (largest, bold): \"$hero\"";
+    if ($secondary !== '') $hierarchyLines[] = "Sub (~40%): \"$secondary\"";
     if ($emphPhone && $phone !== '') {
-        $hierarchyLines[] = "3. PHONE NUMBER (treated as a CALL TO ACTION — bold, prominent, ~50–60% of hero size): \"$phone\"";
+        $hierarchyLines[] = "PHONE CTA (bold, ~55%): \"$phone\"";
     } elseif ($phone !== '') {
         $tertiary[] = $phone;
     }
     foreach ($tertiary as $line) {
         $line = trim((string)$line);
-        if ($line === '') continue;
-        $idx = count($hierarchyLines) + 1;
-        $hierarchyLines[] = "{$idx}. SUPPORTING (small, low-emphasis, ~18–22% of hero size): \"$line\"";
+        if ($line !== '') $hierarchyLines[] = "Small: \"$line\"";
     }
 
-    $textBlock = "EXACT TEXT TO RENDER (use these verbatim — do NOT change spelling, do NOT romanize Korean, do NOT translate, do NOT add any words):\n" .
-                 implode("\n", $hierarchyLines) . "\n";
-
-    $colorBlock = "Color palette: background {$bg}, foreground text {$fg}, accent {$accent}. " .
-                  "Background treatment: {$bgTreat}. ";
-    $decoBlock = "Decorative device: {$deco}. Use the accent color sparingly only for this device or for emphasis. ";
-
     $layoutPhrases = [
-        'left_hero_right_contact'   => 'Layout: left half holds the hero text. Right column holds person/contact info aligned right or stacked vertically.',
-        'top_hero_bottom_grid'      => 'Layout: hero text spans the top third. Bottom holds a clean two-column grid: left = person/role, right = contact details.',
-        'centered_hero_bottom_strip'=> 'Layout: hero centered in upper-middle. Bottom strip holds contact details in a single horizontal row.',
-        'full_bleed_color_left'     => 'Layout: left 35–40% is a full-bleed accent color block holding the hero in white. Right area on the background color holds person/contact info.',
+        'left_hero_right_contact'   => 'Left=hero, right column=contact.',
+        'top_hero_bottom_grid'      => 'Top third=hero, bottom=2-col grid (role | contact).',
+        'centered_hero_bottom_strip'=> 'Hero upper-center, bottom strip=contact row.',
+        'full_bleed_color_left'     => 'Left 35-40%=accent color block w/ hero in white; right=contact on bg.',
     ];
     $layoutPhrase = $layoutPhrases[$layout] ?? $layoutPhrases['left_hero_right_contact'];
 
-    $userTone = $tone !== '' ? "User context: $tone. " : '';
-    $designNoteBlock = $designNote !== '' ? "Mood: $designNote. " : '';
+    // Build prompt incrementally, prioritising the parts that move quality most.
+    $head =
+        "Flat vector graphic design of a business card (NOT a photo/mockup/card on desk). " .
+        "Image IS the card — full bleed, edge-to-edge. No shadow/perspective/paper texture/environment/hand/isometric. " .
+        "Bg {$bg}, text {$fg}, accent {$accent}. {$layoutPhrase} ";
+    if ($deco !== '')      $head .= "Accent device: {$deco}. ";
+    if ($designNote !== '') $head .= "Mood: {$designNote}. ";
+    if ($tone !== '')      $head .= "Brief: " . mb_substr($tone, 0, 120) . ". ";
 
-    $prompt =
-        "Flat vector graphic design. Print-ready business card artwork (NOT a photo, NOT a mockup, NOT a card sitting on a surface). " .
-        "The image IS the card — full bleed, edge-to-edge. No drop shadow. No perspective. No paper texture. No studio environment. No hand. No isometric. " .
-        "Treat this as an Adobe Illustrator artboard exported as a single flat asset. " .
-        $colorBlock . $decoBlock . $designNoteBlock . $userTone .
-        $layoutPhrase . " " .
-        "Use a Korean-aware modern sans typeface (Pretendard / Noto Sans KR style). Generous margins (≥7% from each edge). " .
-        $textBlock .
-        "Render every line above with PERFECT spelling. Hangul characters must be drawn correctly. " .
-        "No clip art. No emoji. No fake QR codes. No stock icons. No invented logos. " .
-        "Single-side front only. Strong typographic hierarchy — the HERO is unmistakably the largest, the rest follow the order above.";
+    $tail =
+        " Render Hangul EXACTLY (no romanization, no translation, perfect spelling). Korean-aware sans (Pretendard/Noto Sans KR). " .
+        "≥7% margins. No clip art/emoji/QR/stock icons/invented logos. Single side only.";
 
-    return mb_substr($prompt, 0, 1500);
+    // Add hierarchy lines greedily, stopping once we approach the 1000-char ceiling.
+    $budget = 990 - mb_strlen($head, 'UTF-8') - mb_strlen($tail, 'UTF-8') - 30; // 30 char safety
+    $textBlock = "Print verbatim:\n";
+    foreach ($hierarchyLines as $line) {
+        $candidate = $textBlock . $line . "\n";
+        if (mb_strlen($candidate, 'UTF-8') > $budget) break;
+        $textBlock = $candidate;
+    }
+
+    $prompt = $head . $textBlock . $tail;
+    if (mb_strlen($prompt, 'UTF-8') > 1000) {
+        $prompt = mb_substr($prompt, 0, 1000, 'UTF-8');
+    }
+    return $prompt;
 }
 
 function recraft_generate(string $apiKey, string $prompt, string $size, string $style = 'realistic_image'): array {
