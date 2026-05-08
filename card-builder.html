@@ -356,6 +356,28 @@
                 resultBody.appendChild(meta);
             }
 
+            if (data.directorPlan) {
+                const p = data.directorPlan;
+                const wrap = document.createElement('details');
+                wrap.style.cssText = 'margin-top:.6rem;padding:.65rem .85rem;background:var(--bg-subtle);border:1px solid var(--border);border-radius:var(--radius-md);font-size:.82rem;';
+                const summary = document.createElement('summary');
+                summary.style.cssText = 'cursor:pointer;color:var(--fg-secondary);';
+                summary.innerHTML = `GPT 디렉터 결정 — Hero: <strong>${p.hero_text || '—'}</strong> (${p.hero_role || '—'})`;
+                wrap.appendChild(summary);
+                const body = document.createElement('div');
+                body.style.cssText = 'margin-top:.6rem;color:var(--fg-secondary);font-size:.78rem;line-height:1.55;';
+                body.innerHTML = [
+                    p.secondary_text ? `<div>Secondary: <strong>${p.secondary_text}</strong> (${p.secondary_role || '—'})</div>` : '',
+                    p.emphasized_phone ? `<div>전화번호 강조: <strong>${p.phone_value || ''}</strong></div>` : '',
+                    p.layout_pattern ? `<div>Layout: ${p.layout_pattern}</div>` : '',
+                    p.color_palette ? `<div>Palette: bg ${p.color_palette.bg}, fg ${p.color_palette.fg}, accent ${p.color_palette.accent}</div>` : '',
+                    p.decorative_device ? `<div>Decoration: ${p.decorative_device}</div>` : '',
+                    p.design_note ? `<div style="margin-top:.4rem;font-style:italic;">${p.design_note}</div>` : '',
+                ].filter(Boolean).join('');
+                wrap.appendChild(body);
+                resultBody.appendChild(wrap);
+            }
+
             if (data.fields && Object.values(data.fields).some(v => v && (typeof v !== 'string' || v.trim()))) {
                 const dl = document.createElement('dl');
                 dl.style.cssText = 'display:grid;grid-template-columns:auto 1fr;gap:.4rem 1rem;margin:1rem 0 0;font-size:.85rem;';

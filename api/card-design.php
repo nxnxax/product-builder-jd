@@ -115,75 +115,148 @@ function pick_recraft_size(array $dims): array {
     return ['size' => $best[0] . 'x' . $best[1], 'width' => $best[0], 'height' => $best[1]];
 }
 
-function build_recraft_prompt(?array $cardFields, ?array $siteMeta, string $tone): string {
-    $name = trim((string)($cardFields['name'] ?? ''));
-    $title = trim((string)($cardFields['title'] ?? ''));
-    $company = trim((string)($cardFields['company'] ?? ''));
-    $phone = trim((string)($cardFields['phone'] ?? $cardFields['mobile'] ?? ''));
-    $email = trim((string)($cardFields['email'] ?? ''));
-    $address = trim((string)($cardFields['address'] ?? ''));
-    $tagline = trim((string)($cardFields['tagline'] ?? ''));
-    $industry = strtolower(trim((string)($cardFields['industry'] ?? '')));
-
-    $stylePresets = [
-        '부동산'   => 'premium real estate developer business card, sophisticated charcoal + burgundy + cream palette, modern Swiss editorial layout, hairline divider, generous whitespace, brand feeling of 현대건설 자이 푸르지오 디에이치, ample padding, no clutter',
-        'real estate' => 'premium real estate developer business card, sophisticated charcoal + burgundy + cream palette, modern Swiss editorial layout, hairline divider, generous whitespace, brand feeling of premium Korean apartment brands, ample padding, no clutter',
-        '건설'     => 'premium construction company business card, navy + cream + charcoal palette, geometric grid, hairline accents, minimal, executive feel',
-        '마케팅'   => 'bold modern marketing agency business card, signal red or hot orange accent, oversized hero typography, asymmetric editorial grid, magazine cover energy',
-        '광고'     => 'bold modern advertising agency business card, signal red or hot orange accent, oversized hero typography, asymmetric editorial grid, magazine cover energy',
-        '테크'     => 'modern tech startup business card, electric blue or signal accent on near-white background, geometric sans typography, asymmetric layout, clean and forward-looking',
-        '법무'     => 'sophisticated law firm business card, deep navy + warm cream palette, refined neo-grotesk typography, classic monogram, conservative hierarchy',
-        '의료'     => 'modern medical professional business card, soft blue + white + grey palette, clean clinical aesthetic, restrained',
-        'f&b'     => 'warm hospitality business card, terracotta or forest green + cream palette, elegant display serif, letterpress feel',
-        '뷰티'     => 'ultra-minimal beauty industry business card, oversized thin display serif, single elegant color block, lots of whitespace',
-        '교육'     => 'modern education business card, navy + warm cream palette, refined sans, hierarchy-grid, trustworthy',
-        '금융'     => 'sophisticated finance business card, deep navy + gold accent palette, refined neo-grotesk, monogram, executive feel',
-    ];
-    $stylePhrase = '';
-    foreach ($stylePresets as $key => $phrase) {
-        if ($key !== '' && (mb_stripos($industry, $key) !== false || mb_stripos((string)$company, $key) !== false || mb_stripos((string)$tone, $key) !== false)) {
-            $stylePhrase = $phrase;
-            break;
+function gpt_design_director(string $apiKey, ?array $cardFields, ?array $siteMeta, string $tone): array {
+    $context = [];
+    if ($cardFields) {
+        $clean = [];
+        foreach (['name','title','company','email','phone','mobile','address','tagline','industry','language'] as $k) {
+            $v = trim((string)($cardFields[$k] ?? ''));
+            if ($v !== '') $clean[$k] = $v;
         }
+        if ($clean) $context[] = "OCR fields: " . json_encode($clean, JSON_UNESCAPED_UNICODE);
     }
-    if ($stylePhrase === '') {
-        $stylePhrase = 'premium luxury business card, sophisticated charcoal + cream palette, modern minimal Swiss editorial layout, ample whitespace, hairline divider, refined typography';
+    if ($siteMeta) {
+        $hint = $siteMeta['description'] ?? $siteMeta['title'] ?? '';
+        if ($hint !== '') $context[] = "Site context: " . mb_substr($hint, 0, 240);
+    }
+    if ($tone !== '') $context[] = "User tone brief: " . $tone;
+
+    $sys = <<<SYS
+You are an art director planning a single-side business card BEFORE handing off to an image generator. Read the brief and emit a STRICT JSON design plan. No prose outside JSON.
+
+CRITICAL HIERARCHY RULES — these dictate what becomes biggest/most prominent:
+1. If the card is for SALES / 영업 / 마케팅 / 광고 / real-estate sales (분양) — the HERO is the BRAND/PRODUCT/PROPERTY title (e.g., apartment brand like "브레인시티 비스타동원"), NOT the legal company name. Phone number is the SECOND most prominent element because the buyer needs to call.
+2. If the card is for an executive/professional (lawyer, doctor, exec) — HERO is the person's name. Company name secondary.
+3. If the card is for a creative/designer — HERO is name OR portfolio brand. Compact contact.
+
+Identify which case applies from the OCR fields. The "company" field on a sales card might actually contain the BRAND/PRODUCT title (apartment brand) rather than the legal entity. Use the tone brief and tagline to decide.
+
+OUTPUT JSON SHAPE (all strings; arrays where noted):
+{
+  "hero_text": "<the single largest piece of text — verbatim from input>",
+  "hero_role": "brand_title | person_name | product_name | studio_name",
+  "secondary_text": "<the second-largest text element>",
+  "secondary_role": "person_name | company_name | tagline | role_title",
+  "emphasized_phone": true | false,
+  "phone_value": "<phone verbatim or empty>",
+  "tertiary_lines": ["<remaining contact lines in display order>"],
+  "layout_pattern": "left_hero_right_contact | top_hero_bottom_grid | centered_hero_bottom_strip | full_bleed_color_left",
+  "color_palette": {"bg":"#hex","fg":"#hex","accent":"#hex"},
+  "decorative_device": "<one short phrase, e.g. 'thin burgundy horizontal line under hero', 'small monogram top-left from initials', 'thick vertical accent bar on left edge'>",
+  "background_treatment": "solid | subtle_gradient | half_color_block",
+  "design_note": "<1 sentence summary of mood: e.g., '럭셔리 부동산 분양, 차분한 위계, 매거진 톤'>"
+}
+
+PALETTE GUIDANCE (override only with brand-color from OCR if present):
+- 부동산/분양/건설: bg #f7f3ec (warm cream), fg #1a1a1a (charcoal), accent #7a0026 (deep burgundy)
+- 마케팅/광고/영업(default): bg #fafafa, fg #0a0a0a, accent #e63946 (signal red)
+- 테크: bg #ffffff, fg #0a0a0a, accent #0066ff
+- 법무/금융: bg #f4f1ea, fg #0a1a2e (deep navy), accent #b08a4a (warm gold)
+- F&B/호스피탈리티: bg #f4f1ea, fg #1a1a1a, accent #1f4d3a (forest)
+- 뷰티/패션: bg #ffffff, fg #1a1a1a, accent #2c2c2c
+SYS;
+
+    $resp = openai_chat($apiKey, [
+        'model' => 'gpt-4o',
+        'messages' => [
+            ['role' => 'system', 'content' => $sys],
+            ['role' => 'user', 'content' => implode("\n", $context)],
+        ],
+        'response_format' => ['type' => 'json_object'],
+        'max_tokens' => 700,
+        'temperature' => 0.4,
+    ], 30);
+
+    if (!$resp['ok']) return ['ok' => false, 'error' => $resp['body']['error']['message'] ?? 'director call failed'];
+    $plan = json_decode((string)($resp['body']['choices'][0]['message']['content'] ?? ''), true);
+    if (!is_array($plan)) return ['ok' => false, 'error' => 'plan parse failed'];
+    return ['ok' => true, 'plan' => $plan];
+}
+
+function build_recraft_prompt(?array $cardFields, ?array $siteMeta, string $tone, ?array $plan = null): string {
+    $hero      = trim((string)($plan['hero_text']        ?? ''));
+    $heroRole  = trim((string)($plan['hero_role']        ?? ''));
+    $secondary = trim((string)($plan['secondary_text']   ?? ''));
+    $phone     = trim((string)($plan['phone_value']      ?? ''));
+    $tertiary  = is_array($plan['tertiary_lines'] ?? null) ? array_filter(array_map('strval', $plan['tertiary_lines'])) : [];
+    $emphPhone = !empty($plan['emphasized_phone']);
+    $layout    = trim((string)($plan['layout_pattern']   ?? 'left_hero_right_contact'));
+    $palette   = is_array($plan['color_palette'] ?? null) ? $plan['color_palette'] : [];
+    $bg        = trim((string)($palette['bg']            ?? '#fafafa'));
+    $fg        = trim((string)($palette['fg']            ?? '#0a0a0a'));
+    $accent    = trim((string)($palette['accent']        ?? '#7a0026'));
+    $deco      = trim((string)($plan['decorative_device'] ?? 'thin accent line under the hero text'));
+    $bgTreat   = trim((string)($plan['background_treatment'] ?? 'solid'));
+    $designNote = trim((string)($plan['design_note']     ?? ''));
+
+    // If plan is missing, fall back to extracting from raw OCR fields.
+    if ($hero === '') {
+        $hero = trim((string)($cardFields['company'] ?? $cardFields['name'] ?? ''));
+        $heroRole = 'brand_title';
+        $secondary = trim((string)($cardFields['name'] ?? ''));
+        $phone = trim((string)($cardFields['phone'] ?? $cardFields['mobile'] ?? ''));
+        $tertiary = array_filter([
+            (string)($cardFields['email']   ?? ''),
+            (string)($cardFields['address'] ?? ''),
+        ]);
     }
 
-    $userTone = $tone !== '' ? "User design brief: $tone. " : '';
+    $hierarchyLines = [];
+    if ($hero      !== '') $hierarchyLines[] = "1. HERO (largest text on the card, extra-bold display weight): \"$hero\"";
+    if ($secondary !== '') $hierarchyLines[] = "2. SECONDARY (medium weight, ~40% of hero size): \"$secondary\"";
+    if ($emphPhone && $phone !== '') {
+        $hierarchyLines[] = "3. PHONE NUMBER (treated as a CALL TO ACTION — bold, prominent, ~50–60% of hero size): \"$phone\"";
+    } elseif ($phone !== '') {
+        $tertiary[] = $phone;
+    }
+    foreach ($tertiary as $line) {
+        $line = trim((string)$line);
+        if ($line === '') continue;
+        $idx = count($hierarchyLines) + 1;
+        $hierarchyLines[] = "{$idx}. SUPPORTING (small, low-emphasis, ~18–22% of hero size): \"$line\"";
+    }
 
-    // Korean text in Recraft prompts: keep verbatim with strict instruction to render exactly.
-    $textInstructions = [];
-    if ($name) $textInstructions[] = "name '$name'";
-    if ($title) $textInstructions[] = "title '$title'";
-    if ($company) $textInstructions[] = "company '$company'";
-    if ($phone) $textInstructions[] = "phone '$phone'";
-    if ($email) $textInstructions[] = "email '$email'";
-    if ($address) $textInstructions[] = "address '$address'";
-    if ($tagline) $textInstructions[] = "tagline '$tagline'";
+    $textBlock = "EXACT TEXT TO RENDER (use these verbatim — do NOT change spelling, do NOT romanize Korean, do NOT translate, do NOT add any words):\n" .
+                 implode("\n", $hierarchyLines) . "\n";
 
-    $textPart = $textInstructions
-        ? "Print exactly these texts on the card, perfectly legible, do not change spelling, do not romanize Korean, render Hangul accurately: " . implode('; ', $textInstructions) . ". "
-        : '';
+    $colorBlock = "Color palette: background {$bg}, foreground text {$fg}, accent {$accent}. " .
+                  "Background treatment: {$bgTreat}. ";
+    $decoBlock = "Decorative device: {$deco}. Use the accent color sparingly only for this device or for emphasis. ";
+
+    $layoutPhrases = [
+        'left_hero_right_contact'   => 'Layout: left half holds the hero text. Right column holds person/contact info aligned right or stacked vertically.',
+        'top_hero_bottom_grid'      => 'Layout: hero text spans the top third. Bottom holds a clean two-column grid: left = person/role, right = contact details.',
+        'centered_hero_bottom_strip'=> 'Layout: hero centered in upper-middle. Bottom strip holds contact details in a single horizontal row.',
+        'full_bleed_color_left'     => 'Layout: left 35–40% is a full-bleed accent color block holding the hero in white. Right area on the background color holds person/contact info.',
+    ];
+    $layoutPhrase = $layoutPhrases[$layout] ?? $layoutPhrases['left_hero_right_contact'];
+
+    $userTone = $tone !== '' ? "User context: $tone. " : '';
+    $designNoteBlock = $designNote !== '' ? "Mood: $designNote. " : '';
 
     $prompt =
-        "FLAT 2D GRAPHIC DESIGN of a business card, NOT a photo, NOT a 3D mockup, NOT a card on a desk. " .
-        "The output IS the card itself — edge-to-edge, full bleed. " .
-        "No drop shadows, no perspective, no paper texture, no studio background, no holding hand, no isometric view. " .
-        "Treat this like a print-ready Adobe Illustrator artboard. " .
-        $stylePhrase . ". " .
-        $userTone .
-        $textPart .
-        "Layout: clear typographic hierarchy with the person's name as the largest element OR an oversized company name as hero, contact details smaller. " .
-        "Use a thin geometric accent line or color block as decorative device. " .
-        "Use Korean-aware sans typeface like Pretendard for Korean text. " .
-        "No clip art, no emoji, no fake QR codes, no stock icons, no logos you did not invent. " .
-        "Generous margins around all edges (at least 6%). " .
-        "Asymmetric or grid-anchored compositions strongly preferred. " .
-        "Single-side card front only. The entire image area is the card surface, filling the frame edge to edge.";
+        "Flat vector graphic design. Print-ready business card artwork (NOT a photo, NOT a mockup, NOT a card sitting on a surface). " .
+        "The image IS the card — full bleed, edge-to-edge. No drop shadow. No perspective. No paper texture. No studio environment. No hand. No isometric. " .
+        "Treat this as an Adobe Illustrator artboard exported as a single flat asset. " .
+        $colorBlock . $decoBlock . $designNoteBlock . $userTone .
+        $layoutPhrase . " " .
+        "Use a Korean-aware modern sans typeface (Pretendard / Noto Sans KR style). Generous margins (≥7% from each edge). " .
+        $textBlock .
+        "Render every line above with PERFECT spelling. Hangul characters must be drawn correctly. " .
+        "No clip art. No emoji. No fake QR codes. No stock icons. No invented logos. " .
+        "Single-side front only. Strong typographic hierarchy — the HERO is unmistakably the largest, the rest follow the order above.";
 
-    // Cap length — Recraft has prompt length limits.
-    return mb_substr($prompt, 0, 1000);
+    return mb_substr($prompt, 0, 1500);
 }
 
 function recraft_generate(string $apiKey, string $prompt, string $size, string $style = 'realistic_image'): array {
@@ -322,18 +395,29 @@ if ($siteUrl !== '') {
 
 if (!$cardFields) $cardFields = [];
 
-$sizePick = pick_recraft_size($inputDims);
-$prompt = build_recraft_prompt($cardFields, $siteMeta, $tone);
+// Step 1: GPT-4o Director plans the hierarchy (hero, secondary, phone CTA, layout, palette).
+$directorPlan = null;
+$directorError = null;
+if ($openaiKey !== '') {
+    $director = gpt_design_director($openaiKey, $cardFields, $siteMeta, $tone);
+    if ($director['ok']) {
+        $directorPlan = $director['plan'];
+    } else {
+        $directorError = $director['error'];
+    }
+}
 
-// Default style: digital_illustration produces flat graphic-design output
-// (the actual card as a flat artwork) instead of a photo of a card.
-// realistic_image makes Recraft compose a studio shot of a card on a desk —
-// not what we want. vector_illustration is even flatter but text rendering
-// can be weaker. digital_illustration is the sweet spot for premium card
-// graphics with legible Korean text.
-$style = 'digital_illustration';
-if (mb_stripos($tone, '벡터') !== false || mb_stripos($tone, 'vector') !== false || mb_stripos($tone, '일러스트') !== false) {
-    $style = 'vector_illustration';
+$sizePick = pick_recraft_size($inputDims);
+$prompt = build_recraft_prompt($cardFields, $siteMeta, $tone, $directorPlan);
+
+// Step 2: Recraft executes. vector_illustration is the flattest output — no
+// shadows, no environment, no card-on-desk mockups. realistic_image and
+// digital_illustration both leak photo cues despite anti-photo prompting.
+$style = 'vector_illustration';
+if (mb_stripos($tone, '리얼') !== false || mb_stripos($tone, 'photo') !== false) {
+    $style = 'realistic_image';
+} elseif (mb_stripos($tone, '디지털') !== false || mb_stripos($tone, 'digital') !== false) {
+    $style = 'digital_illustration';
 }
 
 $gen = recraft_generate($recraftKey, $prompt, $sizePick['size'], $style);
@@ -358,5 +442,6 @@ jout([
     'credits' => $gen['credits'],
     'size' => $sizePick['size'],
     'style' => $style,
-    'note' => $ocrError ? ('OCR: ' . $ocrError) : null,
+    'directorPlan' => $directorPlan,
+    'note' => $ocrError ? ('OCR: ' . $ocrError) : ($directorError ? ('Director: ' . $directorError) : null),
 ]);
