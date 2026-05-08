@@ -473,6 +473,41 @@ function renderSignedOut() {
     setAuthMessage('', '');
 }
 
+let adminBootstrapTried = false;
+async function ensureAdminBootstrap() {
+    if (adminBootstrapTried) return;
+    adminBootstrapTried = true;
+    try {
+        const token = await getApiAuthToken({ forceRefresh: false });
+        if (!token) return;
+        const res = await fetch(`${API_URL}?resource=admin-bootstrap`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${token}`,
+            },
+        });
+        if (!res.ok) return; // 403 etc. — not an admin allowlisted email
+        const data = await res.json().catch(() => null);
+        const role = String(data?.role || '').toLowerCase();
+        if (role !== 'admin' && role !== 'owner') return;
+
+        if (adminLink) adminLink.classList.remove('hidden');
+
+        // Persist role into Supabase user_metadata so subsequent sessions
+        // see it directly from the JWT without another bootstrap call.
+        try {
+            await supabaseClient.auth.updateUser({ data: { role } });
+            const { data: refreshed } = await supabaseClient.auth.getSession();
+            currentSession = refreshed?.session || currentSession;
+        } catch {
+            /* non-fatal — admin link is already visible for this session */
+        }
+    } catch {
+        /* network or env problem — leave admin link as-is */
+    }
+}
+
 function renderSignedIn() {
     authScreen.classList.add('hidden');
     appHeader.classList.remove('hidden');
@@ -489,6 +524,7 @@ function renderSignedIn() {
             const role = String(meta.role || userMeta.role || '').toLowerCase();
             const isAdmin = role === 'admin' || role === 'owner' || meta.is_admin === true || userMeta.is_admin === true;
             adminLink.classList.toggle('hidden', !isAdmin);
+            if (!isAdmin) ensureAdminBootstrap();
         }
     } else {
         userMenu.classList.add('hidden');
