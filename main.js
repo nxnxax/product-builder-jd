@@ -824,9 +824,17 @@ function setAuthMode(mode) {
 
 function openAuthPanel(mode = 'login') {
     setAuthMode(mode);
+    if (googleLoginBtn) googleLoginBtn.disabled = false;
     authScreen.classList.remove('hidden');
     setTimeout(() => authEmail.focus(), 0);
 }
+
+// Restore button state if the page is brought back from BFCache after a
+// Google OAuth redirect — otherwise .disabled stays true and the wait
+// cursor on hover looks like an infinite loading spinner.
+window.addEventListener('pageshow', () => {
+    if (googleLoginBtn) googleLoginBtn.disabled = false;
+});
 
 function closeAuthPanel() {
     if (oauthSignupPending) {

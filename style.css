@@ -804,6 +804,17 @@ select:focus {
 
 .google-btn-pill .google-mark { width: 20px; height: 20px; }
 
+/* Auth panel — tighter rhythm than the global form spacing */
+.auth-form .form-group { margin-bottom: 10px; }
+.auth-form .form-group label { margin-bottom: 4px; }
+.auth-form .auth-divider { margin: 12px 0; }
+.auth-form .signup-fields { margin-bottom: 0; }
+.auth-form .availability-status { margin-top: 4px; min-height: 0; }
+.auth-form .availability-status:empty { display: none; }
+.auth-form .primary-btn { margin-top: 4px; }
+.auth-form .auth-message { margin-top: 8px; min-height: 0; }
+.auth-form .auth-message:empty { display: none; }
+
 /* Availability indicator (email/nickname duplicate check) */
 .availability-status {
     margin: 6px 0 0;
