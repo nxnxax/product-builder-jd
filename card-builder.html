@@ -276,7 +276,7 @@
                 if (currentFile) fd.append('image', currentFile);
                 if (url) fd.append('siteUrl', url);
                 if (toneInput.value.trim()) fd.append('tone', toneInput.value.trim());
-                const res = await fetch('api/card-design.php', { method: 'POST', body: fd });
+                const res = await fetch('card-design.php', { method: 'POST', body: fd });
                 const data = await res.json().catch(() => null);
                 if (!res.ok || !data || data.ok === false) {
                     throw new Error(data?.error || `요청 실패 (${res.status})`);
