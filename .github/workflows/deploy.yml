@@ -92,10 +92,25 @@ jobs:
           $SSH "${SFTP_USER}@${SFTP_HOST}" '
             for d in . www www/www; do
               if [ -d "$d" ]; then
-                find "$d" -maxdepth 1 -type f \( -name "__probe.txt" -o -name "_deploy_audit_*.txt" \) -print -delete 2>/dev/null || true;
+                find "$d" -maxdepth 1 -type f \( -name "__probe.txt" -o -name "_deploy_audit_*.txt" -o -name "_proof_*.txt" \) -print -delete 2>/dev/null || true;
               fi;
             done
           ' || true
+
+          # Upload a sticky proof file to BOTH the configured target AND
+          # a few likely webroots so we can pin down ground truth from outside.
+          GH_SHA="${GITHUB_SHA:-unknown}"
+          PROOF_NAME="_proof_${GH_SHA:0:7}.txt"
+          for cand in "${SFTP_DIR}" /www www public_html html htdocs; do
+            [ -z "$cand" ] && continue
+            echo "PROOF written to ${cand} for SHA ${GH_SHA}" > /tmp/__proof.txt
+            if $SCP /tmp/__proof.txt "${SFTP_USER}@${SFTP_HOST}:${cand}/${PROOF_NAME}" 2>/dev/null; then
+              echo "  proof uploaded to ${cand}/${PROOF_NAME}"
+            else
+              echo "  could not write to ${cand} (no permission or no dir)"
+            fi
+          done
+          echo "Proof file name: ${PROOF_NAME}"
 
           if [ -n "${SFTP_DIR}" ]; then
             TARGET="${SFTP_DIR}"
