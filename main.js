@@ -6,7 +6,9 @@
 const API_URL = 'records.php';
 const MIGRATION_FLAG = 'erpDbMigrationComplete';
 const OAUTH_INTENT_KEY = 'erpOAuthIntent';
+const OAUTH_EMAIL_KEY = 'erpOAuthEmail';
 const AUTH_NOTICE_KEY = 'erpAuthNotice';
+const SIGNUP_REQUIRED_MESSAGE = '회원가입이 필요합니다. 회원가입을 진행하시겠습니까?';
 
 let customers = [];
 let employees = [];
@@ -174,31 +176,66 @@ async function handlePostOAuthSession() {
     const isGoogleUser = provider === 'google' || providers.includes('google');
     if (!isGoogleUser) return;
 
-    const isRegistered = user.user_metadata?.app_registered === true || user.user_metadata?.app_registered === 'true';
-    if (isRegistered) return;
-
-    const intent = localStorage.getItem(OAUTH_INTENT_KEY);
     localStorage.removeItem(OAUTH_INTENT_KEY);
 
-    if (intent === 'signup') {
-        const { error } = await supabaseClient.auth.updateUser({
-            data: {
-                app_registered: true,
-                signup_method: 'google',
-                identity_verified: false,
-                phone_verified: false
-            }
-        });
-        if (error) throw error;
-
-        const { data } = await supabaseClient.auth.getSession();
-        currentSession = data.session || currentSession;
+    const isRegistered = await isRegisteredMember(user);
+    if (isRegistered) {
+        localStorage.removeItem(OAUTH_EMAIL_KEY);
         return;
     }
 
-    localStorage.setItem(AUTH_NOTICE_KEY, '회원가입이 필요합니다. 회원가입을 하시겠습니까?');
+    if (user.email) localStorage.setItem(OAUTH_EMAIL_KEY, user.email);
+    localStorage.setItem(AUTH_NOTICE_KEY, SIGNUP_REQUIRED_MESSAGE);
     await supabaseClient.auth.signOut();
     currentSession = null;
+}
+
+async function isRegisteredMember(user) {
+    const email = String(user?.email || '').trim().toLowerCase();
+    if (!email) return false;
+
+    const apiStatus = await fetchMembershipStatus(email);
+    if (apiStatus !== null) return apiStatus;
+
+    const tableStatus = await findSupabaseMembership(email);
+    if (tableStatus !== null) return tableStatus;
+
+    return false;
+}
+
+async function fetchMembershipStatus(email) {
+    try {
+        const headers = {};
+        if (currentSession?.access_token) {
+            headers.Authorization = `Bearer ${currentSession.access_token}`;
+        }
+
+        const response = await fetch(`${API_URL}?resource=auth-membership&email=${encodeURIComponent(email)}`, { headers });
+        const payload = await response.json().catch(() => null);
+        if (!response.ok || !payload || payload.ok === false) throw new Error(payload?.error || '회원 조회 실패');
+        return payload.registered === true;
+    } catch {
+        return null;
+    }
+}
+
+async function findSupabaseMembership(email) {
+    for (const table of ['members', 'users']) {
+        try {
+            const { data, error } = await supabaseClient
+                .from(table)
+                .select('email')
+                .ilike('email', email)
+                .limit(1);
+
+            if (error) continue;
+            return Array.isArray(data) && data.length > 0;
+        } catch {
+            continue;
+        }
+    }
+
+    return null;
 }
 
 function showPendingAuthNotice() {
@@ -535,9 +572,17 @@ function hideAuthNotice() {
 function handleAuthNoticeAccept() {
     hideAuthNotice();
     openAuthPanel('signup');
+    const oauthEmail = localStorage.getItem(OAUTH_EMAIL_KEY);
+    localStorage.removeItem(OAUTH_EMAIL_KEY);
+    if (oauthEmail) {
+        authEmail.value = oauthEmail;
+        authEmail.readOnly = false;
+        setTimeout(() => authName.focus(), 0);
+    }
 }
 
 function handleAuthNoticeCancel() {
+    localStorage.removeItem(OAUTH_EMAIL_KEY);
     hideAuthNotice();
     closeAuthPanel();
 }

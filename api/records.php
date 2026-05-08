@@ -42,7 +42,7 @@ function normalize_resource($value) {
     $resource = strtolower(trim((string)$value));
     if ($resource === 'customer') $resource = 'customers';
     if ($resource === 'employee') $resource = 'employees';
-    if (!in_array($resource, ['customers', 'employees'], true)) {
+    if (!in_array($resource, ['customers', 'employees', 'auth-membership'], true)) {
         respond(['ok' => false, 'error' => '지원하지 않는 리소스입니다.'], 400);
     }
     return $resource;
@@ -55,6 +55,72 @@ function clean($value) {
 
 function make_client_id() {
     return (string)round(microtime(true) * 1000) . bin2hex(random_bytes(3));
+}
+
+function quote_identifier($value) {
+    return '`' . str_replace('`', '``', (string)$value) . '`';
+}
+
+function table_exists(PDO $pdo, $table) {
+    $stmt = $pdo->prepare("
+        SELECT COUNT(*)
+        FROM information_schema.tables
+        WHERE table_schema = DATABASE()
+          AND table_name = :table_name
+    ");
+    $stmt->execute([':table_name' => $table]);
+    return (int)$stmt->fetchColumn() > 0;
+}
+
+function table_columns(PDO $pdo, $table) {
+    $stmt = $pdo->prepare("
+        SELECT column_name
+        FROM information_schema.columns
+        WHERE table_schema = DATABASE()
+          AND table_name = :table_name
+    ");
+    $stmt->execute([':table_name' => $table]);
+    return array_map('strtolower', $stmt->fetchAll(PDO::FETCH_COLUMN));
+}
+
+function find_member_store(PDO $pdo) {
+    foreach (['members', 'users'] as $table) {
+        if (!table_exists($pdo, $table)) continue;
+
+        $columns = table_columns($pdo, $table);
+        foreach (['email', 'user_email', 'mb_email'] as $emailColumn) {
+            if (in_array($emailColumn, $columns, true)) {
+                return ['table' => $table, 'email_column' => $emailColumn];
+            }
+        }
+    }
+
+    return null;
+}
+
+function member_exists_by_email(PDO $pdo, $email) {
+    $email = strtolower(trim((string)$email));
+    if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) return false;
+
+    $store = find_member_store($pdo);
+    if (!$store) return null;
+
+    $table = quote_identifier($store['table']);
+    $emailColumn = quote_identifier($store['email_column']);
+    $stmt = $pdo->prepare("SELECT 1 FROM {$table} WHERE LOWER({$emailColumn}) = :email LIMIT 1");
+    $stmt->execute([':email' => $email]);
+    return (bool)$stmt->fetchColumn();
+}
+
+function enforce_registered_member(PDO $pdo, $authUser) {
+    if (!$authUser) return;
+
+    $email = (string)($authUser['email'] ?? '');
+    if ($email === '') return;
+
+    $registered = member_exists_by_email($pdo, $email);
+    if ($registered === null) return;
+    if (!$registered) respond(['ok' => false, 'error' => '가입된 회원만 이용할 수 있습니다.'], 403);
 }
 
 function customer_row($row) {
@@ -161,6 +227,27 @@ try {
     $method = $_SERVER['REQUEST_METHOD'];
     $body = in_array($method, ['POST', 'PUT', 'PATCH', 'DELETE'], true) ? read_json_body() : [];
     $resource = normalize_resource($_GET['resource'] ?? $body['resource'] ?? '');
+
+    if ($resource === 'auth-membership') {
+        if ($method !== 'GET') respond(['ok' => false, 'error' => '지원하지 않는 요청 방식입니다.'], 405);
+
+        $email = clean($_GET['email'] ?? null);
+        if (!$email || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            respond(['ok' => false, 'error' => '조회할 이메일이 올바르지 않습니다.'], 400);
+        }
+        if ($authUser && strtolower((string)($authUser['email'] ?? '')) !== strtolower($email)) {
+            respond(['ok' => false, 'error' => '본인 이메일만 조회할 수 있습니다.'], 403);
+        }
+
+        $registered = member_exists_by_email($pdo, $email);
+        respond([
+            'ok' => true,
+            'registered' => $registered === true,
+            'source' => $registered === null ? 'not_configured' : 'database',
+        ]);
+    }
+
+    enforce_registered_member($pdo, $authUser);
 
     if ($method === 'GET') {
         if ($resource === 'customers') {
