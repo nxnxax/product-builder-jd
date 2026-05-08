@@ -10,25 +10,298 @@ function jout(array $payload, int $code = 200): void {
     exit;
 }
 
+function load_env_value(string $key): string {
+    foreach ([__DIR__, dirname(__DIR__)] as $dir) {
+        $path = $dir . '/.env';
+        if (!is_file($path)) continue;
+        foreach (file($path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as $line) {
+            if (preg_match('/^\s*(?:export\s+)?([A-Z0-9_]+)\s*=\s*(.*)$/i', $line, $m)) {
+                if (strcasecmp($m[1], $key) === 0) {
+                    return trim($m[2], "\"' \t\r\n");
+                }
+            }
+        }
+    }
+    return '';
+}
+
+function openai_chat(string $apiKey, array $body, int $timeout = 60): array {
+    $ch = curl_init('https://api.openai.com/v1/chat/completions');
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST => true,
+        CURLOPT_POSTFIELDS => json_encode($body, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+        CURLOPT_HTTPHEADER => [
+            'Authorization: Bearer ' . $apiKey,
+            'Content-Type: application/json',
+        ],
+        CURLOPT_TIMEOUT => $timeout,
+        CURLOPT_CONNECTTIMEOUT => 10,
+    ]);
+    $resp = curl_exec($ch);
+    $status = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $err = curl_error($ch);
+    curl_close($ch);
+    if ($resp === false) {
+        return ['ok' => false, 'status' => 0, 'error' => 'curl: ' . $err];
+    }
+    $decoded = json_decode((string)$resp, true);
+    return ['ok' => $status >= 200 && $status < 300, 'status' => $status, 'body' => $decoded, 'raw' => (string)$resp];
+}
+
+function openai_image(string $apiKey, array $body, int $timeout = 90): array {
+    $ch = curl_init('https://api.openai.com/v1/images/generations');
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST => true,
+        CURLOPT_POSTFIELDS => json_encode($body, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+        CURLOPT_HTTPHEADER => [
+            'Authorization: Bearer ' . $apiKey,
+            'Content-Type: application/json',
+        ],
+        CURLOPT_TIMEOUT => $timeout,
+        CURLOPT_CONNECTTIMEOUT => 10,
+    ]);
+    $resp = curl_exec($ch);
+    $status = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $err = curl_error($ch);
+    curl_close($ch);
+    if ($resp === false) {
+        return ['ok' => false, 'status' => 0, 'error' => 'curl: ' . $err];
+    }
+    $decoded = json_decode((string)$resp, true);
+    return ['ok' => $status >= 200 && $status < 300, 'status' => $status, 'body' => $decoded, 'raw' => (string)$resp];
+}
+
+function ocr_business_card(string $apiKey, string $imageBase64, string $mime): array {
+    $resp = openai_chat($apiKey, [
+        'model' => 'gpt-4o',
+        'messages' => [[
+            'role' => 'user',
+            'content' => [
+                ['type' => 'text', 'text' =>
+                    "이 이미지가 명함이라면 다음 필드를 JSON으로 추출해줘: " .
+                    "name(이름), title(직책/직함), company(회사명), email, phone, mobile, address, website, " .
+                    "tagline(슬로건/한 줄 소개), other(기타 줄들 배열). " .
+                    "값을 못 찾은 필드는 빈 문자열 또는 빈 배열. " .
+                    "추가로 colors(이미지에서 추출한 주요 색상 hex 코드 1~3개 배열), " .
+                    "language('ko' 또는 'en' 등)도 함께 반환. " .
+                    "명함이 아니면 {\"error\":\"not_a_business_card\"}."],
+                ['type' => 'image_url', 'image_url' => ['url' => 'data:' . $mime . ';base64,' . $imageBase64]],
+            ],
+        ]],
+        'response_format' => ['type' => 'json_object'],
+        'max_tokens' => 800,
+        'temperature' => 0.1,
+    ], 45);
+
+    if (!$resp['ok']) {
+        return ['ok' => false, 'status' => $resp['status'], 'error' => $resp['body']['error']['message'] ?? ($resp['error'] ?? 'OpenAI 호출 실패')];
+    }
+    $content = $resp['body']['choices'][0]['message']['content'] ?? '';
+    $parsed = json_decode((string)$content, true);
+    if (!is_array($parsed)) {
+        return ['ok' => false, 'error' => '응답을 파싱하지 못했습니다.'];
+    }
+    if (!empty($parsed['error']) && $parsed['error'] === 'not_a_business_card') {
+        return ['ok' => false, 'error' => '명함으로 보이지 않는 이미지입니다.'];
+    }
+    return ['ok' => true, 'fields' => $parsed];
+}
+
+function fetch_site_meta(string $url): ?array {
+    if (!preg_match('#^https?://#i', $url)) return null;
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT => 10,
+        CURLOPT_CONNECTTIMEOUT => 6,
+        CURLOPT_FOLLOWLOCATION => true,
+        CURLOPT_MAXREDIRS => 3,
+        CURLOPT_USERAGENT => 'Mozilla/5.0 (compatible; CardBuilderBot/1.0)',
+    ]);
+    $body = curl_exec($ch);
+    $status = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    if ($body === false || $status < 200 || $status >= 400) return null;
+
+    $html = (string)$body;
+    $title = '';
+    if (preg_match('/<title[^>]*>(.*?)<\/title>/is', $html, $m)) $title = trim(html_entity_decode($m[1], ENT_QUOTES | ENT_HTML5, 'UTF-8'));
+    $description = '';
+    if (preg_match('/<meta[^>]+name=["\']description["\'][^>]+content=["\']([^"\']+)["\']/i', $html, $m)) $description = trim($m[1]);
+    elseif (preg_match('/<meta[^>]+content=["\']([^"\']+)["\'][^>]+name=["\']description["\']/i', $html, $m)) $description = trim($m[1]);
+    $ogTitle = '';
+    if (preg_match('/<meta[^>]+property=["\']og:title["\'][^>]+content=["\']([^"\']+)["\']/i', $html, $m)) $ogTitle = trim($m[1]);
+    $ogDescription = '';
+    if (preg_match('/<meta[^>]+property=["\']og:description["\'][^>]+content=["\']([^"\']+)["\']/i', $html, $m)) $ogDescription = trim($m[1]);
+    $themeColor = '';
+    if (preg_match('/<meta[^>]+name=["\']theme-color["\'][^>]+content=["\']([^"\']+)["\']/i', $html, $m)) $themeColor = trim($m[1]);
+
+    return [
+        'title' => mb_substr($title, 0, 200),
+        'description' => mb_substr($description, 0, 400),
+        'og_title' => mb_substr($ogTitle, 0, 200),
+        'og_description' => mb_substr($ogDescription, 0, 400),
+        'theme_color' => $themeColor,
+    ];
+}
+
+function build_dalle_prompt(?array $cardFields, ?array $siteMeta, string $tone): string {
+    $parts = [];
+    $parts[] = "Design an elegant, premium-quality business card front. Photorealistic studio mockup on a clean neutral background, soft shadows, sharp typography. Composition is exactly a horizontal business card (3.5:2 aspect ratio).";
+
+    if ($cardFields) {
+        $name = trim((string)($cardFields['name'] ?? ''));
+        $title = trim((string)($cardFields['title'] ?? ''));
+        $company = trim((string)($cardFields['company'] ?? ''));
+        $email = trim((string)($cardFields['email'] ?? ''));
+        $phone = trim((string)($cardFields['phone'] ?? $cardFields['mobile'] ?? ''));
+        $tagline = trim((string)($cardFields['tagline'] ?? ''));
+
+        $details = [];
+        if ($name !== '') $details[] = "name: $name";
+        if ($title !== '') $details[] = "title: $title";
+        if ($company !== '') $details[] = "company: $company";
+        if ($email !== '') $details[] = "email: $email";
+        if ($phone !== '') $details[] = "phone: $phone";
+        if ($tagline !== '') $details[] = "tagline: $tagline";
+        if ($details) $parts[] = "Print these on the card exactly as written, do not change spelling: " . implode(' | ', $details) . ".";
+
+        if (!empty($cardFields['colors']) && is_array($cardFields['colors'])) {
+            $colors = array_filter(array_map('strval', $cardFields['colors']));
+            if ($colors) $parts[] = "Brand colors to use sparingly as accents: " . implode(', ', array_slice($colors, 0, 3)) . ".";
+        }
+    }
+
+    if ($siteMeta) {
+        $tagline = $siteMeta['og_description'] ?: $siteMeta['description'];
+        if ($tagline !== '') $parts[] = "Reference brand context (do not print this verbatim): \"" . mb_substr($tagline, 0, 200) . "\".";
+        if (!empty($siteMeta['theme_color'])) $parts[] = "Brand accent color hint: " . $siteMeta['theme_color'] . ".";
+    }
+
+    if ($tone !== '') {
+        $parts[] = "Design tone: $tone.";
+    } else {
+        $parts[] = "Design tone: minimal, modern, premium — Apple/Linear-quality typography.";
+    }
+
+    $parts[] = "Use only Latin and Korean characters as appropriate for the names. Ensure all printed text is fully legible and correctly spelled. Return only the business card image, centered, no extra UI or annotations.";
+
+    return implode(' ', $parts);
+}
+
+function save_image_from_url(string $url): ?string {
+    $dir = __DIR__ . '/uploads/cards';
+    if (!is_dir($dir)) {
+        if (!@mkdir($dir, 0755, true) && !is_dir($dir)) return null;
+    }
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT => 30,
+        CURLOPT_CONNECTTIMEOUT => 8,
+        CURLOPT_FOLLOWLOCATION => true,
+        CURLOPT_MAXREDIRS => 3,
+    ]);
+    $bytes = curl_exec($ch);
+    $status = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    if ($bytes === false || $status < 200 || $status >= 300) return null;
+
+    try {
+        $rand = bin2hex(random_bytes(5));
+    } catch (Throwable $e) {
+        $rand = substr(sha1(uniqid('', true)), 0, 10);
+    }
+    $name = date('Ymd-His') . '-' . $rand . '.png';
+    $path = $dir . '/' . $name;
+    if (@file_put_contents($path, $bytes) === false) return null;
+    @chmod($path, 0644);
+
+    $proto = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+    $host = $_SERVER['HTTP_HOST'] ?? 'youngman-biz.com';
+    return $proto . '://' . $host . '/uploads/cards/' . $name;
+}
+
+// === Main ===
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 if ($method !== 'POST') jout(['ok' => false, 'error' => 'POST only'], 405);
 
+$apiKey = load_env_value('OPENAI_API_KEY');
+if ($apiKey === '') jout(['ok' => false, 'error' => 'OPENAI_API_KEY가 서버 .env에 설정되지 않았습니다.'], 500);
+
 $siteUrl = trim((string)($_POST['siteUrl'] ?? ''));
 $tone = trim((string)($_POST['tone'] ?? ''));
-$hasImage = !empty($_FILES['image']) && (int)($_FILES['image']['error'] ?? 1) === UPLOAD_ERR_OK;
+$hasImage = !empty($_FILES['image']) && is_array($_FILES['image']) && (int)($_FILES['image']['error'] ?? 1) === UPLOAD_ERR_OK;
 
 if (!$hasImage && $siteUrl === '') {
-    jout(['ok' => false, 'error' => '이미지 또는 사이트 주소가 필요합니다.'], 400);
+    jout(['ok' => false, 'error' => '명함 이미지 또는 사이트 주소가 필요합니다.'], 400);
 }
 
-// TODO: integrate real AI pipeline. Until that's wired up, return a stub
-// so the UI flow can be tested end-to-end.
+$cardFields = null;
+$ocrError = null;
+if ($hasImage) {
+    $tmp = $_FILES['image']['tmp_name'];
+    $size = (int)$_FILES['image']['size'];
+    if ($size > 8 * 1024 * 1024) {
+        jout(['ok' => false, 'error' => '이미지가 너무 큽니다. 최대 8MB.'], 400);
+    }
+    $mime = function_exists('mime_content_type') ? (mime_content_type($tmp) ?: 'image/jpeg') : 'image/jpeg';
+    if (!in_array($mime, ['image/jpeg', 'image/png', 'image/webp', 'image/gif'], true)) {
+        jout(['ok' => false, 'error' => '지원되지 않는 이미지 형식: ' . $mime], 400);
+    }
+    $b64 = base64_encode((string)file_get_contents($tmp));
+    $ocr = ocr_business_card($apiKey, $b64, $mime);
+    if ($ocr['ok']) {
+        $cardFields = $ocr['fields'];
+    } else {
+        $ocrError = $ocr['error'] ?? 'OCR 실패';
+    }
+}
+
+$siteMeta = null;
+if ($siteUrl !== '') {
+    if (!preg_match('#^https?://#i', $siteUrl)) {
+        jout(['ok' => false, 'error' => '사이트 주소는 http:// 또는 https:// 로 시작해야 합니다.'], 400);
+    }
+    $siteMeta = fetch_site_meta($siteUrl);
+}
+
+$prompt = build_dalle_prompt($cardFields, $siteMeta, $tone);
+
+$gen = openai_image($apiKey, [
+    'model' => 'dall-e-3',
+    'prompt' => mb_substr($prompt, 0, 4000),
+    'n' => 1,
+    'size' => '1792x1024',
+    'quality' => 'standard',
+    'response_format' => 'url',
+]);
+
+if (!$gen['ok']) {
+    $msg = $gen['body']['error']['message'] ?? ($gen['error'] ?? 'OpenAI 이미지 생성 실패');
+    jout([
+        'ok' => false,
+        'error' => $msg,
+        'fields' => $cardFields,
+        'ocr_error' => $ocrError,
+        'site_meta' => $siteMeta,
+        'prompt_preview' => mb_substr($prompt, 0, 200),
+    ], 502);
+}
+
+$openaiUrl = $gen['body']['data'][0]['url'] ?? '';
+if ($openaiUrl === '') {
+    jout(['ok' => false, 'error' => '이미지 URL이 응답에 없습니다.', 'fields' => $cardFields], 502);
+}
+
+$savedUrl = save_image_from_url($openaiUrl) ?: $openaiUrl;
+
 jout([
     'ok' => true,
-    'fields' => [
-        '이미지' => $hasImage ? ($_FILES['image']['name'] ?? '(첨부됨)') : '(없음)',
-        '사이트' => $siteUrl ?: '(없음)',
-        '톤' => $tone ?: '(자동)',
-    ],
-    'note' => 'AI 파이프라인이 아직 연결되지 않았습니다. 입력은 정상적으로 수신되었으며, 백엔드 키 등록 후 실제 디자인이 생성됩니다.',
+    'fields' => $cardFields,
+    'siteMeta' => $siteMeta,
+    'imageUrl' => $savedUrl,
+    'note' => $ocrError ? ('OCR: ' . $ocrError) : null,
 ]);
