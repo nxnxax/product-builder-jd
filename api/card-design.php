@@ -202,65 +202,103 @@ function template_palette_decision(string $apiKey, ?array $cardFields, ?array $s
     ];
 }
 
-function pick_recraft_size(array $dims): array {
+function pick_ideogram_aspect(array $dims): string {
     $aspect = $dims['width'] / max(1, $dims['height']);
-    $sizes = [
-        [1024, 1024], [1365, 1024], [1024, 1365], [1536, 1024], [1024, 1536],
-        [1820, 1024], [1024, 1820], [1024, 2048], [2048, 1024],
+    $options = [
+        ['ASPECT_1_1',  1.0],
+        ['ASPECT_4_3',  4/3],   ['ASPECT_3_4',  3/4],
+        ['ASPECT_3_2',  3/2],   ['ASPECT_2_3',  2/3],
+        ['ASPECT_16_10', 16/10], ['ASPECT_10_16', 10/16],
+        ['ASPECT_16_9', 16/9],  ['ASPECT_9_16', 9/16],
+        ['ASPECT_3_1',  3.0],   ['ASPECT_1_3',  1/3],
     ];
-    $best = $sizes[0];
-    $bestDelta = abs(($best[0] / $best[1]) - $aspect);
-    foreach ($sizes as $s) {
-        $d = abs(($s[0] / $s[1]) - $aspect);
-        if ($d < $bestDelta) { $best = $s; $bestDelta = $d; }
+    $best = $options[0];
+    $bestDelta = abs($best[1] - $aspect);
+    foreach ($options as $o) {
+        $d = abs($o[1] - $aspect);
+        if ($d < $bestDelta) { $best = $o; $bestDelta = $d; }
     }
-    return ['size' => $best[0] . 'x' . $best[1], 'width' => $best[0], 'height' => $best[1]];
+    return $best[0];
 }
 
-function build_recraft_bg_prompt(array $palette, ?array $cardFields, string $tone): string {
-    $industry = strtolower(trim((string)(($cardFields['industry'] ?? '') . ' ' . ($cardFields['company'] ?? '') . ' ' . $tone)));
+function build_ideogram_card_prompt(?array $cardFields, ?array $siteMeta, string $tone, ?array $plan = null): string {
+    $hero      = trim((string)($plan['hero_text']        ?? ''));
+    $secondary = trim((string)($plan['secondary_text']   ?? ''));
+    $phone     = trim((string)($plan['phone_value']      ?? ''));
+    $tertiary  = is_array($plan['tertiary_lines'] ?? null) ? array_filter(array_map('strval', $plan['tertiary_lines'])) : [];
+    $emphPhone = !empty($plan['emphasized_phone']);
+    $palette   = is_array($plan['color_palette'] ?? null) ? $plan['color_palette'] : [];
+    $bg        = trim((string)($palette['bg']     ?? '#fafafa'));
+    $fg        = trim((string)($palette['fg']     ?? '#0a0a0a'));
+    $accent    = trim((string)($palette['accent'] ?? '#7a0026'));
+    $deco      = trim((string)($plan['decorative_device']    ?? 'thin accent line under the hero'));
+    $designNote = trim((string)($plan['design_note']         ?? ''));
 
-    $industryHint = 'premium luxury minimal';
+    if ($hero === '') {
+        $hero      = trim((string)($cardFields['brand_title'] ?? $cardFields['company'] ?? $cardFields['name'] ?? ''));
+        $secondary = trim((string)($cardFields['name'] ?? ''));
+        $phone     = trim((string)($cardFields['phone'] ?? $cardFields['mobile'] ?? ''));
+        $tertiary  = array_filter([
+            (string)($cardFields['title']   ?? ''),
+            (string)($cardFields['email']   ?? ''),
+            (string)($cardFields['address'] ?? ''),
+            (string)($cardFields['company'] ?? ''),
+        ]);
+    }
+
+    $industry = strtolower((string)($cardFields['industry'] ?? '') . ' ' . $tone);
+    $industryHint = 'premium luxury';
     if (preg_match('/부동산|분양|건설|아파트|real.?estate|construction/u', $industry)) {
-        $industryHint = 'premium real estate developer mood, 현대건설 자이 푸르지오 brand feel';
+        $industryHint = 'premium Korean real estate / apartment-brand business card, 현대건설 자이 푸르지오 mood';
     } elseif (preg_match('/마케팅|광고|영업|marketing|advert/u', $industry)) {
-        $industryHint = 'bold modern marketing campaign mood, magazine cover energy';
-    } elseif (preg_match('/테크|tech|software|saas|it/u', $industry)) {
-        $industryHint = 'modern tech startup mood, geometric, forward-looking';
-    } elseif (preg_match('/법무|금융|finance|law/u', $industry)) {
-        $industryHint = 'sophisticated executive mood, refined, conservative';
-    } elseif (preg_match('/뷰티|패션|beauty|fashion/u', $industry)) {
-        $industryHint = 'ultra-minimal high-end beauty mood';
+        $industryHint = 'bold modern marketing/advertising business card, magazine-cover energy';
+    } elseif (preg_match('/테크|tech|saas|it/u', $industry)) {
+        $industryHint = 'modern tech startup business card, geometric, forward-looking';
     }
 
-    return mb_substr(
-        "Flat 2D vector graphic. Decorative background art for a business card — abstract premium pattern, generous whitespace. " .
-        "Palette: bg {$palette['neutral']}, accent {$palette['primary']}. {$industryHint}. " .
-        "ABSOLUTELY NO TEXT. NO letters. NO numbers. NO words. NO logos. NO QR codes. NO icons. " .
-        "Composition: empty/calm region on the LEFT 60% of the frame so text can be overlaid there. " .
-        "Decorative interest concentrated on the RIGHT 35-40% of the frame: subtle geometric shapes, thin lines, soft gradient ramps, an abstract mark — tasteful, not busy. " .
-        "Edge-to-edge full bleed. No drop shadow. No 3D. No perspective. No card mockup. No paper texture. No environment. The image IS the card surface itself.",
-        0, 990, 'UTF-8'
-    );
+    $textBlock = '';
+    if ($hero !== '')      $textBlock .= "Largest text (hero, bold display weight): \"$hero\". ";
+    if ($secondary !== '') $textBlock .= "Secondary text: \"$secondary\". ";
+    if ($emphPhone && $phone !== '') $textBlock .= "Phone number as call-to-action (bold): \"$phone\". ";
+    elseif ($phone !== '') $tertiary[] = $phone;
+    foreach ($tertiary as $line) {
+        $line = trim((string)$line);
+        if ($line !== '') $textBlock .= "Small line: \"$line\". ";
+    }
+
+    $prompt =
+        "Premium business card design — flat graphic, NOT a photo of a card on a desk. The image IS the card itself, edge-to-edge. " .
+        "{$industryHint}. " .
+        "Palette: background {$bg}, foreground text {$fg}, accent color {$accent}. " .
+        "Decorative element: {$deco}. " .
+        ($designNote !== '' ? "Mood: {$designNote}. " : '') .
+        ($tone !== '' ? "Brief: " . mb_substr($tone, 0, 120, 'UTF-8') . ". " : '') .
+        "Render Hangul (Korean characters) precisely with perfect spelling — no romanization, no translation. " .
+        "{$textBlock}" .
+        "Single-side card front, asymmetric editorial layout, clear typographic hierarchy (hero significantly larger than rest), generous margins, no clip art, no fake QR code, no stock icon.";
+
+    return mb_substr($prompt, 0, 1500, 'UTF-8');
 }
 
-function recraft_generate(string $apiKey, string $prompt, string $size, string $style = 'vector_illustration'): array {
-    $ch = curl_init('https://external.api.recraft.ai/v1/images/generations');
+function ideogram_generate(string $apiKey, string $prompt, string $aspect, string $styleType = 'DESIGN'): array {
+    $ch = curl_init('https://api.ideogram.ai/generate');
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_POST => true,
         CURLOPT_POSTFIELDS => json_encode([
-            'prompt' => $prompt,
-            'style' => $style,
-            'size' => $size,
-            'model' => 'recraftv3',
-            'response_format' => 'url',
+            'image_request' => [
+                'prompt' => $prompt,
+                'aspect_ratio' => $aspect,
+                'model' => 'V_2',
+                'style_type' => $styleType,
+                'magic_prompt_option' => 'AUTO',
+            ],
         ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
         CURLOPT_HTTPHEADER => [
-            'Authorization: Bearer ' . $apiKey,
+            'Api-Key: ' . $apiKey,
             'Content-Type: application/json',
         ],
-        CURLOPT_TIMEOUT => 90,
+        CURLOPT_TIMEOUT => 120,
         CURLOPT_CONNECTTIMEOUT => 10,
     ]);
     $resp = curl_exec($ch);
@@ -270,12 +308,20 @@ function recraft_generate(string $apiKey, string $prompt, string $size, string $
     if ($resp === false) return ['ok' => false, 'error' => 'curl: ' . $err, 'status' => 0];
     $data = json_decode((string)$resp, true);
     if ($status < 200 || $status >= 300) {
-        $msg = is_array($data) ? ($data['error']['message'] ?? $data['message'] ?? json_encode($data)) : substr((string)$resp, 0, 300);
-        return ['ok' => false, 'error' => 'Recraft ' . $status . ': ' . $msg, 'status' => $status];
+        $msg = is_array($data) ? ($data['error'] ?? $data['detail'] ?? json_encode($data)) : substr((string)$resp, 0, 400);
+        return ['ok' => false, 'error' => 'Ideogram ' . $status . ': ' . $msg, 'status' => $status, 'body' => $data];
     }
-    $url = is_array($data) ? ($data['data'][0]['url'] ?? '') : '';
-    if ($url === '') return ['ok' => false, 'error' => 'No image URL in Recraft response'];
-    return ['ok' => true, 'url' => $url, 'credits' => $data['credits'] ?? null];
+    $first = is_array($data) && !empty($data['data'][0]) ? $data['data'][0] : null;
+    $url = is_array($first) ? ($first['url'] ?? '') : '';
+    if ($url === '') return ['ok' => false, 'error' => 'No image URL in Ideogram response', 'body' => $data];
+    return [
+        'ok' => true,
+        'url' => $url,
+        'resolution' => $first['resolution'] ?? null,
+        'is_image_safe' => $first['is_image_safe'] ?? null,
+        'seed' => $first['seed'] ?? null,
+        'used_prompt' => $first['prompt'] ?? null,
+    ];
 }
 
 function save_remote_image(string $url): ?string {
@@ -368,8 +414,9 @@ if ($method === 'GET' && (($_GET['test'] ?? '') === 'connectivity')) {
     jout([
         'ok' => true,
         'env' => [
-            'OPENAI_API_KEY_present'  => load_env_value('OPENAI_API_KEY')  !== '',
-            'RECRAFT_API_KEY_present' => load_env_value('RECRAFT_API_KEY') !== '',
+            'OPENAI_API_KEY_present'   => load_env_value('OPENAI_API_KEY')   !== '',
+            'RECRAFT_API_KEY_present'  => load_env_value('RECRAFT_API_KEY')  !== '',
+            'IDEOGRAM_API_KEY_present' => load_env_value('IDEOGRAM_API_KEY') !== '',
             'php_version' => PHP_VERSION,
         ],
         'templates' => array_values(array_map(function ($p) { return basename($p, '.html'); }, glob(dirname(__DIR__) . '/templates/cards/*.html') ?: [])),
@@ -417,36 +464,10 @@ if ($siteUrl !== '') {
 
 if (!$cardFields) $cardFields = [];
 
+// Director decides palette + hero/sub/tertiary/etc. (used by both Ideogram and template fallback)
 $decision = template_palette_decision($openaiKey, $cardFields, $siteMeta, $tone);
 
-// Try Recraft for a decorative TEXT-FREE background (hybrid mode).
-$recraftKey = load_env_value('RECRAFT_API_KEY');
-$bgImageUrl = '';
-$recraftMeta = ['attempted' => false, 'used' => false, 'error' => null, 'credits' => null];
-if ($recraftKey !== '') {
-    $recraftMeta['attempted'] = true;
-    $sizePick = pick_recraft_size($inputDims);
-    $bgPrompt = build_recraft_bg_prompt($decision['palette'], $cardFields, $tone);
-    $gen = recraft_generate($recraftKey, $bgPrompt, $sizePick['size']);
-    if ($gen['ok']) {
-        $saved = save_remote_image($gen['url']);
-        if ($saved !== null) {
-            $bgImageUrl = $saved;
-            $recraftMeta['used'] = true;
-            $recraftMeta['credits'] = $gen['credits'];
-        } else {
-            $recraftMeta['error'] = '저장 실패';
-        }
-    } else {
-        $recraftMeta['error'] = $gen['error'] ?? 'Recraft 호출 실패';
-    }
-}
-
-// If Recraft worked, switch template to the overlay variant. Otherwise keep
-// whatever the director picked.
-$useTemplate = $bgImageUrl !== '' ? 'recraft_overlay' : $decision['template_id'];
-
-// Map OCR fields → template slots respecting hero hierarchy from director.
+// Build the director plan in the shape build_ideogram_card_prompt expects.
 $brandTitle = trim((string)($cardFields['brand_title'] ?? ''));
 $personName = trim((string)($cardFields['name']        ?? ''));
 $personTitle = trim((string)($cardFields['title']      ?? ''));
@@ -456,9 +477,74 @@ $email = trim((string)($cardFields['email'] ?? ''));
 $address = trim((string)($cardFields['address'] ?? ''));
 $ocrTagline = trim((string)($cardFields['tagline'] ?? ''));
 
-// Templates expect: name, title, company (largest), phone, email, address, tagline.
-// We map so the HERO ends up in `company` slot (which all templates render biggest).
-$heroForTemplate = $brandTitle !== '' ? $brandTitle : ($legalCompany !== '' ? $legalCompany : $personName);
+$heroResolved = $decision['hero_text'] !== '' ? $decision['hero_text']
+              : ($brandTitle !== '' ? $brandTitle : ($legalCompany !== '' ? $legalCompany : $personName));
+$subResolved = $decision['sub_text'] !== '' ? $decision['sub_text']
+              : trim($personName . ($personTitle !== '' ? ' ' . $personTitle : ''));
+$tertiary = array_filter([
+    $decision['tertiary_text'] !== '' ? $decision['tertiary_text'] : '',
+    $brandTitle !== '' && $legalCompany !== '' ? $legalCompany : '',
+    $email,
+    $address,
+]);
+
+$ideogramPlan = [
+    'hero_text'         => $heroResolved,
+    'secondary_text'    => $subResolved,
+    'phone_value'       => $phone,
+    'emphasized_phone'  => $phone !== '',
+    'tertiary_lines'    => array_values($tertiary),
+    'color_palette'     => [
+        'bg'     => $decision['palette']['neutral'],
+        'fg'     => $decision['palette']['fg'],
+        'accent' => $decision['palette']['primary'],
+    ],
+    'decorative_device' => 'thin accent line near the hero, single brand color used sparingly',
+    'design_note'       => $decision['reasoning'] ?? '',
+];
+
+// Try Ideogram first.
+$ideogramKey = load_env_value('IDEOGRAM_API_KEY');
+$ideogramMeta = ['attempted' => false, 'used' => false, 'error' => null];
+$ideogramImageUrl = '';
+if ($ideogramKey !== '') {
+    $ideogramMeta['attempted'] = true;
+    $aspect = pick_ideogram_aspect($inputDims);
+    $cardPrompt = build_ideogram_card_prompt($cardFields, $siteMeta, $tone, $ideogramPlan);
+    $gen = ideogram_generate($ideogramKey, $cardPrompt, $aspect, 'DESIGN');
+    if ($gen['ok']) {
+        $saved = save_remote_image($gen['url']);
+        if ($saved !== null) {
+            $ideogramImageUrl = $saved;
+            $ideogramMeta['used'] = true;
+            $ideogramMeta['resolution'] = $gen['resolution'] ?? null;
+            $ideogramMeta['seed'] = $gen['seed'] ?? null;
+            $ideogramMeta['used_prompt'] = $gen['used_prompt'] ?? null;
+        } else {
+            $ideogramMeta['error'] = '이미지 저장 실패';
+        }
+    } else {
+        $ideogramMeta['error'] = $gen['error'] ?? 'Ideogram 호출 실패';
+    }
+}
+
+// If Ideogram succeeded, return the image directly. Otherwise fall back to
+// template render so user always gets *something*.
+if ($ideogramImageUrl !== '') {
+    jout([
+        'ok' => true,
+        'fields' => $cardFields,
+        'siteMeta' => $siteMeta,
+        'imageUrl' => $ideogramImageUrl,
+        'ideogram' => $ideogramMeta,
+        'decision' => $decision,
+        'plan' => $ideogramPlan,
+        'note' => $ocrError ? ('OCR: ' . $ocrError) : null,
+    ]);
+}
+
+// === Template fallback ===
+$heroForTemplate = $heroResolved;
 $smallCompanyForTemplate = $brandTitle !== '' && $legalCompany !== '' ? $legalCompany : '';
 
 $renderFields = [
@@ -472,7 +558,7 @@ $renderFields = [
     'monogram' => build_monogram($heroForTemplate ?: $personName),
 ];
 
-$render = render_template($useTemplate, $renderFields, $decision['palette'], $inputDims, $bgImageUrl);
+$render = render_template($decision['template_id'], $renderFields, $decision['palette'], $inputDims, '');
 if (!$render['ok']) jout(['ok' => false, 'error' => $render['error'], 'decision' => $decision], 500);
 
 $savedUrl = save_html($render['html']);
@@ -483,9 +569,8 @@ jout([
     'fields' => $cardFields,
     'siteMeta' => $siteMeta,
     'htmlUrl' => $savedUrl,
-    'decision' => array_merge($decision, ['actual_template' => $useTemplate]),
-    'recraft' => $recraftMeta,
-    'bgImageUrl' => $bgImageUrl ?: null,
+    'decision' => array_merge($decision, ['actual_template' => $decision['template_id']]),
+    'ideogram' => $ideogramMeta,
     'renderFields' => $renderFields,
     'note' => $ocrError ? ('OCR: ' . $ocrError) : null,
 ]);

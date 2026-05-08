@@ -437,9 +437,9 @@
                 resultBody.appendChild(meta);
             }
 
-            // Recraft status — make it loud so we know whether the bg layer fired.
-            if (data.recraft) {
-                const r = data.recraft;
+            // Ideogram status
+            if (data.ideogram) {
+                const r = data.ideogram;
                 const box = document.createElement('div');
                 const used = r.used === true;
                 const bg = used ? 'var(--success-soft)' : (r.attempted ? 'var(--danger-soft)' : 'var(--bg-subtle)');
@@ -447,28 +447,17 @@
                 box.style.cssText = `margin-top:.5rem;padding:.6rem .8rem;background:${bg};color:${fg};border-radius:var(--radius-md);font-size:.82rem;line-height:1.5;`;
                 let label;
                 if (used) {
-                    label = `Recraft 배경 적용됨 ✓${r.credits != null ? ` · 잔여 크레딧 ${r.credits}` : ''}`;
+                    const meta = [];
+                    if (r.resolution) meta.push(r.resolution);
+                    if (r.seed != null) meta.push('seed ' + r.seed);
+                    label = `Ideogram 생성 완료 ✓${meta.length ? ' · ' + meta.join(' · ') : ''}`;
                 } else if (r.attempted) {
-                    label = `Recraft 호출 실패 ✗ — ${r.error || 'unknown'}`;
+                    label = `Ideogram 호출 실패 ✗ — ${r.error || 'unknown'} (HTML 템플릿으로 fallback)`;
                 } else {
-                    label = 'Recraft 호출 안 됨 (RECRAFT_API_KEY가 서버 .env에 없음)';
+                    label = 'Ideogram 호출 안 됨 (IDEOGRAM_API_KEY가 서버 .env에 없음 — HTML 템플릿으로 생성됨)';
                 }
                 box.textContent = label;
                 resultBody.appendChild(box);
-
-                if (used && data.bgImageUrl) {
-                    const bgPreview = document.createElement('details');
-                    bgPreview.style.cssText = 'margin-top:.4rem;padding:.55rem .75rem;background:var(--bg-subtle);border:1px solid var(--border);border-radius:var(--radius-md);font-size:.8rem;';
-                    const sum = document.createElement('summary');
-                    sum.style.cssText = 'cursor:pointer;color:var(--fg-secondary);';
-                    sum.textContent = 'Recraft 배경 이미지 보기';
-                    bgPreview.appendChild(sum);
-                    const img = document.createElement('img');
-                    img.src = data.bgImageUrl;
-                    img.style.cssText = 'max-width:100%;margin-top:.5rem;border-radius:var(--radius-sm);border:1px solid var(--border);';
-                    bgPreview.appendChild(img);
-                    resultBody.appendChild(bgPreview);
-                }
             }
 
             if (data.directorPlan) {

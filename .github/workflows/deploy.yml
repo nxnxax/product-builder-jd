@@ -75,28 +75,19 @@ jobs:
         env:
           OPENAI_KEY: ${{ secrets.OPENAI_API_KEY }}
           RECRAFT_KEY: ${{ secrets.RECRAFT_API_KEY }}
+          IDEOGRAM_KEY: ${{ secrets.IDEOGRAM_API_KEY }}
         run: |
           set -e
           {
             echo "VITE_SUPABASE_URL=https://xktjucyijpkopkyvxovh.supabase.co/rest/v1/"
             echo "VITE_SUPABASE_ANON_KEY=sb_publishable_Qg7NbgXvnIEchsjR18X8Mw_d8YsqVbS"
-            if [ -n "$OPENAI_KEY" ]; then
-              echo "OPENAI_API_KEY=$OPENAI_KEY"
-            else
-              echo "::warning::OPENAI_API_KEY GitHub secret is empty — OCR will fail until set."
-            fi
-            if [ -n "$RECRAFT_KEY" ]; then
-              echo "RECRAFT_API_KEY=$RECRAFT_KEY"
-            else
-              echo "::warning::RECRAFT_API_KEY GitHub secret is empty — card design will fail until set."
-            fi
+            [ -n "$OPENAI_KEY" ]   && echo "OPENAI_API_KEY=$OPENAI_KEY"     || echo "::warning::OPENAI_API_KEY missing"
+            [ -n "$RECRAFT_KEY" ]  && echo "RECRAFT_API_KEY=$RECRAFT_KEY"   || true
+            [ -n "$IDEOGRAM_KEY" ] && echo "IDEOGRAM_API_KEY=$IDEOGRAM_KEY" || echo "::warning::IDEOGRAM_API_KEY missing"
           } > deploy/.env
-          if [ -n "$OPENAI_KEY" ]; then
-            echo "OPENAI_API_KEY length=${#OPENAI_KEY}, prefix=$(printf '%s' "$OPENAI_KEY" | head -c6)…"
-          fi
-          if [ -n "$RECRAFT_KEY" ]; then
-            echo "RECRAFT_API_KEY length=${#RECRAFT_KEY}, prefix=$(printf '%s' "$RECRAFT_KEY" | head -c6)…"
-          fi
+          [ -n "$OPENAI_KEY" ]   && echo "OPENAI_API_KEY len=${#OPENAI_KEY}, prefix=$(printf '%s' "$OPENAI_KEY" | head -c6)…"   || true
+          [ -n "$RECRAFT_KEY" ]  && echo "RECRAFT_API_KEY len=${#RECRAFT_KEY}, prefix=$(printf '%s' "$RECRAFT_KEY" | head -c6)…"  || true
+          [ -n "$IDEOGRAM_KEY" ] && echo "IDEOGRAM_API_KEY len=${#IDEOGRAM_KEY}, prefix=$(printf '%s' "$IDEOGRAM_KEY" | head -c6)…" || true
 
       - name: Deploy to Cafe24 (FTP)
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
