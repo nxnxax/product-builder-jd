@@ -49,7 +49,40 @@ function openai_chat(string $apiKey, array $body, int $timeout = 60): array {
     return ['ok' => $status >= 200 && $status < 300, 'status' => $status, 'body' => $decoded, 'raw' => (string)$resp];
 }
 
-function generate_card_svg(string $apiKey, ?array $cardFields, ?array $siteMeta, string $tone, array $dims = ['width' => 1050, 'height' => 600]): array {
+function research_design_brief(string $apiKey, ?array $cardFields, ?array $siteMeta, string $tone): string {
+    $companyName = trim((string)($cardFields['company'] ?? ''));
+    $title = trim((string)($cardFields['title'] ?? ''));
+    $industryHint = $title ?: ($siteMeta['description'] ?? '') ?: 'advertising / marketing sales';
+    $effectiveTone = $tone !== '' ? $tone : '광고영업이미지로 마케팅 명함 멋지게 만들어줘 (slick advertising/marketing-sales business card, bold and confident, ad-poster energy)';
+
+    $query =
+        "I'm designing a business card for: " . ($companyName ? "company \"$companyName\", " : '') .
+        "industry/role: $industryHint. Tone brief: $effectiveTone.\n\n" .
+        "Search the web for the top 2025 premium business card design references — specifically for marketing/advertising/sales professionals. " .
+        "Look at award-winning portfolios (Behance, Awwwards, It's Nice That, Dieline) and current trends in editorial design. " .
+        "Then synthesize a concrete DESIGN DNA in 4–6 sentences: " .
+        "(a) Layout pattern (e.g. 'oversized name bleeding off the right edge with a thin horizontal accent line at top-third'), " .
+        "(b) Exact color palette (3 hex codes max, name them), " .
+        "(c) Typography hierarchy (which element is the hero, weight contrast), " .
+        "(d) One distinctive graphic device (e.g. 'thick diagonal slash at bottom-left', 'oversized number 2025 as watermark', 'asterisk monogram'). " .
+        "Be specific and opinionated — no generic advice. Output only the design DNA prose, no preamble, no URLs.";
+
+    $resp = openai_chat($apiKey, [
+        'model' => 'gpt-4o-search-preview',
+        'web_search_options' => new \stdClass(),
+        'messages' => [['role' => 'user', 'content' => $query]],
+        'max_tokens' => 800,
+    ], 45);
+
+    if (!$resp['ok']) {
+        // Soft-fail: return empty string and let SVG step proceed without research notes.
+        return '';
+    }
+    $brief = (string)($resp['body']['choices'][0]['message']['content'] ?? '');
+    return trim($brief);
+}
+
+function generate_card_svg(string $apiKey, ?array $cardFields, ?array $siteMeta, string $tone, array $dims = ['width' => 1050, 'height' => 600], string $researchBrief = ''): array {
     $w = max(300, min(2400, (int)$dims['width']));
     $h = max(200, min(2400, (int)$dims['height']));
     $context = [];
@@ -76,6 +109,10 @@ function generate_card_svg(string $apiKey, ?array $cardFields, ?array $siteMeta,
         $context[] = "Default brief from the operator: 광고영업이미지로 마케팅 명함 멋지게 만들어줘 (design a slick MARKETING / ADVERTISING-SALES business card — bold, confident, attention-grabbing, energetic). This is for someone who sells visibility for a living; the card itself must look like an ad worth keeping.";
     }
     if (!$cardFields && !$siteMeta) $context[] = "No extracted info available — invent nothing; instead create a tasteful placeholder layout that demonstrates the design system, using the literal label 'Sample' if absolutely necessary.";
+
+    if ($researchBrief !== '') {
+        $context[] = "REAL-WORLD DESIGN DNA (synthesized from current 2025 references via web search) — follow this closely:\n" . $researchBrief;
+    }
 
     $sys = "You are the lead brand designer at a top-tier studio (think Pentagram, Mucca, COLLINS). Your task: design a luxurious, distinctive business card SVG that captures the company's brand identity.\n" .
         "\n" .
@@ -427,7 +464,11 @@ if ($siteUrl !== '') {
     $siteMeta = fetch_site_meta($siteUrl);
 }
 
-$gen = generate_card_svg($apiKey, $cardFields, $siteMeta, $tone, $inputDims);
+// Step 1: Web-search-augmented research call to extract a current design DNA brief.
+$researchBrief = research_design_brief($apiKey, $cardFields, $siteMeta, $tone);
+
+// Step 2: Generate the SVG card using OCR data + research brief.
+$gen = generate_card_svg($apiKey, $cardFields, $siteMeta, $tone, $inputDims, $researchBrief);
 
 if (!$gen['ok']) {
     jout([
@@ -449,5 +490,6 @@ jout([
     'fields' => $cardFields,
     'siteMeta' => $siteMeta,
     'imageUrl' => $savedUrl,
+    'researchBrief' => $researchBrief !== '' ? $researchBrief : null,
     'note' => $ocrError ? ('OCR: ' . $ocrError) : null,
 ]);
