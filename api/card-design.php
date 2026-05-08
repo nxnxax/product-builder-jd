@@ -53,11 +53,20 @@ function ocr_business_card(string $apiKey, string $imageBase64, string $mime): a
             'role' => 'user',
             'content' => [
                 ['type' => 'text', 'text' =>
-                    "이 이미지가 명함이라면 다음 필드를 JSON으로 추출: " .
-                    "name(이름), title(직책), company(회사명), email, phone, mobile, address, website, " .
-                    "tagline(슬로건), industry(부동산/건설/마케팅/광고/테크/법무/의료/F&B/뷰티/교육/금융/일반 중 하나), " .
-                    "language('ko' 또는 'en'). " .
-                    "값을 못 찾은 필드는 빈 문자열. 명함이 아니면 {\"error\":\"not_a_business_card\"}."],
+                    "이 이미지가 명함이라면 모든 텍스트를 추출해서 JSON으로 반환해줘. 필드:\n" .
+                    "- brand_title: 로고 영역에 있는 가장 시각적으로 강조된 텍스트 (분양 명함이라면 아파트 브랜드명, 광고 명함이라면 캠페인/제품명 등). 가장 크고 굵게 박힌 메인 타이틀이 여기 들어감. 보통 로고 위치(상단/좌상단/중앙 상단)에 있음.\n" .
+                    "- name: 명함 주인의 이름\n" .
+                    "- title: 직책 (팀장/대표/이사 등)\n" .
+                    "- company: 법적 회사명 (작게 박힌 상호 — brand_title과 다를 수 있음. 예: brand_title='브레인시티 비스타동원'일 때 company='동원개발')\n" .
+                    "- email\n" .
+                    "- phone (대표번호)\n" .
+                    "- mobile (휴대폰)\n" .
+                    "- address\n" .
+                    "- website\n" .
+                    "- tagline (슬로건/한 줄 소개)\n" .
+                    "- industry (부동산/건설/마케팅/광고/테크/법무/의료/F&B/뷰티/교육/금융/일반)\n" .
+                    "- language ('ko' 또는 'en')\n" .
+                    "값을 못 찾은 필드는 빈 문자열. brand_title을 찾기 어려우면 빈 문자열로 두고 company를 채워. 명함이 아니면 {\"error\":\"not_a_business_card\"}."],
                 ['type' => 'image_url', 'image_url' => ['url' => 'data:' . $mime . ';base64,' . $imageBase64]],
             ],
         ]],
@@ -119,7 +128,7 @@ function gpt_design_director(string $apiKey, ?array $cardFields, ?array $siteMet
     $context = [];
     if ($cardFields) {
         $clean = [];
-        foreach (['name','title','company','email','phone','mobile','address','tagline','industry','language'] as $k) {
+        foreach (['brand_title','name','title','company','email','phone','mobile','address','tagline','industry','language'] as $k) {
             $v = trim((string)($cardFields[$k] ?? ''));
             if ($v !== '') $clean[$k] = $v;
         }
@@ -135,11 +144,15 @@ function gpt_design_director(string $apiKey, ?array $cardFields, ?array $siteMet
 You are an art director planning a single-side business card BEFORE handing off to an image generator. Read the brief and emit a STRICT JSON design plan. No prose outside JSON.
 
 CRITICAL HIERARCHY RULES — these dictate what becomes biggest/most prominent:
-1. If the card is for SALES / 영업 / 마케팅 / 광고 / real-estate sales (분양) — the HERO is the BRAND/PRODUCT/PROPERTY title (e.g., apartment brand like "브레인시티 비스타동원"), NOT the legal company name. Phone number is the SECOND most prominent element because the buyer needs to call.
-2. If the card is for an executive/professional (lawyer, doctor, exec) — HERO is the person's name. Company name secondary.
-3. If the card is for a creative/designer — HERO is name OR portfolio brand. Compact contact.
 
-Identify which case applies from the OCR fields. The "company" field on a sales card might actually contain the BRAND/PRODUCT title (apartment brand) rather than the legal entity. Use the tone brief and tagline to decide.
+ABSOLUTE RULE: if `brand_title` is non-empty in the OCR fields, it IS the hero. Always. No exceptions. The brand title is the visually-most-prominent text the user wants as the headline (apartment brand, campaign name, product name, etc.). NEVER demote it in favor of `company` (legal entity) or `name` (person).
+
+If brand_title is empty:
+1. SALES / 영업 / 마케팅 / 광고 / real-estate sales (분양) — HERO is whatever brand/product/property title can be inferred from company/tagline. Phone number is the SECOND most prominent element because the buyer needs to call.
+2. Executive/professional (lawyer, doctor, exec) — HERO is the person's name. Company name secondary.
+3. Creative/designer — HERO is name OR portfolio brand. Compact contact.
+
+For real-estate sales cards in Korea: `company` typically contains the LEGAL developer (e.g., "동원개발") and `brand_title` contains the APARTMENT BRAND (e.g., "브레인시티 비스타동원"). The brand is what the buyer cares about, so it MUST be hero. The legal company name goes in tertiary lines, small.
 
 OUTPUT JSON SHAPE (all strings; arrays where noted):
 {
