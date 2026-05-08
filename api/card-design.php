@@ -73,7 +73,7 @@ function generate_card_svg(string $apiKey, ?array $cardFields, ?array $siteMeta,
     if ($tone !== '') {
         $context[] = "Design tone requested by user: $tone";
     } else {
-        $context[] = "Default brief: 해당 회사 이미지로 고급스럽게 디자인해줘 (design luxuriously, reflecting the company's identity). Aim for premium, distinctive, magazine-cover-worthy.";
+        $context[] = "Default brief from the operator: 광고영업이미지로 마케팅 명함 멋지게 만들어줘 (design a slick MARKETING / ADVERTISING-SALES business card — bold, confident, attention-grabbing, energetic). This is for someone who sells visibility for a living; the card itself must look like an ad worth keeping.";
     }
     if (!$cardFields && !$siteMeta) $context[] = "No extracted info available — invent nothing; instead create a tasteful placeholder layout that demonstrates the design system, using the literal label 'Sample' if absolutely necessary.";
 
@@ -82,6 +82,7 @@ function generate_card_svg(string $apiKey, ?array $cardFields, ?array $siteMeta,
         "PROCESS — execute internally before writing SVG:\n" .
         "1. Infer the company's brand essence from name + industry + tagline. What kind of business is this? (Tech startup? Law firm? Cafe? Designer studio? Real estate? Medical?). What are its likely values, customer demographic, and emotional tone?\n" .
         "2. Choose a sophisticated visual identity that matches:\n" .
+        "   - Marketing / Advertising sales (DEFAULT for this product) → bold confident typography (display weight or heavy italic), saturated accent color (electric blue, hot orange, magenta, signal yellow) on dark background OR high-contrast white, oversized name or oversized initials, a strong graphic element like a thick diagonal stripe / bold arrow / large quoted tagline / magazine-cover treatment. Energetic. Looks like an Ogilvy or Wieden+Kennedy poster scaled to card size.\n" .
         "   - Tech/SaaS → bold geometric sans, single saturated accent on near-black or off-white, asymmetric composition.\n" .
         "   - Law/Finance → conservative serif or refined neo-grotesk, deep navy/charcoal + cream, classic centered or hierarchy-grid layout, monogram.\n" .
         "   - F&B/Hospitality → warm cream/terracotta/forest, elegant display serif, generous letterpress feel.\n" .
