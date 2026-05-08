@@ -656,24 +656,39 @@ function verify_supabase_via_userinfo($auth, $token, $payload) {
     ];
     if ($apiKey !== '') $headers[] = 'apikey: ' . $apiKey;
 
-    $context = stream_context_create([
-        'http' => [
-            'method' => 'GET',
-            'header' => implode("\r\n", $headers),
-            'timeout' => 6,
-            'ignore_errors' => true,
-        ],
-    ]);
-
-    $response = @file_get_contents($endpoint, false, $context);
-    if ($response === false) {
-        auth_log('Supabase userinfo verification failed', ['reason' => 'http_request_failed', 'endpoint' => $endpoint]);
+    if (!function_exists('curl_init')) {
+        auth_log('Supabase userinfo verification failed', ['reason' => 'curl_unavailable']);
         return null;
     }
 
-    $statusLine = isset($http_response_header[0]) ? $http_response_header[0] : '';
-    if (!preg_match('#\s(2\d\d)\s#', $statusLine)) {
-        auth_log('Supabase userinfo verification failed', ['reason' => 'non_2xx', 'status' => $statusLine]);
+    $ch = curl_init($endpoint);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_HTTPHEADER => $headers,
+        CURLOPT_TIMEOUT => 6,
+        CURLOPT_CONNECTTIMEOUT => 4,
+        CURLOPT_FOLLOWLOCATION => false,
+    ]);
+    $response = curl_exec($ch);
+    $status = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curlErr = curl_error($ch);
+    curl_close($ch);
+
+    if ($response === false) {
+        auth_log('Supabase userinfo verification failed', [
+            'reason' => 'http_request_failed',
+            'endpoint' => $endpoint,
+            'curl_error' => $curlErr,
+        ]);
+        return null;
+    }
+
+    if ($status < 200 || $status >= 300) {
+        auth_log('Supabase userinfo verification failed', [
+            'reason' => 'non_2xx',
+            'status' => $status,
+            'body' => substr((string)$response, 0, 200),
+        ]);
         return null;
     }
 
