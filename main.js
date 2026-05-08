@@ -60,6 +60,7 @@ const openLoginBtn = document.getElementById('open-login-btn');
 const userMenu = document.getElementById('user-menu');
 const userEmail = document.getElementById('user-email');
 const logoutBtn = document.getElementById('logout-btn');
+const adminLink = document.getElementById('admin-link');
 
 const customerSection = document.getElementById('customer-section');
 const employeeSection = document.getElementById('employee-section');
@@ -481,15 +482,24 @@ function renderSignedIn() {
         userEmail.textContent = currentSession.user.email;
         userMenu.classList.remove('hidden');
         openLoginBtn.classList.add('hidden');
+
+        if (adminLink) {
+            const meta = currentSession.user.app_metadata || {};
+            const userMeta = currentSession.user.user_metadata || {};
+            const role = String(meta.role || userMeta.role || '').toLowerCase();
+            const isAdmin = role === 'admin' || role === 'owner' || meta.is_admin === true || userMeta.is_admin === true;
+            adminLink.classList.toggle('hidden', !isAdmin);
+        }
     } else {
         userMenu.classList.add('hidden');
         openLoginBtn.classList.remove('hidden');
+        if (adminLink) adminLink.classList.add('hidden');
     }
 }
 
 function renderAuthRequiredTables() {
-    customerList.innerHTML = '<tr><td colspan="4">로그인 후 고객 데이터를 확인할 수 있습니다.</td></tr>';
-    employeeList.innerHTML = '<tr><td colspan="5">로그인 후 직원 데이터를 확인할 수 있습니다.</td></tr>';
+    customerList.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--fg-tertiary);padding:48px 16px;">로그인 후 데이터를 확인할 수 있습니다.</td></tr>';
+    employeeList.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--fg-tertiary);padding:48px 16px;">로그인 후 데이터를 확인할 수 있습니다.</td></tr>';
     customerEmpty.classList.add('hidden');
     employeeEmpty.classList.add('hidden');
 }
@@ -972,8 +982,8 @@ function requireSignedIn() {
 
 function renderLoading() {
     isLoading = true;
-    customerList.innerHTML = '<tr><td colspan="4">데이터를 불러오는 중입니다...</td></tr>';
-    employeeList.innerHTML = '<tr><td colspan="5">데이터를 불러오는 중입니다...</td></tr>';
+    customerList.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--fg-tertiary);padding:48px 16px;">불러오는 중…</td></tr>';
+    employeeList.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--fg-tertiary);padding:48px 16px;">불러오는 중…</td></tr>';
     customerEmpty.classList.add('hidden');
     employeeEmpty.classList.add('hidden');
 }
@@ -985,7 +995,7 @@ function renderAll() {
 }
 
 function renderCustomers() {
-    const filtered = customers.filter(c => 
+    const filtered = customers.filter(c =>
         (c.name || '').toLowerCase().includes(customerFilter.toLowerCase())
     );
 
@@ -998,9 +1008,9 @@ function renderCustomers() {
             const tr = document.createElement('tr');
             tr.innerHTML = `
                 <td data-label="이름"><strong>${escapeHtml(item.name)}</strong></td>
-                <td data-label="전화번호">${escapeHtml(item.phone || '-')}</td>
-                <td data-label="가입일">${escapeHtml(item.createdAt || '-')}</td>
-                <td class="action-btns">
+                <td data-label="연락처">${escapeHtml(item.phone || '—')}</td>
+                <td data-label="등록일">${escapeHtml(item.createdAt || '—')}</td>
+                <td class="action-btns" data-label="">
                     <button class="edit-btn" onclick="openAppModal('customer', '${escapeAttr(item.id)}')">수정</button>
                     <button class="delete-btn" onclick="deleteAppItem('customer', '${escapeAttr(item.id)}')">삭제</button>
                 </td>
@@ -1011,7 +1021,7 @@ function renderCustomers() {
 }
 
 function renderEmployees() {
-    const filtered = employees.filter(e => 
+    const filtered = employees.filter(e =>
         (e.name || '').toLowerCase().includes(employeeFilter.toLowerCase()) ||
         (e.title || '').toLowerCase().includes(employeeFilter.toLowerCase())
     );
@@ -1026,9 +1036,9 @@ function renderEmployees() {
             tr.innerHTML = `
                 <td data-label="이름"><strong>${escapeHtml(item.name)}</strong></td>
                 <td data-label="직함">${escapeHtml(item.title)}</td>
-                <td data-label="연락처">${escapeHtml(item.contact || '-')}</td>
-                <td data-label="투입일">${escapeHtml(item.startDate || '-')}</td>
-                <td class="action-btns">
+                <td data-label="연락처">${escapeHtml(item.contact || '—')}</td>
+                <td data-label="투입일">${escapeHtml(item.startDate || '—')}</td>
+                <td class="action-btns" data-label="">
                     <button class="edit-btn" onclick="openAppModal('employee', '${escapeAttr(item.id)}')">수정</button>
                     <button class="delete-btn" onclick="deleteAppItem('employee', '${escapeAttr(item.id)}')">삭제</button>
                 </td>
@@ -1040,11 +1050,11 @@ function renderEmployees() {
 
 function showError(error) {
     const message = escapeHtml(error?.message || '알 수 없는 오류가 발생했습니다.');
-    customerList.innerHTML = `<tr><td colspan="4">DB 연결 오류: ${message}</td></tr>`;
-    employeeList.innerHTML = `<tr><td colspan="5">DB 연결 오류: ${message}</td></tr>`;
+    customerList.innerHTML = `<tr><td colspan="4" style="text-align:center;color:var(--danger);padding:48px 16px;">${message}</td></tr>`;
+    employeeList.innerHTML = `<tr><td colspan="5" style="text-align:center;color:var(--danger);padding:48px 16px;">${message}</td></tr>`;
     customerEmpty.classList.add('hidden');
     employeeEmpty.classList.add('hidden');
-    alert(`DB 작업 실패: ${error?.message || error}`);
+    alert(`처리 실패: ${error?.message || error}`);
 }
 
 function escapeHtml(value) {

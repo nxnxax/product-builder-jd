@@ -23,7 +23,14 @@ jobs:
           test -f index.html
           test -f main.js
           test -f style.css
+          test -f profile.html
+          test -f admin.html
+          test -f profile.js
+          test -f admin.js
+          test -f auth-shared.js
           grep -q 'main.js?v=' index.html
+          grep -q 'profile.js?v=' profile.html
+          grep -q 'admin.js?v=' admin.html
           php -l api/analyze.php
           php -l api/records.php
           php -l kapp_premium.php
@@ -40,6 +47,7 @@ jobs:
           rm -rf deploy
           mkdir -p deploy
           cp index.html style.css main.js Marketing.html kapp_premium.php lotto2233.html deploy/
+          cp profile.html admin.html profile.js admin.js auth-shared.js deploy/
           cp api/analyze.php deploy/analyze.php
           cp api/records.php deploy/records.php
 

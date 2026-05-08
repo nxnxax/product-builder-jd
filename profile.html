@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>내 정보 · JDHOON</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header id="app-header" class="app-header">
+        <div class="header-container">
+            <h1><a href="index.html" style="color:inherit">JDHOON <span class="accent">Console</span></a></h1>
+            <nav class="main-nav">
+                <a class="nav-link" href="index.html#customers">고객</a>
+                <a class="nav-link" href="index.html#employees">직원</a>
+                <a class="nav-link" href="index.html#marketing">마케팅</a>
+                <a class="nav-link active" href="profile.html">내 정보</a>
+            </nav>
+            <div id="user-menu" class="user-menu">
+                <a href="admin.html" id="admin-link" class="hidden">관리자</a>
+                <span id="user-email"></span>
+                <button type="button" id="logout-btn">로그아웃</button>
+            </div>
+        </div>
+    </header>
+
+    <main class="page-shell">
+        <div class="page-header">
+            <h1>내 정보</h1>
+            <p>계정 정보, 보안, 알림 등 개인 설정을 관리합니다.</p>
+        </div>
+
+        <div class="split-layout">
+            <aside class="side-nav" role="tablist">
+                <button type="button" data-tab="overview" class="active">계정 개요</button>
+                <button type="button" data-tab="basic">기본 정보</button>
+                <button type="button" data-tab="security">보안</button>
+                <button type="button" data-tab="account">계정 관리</button>
+            </aside>
+
+            <div class="section-stack">
+                <section id="loading-state" class="card">
+                    <p style="color:var(--fg-tertiary);font-size:14px;margin:0;">불러오는 중…</p>
+                </section>
+
+                <section id="signed-out-state" class="card hidden" style="text-align:center;padding:64px 24px;">
+                    <h3 style="margin-bottom:8px;">로그인이 필요합니다</h3>
+                    <p style="color:var(--fg-tertiary);margin-bottom:20px;">내 정보를 확인하려면 먼저 로그인하세요.</p>
+                    <a href="index.html" class="primary-btn" style="text-decoration:none;display:inline-flex;">로그인 페이지로</a>
+                </section>
+
+                <!-- Overview -->
+                <section id="tab-overview" class="card profile-tab hidden">
+                    <div style="display:flex;gap:20px;align-items:center;">
+                        <div class="avatar lg" id="profile-initial">·</div>
+                        <div>
+                            <h3 id="profile-display-name" style="font-size:20px;line-height:1.25;letter-spacing:-0.02em;">—</h3>
+                            <p id="profile-display-email" style="color:var(--fg-tertiary);font-size:14px;margin-top:2px;">—</p>
+                            <div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap;">
+                                <span class="pill" id="profile-status-pill">활성</span>
+                                <span class="pill" id="profile-role-pill">일반회원</span>
+                                <span class="pill" id="profile-provider-pill">이메일</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div style="margin-top:32px;">
+                        <h3 class="eyebrow" style="margin-bottom:12px;">계정 정보</h3>
+                        <div class="field-row">
+                            <div class="field-label">가입일</div>
+                            <div class="field-meta" id="profile-created">—</div>
+                        </div>
+                        <div class="field-row">
+                            <div class="field-label">마지막 수정</div>
+                            <div class="field-meta" id="profile-updated">—</div>
+                        </div>
+                        <div class="field-row">
+                            <div class="field-label">최근 로그인</div>
+                            <div class="field-meta" id="profile-last-login">—</div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Basic -->
+                <section id="tab-basic" class="card profile-tab hidden">
+                    <h3>기본 정보</h3>
+                    <p class="card-subtitle">이름과 연락처를 관리합니다. 이메일은 가입 후 변경할 수 없습니다.</p>
+
+                    <form id="basic-form">
+                        <div class="field-row">
+                            <label class="field-label" for="basic-name">이름</label>
+                            <div class="field-control">
+                                <input type="text" id="basic-name" autocomplete="name" placeholder="실명">
+                            </div>
+                        </div>
+                        <div class="field-row">
+                            <label class="field-label" for="basic-phone">휴대폰</label>
+                            <div class="field-control">
+                                <input type="tel" id="basic-phone" autocomplete="tel" placeholder="010-0000-0000">
+                                <span class="form-help">로그인 알림 및 본인확인에 사용됩니다.</span>
+                            </div>
+                        </div>
+                        <div class="field-row">
+                            <label class="field-label" for="basic-email">이메일</label>
+                            <div class="field-control">
+                                <input type="email" id="basic-email" disabled>
+                                <span class="form-help">이메일 주소는 변경할 수 없습니다.</span>
+                            </div>
+                        </div>
+                        <div class="form-actions">
+                            <span id="basic-message" class="form-help" style="margin-right:auto;"></span>
+                            <button type="button" class="secondary-btn" id="basic-reset">되돌리기</button>
+                            <button type="submit" class="primary-btn" id="basic-save">변경사항 저장</button>
+                        </div>
+                    </form>
+                </section>
+
+                <!-- Security -->
+                <section id="tab-security" class="card profile-tab hidden">
+                    <h3>보안</h3>
+                    <p class="card-subtitle">비밀번호 변경 및 보안 옵션을 관리합니다.</p>
+
+                    <form id="password-form">
+                        <div class="field-row">
+                            <label class="field-label" for="pw-new">새 비밀번호</label>
+                            <div class="field-control">
+                                <input type="password" id="pw-new" autocomplete="new-password" minlength="6" placeholder="6자 이상">
+                            </div>
+                        </div>
+                        <div class="field-row">
+                            <label class="field-label" for="pw-confirm">새 비밀번호 확인</label>
+                            <div class="field-control">
+                                <input type="password" id="pw-confirm" autocomplete="new-password" minlength="6" placeholder="다시 입력">
+                            </div>
+                        </div>
+                        <div class="form-actions">
+                            <span id="password-message" class="form-help" style="margin-right:auto;"></span>
+                            <button type="submit" class="primary-btn" id="password-save">비밀번호 변경</button>
+                        </div>
+                    </form>
+                </section>
+
+                <!-- Account management -->
+                <section id="tab-account" class="card profile-tab hidden">
+                    <h3>계정 관리</h3>
+                    <p class="card-subtitle">로그아웃 또는 회원 탈퇴를 진행합니다.</p>
+
+                    <div class="field-row">
+                        <div class="field-label">로그아웃</div>
+                        <div class="field-control">
+                            <span class="form-help">모든 기기에서 로그아웃하려면 비밀번호를 다시 변경하세요.</span>
+                            <div style="margin-top:8px;"><button type="button" class="secondary-btn" id="account-signout">로그아웃</button></div>
+                        </div>
+                    </div>
+
+                    <div class="field-row">
+                        <div class="field-label" style="color:var(--danger);">회원 탈퇴</div>
+                        <div class="field-control">
+                            <span class="form-help">계정과 연관된 데이터가 즉시 삭제되며 복구할 수 없습니다.</span>
+                            <div style="margin-top:8px;"><button type="button" class="danger-btn" id="account-delete">계정 삭제 요청</button></div>
+                        </div>
+                    </div>
+                </section>
+            </div>
+        </div>
+    </main>
+
+    <script src="profile.js?v=20260508-minimal-redesign" type="module"></script>
+</body>
+</html>

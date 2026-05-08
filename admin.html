@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>관리자 · JDHOON</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header id="app-header" class="app-header">
+        <div class="header-container">
+            <h1><a href="index.html" style="color:inherit">JDHOON <span class="accent">Console</span></a></h1>
+            <nav class="main-nav">
+                <a class="nav-link" href="index.html#customers">고객</a>
+                <a class="nav-link" href="index.html#employees">직원</a>
+                <a class="nav-link" href="index.html#marketing">마케팅</a>
+                <a class="nav-link active" href="admin.html">관리자</a>
+            </nav>
+            <div id="user-menu" class="user-menu">
+                <a href="profile.html">내 정보</a>
+                <span id="user-email"></span>
+                <button type="button" id="logout-btn">로그아웃</button>
+            </div>
+        </div>
+    </header>
+
+    <main class="page-shell">
+        <div class="page-header">
+            <h1>관리자</h1>
+            <p>회원, 통계, 사이트 설정, 활동 로그를 한 곳에서 관리합니다.</p>
+        </div>
+
+        <section id="loading-state" class="card">
+            <p style="color:var(--fg-tertiary);font-size:14px;margin:0;">불러오는 중…</p>
+        </section>
+
+        <section id="forbidden-state" class="card hidden" style="text-align:center;padding:64px 24px;">
+            <h3 style="margin-bottom:8px;">접근 권한이 없습니다</h3>
+            <p style="color:var(--fg-tertiary);margin-bottom:20px;">관리자 권한을 가진 계정으로 로그인해 주세요.</p>
+            <a href="index.html" class="primary-btn" style="text-decoration:none;display:inline-flex;">홈으로</a>
+        </section>
+
+        <div id="admin-app" class="hidden">
+            <nav class="tabs" role="tablist">
+                <button type="button" class="tab active" data-tab="dashboard">대시보드</button>
+                <button type="button" class="tab" data-tab="members">회원 관리</button>
+                <button type="button" class="tab" data-tab="settings">사이트 설정</button>
+                <button type="button" class="tab" data-tab="logs">활동 로그</button>
+            </nav>
+
+            <!-- Dashboard -->
+            <section id="tab-dashboard" class="admin-tab">
+                <div class="kpi-grid">
+                    <div class="kpi-card">
+                        <div class="kpi-label">총 회원</div>
+                        <div class="kpi-value" id="kpi-members">—</div>
+                        <div class="kpi-delta" id="kpi-members-delta">최근 7일 +0</div>
+                    </div>
+                    <div class="kpi-card">
+                        <div class="kpi-label">고객 데이터</div>
+                        <div class="kpi-value" id="kpi-customers">—</div>
+                        <div class="kpi-delta">CRM 등록 건수</div>
+                    </div>
+                    <div class="kpi-card">
+                        <div class="kpi-label">직원</div>
+                        <div class="kpi-value" id="kpi-employees">—</div>
+                        <div class="kpi-delta">HRM 등록 인원</div>
+                    </div>
+                    <div class="kpi-card">
+                        <div class="kpi-label">신규 가입 (14일)</div>
+                        <div class="kpi-value" id="kpi-trend-total">—</div>
+                        <div class="spark" id="kpi-spark"></div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h3>최근 가입자</h3>
+                    <p class="card-subtitle">가장 최근에 가입한 회원 5명을 표시합니다.</p>
+                    <div class="table-wrapper" style="border:0;">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>이름</th>
+                                    <th>이메일</th>
+                                    <th>가입 방식</th>
+                                    <th>가입일</th>
+                                </tr>
+                            </thead>
+                            <tbody id="recent-signups"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Members -->
+            <section id="tab-members" class="admin-tab hidden">
+                <div class="section-header" style="margin-bottom:16px;">
+                    <div class="title-group">
+                        <h2 style="font-size:20px;">회원 관리</h2>
+                        <p class="subtitle">권한 변경, 정지·해제 등 회원 상태를 제어합니다.</p>
+                    </div>
+                    <div class="controls">
+                        <div class="search-box">
+                            <input type="search" id="members-search" placeholder="이메일 또는 이름으로 검색">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="table-wrapper">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>회원</th>
+                                <th>가입 방식</th>
+                                <th>권한</th>
+                                <th>상태</th>
+                                <th>가입일</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody id="members-list"></tbody>
+                    </table>
+                    <div id="members-empty" class="empty-state hidden">
+                        <p>회원이 없습니다.</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Settings -->
+            <section id="tab-settings" class="admin-tab hidden">
+                <div class="card">
+                    <h3>사이트 설정</h3>
+                    <p class="card-subtitle">사이트 표시 정보 및 운영 설정입니다.</p>
+
+                    <form id="settings-form">
+                        <div class="field-row">
+                            <label class="field-label" for="setting-site-name">사이트 이름</label>
+                            <div class="field-control">
+                                <input type="text" id="setting-site-name" placeholder="JDHOON Console">
+                            </div>
+                        </div>
+                        <div class="field-row">
+                            <label class="field-label" for="setting-site-tagline">한 줄 소개</label>
+                            <div class="field-control">
+                                <input type="text" id="setting-site-tagline" placeholder="고객·직원·마케팅을 한 곳에서">
+                            </div>
+                        </div>
+                        <div class="field-row">
+                            <label class="field-label" for="setting-contact-email">대표 이메일</label>
+                            <div class="field-control">
+                                <input type="email" id="setting-contact-email" placeholder="contact@example.com">
+                            </div>
+                        </div>
+                        <div class="field-row">
+                            <label class="field-label" for="setting-notice">공지사항</label>
+                            <div class="field-control">
+                                <textarea id="setting-notice" rows="4" placeholder="모든 사용자에게 표시될 공지를 입력하세요"></textarea>
+                            </div>
+                        </div>
+                        <div class="field-row">
+                            <div class="field-label">신규 가입 허용</div>
+                            <div class="field-control">
+                                <label class="toggle">
+                                    <input type="checkbox" id="setting-signup-enabled" checked>
+                                    <span class="slider"></span>
+                                </label>
+                                <span class="form-help" style="margin-top:8px;">끄면 회원가입 페이지가 비활성화됩니다.</span>
+                            </div>
+                        </div>
+                        <div class="form-actions">
+                            <span id="settings-message" class="form-help" style="margin-right:auto;"></span>
+                            <button type="submit" class="primary-btn" id="settings-save">설정 저장</button>
+                        </div>
+                    </form>
+                </div>
+            </section>
+
+            <!-- Logs -->
+            <section id="tab-logs" class="admin-tab hidden">
+                <div class="card">
+                    <h3>활동 로그</h3>
+                    <p class="card-subtitle">최근 사용자 활동을 시간순으로 표시합니다.</p>
+                    <ul class="activity-list" id="logs-list"></ul>
+                    <div id="logs-empty" class="empty-state hidden">
+                        <p>기록된 활동이 없습니다.</p>
+                    </div>
+                </div>
+            </section>
+        </div>
+    </main>
+
+    <!-- Member edit modal -->
+    <div id="member-modal" class="modal hidden">
+        <div class="modal-content">
+            <header class="modal-header">
+                <h2>회원 편집</h2>
+                <button type="button" class="close-btn" id="member-close" aria-label="닫기">&times;</button>
+            </header>
+            <form id="member-form">
+                <div class="field-row">
+                    <div class="field-label">이메일</div>
+                    <div class="field-control"><span id="member-email-display" style="font-size:14px;">—</span></div>
+                </div>
+                <div class="field-row">
+                    <label class="field-label" for="member-role">권한</label>
+                    <div class="field-control">
+                        <select id="member-role">
+                            <option value="member">일반회원</option>
+                            <option value="admin">관리자</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="field-row">
+                    <label class="field-label" for="member-status">상태</label>
+                    <div class="field-control">
+                        <select id="member-status">
+                            <option value="active">활성</option>
+                            <option value="suspended">정지</option>
+                            <option value="banned">차단</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-actions">
+                    <span id="member-message" class="form-help" style="margin-right:auto;"></span>
+                    <button type="button" class="secondary-btn" id="member-cancel">취소</button>
+                    <button type="submit" class="primary-btn" id="member-save">저장</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script src="admin.js?v=20260508-minimal-redesign" type="module"></script>
+</body>
+</html>

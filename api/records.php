@@ -24,6 +24,51 @@ if (!is_file($authConfigPath)) {
 }
 $auth = is_file($authConfigPath) ? require $authConfigPath : ['require_auth' => false];
 
+// Fallback: hydrate auth config from .env or supabase_config.js if fields are missing.
+// Lets the new-format token verification work without forcing operators to update
+// supabase_config.php right away.
+(function () use (&$auth) {
+    $rootDir = dirname(__DIR__);
+    $sources = [];
+
+    $envPath = $rootDir . '/.env';
+    if (is_file($envPath)) {
+        $envSource = [];
+        foreach (file($envPath, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as $line) {
+            if (preg_match('/^\s*(?:export\s+)?([A-Z0-9_]+)\s*=\s*(.*)$/i', $line, $m)) {
+                $envSource[$m[1]] = trim($m[2], "\"' ");
+            }
+        }
+        $sources[] = $envSource;
+    }
+
+    $jsPath = $rootDir . '/supabase_config.js';
+    if (is_file($jsPath)) {
+        $jsSource = [];
+        $contents = (string)file_get_contents($jsPath);
+        if (preg_match('/SUPABASE_URL\s*=\s*[\'\"]([^\'\"]+)[\'\"]/', $contents, $m)) {
+            $jsSource['SUPABASE_URL'] = $m[1];
+        }
+        if (preg_match('/SUPABASE_ANON_KEY\s*=\s*[\'\"]([^\'\"]+)[\'\"]/', $contents, $m)) {
+            $jsSource['SUPABASE_ANON_KEY'] = $m[1];
+        }
+        if (!empty($jsSource)) $sources[] = $jsSource;
+    }
+
+    foreach ($sources as $source) {
+        if (empty($auth['supabase_url'])) {
+            $rawUrl = (string)($source['VITE_SUPABASE_URL'] ?? $source['SUPABASE_URL'] ?? '');
+            if ($rawUrl !== '') {
+                $auth['supabase_url'] = preg_replace('#/(rest|auth)/v1/?.*$#', '', $rawUrl);
+            }
+        }
+        if (empty($auth['anon_key'])) {
+            $rawKey = (string)($source['VITE_SUPABASE_ANON_KEY'] ?? $source['SUPABASE_ANON_KEY'] ?? '');
+            if ($rawKey !== '') $auth['anon_key'] = $rawKey;
+        }
+    }
+})();
+
 function respond($payload, $status = 200) {
     http_response_code($status);
     echo json_encode($payload, JSON_UNESCAPED_UNICODE);
@@ -42,7 +87,13 @@ function normalize_resource($value) {
     $resource = strtolower(trim((string)$value));
     if ($resource === 'customer') $resource = 'customers';
     if ($resource === 'employee') $resource = 'employees';
-    if (!in_array($resource, ['customers', 'employees', 'auth-membership', 'auth-member'], true)) {
+    $allowed = [
+        'customers', 'employees',
+        'auth-membership', 'auth-member',
+        'auth-profile',
+        'admin-members', 'admin-stats', 'admin-logs', 'admin-settings',
+    ];
+    if (!in_array($resource, $allowed, true)) {
         respond(['ok' => false, 'error' => '지원하지 않는 리소스입니다.'], 400);
     }
     return $resource;
@@ -193,6 +244,129 @@ function enforce_registered_member(PDO $pdo, $authUser) {
     if (!$registered) respond(['ok' => false, 'error' => '가입된 회원만 이용할 수 있습니다.'], 403);
 }
 
+function format_date($value) {
+    if (!$value) return '';
+    $ts = is_numeric($value) ? (int)$value : strtotime((string)$value);
+    if (!$ts) return '';
+    return date('Y. m. d.', $ts);
+}
+
+function member_row_from_store($store, $row) {
+    $cols = $store['columns'];
+    $emailCol = $store['email_column'];
+    $nameCol = first_existing_column($cols, ['name', 'full_name', 'user_name', 'username', 'mb_name']);
+    $phoneCol = first_existing_column($cols, ['phone', 'mobile', 'tel', 'contact', 'user_phone', 'mb_hp']);
+    $providerCol = first_existing_column($cols, ['provider', 'signup_method', 'oauth_provider']);
+    $statusCol = first_existing_column($cols, ['status', 'member_status']);
+    $roleCol = first_existing_column($cols, ['role', 'member_role', 'user_role', 'level']);
+    $createdCol = first_existing_column($cols, ['created_at', 'created', 'registered_at', 'reg_date']);
+    $updatedCol = first_existing_column($cols, ['updated_at', 'modified_at']);
+    $lastLoginCol = first_existing_column($cols, ['last_login_at', 'last_login', 'login_at', 'last_active_at']);
+
+    $role = $roleCol ? (string)($row[$roleCol] ?? '') : '';
+    $status = $statusCol ? (string)($row[$statusCol] ?? '') : 'active';
+
+    return [
+        'email' => $row[$emailCol] ?? '',
+        'name' => $nameCol ? ($row[$nameCol] ?? '') : '',
+        'phone' => $phoneCol ? ($row[$phoneCol] ?? '') : '',
+        'provider' => $providerCol ? ($row[$providerCol] ?? 'email') : 'email',
+        'status' => $status === '' ? 'active' : strtolower($status),
+        'role' => $role === '' ? 'member' : strtolower($role),
+        'createdAt' => $createdCol ? format_date($row[$createdCol] ?? '') : '',
+        'updatedAt' => $updatedCol ? format_date($row[$updatedCol] ?? '') : '',
+        'lastLoginAt' => $lastLoginCol ? format_date($row[$lastLoginCol] ?? '') : '',
+    ];
+}
+
+function fetch_member_by_email(PDO $pdo, $email) {
+    $email = strtolower(trim((string)$email));
+    if ($email === '') return null;
+
+    $store = find_member_store($pdo);
+    if (!$store) return null;
+
+    $table = quote_identifier($store['table']);
+    $emailCol = quote_identifier($store['email_column']);
+    $stmt = $pdo->prepare("SELECT * FROM {$table} WHERE LOWER({$emailCol}) = :email LIMIT 1");
+    $stmt->execute([':email' => $email]);
+    $row = $stmt->fetch();
+    if (!$row) return null;
+    return ['store' => $store, 'row' => $row];
+}
+
+function is_admin_user($authUser, $memberRecord = null) {
+    if (!$authUser) return false;
+
+    $appMeta = (array)($authUser['app_metadata'] ?? []);
+    $userMeta = (array)($authUser['user_metadata'] ?? []);
+    $role = strtolower((string)($appMeta['role'] ?? $userMeta['role'] ?? ''));
+    if (in_array($role, ['admin', 'owner', 'superadmin'], true)) return true;
+    if (!empty($appMeta['is_admin']) || !empty($userMeta['is_admin'])) return true;
+
+    if ($memberRecord) {
+        $member = member_row_from_store($memberRecord['store'], $memberRecord['row']);
+        $memberRole = strtolower((string)$member['role']);
+        if (in_array($memberRole, ['admin', 'owner', 'superadmin'], true)) return true;
+    }
+
+    return false;
+}
+
+function enforce_admin(PDO $pdo, $authUser) {
+    if (!$authUser) respond(['ok' => false, 'error' => '로그인이 필요합니다.'], 401);
+
+    $email = (string)($authUser['email'] ?? '');
+    $memberRecord = $email !== '' ? fetch_member_by_email($pdo, $email) : null;
+    if (!is_admin_user($authUser, $memberRecord)) {
+        respond(['ok' => false, 'error' => '관리자 권한이 필요합니다.'], 403);
+    }
+}
+
+function ensure_activity_log_table(PDO $pdo) {
+    try {
+        $pdo->exec("CREATE TABLE IF NOT EXISTS activity_logs (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            actor_email VARCHAR(255) NOT NULL,
+            event_type VARCHAR(64) NOT NULL,
+            detail VARCHAR(500) DEFAULT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_logs_created (created_at),
+            INDEX idx_logs_actor (actor_email)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+        return true;
+    } catch (Throwable $e) {
+        return false;
+    }
+}
+
+function ensure_site_settings_table(PDO $pdo) {
+    try {
+        $pdo->exec("CREATE TABLE IF NOT EXISTS site_settings (
+            setting_key VARCHAR(64) PRIMARY KEY,
+            setting_value TEXT,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+        return true;
+    } catch (Throwable $e) {
+        return false;
+    }
+}
+
+function record_activity(PDO $pdo, $email, $eventType, $detail = null) {
+    if (!ensure_activity_log_table($pdo)) return;
+    try {
+        $stmt = $pdo->prepare("INSERT INTO activity_logs (actor_email, event_type, detail) VALUES (:email, :event, :detail)");
+        $stmt->execute([
+            ':email' => (string)$email,
+            ':event' => substr((string)$eventType, 0, 64),
+            ':detail' => $detail === null ? null : substr((string)$detail, 0, 500),
+        ]);
+    } catch (Throwable $e) {
+        // Non-fatal — never block user actions on logging failure.
+    }
+}
+
 function customer_row($row) {
     return [
         'id' => $row['client_id'],
@@ -326,6 +500,14 @@ function verify_firebase_jwt($auth, $token, $headerJson, $payload, $parts) {
         return null;
     }
 
+    // Only attempt Firebase verification when the token actually looks like a
+    // Firebase ID token. Otherwise we would (incorrectly) reject Supabase RS256
+    // tokens that share the same algorithm.
+    $iss = (string)($payload['iss'] ?? '');
+    if (strpos($iss, 'securetoken.google.com') === false) {
+        return null;
+    }
+
     $projectIds = auth_config_list($auth, 'firebase_project_id', 'firebase_project_ids');
     $tokenProjectId = (string)($payload['aud'] ?? '');
     if ($tokenProjectId !== '' && empty($projectIds)) {
@@ -437,6 +619,83 @@ function verify_supabase_jwt_payload($auth, $token, $headerJson, $payload, $part
     return $payload;
 }
 
+function derive_supabase_base_url($auth, $payload) {
+    $candidates = [];
+    if (!empty($auth['supabase_url'])) $candidates[] = (string)$auth['supabase_url'];
+    if (!empty($auth['issuer'])) $candidates[] = (string)$auth['issuer'];
+    if (is_array($payload) && !empty($payload['iss'])) $candidates[] = (string)$payload['iss'];
+
+    foreach ($candidates as $candidate) {
+        $url = trim($candidate);
+        if ($url === '') continue;
+        // Strip /auth/v1 suffix if present so we can append it consistently.
+        $url = preg_replace('#/auth/v1/?$#', '', $url);
+        $url = rtrim($url, '/');
+        if ($url !== '' && preg_match('#^https?://#', $url)) {
+            return $url;
+        }
+    }
+    return '';
+}
+
+function verify_supabase_via_userinfo($auth, $token, $payload) {
+    $base = derive_supabase_base_url($auth, $payload);
+    if ($base === '') return null;
+
+    $endpoint = $base . '/auth/v1/user';
+    $apiKey = (string)($auth['anon_key'] ?? $auth['service_key'] ?? '');
+
+    $headers = [
+        'Authorization: Bearer ' . $token,
+        'Accept: application/json',
+    ];
+    if ($apiKey !== '') $headers[] = 'apikey: ' . $apiKey;
+
+    $context = stream_context_create([
+        'http' => [
+            'method' => 'GET',
+            'header' => implode("\r\n", $headers),
+            'timeout' => 6,
+            'ignore_errors' => true,
+        ],
+    ]);
+
+    $response = @file_get_contents($endpoint, false, $context);
+    if ($response === false) {
+        auth_log('Supabase userinfo verification failed', ['reason' => 'http_request_failed', 'endpoint' => $endpoint]);
+        return null;
+    }
+
+    $statusLine = isset($http_response_header[0]) ? $http_response_header[0] : '';
+    if (!preg_match('#\s(2\d\d)\s#', $statusLine)) {
+        auth_log('Supabase userinfo verification failed', ['reason' => 'non_2xx', 'status' => $statusLine]);
+        return null;
+    }
+
+    $user = json_decode($response, true);
+    if (!is_array($user) || empty($user['id'])) {
+        auth_log('Supabase userinfo verification failed', ['reason' => 'invalid_payload']);
+        return null;
+    }
+
+    auth_log('Supabase userinfo verification succeeded', [
+        'sub' => $user['id'] ?? '',
+        'email' => $user['email'] ?? '',
+    ]);
+
+    $appMeta = is_array($user['app_metadata'] ?? null) ? $user['app_metadata'] : [];
+    $userMeta = is_array($user['user_metadata'] ?? null) ? $user['user_metadata'] : [];
+
+    return [
+        'sub' => $user['id'],
+        'email' => $user['email'] ?? '',
+        'phone' => $user['phone'] ?? '',
+        'role' => $user['role'] ?? 'authenticated',
+        'app_metadata' => $appMeta,
+        'user_metadata' => $userMeta,
+    ];
+}
+
 function verify_auth_token($auth) {
     if (empty($auth['require_auth'])) return null;
 
@@ -471,10 +730,22 @@ function verify_auth_token($auth) {
     $firebasePayload = verify_firebase_jwt($auth, $token, $headerJson, $payload, $parts);
     if ($firebasePayload !== null) return $firebasePayload;
 
-    $supabasePayload = verify_supabase_jwt_payload($auth, $token, $headerJson, $payload, $parts);
-    if ($supabasePayload !== null) return $supabasePayload;
+    $alg = (string)($headerJson['alg'] ?? '');
+    $jwtSecret = (string)($auth['jwt_secret'] ?? '');
+    $supabaseSecretConfigured = $jwtSecret !== '' && $jwtSecret !== 'your-supabase-jwt-secret';
 
-    auth_log('Token verification failed', ['reason' => 'unsupported_token', 'alg' => $headerJson['alg'] ?? '']);
+    if ($alg === 'HS256' && $supabaseSecretConfigured) {
+        $supabasePayload = verify_supabase_jwt_payload($auth, $token, $headerJson, $payload, $parts);
+        if ($supabasePayload !== null) return $supabasePayload;
+    }
+
+    // Fallback: validate by asking Supabase directly.
+    // Required for new-format publishable keys (sb_publishable_*) where access tokens
+    // are signed asymmetrically (RS256/ES256) and we can't verify the signature locally.
+    $userinfoPayload = verify_supabase_via_userinfo($auth, $token, $payload);
+    if ($userinfoPayload !== null) return $userinfoPayload;
+
+    auth_log('Token verification failed', ['reason' => 'unsupported_token', 'alg' => $alg]);
     respond(['ok' => false, 'error' => '지원하지 않는 인증 토큰입니다.'], 401);
 }
 
@@ -522,6 +793,252 @@ try {
     if ($resource === 'auth-member') {
         if ($method !== 'POST') respond(['ok' => false, 'error' => '지원하지 않는 요청 방식입니다.'], 405);
         create_member_from_google($pdo, $authUser, $body);
+    }
+
+    if ($resource === 'auth-profile') {
+        if (!$authUser) respond(['ok' => false, 'error' => '로그인이 필요합니다.'], 401);
+        $email = strtolower((string)($authUser['email'] ?? ''));
+        if ($email === '') respond(['ok' => false, 'error' => '인증 사용자 이메일을 확인할 수 없습니다.'], 400);
+
+        $store = find_member_store($pdo);
+        if (!$store) respond(['ok' => false, 'error' => '회원 테이블을 찾을 수 없습니다.'], 500);
+
+        if ($method === 'GET') {
+            $rec = fetch_member_by_email($pdo, $email);
+            if (!$rec) {
+                respond(['ok' => true, 'profile' => [
+                    'email' => $email,
+                    'name' => $authUser['user_metadata']['full_name'] ?? $authUser['user_metadata']['name'] ?? '',
+                    'phone' => '',
+                    'provider' => $authUser['app_metadata']['provider'] ?? 'email',
+                    'status' => 'active',
+                    'role' => 'member',
+                    'createdAt' => '',
+                    'updatedAt' => '',
+                    'lastLoginAt' => '',
+                ]]);
+            }
+            $profile = member_row_from_store($rec['store'], $rec['row']);
+            $profile['email'] = $email;
+            respond(['ok' => true, 'profile' => $profile]);
+        }
+
+        if ($method === 'PUT' || $method === 'PATCH') {
+            $data = is_array($body['data'] ?? null) ? $body['data'] : $body;
+            $cols = $store['columns'];
+            $assignments = [];
+            $params = [':email' => $email];
+
+            $nameCol = first_existing_column($cols, ['name', 'full_name', 'user_name', 'username', 'mb_name']);
+            if ($nameCol && isset($data['name'])) {
+                $assignments[] = quote_identifier($nameCol) . ' = :name';
+                $params[':name'] = clean($data['name']) ?? '';
+            }
+
+            $phoneCol = first_existing_column($cols, ['phone', 'mobile', 'tel', 'contact', 'user_phone', 'mb_hp']);
+            if ($phoneCol && isset($data['phone'])) {
+                $assignments[] = quote_identifier($phoneCol) . ' = :phone';
+                $params[':phone'] = clean($data['phone']);
+            }
+
+            $updatedCol = first_existing_column($cols, ['updated_at', 'modified_at']);
+            if ($updatedCol) {
+                $assignments[] = quote_identifier($updatedCol) . ' = :updated_at';
+                $params[':updated_at'] = date('Y-m-d H:i:s');
+            }
+
+            if (empty($assignments)) respond(['ok' => false, 'error' => '수정 가능한 필드가 없습니다.'], 400);
+
+            $emailCol = quote_identifier($store['email_column']);
+            $sql = 'UPDATE ' . quote_identifier($store['table']) . ' SET ' . implode(', ', $assignments)
+                . " WHERE LOWER({$emailCol}) = :email";
+            $stmt = $pdo->prepare($sql);
+            $stmt->execute($params);
+
+            record_activity($pdo, $email, 'profile.update');
+            respond(['ok' => true]);
+        }
+
+        respond(['ok' => false, 'error' => '지원하지 않는 요청 방식입니다.'], 405);
+    }
+
+    if ($resource === 'admin-members') {
+        enforce_admin($pdo, $authUser);
+
+        $store = find_member_store($pdo);
+        if (!$store) respond(['ok' => false, 'error' => '회원 테이블을 찾을 수 없습니다.'], 500);
+
+        if ($method === 'GET') {
+            $cols = $store['columns'];
+            $createdCol = first_existing_column($cols, ['created_at', 'created', 'registered_at', 'reg_date']);
+            $orderBy = $createdCol ? quote_identifier($createdCol) . ' DESC' : '1';
+            $rows = $pdo->query('SELECT * FROM ' . quote_identifier($store['table']) . ' ORDER BY ' . $orderBy)->fetchAll();
+            $items = array_map(function ($r) use ($store) { return member_row_from_store($store, $r); }, $rows);
+            respond(['ok' => true, 'items' => $items]);
+        }
+
+        if ($method === 'PATCH' || $method === 'PUT') {
+            $email = strtolower((string)clean($body['email'] ?? null));
+            if ($email === '') respond(['ok' => false, 'error' => '대상 회원 이메일이 없습니다.'], 400);
+
+            $cols = $store['columns'];
+            $assignments = [];
+            $params = [':email' => $email];
+
+            $statusCol = first_existing_column($cols, ['status', 'member_status']);
+            if ($statusCol && isset($body['status'])) {
+                $status = strtolower(trim((string)$body['status']));
+                if (!in_array($status, ['active', 'suspended', 'banned'], true)) {
+                    respond(['ok' => false, 'error' => '허용되지 않는 상태값입니다.'], 400);
+                }
+                $assignments[] = quote_identifier($statusCol) . ' = :status';
+                $params[':status'] = $status;
+            }
+
+            $roleCol = first_existing_column($cols, ['role', 'member_role', 'user_role']);
+            if ($roleCol && isset($body['role'])) {
+                $role = strtolower(trim((string)$body['role']));
+                if (!in_array($role, ['member', 'admin'], true)) {
+                    respond(['ok' => false, 'error' => '허용되지 않는 권한값입니다.'], 400);
+                }
+                $assignments[] = quote_identifier($roleCol) . ' = :role';
+                $params[':role'] = $role;
+            }
+
+            if (empty($assignments)) respond(['ok' => false, 'error' => '수정할 필드가 없습니다.'], 400);
+
+            $updatedCol = first_existing_column($cols, ['updated_at', 'modified_at']);
+            if ($updatedCol) {
+                $assignments[] = quote_identifier($updatedCol) . ' = :updated_at';
+                $params[':updated_at'] = date('Y-m-d H:i:s');
+            }
+
+            $emailCol = quote_identifier($store['email_column']);
+            $sql = 'UPDATE ' . quote_identifier($store['table']) . ' SET ' . implode(', ', $assignments)
+                . " WHERE LOWER({$emailCol}) = :email";
+            $stmt = $pdo->prepare($sql);
+            $stmt->execute($params);
+
+            record_activity($pdo, (string)($authUser['email'] ?? ''), 'admin.member.update', $email);
+            respond(['ok' => true]);
+        }
+
+        respond(['ok' => false, 'error' => '지원하지 않는 요청 방식입니다.'], 405);
+    }
+
+    if ($resource === 'admin-stats') {
+        enforce_admin($pdo, $authUser);
+        if ($method !== 'GET') respond(['ok' => false, 'error' => '지원하지 않는 요청 방식입니다.'], 405);
+
+        $stats = [
+            'totalCustomers' => 0,
+            'totalEmployees' => 0,
+            'totalMembers' => 0,
+            'newMembers7d' => 0,
+            'recentSignups' => [],
+            'memberTrend' => [],
+        ];
+
+        try { $stats['totalCustomers'] = (int)$pdo->query("SELECT COUNT(*) FROM customers")->fetchColumn(); } catch (Throwable $e) {}
+        try { $stats['totalEmployees'] = (int)$pdo->query("SELECT COUNT(*) FROM employees")->fetchColumn(); } catch (Throwable $e) {}
+
+        $store = find_member_store($pdo);
+        if ($store) {
+            $table = quote_identifier($store['table']);
+            try { $stats['totalMembers'] = (int)$pdo->query("SELECT COUNT(*) FROM {$table}")->fetchColumn(); } catch (Throwable $e) {}
+            $createdCol = first_existing_column($store['columns'], ['created_at', 'created', 'registered_at', 'reg_date']);
+            if ($createdCol) {
+                $createdQ = quote_identifier($createdCol);
+                try {
+                    $stmt = $pdo->prepare("SELECT COUNT(*) FROM {$table} WHERE {$createdQ} >= DATE_SUB(NOW(), INTERVAL 7 DAY)");
+                    $stmt->execute();
+                    $stats['newMembers7d'] = (int)$stmt->fetchColumn();
+                } catch (Throwable $e) {}
+
+                try {
+                    $emailCol = quote_identifier($store['email_column']);
+                    $rows = $pdo->query("SELECT * FROM {$table} ORDER BY {$createdQ} DESC LIMIT 5")->fetchAll();
+                    $stats['recentSignups'] = array_map(function ($r) use ($store) { return member_row_from_store($store, $r); }, $rows);
+                } catch (Throwable $e) {}
+
+                try {
+                    $stmt = $pdo->query("
+                        SELECT DATE({$createdQ}) AS d, COUNT(*) AS c
+                        FROM {$table}
+                        WHERE {$createdQ} >= DATE_SUB(CURDATE(), INTERVAL 13 DAY)
+                        GROUP BY DATE({$createdQ})
+                        ORDER BY d ASC
+                    ");
+                    $byDay = [];
+                    foreach ($stmt as $row) { $byDay[$row['d']] = (int)$row['c']; }
+                    $trend = [];
+                    for ($i = 13; $i >= 0; $i--) {
+                        $day = date('Y-m-d', strtotime("-{$i} day"));
+                        $trend[] = ['date' => $day, 'count' => $byDay[$day] ?? 0];
+                    }
+                    $stats['memberTrend'] = $trend;
+                } catch (Throwable $e) {}
+            }
+        }
+
+        respond(['ok' => true, 'stats' => $stats]);
+    }
+
+    if ($resource === 'admin-logs') {
+        enforce_admin($pdo, $authUser);
+        if ($method !== 'GET') respond(['ok' => false, 'error' => '지원하지 않는 요청 방식입니다.'], 405);
+
+        ensure_activity_log_table($pdo);
+        $limit = max(1, min(200, (int)($_GET['limit'] ?? 50)));
+        try {
+            $stmt = $pdo->prepare('SELECT actor_email, event_type, detail, created_at FROM activity_logs ORDER BY id DESC LIMIT ' . $limit);
+            $stmt->execute();
+            $items = $stmt->fetchAll() ?: [];
+        } catch (Throwable $e) {
+            $items = [];
+        }
+        respond(['ok' => true, 'items' => array_map(function ($r) {
+            return [
+                'actor' => $r['actor_email'] ?? '',
+                'event' => $r['event_type'] ?? '',
+                'detail' => $r['detail'] ?? '',
+                'createdAt' => $r['created_at'] ?? '',
+            ];
+        }, $items)]);
+    }
+
+    if ($resource === 'admin-settings') {
+        enforce_admin($pdo, $authUser);
+        ensure_site_settings_table($pdo);
+
+        if ($method === 'GET') {
+            $items = [];
+            try {
+                $rows = $pdo->query('SELECT setting_key, setting_value FROM site_settings')->fetchAll();
+                foreach ($rows as $row) {
+                    $items[$row['setting_key']] = $row['setting_value'];
+                }
+            } catch (Throwable $e) {}
+            respond(['ok' => true, 'settings' => $items]);
+        }
+
+        if ($method === 'PUT' || $method === 'PATCH') {
+            $settings = is_array($body['settings'] ?? null) ? $body['settings'] : [];
+            if (empty($settings)) respond(['ok' => false, 'error' => '저장할 설정이 없습니다.'], 400);
+
+            $stmt = $pdo->prepare('INSERT INTO site_settings (setting_key, setting_value) VALUES (:k, :v)
+                ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)');
+            foreach ($settings as $k => $v) {
+                $key = substr((string)$k, 0, 64);
+                $val = $v === null ? null : substr((string)$v, 0, 65000);
+                $stmt->execute([':k' => $key, ':v' => $val]);
+            }
+
+            record_activity($pdo, (string)($authUser['email'] ?? ''), 'admin.settings.update');
+            respond(['ok' => true]);
+        }
+
+        respond(['ok' => false, 'error' => '지원하지 않는 요청 방식입니다.'], 405);
     }
 
     enforce_registered_member($pdo, $authUser);

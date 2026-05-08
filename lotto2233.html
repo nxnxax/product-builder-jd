@@ -5,38 +5,48 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>AI 점집 사주 로또 추천</title>
 <style>
-body{margin:0;background:#0f0f0f;color:#fff;font-family:sans-serif;}
-.app-header{background:#1e293b;color:#fff;padding:12px 24px;position:sticky;top:0;z-index:100;box-shadow:0 4px 12px rgba(0,0,0,.25);}
-.header-container{max-width:1200px;margin:0 auto;display:flex;justify-content:space-between;align-items:center;gap:16px;}
-.header-container h1{font-size:17px;font-weight:800;letter-spacing:0;text-transform:uppercase;display:flex;align-items:center;gap:8px;margin:0;}
-.header-container h1 .accent{color:#38bdf8;background:rgba(56,189,248,.15);padding:2px 7px;border-radius:4px;font-size:12px;}
-.main-nav{display:flex;gap:4px;flex-wrap:wrap;}
-.nav-link{display:inline-flex;align-items:center;text-decoration:none;border:0;background:none;color:rgba(255,255,255,.72);font-size:14px;font-weight:700;padding:8px 14px;border-radius:4px;cursor:pointer;}
-.nav-link:hover{color:#fff;background:rgba(255,255,255,.1);}
-.nav-link.active{color:#fff;background:#2563eb;}
-.container{max-width:520px;margin:auto;padding:20px;}
-label{display:block;margin-top:16px;margin-bottom:6px;font-size:13px;color:#bbb;}
-input,select{width:100%;padding:13px;border-radius:10px;border:1px solid #333;background:#1a1a1a;color:#fff;box-sizing:border-box;font-size:15px;}
-.row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;}
-.calendar-row{display:grid;grid-template-columns:120px 1fr 1fr 1fr;gap:10px;}
-.calendar-help{margin-top:8px;color:#888;font-size:12px;line-height:1.5;}
-.gender{display:flex;gap:10px;}
-.gender button{flex:1;padding:13px;border-radius:10px;border:1px solid #333;background:#1a1a1a;color:#fff;}
-.gender button.active{background:#2b6fff;border:none;}
-.main-btn{margin-top:22px;width:100%;padding:16px;border:none;border-radius:12px;font-size:16px;color:#fff;background:linear-gradient(135deg,#7f00ff,#2b6fff);}
-.box{margin-top:20px;padding:16px;background:#1a1a1a;border-radius:14px;line-height:1.65;}
-.nums{display:flex;justify-content:space-between;gap:8px;}
-.ball{width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:bold;font-size:18px;}
-.note{margin-top:12px;padding-top:10px;border-top:1px solid #2d2d2d;font-size:13px;color:#bbb;}
-.yellow{background:#fbc400}.blue{background:#69c8f2}.red{background:#ff7272}.gray{background:#aaa}.green{background:#7bc043}
-.error{color:#ff5c5c;font-size:13px;margin-top:10px;}
-@media (max-width:440px){
-    .app-header{padding:14px;}
-    .header-container{align-items:flex-start;flex-direction:column;}
-    .main-nav{width:100%;}
-    .nav-link{flex:1;justify-content:center;padding:9px 8px;font-size:12px;}
-    .calendar-row{grid-template-columns:1fr 1fr 1fr;}
-    .calendar-row select{grid-column:1 / -1;}
+:root{
+  --bg:#fff; --fg:#0a0a0a; --secondary:#525252; --muted:#8e8e93;
+  --line:rgba(0,0,0,0.08); --line-strong:rgba(0,0,0,0.14); --bg-muted:#f5f5f7;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",Pretendard,Inter,sans-serif;letter-spacing:-.005em;-webkit-font-smoothing:antialiased}
+.app-header{position:sticky;top:0;z-index:80;background:rgba(255,255,255,.85);backdrop-filter:saturate(180%) blur(20px);-webkit-backdrop-filter:saturate(180%) blur(20px);border-bottom:1px solid var(--line)}
+.header-container{max-width:1180px;margin:0 auto;padding:0 24px;height:56px;display:flex;align-items:center;gap:28px}
+.header-container h1{font-size:15px;font-weight:600;letter-spacing:-.01em;color:var(--fg);text-transform:none;display:flex;align-items:center;gap:8px;margin:0}
+.header-container h1 .accent{color:var(--muted);background:transparent;padding:0;border-radius:0;font-size:12px;font-weight:500}
+.main-nav{display:flex;gap:4px;flex:1}
+.nav-link{display:inline-flex;align-items:center;text-decoration:none;border:0;background:none;color:var(--secondary);font-size:13.5px;font-weight:500;padding:7px 12px;border-radius:6px;cursor:pointer;transition:all 180ms cubic-bezier(0.16,1,0.3,1)}
+.nav-link:hover{color:var(--fg);background:var(--bg-muted)}
+.nav-link.active{color:var(--fg);background:var(--bg-muted);font-weight:600}
+.container{max-width:520px;margin:0 auto;padding:48px 24px 96px}
+.container h2{font-size:28px;font-weight:600;letter-spacing:-.024em;margin:0 0 8px}
+.subtitle{color:var(--muted);font-size:14px;margin-bottom:32px}
+label{display:block;margin-top:18px;margin-bottom:6px;font-size:13px;color:var(--secondary);font-weight:500}
+input,select{width:100%;height:38px;padding:0 12px;border-radius:6px;border:1px solid var(--line-strong);background:#fff;color:var(--fg);box-sizing:border-box;font-size:14px;outline:none;font-family:inherit;transition:all 180ms cubic-bezier(0.16,1,0.3,1);appearance:none;-webkit-appearance:none}
+input:focus,select:focus{border-color:rgba(0,0,0,0.85);box-shadow:0 0 0 3px rgba(0,0,0,0.06)}
+.row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+.calendar-row{display:grid;grid-template-columns:120px 1fr 1fr 1fr;gap:8px}
+.calendar-help{margin-top:8px;color:var(--muted);font-size:12px;line-height:1.5}
+.gender{display:flex;gap:6px}
+.gender button{flex:1;height:38px;border-radius:6px;border:1px solid var(--line-strong);background:#fff;color:var(--fg);font-size:14px;font-weight:500;cursor:pointer;transition:all 180ms cubic-bezier(0.16,1,0.3,1)}
+.gender button:hover{background:var(--bg-muted)}
+.gender button.active{background:var(--fg);color:#fff;border-color:var(--fg)}
+.main-btn{margin-top:28px;width:100%;height:42px;border:0;border-radius:6px;font-size:14px;font-weight:600;color:#fff;background:var(--fg);cursor:pointer;letter-spacing:-.005em;transition:opacity 180ms}
+.main-btn:hover{opacity:.85}
+.box{margin-top:24px;padding:24px;background:#fff;border:1px solid var(--line);border-radius:10px;line-height:1.6;color:var(--fg);font-size:14px}
+.nums{display:flex;justify-content:space-between;gap:8px;margin-top:8px}
+.ball{width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:600;font-size:16px;color:#fff;letter-spacing:-.01em}
+.note{margin-top:16px;padding-top:14px;border-top:1px solid var(--line);font-size:13px;color:var(--muted);line-height:1.55}
+.yellow{background:#fbc400;color:#0a0a0a}.blue{background:#69c8f2;color:#0a0a0a}.red{background:#ff7272}.gray{background:#aaa;color:#0a0a0a}.green{background:#7bc043;color:#0a0a0a}
+.error{color:#c92a2a;font-size:13px;margin-top:12px}
+@media (max-width:560px){
+    .header-container{height:auto;padding:10px 16px;flex-wrap:wrap;gap:8px}
+    .main-nav{order:3;flex-basis:100%;overflow-x:auto;padding-bottom:2px}
+    .nav-link{white-space:nowrap}
+    .container{padding:32px 16px 64px}
+    .calendar-row{grid-template-columns:1fr 1fr 1fr}
+    .calendar-row select{grid-column:1 / -1}
 }
 </style>
 </head>
@@ -44,11 +54,11 @@ input,select{width:100%;padding:13px;border-radius:10px;border:1px solid #333;ba
 <body>
 <header class="app-header">
 <div class="header-container">
-<h1>JDHOON <span class="accent">ERP CONSOLE</span></h1>
+<h1>JDHOON <span class="accent">Console</span></h1>
 <nav class="main-nav">
-<a class="nav-link" href="index.html#customers">CRM: 고객 관리</a>
-<a class="nav-link" href="index.html#employees">HRM: 직원 관리</a>
-<a class="nav-link" href="index.html#marketing">Marketing: 마케팅 분석</a>
+<a class="nav-link" href="index.html#customers">고객</a>
+<a class="nav-link" href="index.html#employees">직원</a>
+<a class="nav-link" href="index.html#marketing">마케팅</a>
 <a class="nav-link active" href="lotto2233.html">Lotto</a>
 </nav>
 </div>
@@ -56,7 +66,8 @@ input,select{width:100%;padding:13px;border-radius:10px;border:1px solid #333;ba
 
 <div class="container">
 
-<h2>🔮 AI 점집 사주 로또 추천</h2>
+<h2>AI 사주 로또 추천</h2>
+<p class="subtitle">사주 정보를 입력하면 오늘의 추천 번호를 계산합니다.</p>
 
 <label>이름</label>
 <input id="userName" placeholder="이름 입력">
