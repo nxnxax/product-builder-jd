@@ -232,7 +232,19 @@ function verify_supabase_jwt($auth) {
         respond(['ok' => false, 'error' => 'Supabase 인증 설정이 없습니다.'], 500);
     }
 
-    $header = $_SERVER['HTTP_AUTHORIZATION'] ?? '';
+    // Try multiple ways to get the Authorization header (Apache/PHP environment compatibility)
+    $header = $_SERVER['HTTP_AUTHORIZATION'] ?? $_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? '';
+    
+    if (!$header && function_exists('getallheaders')) {
+        $headers = getallheaders();
+        foreach (['Authorization', 'authorization'] as $key) {
+            if (!empty($headers[$key])) {
+                $header = $headers[$key];
+                break;
+            }
+        }
+    }
+
     if (!preg_match('/^Bearer\s+(.+)$/i', $header, $matches)) {
         respond(['ok' => false, 'error' => '로그인이 필요합니다.'], 401);
     }

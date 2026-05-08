@@ -459,8 +459,13 @@ async function apiRequest(resource, options = {}) {
         ...(options.headers || {})
     };
 
-    if (currentSession?.access_token) {
-        headers.Authorization = `Bearer ${currentSession.access_token}`;
+    // Always try to get the freshest session before making an API call
+    if (supabaseClient) {
+        const { data } = await supabaseClient.auth.getSession();
+        const session = data.session || currentSession;
+        if (session?.access_token) {
+            headers.Authorization = `Bearer ${session.access_token}`;
+        }
     }
 
     const response = await fetch(`${API_URL}?resource=${encodeURIComponent(resource)}`, {
