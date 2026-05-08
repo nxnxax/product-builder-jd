@@ -401,10 +401,8 @@ if ($hasImage) {
     }
     $info = @getimagesize($tmp);
     if ($info && (int)$info[0] > 0 && (int)$info[1] > 0) {
-        $iw = (int)$info[0]; $ih = (int)$info[1];
-        $maxSide = max($iw, $ih);
-        if ($maxSide > 2000) { $s = 2000 / $maxSide; $iw = (int)round($iw * $s); $ih = (int)round($ih * $s); }
-        $inputDims = ['width' => $iw, 'height' => $ih];
+        // Use the original image dimensions exactly — no scaling/cap.
+        $inputDims = ['width' => (int)$info[0], 'height' => (int)$info[1]];
     }
     $b64 = base64_encode((string)file_get_contents($tmp));
     $ocr = ocr_business_card($openaiKey, $b64, $mime);

@@ -316,22 +316,72 @@
                 } else {
                     const iframe = document.createElement('iframe');
                     iframe.src = url;
-                    iframe.style.cssText = 'width:100%;height:520px;border:1px solid var(--border);border-radius:var(--radius-md);background:#ececec;';
+                    // Set initial height proportional to detected card aspect; will adjust on load.
+                    iframe.style.cssText = 'width:100%;border:1px solid var(--border);border-radius:var(--radius-md);background:#ececec;display:block;';
                     iframe.setAttribute('sandbox', 'allow-same-origin');
+                    iframe.addEventListener('load', () => {
+                        try {
+                            const inner = iframe.contentDocument || iframe.contentWindow.document;
+                            const card = inner.querySelector('.card');
+                            if (card) {
+                                const cardW = parseFloat(getComputedStyle(card).width) || card.clientWidth;
+                                const cardH = parseFloat(getComputedStyle(card).height) || card.clientHeight;
+                                const containerW = iframe.clientWidth;
+                                if (cardW && cardH && containerW) {
+                                    iframe.style.height = Math.round(containerW * (cardH / cardW)) + 'px';
+                                } else {
+                                    iframe.style.height = (inner.documentElement.scrollHeight || 520) + 'px';
+                                }
+                            } else {
+                                iframe.style.height = '520px';
+                            }
+                        } catch { iframe.style.height = '520px'; }
+                    });
+                    iframe.style.height = '520px'; // fallback before load
                     resultBody.appendChild(iframe);
                 }
 
                 const dlRow = document.createElement('div');
                 dlRow.style.cssText = 'display:flex;gap:.5rem;flex-wrap:wrap;margin-top:1rem;';
 
-                const ext = isSvg ? 'svg' : (url.match(/\.(png|jpe?g|webp|gif)(\?|$)/i)?.[1] || 'png');
-                const dlImg = document.createElement('a');
-                dlImg.href = url;
-                dlImg.download = baseName + '.' + ext;
-                dlImg.textContent = `${ext.toUpperCase()} 다운로드`;
-                dlImg.className = 'primary-btn';
-                dlImg.style.cssText = 'height:40px;padding:0 1.1rem;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;';
-                dlRow.appendChild(dlImg);
+                const isHtml = !isImage && !isSvg;
+
+                if (isHtml) {
+                    // Render the iframe DOM to PNG at original card size.
+                    const iframeEl = resultBody.querySelector('iframe');
+                    const dlPng = document.createElement('button');
+                    dlPng.type = 'button';
+                    dlPng.textContent = 'PNG 다운로드 (원본 크기)';
+                    dlPng.className = 'primary-btn';
+                    dlPng.style.cssText = 'height:40px;padding:0 1.1rem;';
+                    dlPng.addEventListener('click', () => downloadIframeAsPng(iframeEl, baseName + '.png', 1));
+                    dlRow.appendChild(dlPng);
+
+                    const dlPng2x = document.createElement('button');
+                    dlPng2x.type = 'button';
+                    dlPng2x.textContent = 'PNG 다운로드 (2x 고화질)';
+                    dlPng2x.className = 'secondary-btn';
+                    dlPng2x.style.cssText = 'height:40px;padding:0 1.1rem;';
+                    dlPng2x.addEventListener('click', () => downloadIframeAsPng(iframeEl, baseName + '@2x.png', 2));
+                    dlRow.appendChild(dlPng2x);
+
+                    const dlHtml = document.createElement('a');
+                    dlHtml.href = url;
+                    dlHtml.download = baseName + '.html';
+                    dlHtml.textContent = 'HTML 다운로드';
+                    dlHtml.className = 'secondary-btn';
+                    dlHtml.style.cssText = 'height:40px;padding:0 1.1rem;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;';
+                    dlRow.appendChild(dlHtml);
+                } else {
+                    const ext = isSvg ? 'svg' : (url.match(/\.(png|jpe?g|webp|gif)(\?|$)/i)?.[1] || 'png');
+                    const dlImg = document.createElement('a');
+                    dlImg.href = url;
+                    dlImg.download = baseName + '.' + ext;
+                    dlImg.textContent = `${ext.toUpperCase()} 다운로드`;
+                    dlImg.className = 'primary-btn';
+                    dlImg.style.cssText = 'height:40px;padding:0 1.1rem;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;';
+                    dlRow.appendChild(dlImg);
+                }
 
                 const openNew = document.createElement('a');
                 openNew.href = url;
@@ -343,6 +393,36 @@
                 dlRow.appendChild(openNew);
 
                 resultBody.appendChild(dlRow);
+            }
+
+            async function downloadIframeAsPng(iframe, filename, scale) {
+                if (!iframe) { setStatus('iframe을 찾을 수 없어요', 'error'); return; }
+                try {
+                    if (!window.html2canvas) {
+                        await new Promise((resolve, reject) => {
+                            const s = document.createElement('script');
+                            s.src = 'https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js';
+                            s.onload = resolve; s.onerror = reject;
+                            document.head.appendChild(s);
+                        });
+                    }
+                    const inner = iframe.contentDocument || iframe.contentWindow.document;
+                    const card = inner.querySelector('.card') || inner.body;
+                    const canvas = await window.html2canvas(card, {
+                        backgroundColor: null, scale, useCORS: true, allowTaint: true,
+                    });
+                    canvas.toBlob((blob) => {
+                        const a = document.createElement('a');
+                        a.href = URL.createObjectURL(blob);
+                        a.download = filename;
+                        document.body.appendChild(a);
+                        a.click();
+                        a.remove();
+                        setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+                    }, 'image/png');
+                } catch (e) {
+                    setStatus('PNG 변환 실패: ' + (e.message || e), 'error');
+                }
             }
 
             const metaParts = [];
