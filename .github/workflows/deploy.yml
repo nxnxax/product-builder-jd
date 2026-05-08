@@ -112,6 +112,15 @@ jobs:
           done
           echo "Proof file name: ${PROOF_NAME}"
 
+          # Filetype isolation test: upload a tiny .html and tiny .css with
+          # NEW filenames to ~/www. If these turn 200 over HTTPS but the real
+          # admin.html upload returns 404, then the issue is filename-specific
+          # rather than file-extension-specific.
+          echo "<!DOCTYPE html><title>htest ${GH_SHA:0:7}</title><h1>htest ${GH_SHA:0:7}</h1>" > /tmp/__htest.html
+          echo "/* css test ${GH_SHA:0:7} */ body { color: red; }" > /tmp/__ctest.css
+          $SCP /tmp/__htest.html "${SFTP_USER}@${SFTP_HOST}:${SFTP_DIR}/_htest_${GH_SHA:0:7}.html" 2>/dev/null && echo "  uploaded _htest" || echo "  htest scp failed"
+          $SCP /tmp/__ctest.css  "${SFTP_USER}@${SFTP_HOST}:${SFTP_DIR}/_ctest_${GH_SHA:0:7}.css"  2>/dev/null && echo "  uploaded _ctest" || echo "  ctest scp failed"
+
           if [ -n "${SFTP_DIR}" ]; then
             TARGET="${SFTP_DIR}"
             echo "Using SFTP_DIR override: ${TARGET}"
