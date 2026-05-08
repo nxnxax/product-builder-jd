@@ -57,7 +57,7 @@ jobs:
           SFTP_HOST: ${{ secrets.SFTP_HOST || 'youngman-biz.com' }}
           SFTP_USER: ${{ secrets.SFTP_USER || 'nxnxqxx' }}
           SFTP_PORT: ${{ secrets.SFTP_PORT || '22' }}
-          SFTP_DIR: ${{ secrets.SFTP_DIR || '/www' }}
+          SFTP_DIR: ${{ secrets.SFTP_DIR || 'www' }}
           SFTP_KEY: ${{ secrets.SFTP_PRIVATE_KEY }}
         run: |
           set -euo pipefail
