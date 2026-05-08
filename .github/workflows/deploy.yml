@@ -148,7 +148,28 @@ jobs:
             else \
               echo \"MISS \$f\"; \
             fi; \
-          done"
+          done" | tee /tmp/__audit.txt
+
+          AUDIT_NAME="_deploy_audit_$(date +%s).txt"
+          echo "==== Uploading audit (${AUDIT_NAME}) and fetching it back over HTTPS ===="
+          $SCP /tmp/__audit.txt "${SFTP_USER}@${SFTP_HOST}:${TARGET}/${AUDIT_NAME}"
+          sleep 2
+          curl -sk -o /tmp/__audit_remote.txt -w "audit fetch: HTTP %{http_code} size=%{size_download}\n" "https://youngman-biz.com/${AUDIT_NAME}?cb=$(date +%s%N)"
+          echo "----- audit content fetched from live site -----"
+          cat /tmp/__audit_remote.txt 2>/dev/null || echo "(empty)"
+          echo "------------------------------------------------"
+
+          echo "==== Live HTTPS sanity for newly uploaded files (in this run) ===="
+          CB=$(date +%s%N)
+          for f in admin.html admin.js profile.html profile.js auth-shared.js style.css index.html; do
+            code=$(curl -sk -o /dev/null -w "%{http_code}" "https://youngman-biz.com/${f}?cb=${CB}")
+            size=$(curl -sk -o /dev/null -w "%{size_download}" "https://youngman-biz.com/${f}?cb=${CB}")
+            echo "  ${f}: HTTP ${code}  size=${size}"
+          done
+
+          echo "==== Webroot path actually used: ${TARGET} ===="
+          $SSH "${SFTP_USER}@${SFTP_HOST}" "readlink -f '${TARGET}' 2>/dev/null || (cd '${TARGET}' && pwd)"
+          $SSH "${SFTP_USER}@${SFTP_HOST}" "rm -f '${TARGET}/${AUDIT_NAME}'" 2>/dev/null || true
 
       - name: Verify deploy via HTTPS
         run: |
