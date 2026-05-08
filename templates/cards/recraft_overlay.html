@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>Card · recraft_overlay</title>
+<link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
+<style>
+:root {
+  --bg: {{neutral}};
+  --fg: {{fg}};
+  --accent: {{primary}};
+  --secondary: {{secondary}};
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { background: #ececec; }
+body { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 40px; font-family: 'Pretendard', -apple-system, sans-serif; }
+.card {
+  width: {{width}}px; height: {{height}}px;
+  background-color: var(--bg);
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 16px 48px rgba(0,0,0,0.12), 0 2px 6px rgba(0,0,0,0.06);
+  color: var(--fg);
+}
+.bg-image {
+  position: absolute; inset: 0;
+  background-image: url('{{bg_image_url}}');
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  opacity: 0.92;
+}
+.bg-scrim {
+  position: absolute; inset: 0;
+  background: linear-gradient(125deg,
+    rgba(255,255,255,0.78) 0%,
+    rgba(255,255,255,0.50) 38%,
+    rgba(255,255,255,0.10) 70%,
+    rgba(255,255,255,0.00) 100%);
+}
+.text-layer {
+  position: absolute; inset: 0;
+  padding: 8% 7%;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  z-index: 2;
+}
+.hero {
+  font-size: 2.6em;
+  font-weight: 700;
+  letter-spacing: -0.026em;
+  line-height: 1.04;
+  word-break: keep-all;
+  color: var(--fg);
+  text-shadow: 0 1px 2px rgba(255,255,255,0.4);
+  max-width: 70%;
+}
+.accent-line {
+  width: 36px; height: 2px;
+  background: var(--accent);
+  margin: 0.7em 0 0;
+}
+.middle-spacer { flex: 1; }
+.bottom {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 1.2em;
+  align-items: end;
+}
+.sub-block .person {
+  font-size: 1.05em;
+  font-weight: 600;
+  color: var(--fg);
+  letter-spacing: -0.005em;
+}
+.sub-block .role {
+  font-size: 0.78em;
+  color: var(--secondary);
+  margin-top: 0.2em;
+  letter-spacing: 0.02em;
+}
+.sub-block .legal {
+  font-size: 0.7em;
+  color: var(--secondary);
+  margin-top: 0.5em;
+  letter-spacing: 0.01em;
+  word-break: keep-all;
+}
+.contact {
+  text-align: right;
+  font-size: 0.74em;
+  color: var(--fg);
+  line-height: 1.7;
+}
+.contact .phone {
+  font-size: 1.14em;
+  font-weight: 700;
+  color: var(--fg);
+  letter-spacing: -0.005em;
+}
+.contact .email,
+.contact .address {
+  color: var(--secondary);
+  font-size: 0.92em;
+}
+.contact .address {
+  word-break: keep-all;
+  max-width: 22em;
+  display: inline-block;
+}
+.empty { display: none; }
+</style>
+</head>
+<body>
+  <article class="card">
+    <div class="bg-image" aria-hidden="true"></div>
+    <div class="bg-scrim" aria-hidden="true"></div>
+    <div class="text-layer">
+      <header>
+        <div class="hero">{{company}}</div>
+        <div class="accent-line"></div>
+      </header>
+      <div class="middle-spacer"></div>
+      <div class="bottom">
+        <div class="sub-block">
+          <div class="person {{name_empty}}">{{name}}</div>
+          <div class="role {{title_empty}}">{{title}}</div>
+          <div class="legal {{tagline_empty}}">{{tagline}}</div>
+        </div>
+        <div class="contact">
+          <div class="phone {{phone_empty}}">{{phone}}</div>
+          <div class="email {{email_empty}}">{{email}}</div>
+          <div class="address {{address_empty}}">{{address}}</div>
+        </div>
+      </div>
+    </div>
+  </article>
+</body>
+</html>

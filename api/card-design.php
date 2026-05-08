@@ -202,6 +202,110 @@ function template_palette_decision(string $apiKey, ?array $cardFields, ?array $s
     ];
 }
 
+function pick_recraft_size(array $dims): array {
+    $aspect = $dims['width'] / max(1, $dims['height']);
+    $sizes = [
+        [1024, 1024], [1365, 1024], [1024, 1365], [1536, 1024], [1024, 1536],
+        [1820, 1024], [1024, 1820], [1024, 2048], [2048, 1024],
+    ];
+    $best = $sizes[0];
+    $bestDelta = abs(($best[0] / $best[1]) - $aspect);
+    foreach ($sizes as $s) {
+        $d = abs(($s[0] / $s[1]) - $aspect);
+        if ($d < $bestDelta) { $best = $s; $bestDelta = $d; }
+    }
+    return ['size' => $best[0] . 'x' . $best[1], 'width' => $best[0], 'height' => $best[1]];
+}
+
+function build_recraft_bg_prompt(array $palette, ?array $cardFields, string $tone): string {
+    $industry = strtolower(trim((string)(($cardFields['industry'] ?? '') . ' ' . ($cardFields['company'] ?? '') . ' ' . $tone)));
+
+    $industryHint = 'premium luxury minimal';
+    if (preg_match('/부동산|분양|건설|아파트|real.?estate|construction/u', $industry)) {
+        $industryHint = 'premium real estate developer mood, 현대건설 자이 푸르지오 brand feel';
+    } elseif (preg_match('/마케팅|광고|영업|marketing|advert/u', $industry)) {
+        $industryHint = 'bold modern marketing campaign mood, magazine cover energy';
+    } elseif (preg_match('/테크|tech|software|saas|it/u', $industry)) {
+        $industryHint = 'modern tech startup mood, geometric, forward-looking';
+    } elseif (preg_match('/법무|금융|finance|law/u', $industry)) {
+        $industryHint = 'sophisticated executive mood, refined, conservative';
+    } elseif (preg_match('/뷰티|패션|beauty|fashion/u', $industry)) {
+        $industryHint = 'ultra-minimal high-end beauty mood';
+    }
+
+    return mb_substr(
+        "Flat 2D vector graphic. Decorative background art for a business card — abstract premium pattern, generous whitespace. " .
+        "Palette: bg {$palette['neutral']}, accent {$palette['primary']}. {$industryHint}. " .
+        "ABSOLUTELY NO TEXT. NO letters. NO numbers. NO words. NO logos. NO QR codes. NO icons. " .
+        "Composition: empty/calm region on the LEFT 60% of the frame so text can be overlaid there. " .
+        "Decorative interest concentrated on the RIGHT 35-40% of the frame: subtle geometric shapes, thin lines, soft gradient ramps, an abstract mark — tasteful, not busy. " .
+        "Edge-to-edge full bleed. No drop shadow. No 3D. No perspective. No card mockup. No paper texture. No environment. The image IS the card surface itself.",
+        0, 990, 'UTF-8'
+    );
+}
+
+function recraft_generate(string $apiKey, string $prompt, string $size, string $style = 'vector_illustration'): array {
+    $ch = curl_init('https://external.api.recraft.ai/v1/images/generations');
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST => true,
+        CURLOPT_POSTFIELDS => json_encode([
+            'prompt' => $prompt,
+            'style' => $style,
+            'size' => $size,
+            'model' => 'recraftv3',
+            'response_format' => 'url',
+        ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+        CURLOPT_HTTPHEADER => [
+            'Authorization: Bearer ' . $apiKey,
+            'Content-Type: application/json',
+        ],
+        CURLOPT_TIMEOUT => 90,
+        CURLOPT_CONNECTTIMEOUT => 10,
+    ]);
+    $resp = curl_exec($ch);
+    $status = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $err = curl_error($ch);
+    curl_close($ch);
+    if ($resp === false) return ['ok' => false, 'error' => 'curl: ' . $err, 'status' => 0];
+    $data = json_decode((string)$resp, true);
+    if ($status < 200 || $status >= 300) {
+        $msg = is_array($data) ? ($data['error']['message'] ?? $data['message'] ?? json_encode($data)) : substr((string)$resp, 0, 300);
+        return ['ok' => false, 'error' => 'Recraft ' . $status . ': ' . $msg, 'status' => $status];
+    }
+    $url = is_array($data) ? ($data['data'][0]['url'] ?? '') : '';
+    if ($url === '') return ['ok' => false, 'error' => 'No image URL in Recraft response'];
+    return ['ok' => true, 'url' => $url, 'credits' => $data['credits'] ?? null];
+}
+
+function save_remote_image(string $url): ?string {
+    $dir = __DIR__ . '/uploads/cards';
+    if (!is_dir($dir) && (!@mkdir($dir, 0755, true) && !is_dir($dir))) return null;
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT => 60,
+        CURLOPT_CONNECTTIMEOUT => 10,
+        CURLOPT_FOLLOWLOCATION => true,
+        CURLOPT_MAXREDIRS => 3,
+    ]);
+    $bytes = curl_exec($ch);
+    $status = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    if ($bytes === false || $status < 200 || $status >= 300) return null;
+
+    $ext = 'png';
+    if (preg_match('/\.(png|jpg|jpeg|webp|svg)(\?|$)/i', $url, $m)) $ext = strtolower($m[1]);
+    try { $rand = bin2hex(random_bytes(5)); } catch (Throwable $e) { $rand = substr(sha1(uniqid('', true)), 0, 10); }
+    $name = 'bg-' . date('Ymd-His') . '-' . $rand . '.' . $ext;
+    $path = $dir . '/' . $name;
+    if (@file_put_contents($path, $bytes) === false) return null;
+    @chmod($path, 0644);
+    $proto = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+    $host = $_SERVER['HTTP_HOST'] ?? 'youngman-biz.com';
+    return $proto . '://' . $host . '/uploads/cards/' . $name;
+}
+
 function build_monogram(string $candidate): string {
     $candidate = trim($candidate);
     if ($candidate === '') return 'JD';
@@ -217,7 +321,7 @@ function build_monogram(string $candidate): string {
     return mb_strtoupper($letters, 'UTF-8');
 }
 
-function render_template(string $templateId, array $renderFields, array $palette, array $dims): array {
+function render_template(string $templateId, array $renderFields, array $palette, array $dims, string $bgImageUrl = ''): array {
     $candidates = [
         dirname(__DIR__) . '/templates/cards/' . $templateId . '.html',
         __DIR__ . '/templates/cards/' . $templateId . '.html',
@@ -228,12 +332,13 @@ function render_template(string $templateId, array $renderFields, array $palette
 
     $html = (string)file_get_contents($path);
     $repl = [
-        '{{width}}'     => (string)$dims['width'],
-        '{{height}}'    => (string)$dims['height'],
-        '{{primary}}'   => $palette['primary'],
-        '{{fg}}'        => $palette['fg'],
-        '{{neutral}}'   => $palette['neutral'],
-        '{{secondary}}' => $palette['secondary'],
+        '{{width}}'        => (string)$dims['width'],
+        '{{height}}'       => (string)$dims['height'],
+        '{{primary}}'      => $palette['primary'],
+        '{{fg}}'           => $palette['fg'],
+        '{{neutral}}'      => $palette['neutral'],
+        '{{secondary}}'    => $palette['secondary'],
+        '{{bg_image_url}}' => $bgImageUrl,
     ];
     foreach (['name','title','company','phone','email','address','tagline','monogram'] as $k) {
         $val = trim((string)($renderFields[$k] ?? ''));
@@ -316,6 +421,33 @@ if (!$cardFields) $cardFields = [];
 
 $decision = template_palette_decision($openaiKey, $cardFields, $siteMeta, $tone);
 
+// Try Recraft for a decorative TEXT-FREE background (hybrid mode).
+$recraftKey = load_env_value('RECRAFT_API_KEY');
+$bgImageUrl = '';
+$recraftMeta = ['attempted' => false, 'used' => false, 'error' => null, 'credits' => null];
+if ($recraftKey !== '') {
+    $recraftMeta['attempted'] = true;
+    $sizePick = pick_recraft_size($inputDims);
+    $bgPrompt = build_recraft_bg_prompt($decision['palette'], $cardFields, $tone);
+    $gen = recraft_generate($recraftKey, $bgPrompt, $sizePick['size']);
+    if ($gen['ok']) {
+        $saved = save_remote_image($gen['url']);
+        if ($saved !== null) {
+            $bgImageUrl = $saved;
+            $recraftMeta['used'] = true;
+            $recraftMeta['credits'] = $gen['credits'];
+        } else {
+            $recraftMeta['error'] = '저장 실패';
+        }
+    } else {
+        $recraftMeta['error'] = $gen['error'] ?? 'Recraft 호출 실패';
+    }
+}
+
+// If Recraft worked, switch template to the overlay variant. Otherwise keep
+// whatever the director picked.
+$useTemplate = $bgImageUrl !== '' ? 'recraft_overlay' : $decision['template_id'];
+
 // Map OCR fields → template slots respecting hero hierarchy from director.
 $brandTitle = trim((string)($cardFields['brand_title'] ?? ''));
 $personName = trim((string)($cardFields['name']        ?? ''));
@@ -342,7 +474,7 @@ $renderFields = [
     'monogram' => build_monogram($heroForTemplate ?: $personName),
 ];
 
-$render = render_template($decision['template_id'], $renderFields, $decision['palette'], $inputDims);
+$render = render_template($useTemplate, $renderFields, $decision['palette'], $inputDims, $bgImageUrl);
 if (!$render['ok']) jout(['ok' => false, 'error' => $render['error'], 'decision' => $decision], 500);
 
 $savedUrl = save_html($render['html']);
@@ -353,7 +485,9 @@ jout([
     'fields' => $cardFields,
     'siteMeta' => $siteMeta,
     'htmlUrl' => $savedUrl,
-    'decision' => $decision,
+    'decision' => array_merge($decision, ['actual_template' => $useTemplate]),
+    'recraft' => $recraftMeta,
+    'bgImageUrl' => $bgImageUrl ?: null,
     'renderFields' => $renderFields,
     'note' => $ocrError ? ('OCR: ' . $ocrError) : null,
 ]);
