@@ -174,26 +174,40 @@ jobs:
             fi; \
           done" | tee /tmp/__audit.txt
 
-          AUDIT_NAME="_deploy_audit_$(date +%s).txt"
-          echo "==== Uploading audit (${AUDIT_NAME}) and fetching it back over HTTPS ===="
+          # Build a comprehensive diagnostic and leave it on the server (NOT deleted).
+          # I curl it externally to learn what is really happening without log auth.
+          AUDIT_NAME="_diag_${GH_SHA:0:7}.txt"
+          {
+            echo "=== Diagnostic for run SHA ${GH_SHA} ==="
+            echo "TARGET=${TARGET}"
+            echo "(SSH user) HOME=$($SSH ${SFTP_USER}@${SFTP_HOST} 'echo $HOME' 2>/dev/null)"
+            echo "(SSH user) realpath of TARGET:"
+            $SSH "${SFTP_USER}@${SFTP_HOST}" "readlink -f '${TARGET}' 2>/dev/null || (cd '${TARGET}' && pwd)" || true
+            echo
+            echo "=== ls -la ${TARGET} | head -120 ==="
+            $SSH "${SFTP_USER}@${SFTP_HOST}" "ls -la '${TARGET}' | head -120" || true
+            echo
+            echo "=== Existence + size of key files at TARGET ==="
+            $SSH "${SFTP_USER}@${SFTP_HOST}" "T='${TARGET}'; for f in index.html style.css main.js admin.html admin.js profile.html profile.js auth-shared.js .htaccess records.php analyze.php kapp_premium.php lotto2233.html; do \
+              if [ -f \"\$T/\$f\" ]; then \
+                echo \"OK   \$f  \$(stat -c '%s bytes  mtime=%y  uid=%U gid=%G mode=%a' \"\$T/\$f\" 2>/dev/null || wc -c < \"\$T/\$f\")\"; \
+              else \
+                echo \"MISS \$f\"; \
+              fi; \
+            done" || true
+            echo
+            echo "=== Other places admin.html might be (find -name, capped) ==="
+            $SSH "${SFTP_USER}@${SFTP_HOST}" "find . /www /home/hosting_users 2>/dev/null -maxdepth 4 -name admin.html -printf '%p %s %TY-%Tm-%Td\\n' 2>/dev/null | head -20" || true
+            echo
+            echo "=== Other places index.html might be ==="
+            $SSH "${SFTP_USER}@${SFTP_HOST}" "find . /www /home/hosting_users 2>/dev/null -maxdepth 4 -name index.html -printf '%p %s %TY-%Tm-%Td\\n' 2>/dev/null | head -20" || true
+          } > /tmp/__audit.txt 2>&1
+
+          echo "----- /tmp/__audit.txt (will also leave on server as ${AUDIT_NAME}) -----"
+          cat /tmp/__audit.txt
+          echo "----- end audit -----"
           $SCP /tmp/__audit.txt "${SFTP_USER}@${SFTP_HOST}:${TARGET}/${AUDIT_NAME}"
-          sleep 2
-          curl -sk -o /tmp/__audit_remote.txt -w "audit fetch: HTTP %{http_code} size=%{size_download}\n" "https://youngman-biz.com/${AUDIT_NAME}?cb=$(date +%s%N)"
-          echo "----- audit content fetched from live site -----"
-          cat /tmp/__audit_remote.txt 2>/dev/null || echo "(empty)"
-          echo "------------------------------------------------"
-
-          echo "==== Live HTTPS sanity for newly uploaded files (in this run) ===="
-          CB=$(date +%s%N)
-          for f in admin.html admin.js profile.html profile.js auth-shared.js style.css index.html; do
-            code=$(curl -sk -o /dev/null -w "%{http_code}" "https://youngman-biz.com/${f}?cb=${CB}")
-            size=$(curl -sk -o /dev/null -w "%{size_download}" "https://youngman-biz.com/${f}?cb=${CB}")
-            echo "  ${f}: HTTP ${code}  size=${size}"
-          done
-
-          echo "==== Webroot path actually used: ${TARGET} ===="
-          $SSH "${SFTP_USER}@${SFTP_HOST}" "readlink -f '${TARGET}' 2>/dev/null || (cd '${TARGET}' && pwd)"
-          $SSH "${SFTP_USER}@${SFTP_HOST}" "rm -f '${TARGET}/${AUDIT_NAME}'" 2>/dev/null || true
+          # NOTE: intentionally NOT deleting the audit so it can be fetched externally.
 
       - name: Verify deploy via HTTPS
         run: |
