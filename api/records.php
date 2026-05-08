@@ -224,17 +224,9 @@ function base64url_decode_strict($value) {
     return $decoded;
 }
 
-function verify_supabase_jwt($auth) {
-    if (empty($auth['require_auth'])) return null;
-
-    $jwtSecret = (string)($auth['jwt_secret'] ?? '');
-    if ($jwtSecret === '' || $jwtSecret === 'your-supabase-jwt-secret') {
-        respond(['ok' => false, 'error' => 'Supabase 인증 설정이 없습니다.'], 500);
-    }
-
-    // Try multiple ways to get the Authorization header (Apache/PHP environment compatibility)
+function read_authorization_header() {
     $header = $_SERVER['HTTP_AUTHORIZATION'] ?? $_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? '';
-    
+
     if (!$header && function_exists('getallheaders')) {
         $headers = getallheaders();
         foreach (['Authorization', 'authorization'] as $key) {
@@ -245,36 +237,187 @@ function verify_supabase_jwt($auth) {
         }
     }
 
-    if (!preg_match('/^Bearer\s+(.+)$/i', $header, $matches)) {
-        respond(['ok' => false, 'error' => '로그인이 필요합니다.'], 401);
-    }
+    return (string)$header;
+}
 
-    $token = $matches[1];
+function auth_log($message, $context = []) {
+    if (!empty($context)) {
+        $message .= ' ' . json_encode($context, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    }
+    error_log('[Auth] ' . $message);
+}
+
+function auth_token_diagnostics($header, $token = null, $extra = []) {
+    $header = (string)$header;
+    $token = $token === null ? '' : (string)$token;
+    $dotCount = $token === '' ? 0 : substr_count($token, '.');
+    auth_log('Authorization diagnostics', array_merge([
+        'authorization_header_exists' => $header !== '',
+        'bearer_prefix_exists' => (bool)preg_match('/^Bearer\s+/i', $header),
+        'token_prefix_20' => $token === '' ? '' : substr($token, 0, 20),
+        'jwt_format_dot_count_is_2' => $dotCount === 2,
+        'dot_count' => $dotCount,
+    ], $extra));
+}
+
+function decode_jwt_parts($token) {
     $parts = explode('.', $token);
     if (count($parts) !== 3) {
-        respond(['ok' => false, 'error' => '인증 토큰 형식이 올바르지 않습니다.'], 401);
+        return [null, null, $parts];
+    }
+
+    [$headerPart, $payloadPart] = $parts;
+    $headerJson = json_decode(base64url_decode_strict($headerPart), true);
+    $payload = json_decode(base64url_decode_strict($payloadPart), true);
+    return [$headerJson, $payload, $parts];
+}
+
+function auth_config_list($auth, $singleKey, $listKey) {
+    $values = [];
+    if (!empty($auth[$singleKey])) $values[] = (string)$auth[$singleKey];
+    if (!empty($auth[$listKey]) && is_array($auth[$listKey])) {
+        foreach ($auth[$listKey] as $value) {
+            if ((string)$value !== '') $values[] = (string)$value;
+        }
+    }
+    return array_values(array_unique($values));
+}
+
+function fetch_firebase_certs($auth) {
+    $cachePath = (string)($auth['firebase_certs_cache'] ?? (sys_get_temp_dir() . '/jdhoon_firebase_certs.json'));
+    if (is_file($cachePath)) {
+        $cached = json_decode((string)file_get_contents($cachePath), true);
+        if (is_array($cached) && ($cached['expires_at'] ?? 0) > time() && is_array($cached['certs'] ?? null)) {
+            return $cached['certs'];
+        }
+    }
+
+    $url = (string)($auth['firebase_cert_url'] ?? 'https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com');
+    $response = @file_get_contents($url);
+    if ($response === false) {
+        auth_log('Firebase ID Token verification failed', ['reason' => 'public_cert_fetch_failed']);
+        respond(['ok' => false, 'error' => 'Firebase 공개키를 가져오지 못했습니다.'], 401);
+    }
+
+    $certs = json_decode($response, true);
+    if (!is_array($certs)) {
+        auth_log('Firebase ID Token verification failed', ['reason' => 'public_cert_json_invalid']);
+        respond(['ok' => false, 'error' => 'Firebase 공개키 응답이 올바르지 않습니다.'], 401);
+    }
+
+    $ttl = 3600;
+    foreach (($http_response_header ?? []) as $line) {
+        if (preg_match('/max-age=(\d+)/i', $line, $matches)) {
+            $ttl = max(60, (int)$matches[1]);
+            break;
+        }
+    }
+
+    @file_put_contents($cachePath, json_encode([
+        'expires_at' => time() + $ttl,
+        'certs' => $certs,
+    ], JSON_UNESCAPED_SLASHES));
+
+    return $certs;
+}
+
+function verify_firebase_jwt($auth, $token, $headerJson, $payload, $parts) {
+    if (($headerJson['alg'] ?? '') !== 'RS256') {
+        return null;
+    }
+
+    $projectIds = auth_config_list($auth, 'firebase_project_id', 'firebase_project_ids');
+    $tokenProjectId = (string)($payload['aud'] ?? '');
+    if ($tokenProjectId !== '' && empty($projectIds)) {
+        $projectIds[] = $tokenProjectId;
+    }
+
+    if (empty($projectIds)) {
+        auth_log('Firebase ID Token verification failed', ['reason' => 'firebase_project_id_missing']);
+        respond(['ok' => false, 'error' => 'Firebase 인증 설정이 없습니다.'], 500);
+    }
+
+    if (!in_array($tokenProjectId, $projectIds, true)) {
+        auth_log('Firebase ID Token verification failed', ['reason' => 'audience_mismatch', 'aud' => $tokenProjectId]);
+        respond(['ok' => false, 'error' => 'Firebase 인증 대상이 올바르지 않습니다.'], 401);
+    }
+
+    $expectedIssuer = 'https://securetoken.google.com/' . $tokenProjectId;
+    if (($payload['iss'] ?? '') !== $expectedIssuer) {
+        auth_log('Firebase ID Token verification failed', ['reason' => 'issuer_mismatch', 'iss' => $payload['iss'] ?? '']);
+        respond(['ok' => false, 'error' => 'Firebase 인증 발급자가 올바르지 않습니다.'], 401);
+    }
+
+    if (($payload['exp'] ?? 0) < time()) {
+        auth_log('Firebase ID Token verification failed', ['reason' => 'expired']);
+        respond(['ok' => false, 'error' => '로그인 세션이 만료되었습니다.'], 401);
+    }
+
+    if (($payload['iat'] ?? 0) > time() + 300) {
+        auth_log('Firebase ID Token verification failed', ['reason' => 'issued_in_future']);
+        respond(['ok' => false, 'error' => 'Firebase 인증 발급 시간이 올바르지 않습니다.'], 401);
+    }
+
+    if (empty($payload['sub']) || !is_string($payload['sub'])) {
+        auth_log('Firebase ID Token verification failed', ['reason' => 'subject_missing']);
+        respond(['ok' => false, 'error' => 'Firebase 인증 사용자 정보가 없습니다.'], 401);
+    }
+
+    $kid = (string)($headerJson['kid'] ?? '');
+    $certs = fetch_firebase_certs($auth);
+    if ($kid === '' || empty($certs[$kid])) {
+        auth_log('Firebase ID Token verification failed', ['reason' => 'kid_not_found', 'kid' => $kid]);
+        respond(['ok' => false, 'error' => 'Firebase 인증 키를 찾을 수 없습니다.'], 401);
+    }
+
+    $publicKey = openssl_pkey_get_public($certs[$kid]);
+    if (!$publicKey) {
+        auth_log('Firebase ID Token verification failed', ['reason' => 'public_key_invalid', 'kid' => $kid]);
+        respond(['ok' => false, 'error' => 'Firebase 공개키가 올바르지 않습니다.'], 401);
+    }
+
+    $signature = base64url_decode_strict($parts[2]);
+    $verified = openssl_verify($parts[0] . '.' . $parts[1], $signature, $publicKey, OPENSSL_ALGO_SHA256);
+    if ($verified !== 1) {
+        auth_log('Firebase ID Token verification failed', ['reason' => 'signature_invalid', 'kid' => $kid]);
+        respond(['ok' => false, 'error' => 'Firebase ID Token 검증에 실패했습니다.'], 401);
+    }
+
+    auth_log('Firebase ID Token verification succeeded', [
+        'uid' => $payload['sub'] ?? '',
+        'email' => $payload['email'] ?? '',
+        'aud' => $payload['aud'] ?? '',
+    ]);
+
+    return $payload;
+}
+
+function verify_supabase_jwt_payload($auth, $token, $headerJson, $payload, $parts) {
+    if (($headerJson['alg'] ?? '') !== 'HS256') {
+        return null;
+    }
+
+    $jwtSecret = (string)($auth['jwt_secret'] ?? '');
+    if ($jwtSecret === '' || $jwtSecret === 'your-supabase-jwt-secret') {
+        respond(['ok' => false, 'error' => 'Supabase 인증 설정이 없습니다.'], 500);
     }
 
     [$headerPart, $payloadPart, $signaturePart] = $parts;
-    $headerJson = json_decode(base64url_decode_strict($headerPart), true);
-    $payload = json_decode(base64url_decode_strict($payloadPart), true);
-
-    if (!is_array($headerJson) || !is_array($payload) || ($headerJson['alg'] ?? '') !== 'HS256') {
-        respond(['ok' => false, 'error' => '지원하지 않는 인증 토큰입니다.'], 401);
-    }
-
     $expected = hash_hmac('sha256', $headerPart . '.' . $payloadPart, $jwtSecret, true);
     $actual = base64url_decode_strict($signaturePart);
     if (!hash_equals($expected, $actual)) {
+        auth_log('Supabase JWT verification failed', ['reason' => 'signature_invalid']);
         respond(['ok' => false, 'error' => '인증 토큰 검증에 실패했습니다.'], 401);
     }
 
     if (($payload['exp'] ?? 0) < time()) {
+        auth_log('Supabase JWT verification failed', ['reason' => 'expired']);
         respond(['ok' => false, 'error' => '로그인 세션이 만료되었습니다.'], 401);
     }
 
     $issuer = (string)($auth['issuer'] ?? '');
     if ($issuer !== '' && ($payload['iss'] ?? '') !== $issuer) {
+        auth_log('Supabase JWT verification failed', ['reason' => 'issuer_mismatch', 'iss' => $payload['iss'] ?? '']);
         respond(['ok' => false, 'error' => '인증 발급자가 올바르지 않습니다.'], 401);
     }
 
@@ -282,14 +425,61 @@ function verify_supabase_jwt($auth) {
     $aud = $payload['aud'] ?? '';
     $audiences = is_array($aud) ? $aud : [$aud];
     if ($audience !== '' && !in_array($audience, $audiences, true)) {
+        auth_log('Supabase JWT verification failed', ['reason' => 'audience_mismatch', 'aud' => $aud]);
         respond(['ok' => false, 'error' => '인증 대상이 올바르지 않습니다.'], 401);
     }
+
+    auth_log('Supabase JWT verification succeeded', [
+        'sub' => $payload['sub'] ?? '',
+        'email' => $payload['email'] ?? '',
+    ]);
 
     return $payload;
 }
 
+function verify_auth_token($auth) {
+    if (empty($auth['require_auth'])) return null;
+
+    $header = read_authorization_header();
+
+    if (!preg_match('/^Bearer\s+(.+)$/i', $header, $matches)) {
+        auth_token_diagnostics($header);
+        respond(['ok' => false, 'error' => '로그인이 필요합니다.'], 401);
+    }
+
+    $token = $matches[1];
+    auth_token_diagnostics($header, $token);
+
+    [$headerJson, $payload, $parts] = decode_jwt_parts($token);
+    if (count($parts) !== 3) {
+        auth_log('Token verification failed', ['reason' => 'not_jwt']);
+        respond(['ok' => false, 'error' => '인증 토큰 형식이 올바르지 않습니다.'], 401);
+    }
+
+    if (!is_array($headerJson) || !is_array($payload)) {
+        auth_log('Token verification failed', ['reason' => 'jwt_json_invalid']);
+        respond(['ok' => false, 'error' => '인증 토큰 형식이 올바르지 않습니다.'], 401);
+    }
+
+    auth_log('JWT decoded', [
+        'alg' => $headerJson['alg'] ?? '',
+        'kid' => $headerJson['kid'] ?? '',
+        'iss' => $payload['iss'] ?? '',
+        'aud' => $payload['aud'] ?? '',
+    ]);
+
+    $firebasePayload = verify_firebase_jwt($auth, $token, $headerJson, $payload, $parts);
+    if ($firebasePayload !== null) return $firebasePayload;
+
+    $supabasePayload = verify_supabase_jwt_payload($auth, $token, $headerJson, $payload, $parts);
+    if ($supabasePayload !== null) return $supabasePayload;
+
+    auth_log('Token verification failed', ['reason' => 'unsupported_token', 'alg' => $headerJson['alg'] ?? '']);
+    respond(['ok' => false, 'error' => '지원하지 않는 인증 토큰입니다.'], 401);
+}
+
 try {
-    $authUser = verify_supabase_jwt($auth);
+    $authUser = verify_auth_token($auth);
 
     $pdo = new PDO(
         sprintf(

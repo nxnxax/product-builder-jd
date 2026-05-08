@@ -280,6 +280,54 @@ function safeStorageRemove(storage, key) {
     }
 }
 
+function summarizeAuthToken(token) {
+    const value = String(token || '');
+    const dotCount = (value.match(/\./g) || []).length;
+    return {
+        prefix20: value.slice(0, 20),
+        isJwt: dotCount === 2,
+        dotCount
+    };
+}
+
+function getFirebaseCurrentUser() {
+    const firebaseGlobal = window.firebase;
+    if (firebaseGlobal?.auth && typeof firebaseGlobal.auth === 'function') {
+        return firebaseGlobal.auth().currentUser || null;
+    }
+    if (window.firebaseAuth?.currentUser) return window.firebaseAuth.currentUser;
+    if (window.auth?.currentUser) return window.auth.currentUser;
+    return null;
+}
+
+async function getFirebaseIdToken(forceRefresh = true) {
+    const user = getFirebaseCurrentUser();
+    console.log('[Auth] Firebase currentUser exists:', Boolean(user));
+    if (!user || typeof user.getIdToken !== 'function') return null;
+
+    const token = await user.getIdToken(forceRefresh);
+    console.log('[Auth] Using Firebase ID Token for API:', summarizeAuthToken(token));
+    return token;
+}
+
+async function getApiAuthToken({ forceRefresh = false } = {}) {
+    const firebaseToken = await getFirebaseIdToken(forceRefresh);
+    if (firebaseToken) return firebaseToken;
+
+    if (supabaseClient) {
+        const { data } = await supabaseClient.auth.getSession();
+        const session = data.session || currentSession;
+        currentSession = session || currentSession;
+        if (session?.access_token) {
+            console.log('[Auth] Using Supabase access token for API:', summarizeAuthToken(session.access_token));
+            return session.access_token;
+        }
+    }
+
+    console.log('[Auth] No API auth token available.');
+    return null;
+}
+
 let isProcessingOAuth = false;
 
 async function handlePostOAuthSession() {
@@ -298,28 +346,23 @@ async function handlePostOAuthSession() {
         const intent = getStoredOAuthIntent();
         console.log('[Auth] Processing OAuth session. Intent:', intent);
 
+        if (intent === 'signup') {
+            clearOAuthIntent();
+            const fullName = user.user_metadata?.full_name || user.user_metadata?.name || user.email?.split('@')[0] || '';
+            console.log('[Auth] Creating Google signup member:', {
+                email: user.email || '',
+                hasName: Boolean(fullName)
+            });
+            await completeGoogleSignup({ fullName, phone: '' });
+            return;
+        }
+
         const isRegistered = await isRegisteredMember(user);
         if (isRegistered) {
             clearOAuthIntent();
             localStorage.removeItem(OAUTH_EMAIL_KEY);
             localStorage.removeItem(OAUTH_PENDING_SIGNUP_KEY);
             oauthSignupPending = false;
-            if (intent === 'signup') {
-                localStorage.setItem(OAUTH_EMAIL_KEY, user.email || '');
-                localStorage.setItem(AUTH_NOTICE_KEY, SIGNUP_EXISTING_MESSAGE);
-                localStorage.setItem(AUTH_NOTICE_ACTION_KEY, 'login');
-                await supabaseClient.auth.signOut();
-                currentSession = null;
-            }
-            return;
-        }
-
-        if (intent === 'signup') {
-            clearOAuthIntent();
-            // Google 시스템 그대로 가입: 추가정보 입력 폼을 건너뛰고 Google 정보를 사용하여 자동 가입 처리
-            const fullName = user.user_metadata?.full_name || user.user_metadata?.name || '';
-            console.log('[Auth] Auto-registering Google user:', fullName);
-            await completeGoogleSignup({ fullName, phone: '' });
             return;
         }
 
@@ -376,9 +419,8 @@ async function isRegisteredMember(user) {
 async function fetchMembershipStatus(email) {
     try {
         const headers = {};
-        if (currentSession?.access_token) {
-            headers.Authorization = `Bearer ${currentSession.access_token}`;
-        }
+        const token = await getApiAuthToken({ forceRefresh: true });
+        if (token) headers.Authorization = `Bearer ${token}`;
 
         const response = await fetch(`${API_URL}?resource=auth-membership&email=${encodeURIComponent(email)}`, { headers });
         const payload = await response.json().catch(() => null);
@@ -459,14 +501,8 @@ async function apiRequest(resource, options = {}) {
         ...(options.headers || {})
     };
 
-    // Always try to get the freshest session before making an API call
-    if (supabaseClient) {
-        const { data } = await supabaseClient.auth.getSession();
-        const session = data.session || currentSession;
-        if (session?.access_token) {
-            headers.Authorization = `Bearer ${session.access_token}`;
-        }
-    }
+    const token = await getApiAuthToken({ forceRefresh: true });
+    if (token) headers.Authorization = `Bearer ${token}`;
 
     const response = await fetch(`${API_URL}?resource=${encodeURIComponent(resource)}`, {
         ...options,
@@ -745,16 +781,19 @@ async function completeGoogleSignup({ fullName, phone }) {
     const email = String(user?.email || authEmail.value || '').trim().toLowerCase();
     if (!user || !email) throw new Error('Google 인증 세션이 없습니다. 다시 시도하세요.');
 
+    const token = await getApiAuthToken({ forceRefresh: true });
+    if (!token) throw new Error('Google 인증 토큰을 가져오지 못했습니다. 다시 시도하세요.');
+
     const response = await fetch(`${API_URL}?resource=auth-member`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
-            Authorization: `Bearer ${currentSession.access_token}`
+            Authorization: `Bearer ${token}`
         },
         body: JSON.stringify({
             resource: 'auth-member',
             email,
-            fullName,
+            fullName: fullName || user.user_metadata?.full_name || user.user_metadata?.name || email.split('@')[0],
             phone,
             provider: 'google'
         })
