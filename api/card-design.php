@@ -66,12 +66,12 @@ function ocr_business_card(string $apiKey, string $imageBase64, string $mime): a
                     "- tagline (슬로건/한 줄 소개)\n" .
                     "- industry (부동산/건설/마케팅/광고/테크/법무/의료/F&B/뷰티/교육/금융/일반)\n" .
                     "- language ('ko' 또는 'en')\n" .
-                    "값을 못 찾은 필드는 빈 문자열. brand_title을 찾기 어려우면 빈 문자열로 두고 company를 채워. 명함이 아니면 {\"error\":\"not_a_business_card\"}."],
+                    "값을 못 찾은 필드는 빈 문자열. 명함이 아니면 {\"error\":\"not_a_business_card\"}."],
                 ['type' => 'image_url', 'image_url' => ['url' => 'data:' . $mime . ';base64,' . $imageBase64]],
             ],
         ]],
         'response_format' => ['type' => 'json_object'],
-        'max_tokens' => 700,
+        'max_tokens' => 800,
         'temperature' => 0.1,
     ], 45);
 
@@ -107,236 +107,149 @@ function fetch_site_meta(string $url): ?array {
     return ['title' => mb_substr($title, 0, 200), 'description' => mb_substr($description, 0, 400)];
 }
 
-function pick_recraft_size(array $dims): array {
-    $aspect = $dims['width'] / max(1, $dims['height']);
-    // Recraft v3 supported sizes (per docs).
-    $sizes = [
-        [1024, 1024], [1365, 1024], [1024, 1365], [1536, 1024], [1024, 1536],
-        [1820, 1024], [1024, 1820], [1024, 2048], [2048, 1024], [1434, 1024],
-        [1024, 1434], [1024, 1280], [1280, 1024], [1024, 1707], [1707, 1024],
+function template_palette_decision(string $apiKey, ?array $cardFields, ?array $siteMeta, string $tone): array {
+    $availableTemplates = [
+        'luxury_01'           => '럭셔리/프리미엄 (부동산, 건설, 호텔, 고급 서비스). 좌우 분할, 차콜+버건디+크림.',
+        'black_gold'          => '하이엔드 임원/전문직 (법무, 금융, 컨설팅). 다크 배경 + 골드/크림, 모노그램.',
+        'modern_corporate'    => '테크/SaaS/현대적 기업. 좌측 액센트 바, 깔끔한 그리드.',
+        'minimal_01'          => '미니멀/디자이너/예술 (스튜디오, 사진가). 흰 배경, 큰 여백.',
+        'editorial_marketing' => '광고/마케팅/영업/엔터테인먼트. 오버사이즈 이름, 시그널 컬러.',
     ];
-    $best = $sizes[0];
-    $bestDelta = abs(($best[0] / $best[1]) - $aspect);
-    foreach ($sizes as $s) {
-        $d = abs(($s[0] / $s[1]) - $aspect);
-        if ($d < $bestDelta) { $best = $s; $bestDelta = $d; }
-    }
-    return ['size' => $best[0] . 'x' . $best[1], 'width' => $best[0], 'height' => $best[1]];
-}
 
-function gpt_design_director(string $apiKey, ?array $cardFields, ?array $siteMeta, string $tone): array {
-    $context = [];
+    $palettes = [
+        ['name' => 'real_estate_premium', 'primary' => '#7a0026', 'fg' => '#1a1a1a', 'neutral' => '#f8f6f1', 'secondary' => '#5a5a5a', 'mood' => '럭셔리 부동산'],
+        ['name' => 'construction_navy',   'primary' => '#0a2940', 'fg' => '#1a1a1a', 'neutral' => '#fafafa', 'secondary' => '#5a5a5a', 'mood' => '건설/엔지니어링'],
+        ['name' => 'black_warm_gold',     'primary' => '#c9a567', 'fg' => '#f5f0e6', 'neutral' => '#0f0f0f', 'secondary' => '#a89d87', 'mood' => '하이엔드 임원'],
+        ['name' => 'editorial_red',       'primary' => '#e63946', 'fg' => '#0a0a0a', 'neutral' => '#fafafa', 'secondary' => '#666',    'mood' => '광고/마케팅'],
+        ['name' => 'tech_electric',       'primary' => '#0066ff', 'fg' => '#0a0a0a', 'neutral' => '#ffffff', 'secondary' => '#525252', 'mood' => '테크/SaaS'],
+        ['name' => 'forest_cream',        'primary' => '#1f4d3a', 'fg' => '#1a1a1a', 'neutral' => '#f4f1ea', 'secondary' => '#666',    'mood' => 'F&B/호스피탈리티'],
+        ['name' => 'soft_charcoal',       'primary' => '#2c2c2c', 'fg' => '#1a1a1a', 'neutral' => '#f8f8f8', 'secondary' => '#777',    'mood' => '미니멀'],
+    ];
+
+    $brief = [];
     if ($cardFields) {
-        $clean = [];
-        foreach (['brand_title','name','title','company','email','phone','mobile','address','tagline','industry','language'] as $k) {
+        $b = [];
+        foreach (['brand_title','name','title','company','industry','tagline'] as $k) {
             $v = trim((string)($cardFields[$k] ?? ''));
-            if ($v !== '') $clean[$k] = $v;
+            if ($v !== '') $b[$k] = $v;
         }
-        if ($clean) $context[] = "OCR fields: " . json_encode($clean, JSON_UNESCAPED_UNICODE);
+        if ($b) $brief[] = "OCR fields: " . json_encode($b, JSON_UNESCAPED_UNICODE);
     }
     if ($siteMeta) {
-        $hint = $siteMeta['description'] ?? $siteMeta['title'] ?? '';
-        if ($hint !== '') $context[] = "Site context: " . mb_substr($hint, 0, 240);
+        $hint = $siteMeta['description'] ?: $siteMeta['title'];
+        if ($hint !== '') $brief[] = "Site context: " . mb_substr($hint, 0, 240);
     }
-    if ($tone !== '') $context[] = "User tone brief: " . $tone;
+    if ($tone !== '') $brief[] = "User tone: " . $tone;
+    if (!$brief) $brief[] = "No info — pick minimal_01 + soft_charcoal.";
 
-    $sys = <<<SYS
-You are an art director planning a single-side business card BEFORE handing off to an image generator. Read the brief and emit a STRICT JSON design plan. No prose outside JSON.
-
-CRITICAL HIERARCHY RULES — these dictate what becomes biggest/most prominent:
-
-ABSOLUTE RULE: if `brand_title` is non-empty in the OCR fields, it IS the hero. Always. No exceptions. The brand title is the visually-most-prominent text the user wants as the headline (apartment brand, campaign name, product name, etc.). NEVER demote it in favor of `company` (legal entity) or `name` (person).
-
-If brand_title is empty:
-1. SALES / 영업 / 마케팅 / 광고 / real-estate sales (분양) — HERO is whatever brand/product/property title can be inferred from company/tagline. Phone number is the SECOND most prominent element because the buyer needs to call.
-2. Executive/professional (lawyer, doctor, exec) — HERO is the person's name. Company name secondary.
-3. Creative/designer — HERO is name OR portfolio brand. Compact contact.
-
-For real-estate sales cards in Korea: `company` typically contains the LEGAL developer (e.g., "동원개발") and `brand_title` contains the APARTMENT BRAND (e.g., "브레인시티 비스타동원"). The brand is what the buyer cares about, so it MUST be hero. The legal company name goes in tertiary lines, small.
-
-OUTPUT JSON SHAPE (all strings; arrays where noted):
-{
-  "hero_text": "<the single largest piece of text — verbatim from input>",
-  "hero_role": "brand_title | person_name | product_name | studio_name",
-  "secondary_text": "<the second-largest text element>",
-  "secondary_role": "person_name | company_name | tagline | role_title",
-  "emphasized_phone": true | false,
-  "phone_value": "<phone verbatim or empty>",
-  "tertiary_lines": ["<remaining contact lines in display order>"],
-  "layout_pattern": "left_hero_right_contact | top_hero_bottom_grid | centered_hero_bottom_strip | full_bleed_color_left",
-  "color_palette": {"bg":"#hex","fg":"#hex","accent":"#hex"},
-  "decorative_device": "<one short phrase, e.g. 'thin burgundy horizontal line under hero', 'small monogram top-left from initials', 'thick vertical accent bar on left edge'>",
-  "background_treatment": "solid | subtle_gradient | half_color_block",
-  "design_note": "<1 sentence summary of mood: e.g., '럭셔리 부동산 분양, 차분한 위계, 매거진 톤'>"
-}
-
-PALETTE GUIDANCE (override only with brand-color from OCR if present):
-- 부동산/분양/건설: bg #f7f3ec (warm cream), fg #1a1a1a (charcoal), accent #7a0026 (deep burgundy)
-- 마케팅/광고/영업(default): bg #fafafa, fg #0a0a0a, accent #e63946 (signal red)
-- 테크: bg #ffffff, fg #0a0a0a, accent #0066ff
-- 법무/금융: bg #f4f1ea, fg #0a1a2e (deep navy), accent #b08a4a (warm gold)
-- F&B/호스피탈리티: bg #f4f1ea, fg #1a1a1a, accent #1f4d3a (forest)
-- 뷰티/패션: bg #ffffff, fg #1a1a1a, accent #2c2c2c
-SYS;
+    $sys =
+        "You are a brand designer routing a business card to one pre-built HTML template + curated palette. " .
+        "Read the brief, decide the IDs.\n\n" .
+        "ABSOLUTE HIERARCHY RULE: if `brand_title` is present in OCR, it IS the visual hero of the card and goes into the 'company' slot of the chosen template (which renders biggest). The legal 'company' name goes into 'tagline' (smaller). Person 'name' stays as 'name'.\n" .
+        "Templates:\n";
+    foreach ($availableTemplates as $id => $desc) $sys .= "- $id: $desc\n";
+    $sys .= "\nPalettes (use exact name):\n";
+    foreach ($palettes as $p) $sys .= "- {$p['name']}: {$p['mood']} — primary {$p['primary']}, neutral {$p['neutral']}\n";
+    $sys .= "\nReturn STRICT JSON: { \"template_id\":\"...\", \"palette_name\":\"...\", \"primary_override\":\"#hex or empty\", \"hero_text\":\"<verbatim text that should be largest>\", \"sub_text\":\"<verbatim text that should be second>\", \"tertiary_text\":\"<verbatim small text e.g. legal company>\", \"reasoning\":\"1 sentence in Korean\" }.\n" .
+        "Korean real-estate-sales (분양) → luxury_01 + real_estate_premium. brand_title is hero, person 'name 직책' is sub, legal company is tertiary.\n" .
+        "Marketing/광고 → editorial_marketing + editorial_red.";
 
     $resp = openai_chat($apiKey, [
         'model' => 'gpt-4o',
         'messages' => [
             ['role' => 'system', 'content' => $sys],
-            ['role' => 'user', 'content' => implode("\n", $context)],
+            ['role' => 'user', 'content' => implode("\n", $brief)],
         ],
         'response_format' => ['type' => 'json_object'],
-        'max_tokens' => 700,
+        'max_tokens' => 600,
         'temperature' => 0.4,
     ], 30);
 
-    if (!$resp['ok']) return ['ok' => false, 'error' => $resp['body']['error']['message'] ?? 'director call failed'];
-    $plan = json_decode((string)($resp['body']['choices'][0]['message']['content'] ?? ''), true);
-    if (!is_array($plan)) return ['ok' => false, 'error' => 'plan parse failed'];
-    return ['ok' => true, 'plan' => $plan];
-}
-
-function build_recraft_prompt(?array $cardFields, ?array $siteMeta, string $tone, ?array $plan = null): string {
-    $hero      = trim((string)($plan['hero_text']        ?? ''));
-    $heroRole  = trim((string)($plan['hero_role']        ?? ''));
-    $secondary = trim((string)($plan['secondary_text']   ?? ''));
-    $phone     = trim((string)($plan['phone_value']      ?? ''));
-    $tertiary  = is_array($plan['tertiary_lines'] ?? null) ? array_filter(array_map('strval', $plan['tertiary_lines'])) : [];
-    $emphPhone = !empty($plan['emphasized_phone']);
-    $layout    = trim((string)($plan['layout_pattern']   ?? 'left_hero_right_contact'));
-    $palette   = is_array($plan['color_palette'] ?? null) ? $plan['color_palette'] : [];
-    $bg        = trim((string)($palette['bg']            ?? '#fafafa'));
-    $fg        = trim((string)($palette['fg']            ?? '#0a0a0a'));
-    $accent    = trim((string)($palette['accent']        ?? '#7a0026'));
-    $deco      = trim((string)($plan['decorative_device'] ?? 'thin accent line under the hero text'));
-    $bgTreat   = trim((string)($plan['background_treatment'] ?? 'solid'));
-    $designNote = trim((string)($plan['design_note']     ?? ''));
-
-    // If plan is missing, fall back to extracting from raw OCR fields.
-    if ($hero === '') {
-        $hero = trim((string)($cardFields['company'] ?? $cardFields['name'] ?? ''));
-        $heroRole = 'brand_title';
-        $secondary = trim((string)($cardFields['name'] ?? ''));
-        $phone = trim((string)($cardFields['phone'] ?? $cardFields['mobile'] ?? ''));
-        $tertiary = array_filter([
-            (string)($cardFields['email']   ?? ''),
-            (string)($cardFields['address'] ?? ''),
-        ]);
+    $defaultPalette = $palettes[6];
+    if (!$resp['ok']) {
+        return [
+            'template_id' => 'minimal_01',
+            'palette' => $defaultPalette,
+            'reasoning' => 'fallback — OpenAI 호출 실패: ' . ($resp['body']['error']['message'] ?? 'unknown'),
+            'hero_text' => '', 'sub_text' => '', 'tertiary_text' => '',
+        ];
+    }
+    $decision = json_decode((string)($resp['body']['choices'][0]['message']['content'] ?? ''), true);
+    if (!is_array($decision)) {
+        return ['template_id' => 'minimal_01', 'palette' => $defaultPalette, 'reasoning' => 'fallback — JSON parse failed', 'hero_text' => '', 'sub_text' => '', 'tertiary_text' => ''];
     }
 
-    $hierarchyLines = [];
-    if ($hero      !== '') $hierarchyLines[] = "HERO (largest, bold): \"$hero\"";
-    if ($secondary !== '') $hierarchyLines[] = "Sub (~40%): \"$secondary\"";
-    if ($emphPhone && $phone !== '') {
-        $hierarchyLines[] = "PHONE CTA (bold, ~55%): \"$phone\"";
-    } elseif ($phone !== '') {
-        $tertiary[] = $phone;
-    }
-    foreach ($tertiary as $line) {
-        $line = trim((string)$line);
-        if ($line !== '') $hierarchyLines[] = "Small: \"$line\"";
+    $tplId = (string)($decision['template_id'] ?? '');
+    if (!isset($availableTemplates[$tplId])) $tplId = 'minimal_01';
+
+    $palette = $defaultPalette;
+    foreach ($palettes as $p) {
+        if ($p['name'] === ($decision['palette_name'] ?? '')) { $palette = $p; break; }
     }
 
-    $layoutPhrases = [
-        'left_hero_right_contact'   => 'Left=hero, right column=contact.',
-        'top_hero_bottom_grid'      => 'Top third=hero, bottom=2-col grid (role | contact).',
-        'centered_hero_bottom_strip'=> 'Hero upper-center, bottom strip=contact row.',
-        'full_bleed_color_left'     => 'Left 35-40%=accent color block w/ hero in white; right=contact on bg.',
+    $override = trim((string)($decision['primary_override'] ?? ''));
+    if (preg_match('/^#[0-9a-f]{6}$/i', $override)) {
+        $palette = array_merge($palette, ['primary' => strtolower($override)]);
+    }
+
+    return [
+        'template_id'    => $tplId,
+        'palette'        => $palette,
+        'reasoning'      => (string)($decision['reasoning'] ?? ''),
+        'hero_text'      => (string)($decision['hero_text'] ?? ''),
+        'sub_text'       => (string)($decision['sub_text'] ?? ''),
+        'tertiary_text'  => (string)($decision['tertiary_text'] ?? ''),
     ];
-    $layoutPhrase = $layoutPhrases[$layout] ?? $layoutPhrases['left_hero_right_contact'];
-
-    // Build prompt incrementally, prioritising the parts that move quality most.
-    $head =
-        "Flat vector graphic design of a business card (NOT a photo/mockup/card on desk). " .
-        "Image IS the card — full bleed, edge-to-edge. No shadow/perspective/paper texture/environment/hand/isometric. " .
-        "Bg {$bg}, text {$fg}, accent {$accent}. {$layoutPhrase} ";
-    if ($deco !== '')      $head .= "Accent device: {$deco}. ";
-    if ($designNote !== '') $head .= "Mood: {$designNote}. ";
-    if ($tone !== '')      $head .= "Brief: " . mb_substr($tone, 0, 120) . ". ";
-
-    $tail =
-        " Render Hangul EXACTLY (no romanization, no translation, perfect spelling). Korean-aware sans (Pretendard/Noto Sans KR). " .
-        "≥7% margins. No clip art/emoji/QR/stock icons/invented logos. Single side only.";
-
-    // Add hierarchy lines greedily, stopping once we approach the 1000-char ceiling.
-    $budget = 990 - mb_strlen($head, 'UTF-8') - mb_strlen($tail, 'UTF-8') - 30; // 30 char safety
-    $textBlock = "Print verbatim:\n";
-    foreach ($hierarchyLines as $line) {
-        $candidate = $textBlock . $line . "\n";
-        if (mb_strlen($candidate, 'UTF-8') > $budget) break;
-        $textBlock = $candidate;
-    }
-
-    $prompt = $head . $textBlock . $tail;
-    if (mb_strlen($prompt, 'UTF-8') > 1000) {
-        $prompt = mb_substr($prompt, 0, 1000, 'UTF-8');
-    }
-    return $prompt;
 }
 
-function recraft_generate(string $apiKey, string $prompt, string $size, string $style = 'realistic_image'): array {
-    $ch = curl_init('https://external.api.recraft.ai/v1/images/generations');
-    curl_setopt_array($ch, [
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_POST => true,
-        CURLOPT_POSTFIELDS => json_encode([
-            'prompt' => $prompt,
-            'style' => $style,
-            'size' => $size,
-            'model' => 'recraftv3',
-            'response_format' => 'url',
-        ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
-        CURLOPT_HTTPHEADER => [
-            'Authorization: Bearer ' . $apiKey,
-            'Content-Type: application/json',
-        ],
-        CURLOPT_TIMEOUT => 120,
-        CURLOPT_CONNECTTIMEOUT => 10,
-    ]);
-    $resp = curl_exec($ch);
-    $status = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    $err = curl_error($ch);
-    curl_close($ch);
-
-    if ($resp === false) return ['ok' => false, 'error' => 'curl: ' . $err, 'status' => 0];
-    $data = json_decode((string)$resp, true);
-
-    if ($status < 200 || $status >= 300) {
-        $msg = is_array($data) ? ($data['error']['message'] ?? $data['message'] ?? json_encode($data)) : substr((string)$resp, 0, 300);
-        return ['ok' => false, 'error' => 'Recraft ' . $status . ': ' . $msg, 'status' => $status, 'body' => $data];
+function build_monogram(string $candidate): string {
+    $candidate = trim($candidate);
+    if ($candidate === '') return 'JD';
+    $clean = preg_replace('/[^A-Za-z가-힣\s]/u', '', $candidate);
+    $parts = preg_split('/\s+/', trim((string)$clean));
+    $letters = '';
+    foreach ($parts as $p) {
+        if ($p === '') continue;
+        $letters .= mb_substr($p, 0, 1, 'UTF-8');
+        if (mb_strlen($letters, 'UTF-8') >= 2) break;
     }
-
-    $url = is_array($data) ? ($data['data'][0]['url'] ?? $data['data'][0]['image']['url'] ?? '') : '';
-    if ($url === '') return ['ok' => false, 'error' => 'No image URL in Recraft response', 'body' => $data];
-    return ['ok' => true, 'url' => $url, 'credits' => $data['credits'] ?? null, 'body' => $data];
+    if ($letters === '') $letters = mb_substr($candidate, 0, 2, 'UTF-8');
+    return mb_strtoupper($letters, 'UTF-8');
 }
 
-function save_image_from_url(string $url, string $extension = 'png'): ?string {
+function render_template(string $templateId, array $renderFields, array $palette, array $dims): array {
+    $candidates = [
+        dirname(__DIR__) . '/templates/cards/' . $templateId . '.html',
+        __DIR__ . '/templates/cards/' . $templateId . '.html',
+    ];
+    $path = null;
+    foreach ($candidates as $c) if (is_file($c)) { $path = $c; break; }
+    if ($path === null) return ['ok' => false, 'error' => 'Template file not found: ' . $templateId];
+
+    $html = (string)file_get_contents($path);
+    $repl = [
+        '{{width}}'     => (string)$dims['width'],
+        '{{height}}'    => (string)$dims['height'],
+        '{{primary}}'   => $palette['primary'],
+        '{{fg}}'        => $palette['fg'],
+        '{{neutral}}'   => $palette['neutral'],
+        '{{secondary}}' => $palette['secondary'],
+    ];
+    foreach (['name','title','company','phone','email','address','tagline','monogram'] as $k) {
+        $val = trim((string)($renderFields[$k] ?? ''));
+        $repl["{{{$k}}}"] = htmlspecialchars($val, ENT_QUOTES, 'UTF-8');
+        $repl["{{{$k}_empty}}"] = $val === '' ? 'empty' : '';
+    }
+    return ['ok' => true, 'html' => strtr($html, $repl)];
+}
+
+function save_html(string $html): ?string {
     $dir = __DIR__ . '/uploads/cards';
-    if (!is_dir($dir)) {
-        if (!@mkdir($dir, 0755, true) && !is_dir($dir)) return null;
-    }
-    $ch = curl_init($url);
-    curl_setopt_array($ch, [
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_TIMEOUT => 60,
-        CURLOPT_CONNECTTIMEOUT => 10,
-        CURLOPT_FOLLOWLOCATION => true,
-        CURLOPT_MAXREDIRS => 3,
-    ]);
-    $bytes = curl_exec($ch);
-    $status = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    curl_close($ch);
-    if ($bytes === false || $status < 200 || $status >= 300) return null;
-
+    if (!is_dir($dir) && (!@mkdir($dir, 0755, true) && !is_dir($dir))) return null;
     try { $rand = bin2hex(random_bytes(5)); } catch (Throwable $e) { $rand = substr(sha1(uniqid('', true)), 0, 10); }
-    // Detect actual extension from URL or default to png.
-    if (preg_match('/\.(png|jpg|jpeg|webp|svg)(\?|$)/i', $url, $m)) {
-        $extension = strtolower($m[1]);
-    }
-    $name = date('Ymd-His') . '-' . $rand . '.' . $extension;
+    $name = date('Ymd-His') . '-' . $rand . '.html';
     $path = $dir . '/' . $name;
-    if (@file_put_contents($path, $bytes) === false) return null;
+    if (@file_put_contents($path, $html) === false) return null;
     @chmod($path, 0644);
     $proto = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
     $host = $_SERVER['HTTP_HOST'] ?? 'youngman-biz.com';
@@ -347,29 +260,21 @@ function save_image_from_url(string $url, string $extension = 'png'): ?string {
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 
 if ($method === 'GET' && (($_GET['test'] ?? '') === 'connectivity')) {
-    $hosts = ['api.openai.com', 'external.api.recraft.ai', 'example.com'];
-    $results = [];
-    foreach ($hosts as $h) {
-        $ip = @gethostbyname($h);
-        $resolved = $ip !== $h && $ip !== false;
-        $results[] = ['host' => $h, 'resolved_ip' => $resolved ? $ip : null];
-    }
     jout([
         'ok' => true,
-        'hosts' => $results,
         'env' => [
             'OPENAI_API_KEY_present'  => load_env_value('OPENAI_API_KEY')  !== '',
             'RECRAFT_API_KEY_present' => load_env_value('RECRAFT_API_KEY') !== '',
             'php_version' => PHP_VERSION,
         ],
+        'templates' => array_values(array_map(function ($p) { return basename($p, '.html'); }, glob(dirname(__DIR__) . '/templates/cards/*.html') ?: [])),
     ]);
 }
 
 if ($method !== 'POST') jout(['ok' => false, 'error' => 'POST only'], 405);
 
-$openaiKey  = load_env_value('OPENAI_API_KEY');
-$recraftKey = load_env_value('RECRAFT_API_KEY');
-if ($recraftKey === '') jout(['ok' => false, 'error' => 'RECRAFT_API_KEY가 서버 .env에 설정되지 않았습니다.'], 500);
+$openaiKey = load_env_value('OPENAI_API_KEY');
+if ($openaiKey === '') jout(['ok' => false, 'error' => 'OPENAI_API_KEY가 서버 .env에 설정되지 않았습니다.'], 500);
 
 $siteUrl = trim((string)($_POST['siteUrl'] ?? ''));
 $tone = trim((string)($_POST['tone'] ?? ''));
@@ -381,7 +286,7 @@ if (!$hasImage && $siteUrl === '' && $tone === '') {
 
 $cardFields = null;
 $ocrError = null;
-$inputDims = ['width' => 1820, 'height' => 1024]; // landscape default
+$inputDims = ['width' => 1050, 'height' => 600];
 if ($hasImage) {
     $tmp = $_FILES['image']['tmp_name'];
     if ((int)$_FILES['image']['size'] > 8 * 1024 * 1024) jout(['ok' => false, 'error' => '이미지가 너무 큽니다. 최대 8MB.'], 400);
@@ -391,15 +296,14 @@ if ($hasImage) {
     }
     $info = @getimagesize($tmp);
     if ($info && (int)$info[0] > 0 && (int)$info[1] > 0) {
-        $inputDims = ['width' => (int)$info[0], 'height' => (int)$info[1]];
+        $iw = (int)$info[0]; $ih = (int)$info[1];
+        $maxSide = max($iw, $ih);
+        if ($maxSide > 2000) { $s = 2000 / $maxSide; $iw = (int)round($iw * $s); $ih = (int)round($ih * $s); }
+        $inputDims = ['width' => $iw, 'height' => $ih];
     }
-    if ($openaiKey !== '') {
-        $b64 = base64_encode((string)file_get_contents($tmp));
-        $ocr = ocr_business_card($openaiKey, $b64, $mime);
-        if ($ocr['ok']) $cardFields = $ocr['fields']; else $ocrError = $ocr['error'] ?? 'OCR 실패';
-    } else {
-        $ocrError = 'OPENAI_API_KEY 미설정 — OCR 건너뜀';
-    }
+    $b64 = base64_encode((string)file_get_contents($tmp));
+    $ocr = ocr_business_card($openaiKey, $b64, $mime);
+    if ($ocr['ok']) $cardFields = $ocr['fields']; else $ocrError = $ocr['error'] ?? 'OCR 실패';
 }
 
 $siteMeta = null;
@@ -410,53 +314,46 @@ if ($siteUrl !== '') {
 
 if (!$cardFields) $cardFields = [];
 
-// Step 1: GPT-4o Director plans the hierarchy (hero, secondary, phone CTA, layout, palette).
-$directorPlan = null;
-$directorError = null;
-if ($openaiKey !== '') {
-    $director = gpt_design_director($openaiKey, $cardFields, $siteMeta, $tone);
-    if ($director['ok']) {
-        $directorPlan = $director['plan'];
-    } else {
-        $directorError = $director['error'];
-    }
-}
+$decision = template_palette_decision($openaiKey, $cardFields, $siteMeta, $tone);
 
-$sizePick = pick_recraft_size($inputDims);
-$prompt = build_recraft_prompt($cardFields, $siteMeta, $tone, $directorPlan);
+// Map OCR fields → template slots respecting hero hierarchy from director.
+$brandTitle = trim((string)($cardFields['brand_title'] ?? ''));
+$personName = trim((string)($cardFields['name']        ?? ''));
+$personTitle = trim((string)($cardFields['title']      ?? ''));
+$legalCompany = trim((string)($cardFields['company']   ?? ''));
+$phone = trim((string)($cardFields['phone'] ?? $cardFields['mobile'] ?? ''));
+$email = trim((string)($cardFields['email'] ?? ''));
+$address = trim((string)($cardFields['address'] ?? ''));
+$ocrTagline = trim((string)($cardFields['tagline'] ?? ''));
 
-// Step 2: Recraft executes. vector_illustration is the flattest output — no
-// shadows, no environment, no card-on-desk mockups. realistic_image and
-// digital_illustration both leak photo cues despite anti-photo prompting.
-$style = 'vector_illustration';
-if (mb_stripos($tone, '리얼') !== false || mb_stripos($tone, 'photo') !== false) {
-    $style = 'realistic_image';
-} elseif (mb_stripos($tone, '디지털') !== false || mb_stripos($tone, 'digital') !== false) {
-    $style = 'digital_illustration';
-}
+// Templates expect: name, title, company (largest), phone, email, address, tagline.
+// We map so the HERO ends up in `company` slot (which all templates render biggest).
+$heroForTemplate = $brandTitle !== '' ? $brandTitle : ($legalCompany !== '' ? $legalCompany : $personName);
+$smallCompanyForTemplate = $brandTitle !== '' && $legalCompany !== '' ? $legalCompany : '';
 
-$gen = recraft_generate($recraftKey, $prompt, $sizePick['size'], $style);
-if (!$gen['ok']) {
-    jout([
-        'ok' => false,
-        'error' => $gen['error'],
-        'fields' => $cardFields,
-        'ocr_error' => $ocrError,
-        'prompt_preview' => mb_substr($prompt, 0, 300),
-    ], 502);
-}
+$renderFields = [
+    'name'     => $personName,
+    'title'    => $personTitle,
+    'company'  => $heroForTemplate,
+    'phone'    => $phone,
+    'email'    => $email,
+    'address'  => $address,
+    'tagline'  => $smallCompanyForTemplate !== '' ? $smallCompanyForTemplate : $ocrTagline,
+    'monogram' => build_monogram($heroForTemplate ?: $personName),
+];
 
-$savedUrl = save_image_from_url($gen['url']) ?: $gen['url'];
+$render = render_template($decision['template_id'], $renderFields, $decision['palette'], $inputDims);
+if (!$render['ok']) jout(['ok' => false, 'error' => $render['error'], 'decision' => $decision], 500);
+
+$savedUrl = save_html($render['html']);
+if ($savedUrl === null) jout(['ok' => false, 'error' => '결과 저장 실패'], 500);
 
 jout([
     'ok' => true,
     'fields' => $cardFields,
     'siteMeta' => $siteMeta,
-    'imageUrl' => $savedUrl,
-    'recraftUrl' => $gen['url'],
-    'credits' => $gen['credits'],
-    'size' => $sizePick['size'],
-    'style' => $style,
-    'directorPlan' => $directorPlan,
-    'note' => $ocrError ? ('OCR: ' . $ocrError) : ($directorError ? ('Director: ' . $directorError) : null),
+    'htmlUrl' => $savedUrl,
+    'decision' => $decision,
+    'renderFields' => $renderFields,
+    'note' => $ocrError ? ('OCR: ' . $ocrError) : null,
 ]);
