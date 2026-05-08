@@ -6,6 +6,7 @@
 const API_URL = 'records.php';
 const MIGRATION_FLAG = 'erpDbMigrationComplete';
 const OAUTH_INTENT_KEY = 'erpOAuthIntent';
+const OAUTH_MODE_PARAM = 'oauth_mode';
 const OAUTH_EMAIL_KEY = 'erpOAuthEmail';
 const OAUTH_PENDING_SIGNUP_KEY = 'erpOAuthPendingSignup';
 const AUTH_NOTICE_ACTION_KEY = 'erpAuthNoticeAction';
@@ -180,7 +181,110 @@ function normalizeSupabaseUrl(value) {
     }
 }
 
+function getOAuthIntentFromUrl() {
+    try {
+        const url = new URL(window.location.href);
+        let mode = url.searchParams.get(OAUTH_MODE_PARAM);
+        
+        // Also check hash for fragment-based params (Supabase often uses fragments)
+        if (!mode && url.hash) {
+            const hashPart = url.hash.substring(1);
+            const hashParams = new URLSearchParams(hashPart.includes('?') ? hashPart.split('?')[1] : hashPart);
+            mode = hashParams.get(OAUTH_MODE_PARAM);
+        }
+        
+        return normalizeOAuthIntent(mode);
+    } catch {
+        return '';
+    }
+}
+
+function normalizeOAuthIntent(value) {
+    return value === 'signup' ? 'signup' : value === 'login' ? 'login' : '';
+}
+
+function getStoredOAuthIntent() {
+    const fromUrl = getOAuthIntentFromUrl();
+    if (fromUrl) return fromUrl;
+
+    const fromSession = safeStorageGet(sessionStorage, OAUTH_INTENT_KEY);
+    if (normalizeOAuthIntent(fromSession)) return fromSession;
+
+    const fromLocal = safeStorageGet(localStorage, OAUTH_INTENT_KEY);
+    if (normalizeOAuthIntent(fromLocal)) return fromLocal;
+
+    return safeStorageGet(localStorage, OAUTH_PENDING_SIGNUP_KEY) === '1' ? 'signup' : 'login';
+}
+
+function saveOAuthIntent(intent) {
+    const mode = normalizeOAuthIntent(intent) || 'login';
+    safeStorageSet(sessionStorage, OAUTH_INTENT_KEY, mode);
+    safeStorageSet(localStorage, OAUTH_INTENT_KEY, mode);
+}
+
+function clearOAuthIntent() {
+    safeStorageRemove(sessionStorage, OAUTH_INTENT_KEY);
+    safeStorageRemove(localStorage, OAUTH_INTENT_KEY);
+    cleanOAuthIntentUrl();
+}
+
+function cleanOAuthIntentUrl() {
+    try {
+        const url = new URL(window.location.href);
+        let changed = false;
+        if (url.searchParams.has(OAUTH_MODE_PARAM)) {
+            url.searchParams.delete(OAUTH_MODE_PARAM);
+            changed = true;
+        }
+        // Also try to clean from hash if present
+        if (url.hash.includes(OAUTH_MODE_PARAM)) {
+            // Complex to clean hash accurately without library, but we can try basic replacement
+            // Or just leave it as it's less critical than storage
+        }
+        if (changed) {
+            const nextUrl = `${url.pathname}${url.search}${url.hash}`;
+            window.history.replaceState({}, document.title, nextUrl);
+        }
+    } catch {
+        // Ignore history cleanup failures.
+    }
+}
+
+function buildOAuthRedirectTo(intent) {
+    const url = new URL(window.location.pathname, window.location.origin);
+    url.searchParams.set(OAUTH_MODE_PARAM, normalizeOAuthIntent(intent) || 'login');
+    return url.toString();
+}
+
+function safeStorageGet(storage, key) {
+    try {
+        return storage.getItem(key) || '';
+    } catch {
+        return '';
+    }
+}
+
+function safeStorageSet(storage, key, value) {
+    try {
+        storage.setItem(key, value);
+    } catch {
+        // Storage can be unavailable in restricted browser contexts.
+    }
+}
+
+function safeStorageRemove(storage, key) {
+    try {
+        storage.removeItem(key);
+    } catch {
+        // Storage can be unavailable in restricted browser contexts.
+    }
+}
+
+let isProcessingOAuth = false;
+
 async function handlePostOAuthSession() {
+    if (isProcessingOAuth) return;
+    
     const user = currentSession?.user;
     if (!user) return;
 
@@ -189,31 +293,41 @@ async function handlePostOAuthSession() {
     const isGoogleUser = provider === 'google' || providers.includes('google');
     if (!isGoogleUser) return;
 
-    const intent = localStorage.getItem(OAUTH_INTENT_KEY)
-        || (localStorage.getItem(OAUTH_PENDING_SIGNUP_KEY) === '1' ? 'signup' : 'login');
-    localStorage.removeItem(OAUTH_INTENT_KEY);
+    isProcessingOAuth = true;
+    try {
+        const intent = getStoredOAuthIntent();
+        console.log('[Auth] Processing OAuth session. Intent:', intent);
 
-    const isRegistered = await isRegisteredMember(user);
-    if (isRegistered) {
-        localStorage.removeItem(OAUTH_EMAIL_KEY);
-        localStorage.removeItem(OAUTH_PENDING_SIGNUP_KEY);
-        oauthSignupPending = false;
-        if (intent === 'signup') {
-            localStorage.setItem(OAUTH_EMAIL_KEY, user.email || '');
-            localStorage.setItem(AUTH_NOTICE_KEY, SIGNUP_EXISTING_MESSAGE);
-            localStorage.setItem(AUTH_NOTICE_ACTION_KEY, 'login');
-            await supabaseClient.auth.signOut();
-            currentSession = null;
+        const isRegistered = await isRegisteredMember(user);
+        if (isRegistered) {
+            clearOAuthIntent();
+            localStorage.removeItem(OAUTH_EMAIL_KEY);
+            localStorage.removeItem(OAUTH_PENDING_SIGNUP_KEY);
+            oauthSignupPending = false;
+            if (intent === 'signup') {
+                localStorage.setItem(OAUTH_EMAIL_KEY, user.email || '');
+                localStorage.setItem(AUTH_NOTICE_KEY, SIGNUP_EXISTING_MESSAGE);
+                localStorage.setItem(AUTH_NOTICE_ACTION_KEY, 'login');
+                await supabaseClient.auth.signOut();
+                currentSession = null;
+            }
+            return;
         }
-        return;
-    }
 
-    if (intent === 'signup') {
-        startGoogleSignupFlow(user);
-        return;
-    }
+        if (intent === 'signup') {
+            clearOAuthIntent();
+            startGoogleSignupFlow(user);
+            return;
+        }
 
-    await blockUnregisteredGoogleLogin(user.email);
+        // Default: login intent or unknown
+        clearOAuthIntent();
+        await blockUnregisteredGoogleLogin(user.email);
+    } catch (error) {
+        console.error('[Auth] OAuth session processing failed:', error);
+    } finally {
+        isProcessingOAuth = false;
+    }
 }
 
 function startGoogleSignupFlow(user) {
@@ -678,16 +792,17 @@ async function handleGoogleLogin() {
     setAuthMessage('', '');
 
     try {
-        localStorage.setItem(OAUTH_INTENT_KEY, authMode === 'signup' ? 'signup' : 'login');
+        const intent = authMode === 'signup' ? 'signup' : 'login';
+        saveOAuthIntent(intent);
         const { error } = await supabaseClient.auth.signInWithOAuth({
             provider: 'google',
             options: {
-                redirectTo: window.location.origin + window.location.pathname
+                redirectTo: buildOAuthRedirectTo(intent)
             }
         });
         if (error) throw error;
     } catch (error) {
-        localStorage.removeItem(OAUTH_INTENT_KEY);
+        clearOAuthIntent();
         googleLoginBtn.disabled = false;
         setAuthMessage(error?.message || 'Google 로그인에 실패했습니다.', 'error');
     }
