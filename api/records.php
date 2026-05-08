@@ -139,6 +139,35 @@ function table_columns(PDO $pdo, $table) {
     return array_map('strtolower', $stmt->fetchAll(PDO::FETCH_COLUMN));
 }
 
+function ensure_members_table(PDO $pdo) {
+    static $attempted = false;
+    if ($attempted) return;
+    $attempted = true;
+
+    try {
+        $pdo->exec("CREATE TABLE IF NOT EXISTS `members` (
+            `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            `email` VARCHAR(255) NOT NULL,
+            `name` VARCHAR(120) NOT NULL DEFAULT '',
+            `phone` VARCHAR(40) NOT NULL DEFAULT '',
+            `provider` VARCHAR(40) NOT NULL DEFAULT 'email',
+            `supabase_id` VARCHAR(64) NOT NULL DEFAULT '',
+            `status` VARCHAR(20) NOT NULL DEFAULT 'active',
+            `role` VARCHAR(20) NOT NULL DEFAULT 'member',
+            `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            `last_login_at` DATETIME NULL DEFAULT NULL,
+            PRIMARY KEY (`id`),
+            UNIQUE KEY `uniq_email` (`email`),
+            KEY `idx_supabase_id` (`supabase_id`),
+            KEY `idx_role` (`role`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+        auth_log('members table ensured');
+    } catch (Throwable $e) {
+        auth_log('members table create failed', ['error' => $e->getMessage()]);
+    }
+}
+
 function find_member_store(PDO $pdo) {
     foreach (['members', 'users'] as $table) {
         if (!table_exists($pdo, $table)) continue;
@@ -148,6 +177,15 @@ function find_member_store(PDO $pdo) {
             if (in_array($emailColumn, $columns, true)) {
                 return ['table' => $table, 'email_column' => $emailColumn, 'columns' => $columns];
             }
+        }
+    }
+
+    // Neither members nor users exists — auto-create members on cafe24.
+    ensure_members_table($pdo);
+    if (table_exists($pdo, 'members')) {
+        $columns = table_columns($pdo, 'members');
+        if (in_array('email', $columns, true)) {
+            return ['table' => 'members', 'email_column' => 'email', 'columns' => $columns];
         }
     }
 
