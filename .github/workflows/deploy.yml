@@ -52,7 +52,7 @@ jobs:
           cp api/records.php deploy/records.php
           if [ -f .htaccess ]; then cp .htaccess deploy/.htaccess; fi
 
-      - name: Deploy to Cafe24 (auto-detect webroot)
+      - name: Deploy to Cafe24 (probe webroot via HTTPS)
         env:
           SFTP_HOST: ${{ secrets.SFTP_HOST || 'youngman-biz.com' }}
           SFTP_USER: ${{ secrets.SFTP_USER || 'nxnxqxx' }}
@@ -74,55 +74,74 @@ jobs:
           SSH="ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o BatchMode=yes -i ~/.ssh/id_deploy -p ${SFTP_PORT}"
           SCP="scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o BatchMode=yes -i ~/.ssh/id_deploy -P ${SFTP_PORT} -p"
 
-          echo "==== Remote home / candidate listings ===="
+          PROBE_TOKEN="probe-$(date +%s)-$$"
+          echo "Probe token: ${PROBE_TOKEN}"
+          echo "${PROBE_TOKEN}" > /tmp/__probe.txt
+
+          echo "==== Remote home / candidate listing ===="
           $SSH "${SFTP_USER}@${SFTP_HOST}" '
             echo "HOME=$HOME"; pwd; echo "---";
-            for d in . www public_html html htdocs httpdocs html/htdocs; do
+            for d in . www public_html html htdocs httpdocs www/html web; do
               if [ -d "$d" ]; then
-                echo ">>> ls $d (count=$(ls -1A "$d" 2>/dev/null | wc -l))";
-                ls -la "$d" 2>/dev/null | head -8;
+                echo ">>> $d  count=$(ls -1A "$d" 2>/dev/null | wc -l)";
               fi;
             done
           '
 
-          echo "==== Detecting actual webroot by locating live index.html ===="
-          DETECTED=$($SSH "${SFTP_USER}@${SFTP_HOST}" '
-            for d in www public_html html htdocs httpdocs html/htdocs .; do
-              if [ -f "$d/index.html" ] && grep -q "main.js?v=" "$d/index.html" 2>/dev/null; then
-                echo "$d"; exit 0;
-              fi;
-            done;
-            exit 1;
-          ' || true)
-
           if [ -n "${SFTP_DIR}" ]; then
             TARGET="${SFTP_DIR}"
-            echo "Using SFTP_DIR override from secret: ${TARGET}"
-          elif [ -n "${DETECTED}" ]; then
-            TARGET="${DETECTED}"
-            echo "Auto-detected webroot: ${TARGET}"
+            echo "Using SFTP_DIR override: ${TARGET}"
           else
-            echo "::error::Could not locate webroot. Set SFTP_DIR secret to the correct path (e.g. www, public_html)."
-            exit 1
+            echo "==== Probing every candidate dir by uploading marker + curl ===="
+            CANDIDATES="www public_html html htdocs httpdocs web . www/html"
+            TARGET=""
+            for d in $CANDIDATES; do
+              # Skip non-existent dirs so scp doesnt error
+              if ! $SSH "${SFTP_USER}@${SFTP_HOST}" "[ -d '$d' ]" 2>/dev/null; then
+                echo "  skip ${d} (not a dir)"
+                continue
+              fi
+              # Upload marker
+              if $SCP /tmp/__probe.txt "${SFTP_USER}@${SFTP_HOST}:${d}/__probe.txt" 2>/dev/null; then
+                code=$(curl -sk -o /tmp/__probe.body -w "%{http_code}" "https://youngman-biz.com/__probe.txt?cb=$(date +%s%N)")
+                body=$(cat /tmp/__probe.body 2>/dev/null | tr -d '\r\n' || true)
+                echo "  ${d}: HTTP ${code}  body='${body}'"
+                if [ "${code}" = "200" ] && [ "${body}" = "${PROBE_TOKEN}" ]; then
+                  TARGET="${d}"
+                  $SSH "${SFTP_USER}@${SFTP_HOST}" "rm -f '${d}/__probe.txt'" 2>/dev/null || true
+                  break
+                fi
+                # cleanup non-matching marker
+                $SSH "${SFTP_USER}@${SFTP_HOST}" "rm -f '${d}/__probe.txt'" 2>/dev/null || true
+              else
+                echo "  ${d}: scp failed (likely no write permission)"
+              fi
+            done
+
+            if [ -z "${TARGET}" ]; then
+              echo "::error::Could not locate webroot — no candidate served the probe. Set SFTP_DIR secret manually."
+              exit 1
+            fi
+            echo "==== Probed webroot: ${TARGET} ===="
           fi
 
-          echo "==== Target dir listing BEFORE upload ===="
+          echo "==== Target dir BEFORE upload ===="
           $SSH "${SFTP_USER}@${SFTP_HOST}" "ls -la '${TARGET}' | head -40"
 
-          echo "==== deploy/ contents to upload ===="
+          echo "==== deploy/ contents ===="
           ls -la deploy/
 
-          echo "==== Uploading each file (will FAIL LOUDLY on error) ===="
+          echo "==== Uploading each file ===="
           # shellcheck disable=SC2012
           for f in $(ls -A deploy/); do
             echo ">> ${f}"
             $SCP "deploy/${f}" "${SFTP_USER}@${SFTP_HOST}:${TARGET}/${f}"
           done
 
-          echo "==== Target dir listing AFTER upload ===="
+          echo "==== Target dir AFTER upload ===="
           $SSH "${SFTP_USER}@${SFTP_HOST}" "ls -la '${TARGET}' | head -80"
 
-          echo "==== Per-file presence + size on remote ===="
+          echo "==== Per-file presence + size ===="
           $SSH "${SFTP_USER}@${SFTP_HOST}" "T='${TARGET}'; for f in index.html style.css main.js admin.html admin.js profile.html profile.js auth-shared.js .htaccess records.php analyze.php kapp_premium.php lotto2233.html; do \
             if [ -f \"\$T/\$f\" ]; then \
               echo \"OK   \$f  \$(stat -c '%s bytes  %y' \"\$T/\$f\" 2>/dev/null || wc -c < \"\$T/\$f\")\"; \
