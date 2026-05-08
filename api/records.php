@@ -289,7 +289,11 @@ function create_member_from_google(PDO $pdo, $authUser, $data) {
     }
     $stmt->execute($params);
 
-    respond(['ok' => true, 'created' => true]);
+    respond([
+        'ok' => true,
+        'created' => true,
+        'role' => is_admin_email($email) ? 'admin' : 'member',
+    ]);
 }
 
 function enforce_registered_member(PDO $pdo, $authUser) {

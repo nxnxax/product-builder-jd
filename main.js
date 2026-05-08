@@ -813,16 +813,18 @@ async function completeGoogleSignup({ fullName, phone }) {
         throw new Error(payload?.error || '회원 정보를 저장하지 못했습니다.');
     }
 
-    const { error } = await supabaseClient.auth.updateUser({
-        data: {
-            full_name: fullName,
-            phone,
-            phone_verified: false,
-            identity_verified: false,
-            app_registered: true,
-            signup_method: 'google'
-        }
-    });
+    const userData = {
+        full_name: fullName,
+        phone,
+        phone_verified: false,
+        identity_verified: false,
+        app_registered: true,
+        signup_method: 'google'
+    };
+    if (payload.role === 'admin' || payload.role === 'owner') {
+        userData.role = payload.role;
+    }
+    const { error } = await supabaseClient.auth.updateUser({ data: userData });
     if (error) throw error;
 
     localStorage.removeItem(OAUTH_PENDING_SIGNUP_KEY);
