@@ -42,11 +42,8 @@ function openai_chat(string $apiKey, array $body, int $timeout = 60): array {
     $status = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
     $err = curl_error($ch);
     curl_close($ch);
-    if ($resp === false) {
-        return ['ok' => false, 'status' => 0, 'error' => 'curl: ' . $err];
-    }
-    $decoded = json_decode((string)$resp, true);
-    return ['ok' => $status >= 200 && $status < 300, 'status' => $status, 'body' => $decoded, 'raw' => (string)$resp];
+    if ($resp === false) return ['ok' => false, 'status' => 0, 'error' => 'curl: ' . $err];
+    return ['ok' => $status >= 200 && $status < 300, 'status' => $status, 'body' => json_decode((string)$resp, true), 'raw' => (string)$resp];
 }
 
 function ocr_business_card(string $apiKey, string $imageBase64, string $mime): array {
@@ -56,10 +53,10 @@ function ocr_business_card(string $apiKey, string $imageBase64, string $mime): a
             'role' => 'user',
             'content' => [
                 ['type' => 'text', 'text' =>
-                    "이 이미지가 명함이라면 다음 필드를 JSON으로 추출해줘: " .
-                    "name(이름), title(직책/직함), company(회사명), email, phone, mobile, address, website, " .
-                    "tagline(슬로건/한 줄 소개), industry(추정 업종 — '부동산','건설','마케팅','광고','테크','법무','의료','F&B','뷰티','교육','금융','일반' 중 하나), " .
-                    "language('ko' 또는 'en' 등). " .
+                    "이 이미지가 명함이라면 다음 필드를 JSON으로 추출: " .
+                    "name(이름), title(직책), company(회사명), email, phone, mobile, address, website, " .
+                    "tagline(슬로건), industry(부동산/건설/마케팅/광고/테크/법무/의료/F&B/뷰티/교육/금융/일반 중 하나), " .
+                    "language('ko' 또는 'en'). " .
                     "값을 못 찾은 필드는 빈 문자열. 명함이 아니면 {\"error\":\"not_a_business_card\"}."],
                 ['type' => 'image_url', 'image_url' => ['url' => 'data:' . $mime . ';base64,' . $imageBase64]],
             ],
@@ -69,9 +66,7 @@ function ocr_business_card(string $apiKey, string $imageBase64, string $mime): a
         'temperature' => 0.1,
     ], 45);
 
-    if (!$resp['ok']) {
-        return ['ok' => false, 'error' => $resp['body']['error']['message'] ?? ($resp['error'] ?? 'OpenAI 호출 실패')];
-    }
+    if (!$resp['ok']) return ['ok' => false, 'error' => $resp['body']['error']['message'] ?? ($resp['error'] ?? 'OpenAI 호출 실패')];
     $content = $resp['body']['choices'][0]['message']['content'] ?? '';
     $parsed = json_decode((string)$content, true);
     if (!is_array($parsed)) return ['ok' => false, 'error' => '응답 파싱 실패'];
@@ -96,175 +91,160 @@ function fetch_site_meta(string $url): ?array {
     $status = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
     curl_close($ch);
     if ($body === false || $status < 200 || $status >= 400) return null;
-
     $html = (string)$body;
-    $title = '';
+    $title = ''; $description = '';
     if (preg_match('/<title[^>]*>(.*?)<\/title>/is', $html, $m)) $title = trim(html_entity_decode($m[1], ENT_QUOTES | ENT_HTML5, 'UTF-8'));
-    $description = '';
     if (preg_match('/<meta[^>]+name=["\']description["\'][^>]+content=["\']([^"\']+)["\']/i', $html, $m)) $description = trim($m[1]);
-    elseif (preg_match('/<meta[^>]+content=["\']([^"\']+)["\'][^>]+name=["\']description["\']/i', $html, $m)) $description = trim($m[1]);
-    $themeColor = '';
-    if (preg_match('/<meta[^>]+name=["\']theme-color["\'][^>]+content=["\']([^"\']+)["\']/i', $html, $m)) $themeColor = trim($m[1]);
-
-    return ['title' => mb_substr($title, 0, 200), 'description' => mb_substr($description, 0, 400), 'theme_color' => $themeColor];
+    return ['title' => mb_substr($title, 0, 200), 'description' => mb_substr($description, 0, 400)];
 }
 
-function template_palette_decision(string $apiKey, ?array $cardFields, ?array $siteMeta, string $tone): array {
-    $availableTemplates = [
-        'luxury_01'           => '럭셔리/프리미엄 (부동산, 건설, 호텔, 고급 서비스). 좌우 분할, 차콜+버건디+크림, 코너 마크.',
-        'black_gold'          => '하이엔드 임원/전문직 (법무, 금융, 컨설팅). 다크 배경 + 골드/크림 텍스트, 모노그램.',
-        'modern_corporate'    => '테크/SaaS/현대적 기업. 좌측 액센트 바, 깔끔한 그리드, 라벨링된 메타데이터.',
-        'minimal_01'          => '미니멀/디자이너/예술 (스튜디오, 사진가, 작가). 흰 배경, 큰 여백, 얇은 디바이더.',
-        'editorial_marketing' => '광고/마케팅/영업/엔터테인먼트. 오버사이즈 이름, 시그널 컬러 액센트 블록, 매거진 톤.',
+function pick_recraft_size(array $dims): array {
+    $aspect = $dims['width'] / max(1, $dims['height']);
+    // Recraft v3 supported sizes (per docs).
+    $sizes = [
+        [1024, 1024], [1365, 1024], [1024, 1365], [1536, 1024], [1024, 1536],
+        [1820, 1024], [1024, 1820], [1024, 2048], [2048, 1024], [1434, 1024],
+        [1024, 1434], [1024, 1280], [1280, 1024], [1024, 1707], [1707, 1024],
     ];
+    $best = $sizes[0];
+    $bestDelta = abs(($best[0] / $best[1]) - $aspect);
+    foreach ($sizes as $s) {
+        $d = abs(($s[0] / $s[1]) - $aspect);
+        if ($d < $bestDelta) { $best = $s; $bestDelta = $d; }
+    }
+    return ['size' => $best[0] . 'x' . $best[1], 'width' => $best[0], 'height' => $best[1]];
+}
 
-    $palettes = [
-        ['name' => 'real_estate_premium', 'primary' => '#7a0026', 'fg' => '#1a1a1a', 'neutral' => '#f8f6f1', 'secondary' => '#5a5a5a', 'mood' => '럭셔리 부동산 (버건디+크림+차콜)'],
-        ['name' => 'construction_navy',   'primary' => '#0a2940', 'fg' => '#1a1a1a', 'neutral' => '#fafafa', 'secondary' => '#5a5a5a', 'mood' => '건설/엔지니어링 (네이비+화이트)'],
-        ['name' => 'black_warm_gold',     'primary' => '#c9a567', 'fg' => '#f5f0e6', 'neutral' => '#0f0f0f', 'secondary' => '#a89d87', 'mood' => '하이엔드 임원 (블랙+웜골드)'],
-        ['name' => 'editorial_red',       'primary' => '#e63946', 'fg' => '#0a0a0a', 'neutral' => '#fafafa', 'secondary' => '#666',    'mood' => '광고/마케팅 (시그널 레드)'],
-        ['name' => 'tech_electric',       'primary' => '#0066ff', 'fg' => '#0a0a0a', 'neutral' => '#ffffff', 'secondary' => '#525252', 'mood' => '테크/SaaS (일렉트릭 블루)'],
-        ['name' => 'forest_cream',        'primary' => '#1f4d3a', 'fg' => '#1a1a1a', 'neutral' => '#f4f1ea', 'secondary' => '#666',    'mood' => 'F&B/호스피탈리티 (포레스트+크림)'],
-        ['name' => 'soft_charcoal',       'primary' => '#2c2c2c', 'fg' => '#1a1a1a', 'neutral' => '#f8f8f8', 'secondary' => '#777',    'mood' => '미니멀 (소프트 차콜)'],
+function build_recraft_prompt(?array $cardFields, ?array $siteMeta, string $tone): string {
+    $name = trim((string)($cardFields['name'] ?? ''));
+    $title = trim((string)($cardFields['title'] ?? ''));
+    $company = trim((string)($cardFields['company'] ?? ''));
+    $phone = trim((string)($cardFields['phone'] ?? $cardFields['mobile'] ?? ''));
+    $email = trim((string)($cardFields['email'] ?? ''));
+    $address = trim((string)($cardFields['address'] ?? ''));
+    $tagline = trim((string)($cardFields['tagline'] ?? ''));
+    $industry = strtolower(trim((string)($cardFields['industry'] ?? '')));
+
+    $stylePresets = [
+        '부동산'   => 'premium real estate developer business card, sophisticated charcoal + burgundy + cream palette, modern Swiss editorial layout, hairline divider, generous whitespace, brand feeling of 현대건설 자이 푸르지오 디에이치, ample padding, no clutter',
+        'real estate' => 'premium real estate developer business card, sophisticated charcoal + burgundy + cream palette, modern Swiss editorial layout, hairline divider, generous whitespace, brand feeling of premium Korean apartment brands, ample padding, no clutter',
+        '건설'     => 'premium construction company business card, navy + cream + charcoal palette, geometric grid, hairline accents, minimal, executive feel',
+        '마케팅'   => 'bold modern marketing agency business card, signal red or hot orange accent, oversized hero typography, asymmetric editorial grid, magazine cover energy',
+        '광고'     => 'bold modern advertising agency business card, signal red or hot orange accent, oversized hero typography, asymmetric editorial grid, magazine cover energy',
+        '테크'     => 'modern tech startup business card, electric blue or signal accent on near-white background, geometric sans typography, asymmetric layout, clean and forward-looking',
+        '법무'     => 'sophisticated law firm business card, deep navy + warm cream palette, refined neo-grotesk typography, classic monogram, conservative hierarchy',
+        '의료'     => 'modern medical professional business card, soft blue + white + grey palette, clean clinical aesthetic, restrained',
+        'f&b'     => 'warm hospitality business card, terracotta or forest green + cream palette, elegant display serif, letterpress feel',
+        '뷰티'     => 'ultra-minimal beauty industry business card, oversized thin display serif, single elegant color block, lots of whitespace',
+        '교육'     => 'modern education business card, navy + warm cream palette, refined sans, hierarchy-grid, trustworthy',
+        '금융'     => 'sophisticated finance business card, deep navy + gold accent palette, refined neo-grotesk, monogram, executive feel',
     ];
-
-    $brief = [];
-    if ($cardFields) {
-        $b = [];
-        foreach (['name','title','company','industry','tagline'] as $k) {
-            $v = trim((string)($cardFields[$k] ?? ''));
-            if ($v !== '') $b[$k] = $v;
+    $stylePhrase = '';
+    foreach ($stylePresets as $key => $phrase) {
+        if ($key !== '' && (mb_stripos($industry, $key) !== false || mb_stripos((string)$company, $key) !== false || mb_stripos((string)$tone, $key) !== false)) {
+            $stylePhrase = $phrase;
+            break;
         }
-        if ($b) $brief[] = "OCR fields: " . json_encode($b, JSON_UNESCAPED_UNICODE);
     }
-    if ($siteMeta) {
-        $hint = $siteMeta['description'] ?: $siteMeta['title'];
-        if ($hint !== '') $brief[] = "Site context: " . mb_substr($hint, 0, 240);
+    if ($stylePhrase === '') {
+        $stylePhrase = 'premium luxury business card, sophisticated charcoal + cream palette, modern minimal Swiss editorial layout, ample whitespace, hairline divider, refined typography';
     }
-    if ($tone !== '') $brief[] = "User tone brief: " . $tone;
-    if (!$brief) $brief[] = "No info — pick a clean default (minimal_01 with soft_charcoal).";
 
-    $sys =
-        "You are a brand designer routing a business card to one of {N} pre-built templates and one of {M} curated palettes. " .
-        "Read the brief, decide the template_id and palette_name. Optionally suggest tweaks. " .
-        "Available templates:\n";
-    foreach ($availableTemplates as $id => $desc) $sys .= "- $id: $desc\n";
-    $sys .= "\nAvailable palettes (use exact name):\n";
-    foreach ($palettes as $p) $sys .= "- {$p['name']}: {$p['mood']} — primary {$p['primary']}, neutral {$p['neutral']}\n";
-    $sys .= "\nReturn STRICT JSON: { \"template_id\": \"...\", \"palette_name\": \"...\", \"primary_override\": \"#hex or empty\", \"reasoning\": \"1 sentence\" }. " .
-        "Choose template_id ONLY from the above list. palette_name ONLY from the above list. primary_override is empty unless the brief explicitly demands a different brand color. " .
-        "Match korean realestate/construction businesses to luxury_01 + real_estate_premium UNLESS the brief says otherwise. Match marketing/advertising businesses to editorial_marketing + editorial_red.";
+    $userTone = $tone !== '' ? "User design brief: $tone. " : '';
 
-    $resp = openai_chat($apiKey, [
-        'model' => 'gpt-4o',
-        'messages' => [
-            ['role' => 'system', 'content' => $sys],
-            ['role' => 'user', 'content' => implode("\n", $brief)],
+    // Korean text in Recraft prompts: keep verbatim with strict instruction to render exactly.
+    $textInstructions = [];
+    if ($name) $textInstructions[] = "name '$name'";
+    if ($title) $textInstructions[] = "title '$title'";
+    if ($company) $textInstructions[] = "company '$company'";
+    if ($phone) $textInstructions[] = "phone '$phone'";
+    if ($email) $textInstructions[] = "email '$email'";
+    if ($address) $textInstructions[] = "address '$address'";
+    if ($tagline) $textInstructions[] = "tagline '$tagline'";
+
+    $textPart = $textInstructions
+        ? "Print exactly these texts on the card, perfectly legible, do not change spelling, do not romanize Korean, render Hangul accurately: " . implode('; ', $textInstructions) . ". "
+        : '';
+
+    $prompt =
+        "Horizontal landscape business card design, single side, on a clean studio background. " .
+        $stylePhrase . ". " .
+        $userTone .
+        $textPart .
+        "Layout: clear typographic hierarchy with the person's name as the largest element OR an oversized company name as hero, contact details smaller. " .
+        "Use a thin geometric accent line or color block as decorative device. " .
+        "Use Korean-aware sans typeface like Pretendard for Korean text. " .
+        "No clip art, no emoji, no fake QR codes, no stock icons, no logos you did not invent. " .
+        "Generous margins around all edges (at least 6%). " .
+        "Avoid centered-everything layouts. Asymmetric or grid-anchored compositions strongly preferred.";
+
+    // Cap length — Recraft has prompt length limits.
+    return mb_substr($prompt, 0, 1000);
+}
+
+function recraft_generate(string $apiKey, string $prompt, string $size, string $style = 'realistic_image'): array {
+    $ch = curl_init('https://external.api.recraft.ai/v1/images/generations');
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST => true,
+        CURLOPT_POSTFIELDS => json_encode([
+            'prompt' => $prompt,
+            'style' => $style,
+            'size' => $size,
+            'model' => 'recraftv3',
+            'response_format' => 'url',
+        ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+        CURLOPT_HTTPHEADER => [
+            'Authorization: Bearer ' . $apiKey,
+            'Content-Type: application/json',
         ],
-        'response_format' => ['type' => 'json_object'],
-        'max_tokens' => 300,
-        'temperature' => 0.4,
-    ], 30);
+        CURLOPT_TIMEOUT => 120,
+        CURLOPT_CONNECTTIMEOUT => 10,
+    ]);
+    $resp = curl_exec($ch);
+    $status = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $err = curl_error($ch);
+    curl_close($ch);
 
-    $defaultPalette = $palettes[6]; // soft_charcoal as ultimate fallback
-    if (!$resp['ok']) {
-        return [
-            'template_id' => 'minimal_01',
-            'palette' => $defaultPalette,
-            'reasoning' => 'fallback — OpenAI 호출 실패: ' . ($resp['body']['error']['message'] ?? 'unknown'),
-        ];
-    }
-    $decision = json_decode((string)($resp['body']['choices'][0]['message']['content'] ?? ''), true);
-    if (!is_array($decision)) {
-        return ['template_id' => 'minimal_01', 'palette' => $defaultPalette, 'reasoning' => 'fallback — JSON parse failed'];
+    if ($resp === false) return ['ok' => false, 'error' => 'curl: ' . $err, 'status' => 0];
+    $data = json_decode((string)$resp, true);
+
+    if ($status < 200 || $status >= 300) {
+        $msg = is_array($data) ? ($data['error']['message'] ?? $data['message'] ?? json_encode($data)) : substr((string)$resp, 0, 300);
+        return ['ok' => false, 'error' => 'Recraft ' . $status . ': ' . $msg, 'status' => $status, 'body' => $data];
     }
 
-    $tplId = (string)($decision['template_id'] ?? '');
-    if (!isset($availableTemplates[$tplId])) $tplId = 'minimal_01';
-
-    $palette = $defaultPalette;
-    foreach ($palettes as $p) {
-        if ($p['name'] === ($decision['palette_name'] ?? '')) { $palette = $p; break; }
-    }
-
-    $override = trim((string)($decision['primary_override'] ?? ''));
-    if (preg_match('/^#[0-9a-f]{6}$/i', $override)) {
-        $palette = array_merge($palette, ['primary' => strtolower($override)]);
-    }
-
-    return [
-        'template_id' => $tplId,
-        'palette'     => $palette,
-        'reasoning'   => (string)($decision['reasoning'] ?? ''),
-    ];
+    $url = is_array($data) ? ($data['data'][0]['url'] ?? $data['data'][0]['image']['url'] ?? '') : '';
+    if ($url === '') return ['ok' => false, 'error' => 'No image URL in Recraft response', 'body' => $data];
+    return ['ok' => true, 'url' => $url, 'credits' => $data['credits'] ?? null, 'body' => $data];
 }
 
-function build_monogram(?array $fields): string {
-    if (!$fields) return 'JD';
-    $candidate = trim((string)($fields['company'] ?? '')) ?: trim((string)($fields['name'] ?? ''));
-    if ($candidate === '') return 'JD';
-    // Use first letter of each word, max 2 chars. For Korean fall back to first char.
-    $clean = preg_replace('/[^A-Za-z가-힣\s]/u', '', $candidate);
-    $parts = preg_split('/\s+/', trim((string)$clean));
-    $letters = '';
-    foreach ($parts as $p) {
-        if ($p === '') continue;
-        $letters .= mb_substr($p, 0, 1, 'UTF-8');
-        if (mb_strlen($letters, 'UTF-8') >= 2) break;
-    }
-    if ($letters === '') $letters = mb_substr($candidate, 0, 2, 'UTF-8');
-    return mb_strtoupper($letters, 'UTF-8');
-}
-
-function render_template(string $templateId, array $fields, array $palette, array $dims): array {
-    $path = dirname(__DIR__) . '/templates/cards/' . $templateId . '.html';
-    if (!is_file($path)) {
-        $path = __DIR__ . '/../templates/cards/' . $templateId . '.html';
-        if (!is_file($path)) {
-            $path = __DIR__ . '/templates/cards/' . $templateId . '.html';
-        }
-    }
-    if (!is_file($path)) {
-        return ['ok' => false, 'error' => 'Template file not found: ' . $templateId];
-    }
-    $html = (string)file_get_contents($path);
-
-    $repl = [
-        '{{width}}'     => (string)$dims['width'],
-        '{{height}}'    => (string)$dims['height'],
-        '{{primary}}'   => $palette['primary'],
-        '{{fg}}'        => $palette['fg'],
-        '{{neutral}}'   => $palette['neutral'],
-        '{{secondary}}' => $palette['secondary'],
-        '{{name}}'      => htmlspecialchars((string)($fields['name'] ?? ''), ENT_QUOTES, 'UTF-8'),
-        '{{title}}'     => htmlspecialchars((string)($fields['title'] ?? ''), ENT_QUOTES, 'UTF-8'),
-        '{{company}}'   => htmlspecialchars((string)($fields['company'] ?? ''), ENT_QUOTES, 'UTF-8'),
-        '{{phone}}'     => htmlspecialchars((string)($fields['phone'] ?? $fields['mobile'] ?? ''), ENT_QUOTES, 'UTF-8'),
-        '{{email}}'     => htmlspecialchars((string)($fields['email'] ?? ''), ENT_QUOTES, 'UTF-8'),
-        '{{address}}'   => htmlspecialchars((string)($fields['address'] ?? ''), ENT_QUOTES, 'UTF-8'),
-        '{{tagline}}'   => htmlspecialchars((string)($fields['tagline'] ?? ''), ENT_QUOTES, 'UTF-8'),
-        '{{monogram}}'  => htmlspecialchars(build_monogram($fields), ENT_QUOTES, 'UTF-8'),
-    ];
-
-    // Conditional empty-class flags so the template can hide blanks via CSS class.
-    foreach (['name','title','company','phone','email','address','tagline'] as $k) {
-        $val = trim((string)($fields[$k] ?? ($k === 'phone' ? ($fields['mobile'] ?? '') : '')));
-        $repl["{{{$k}_empty}}"] = $val === '' ? 'empty' : '';
-    }
-
-    $rendered = strtr($html, $repl);
-    return ['ok' => true, 'html' => $rendered];
-}
-
-function save_html(string $html): ?string {
+function save_image_from_url(string $url, string $extension = 'png'): ?string {
     $dir = __DIR__ . '/uploads/cards';
     if (!is_dir($dir)) {
         if (!@mkdir($dir, 0755, true) && !is_dir($dir)) return null;
     }
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT => 60,
+        CURLOPT_CONNECTTIMEOUT => 10,
+        CURLOPT_FOLLOWLOCATION => true,
+        CURLOPT_MAXREDIRS => 3,
+    ]);
+    $bytes = curl_exec($ch);
+    $status = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    if ($bytes === false || $status < 200 || $status >= 300) return null;
+
     try { $rand = bin2hex(random_bytes(5)); } catch (Throwable $e) { $rand = substr(sha1(uniqid('', true)), 0, 10); }
-    $name = date('Ymd-His') . '-' . $rand . '.html';
+    // Detect actual extension from URL or default to png.
+    if (preg_match('/\.(png|jpg|jpeg|webp|svg)(\?|$)/i', $url, $m)) {
+        $extension = strtolower($m[1]);
+    }
+    $name = date('Ymd-His') . '-' . $rand . '.' . $extension;
     $path = $dir . '/' . $name;
-    if (@file_put_contents($path, $html) === false) return null;
+    if (@file_put_contents($path, $bytes) === false) return null;
     @chmod($path, 0644);
     $proto = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
     $host = $_SERVER['HTTP_HOST'] ?? 'youngman-biz.com';
@@ -275,7 +255,7 @@ function save_html(string $html): ?string {
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 
 if ($method === 'GET' && (($_GET['test'] ?? '') === 'connectivity')) {
-    $hosts = ['api.openai.com', 'example.com'];
+    $hosts = ['api.openai.com', 'external.api.recraft.ai', 'example.com'];
     $results = [];
     foreach ($hosts as $h) {
         $ip = @gethostbyname($h);
@@ -286,17 +266,18 @@ if ($method === 'GET' && (($_GET['test'] ?? '') === 'connectivity')) {
         'ok' => true,
         'hosts' => $results,
         'env' => [
-            'OPENAI_API_KEY_present' => load_env_value('OPENAI_API_KEY') !== '',
+            'OPENAI_API_KEY_present'  => load_env_value('OPENAI_API_KEY')  !== '',
+            'RECRAFT_API_KEY_present' => load_env_value('RECRAFT_API_KEY') !== '',
             'php_version' => PHP_VERSION,
         ],
-        'templates' => array_values(array_map(function ($p) { return basename($p, '.html'); }, glob(dirname(__DIR__) . '/templates/cards/*.html') ?: [])),
     ]);
 }
 
 if ($method !== 'POST') jout(['ok' => false, 'error' => 'POST only'], 405);
 
-$apiKey = load_env_value('OPENAI_API_KEY');
-if ($apiKey === '') jout(['ok' => false, 'error' => 'OPENAI_API_KEY가 서버 .env에 설정되지 않았습니다.'], 500);
+$openaiKey  = load_env_value('OPENAI_API_KEY');
+$recraftKey = load_env_value('RECRAFT_API_KEY');
+if ($recraftKey === '') jout(['ok' => false, 'error' => 'RECRAFT_API_KEY가 서버 .env에 설정되지 않았습니다.'], 500);
 
 $siteUrl = trim((string)($_POST['siteUrl'] ?? ''));
 $tone = trim((string)($_POST['tone'] ?? ''));
@@ -308,7 +289,7 @@ if (!$hasImage && $siteUrl === '' && $tone === '') {
 
 $cardFields = null;
 $ocrError = null;
-$inputDims = ['width' => 1050, 'height' => 600];
+$inputDims = ['width' => 1820, 'height' => 1024]; // landscape default
 if ($hasImage) {
     $tmp = $_FILES['image']['tmp_name'];
     if ((int)$_FILES['image']['size'] > 8 * 1024 * 1024) jout(['ok' => false, 'error' => '이미지가 너무 큽니다. 최대 8MB.'], 400);
@@ -318,14 +299,15 @@ if ($hasImage) {
     }
     $info = @getimagesize($tmp);
     if ($info && (int)$info[0] > 0 && (int)$info[1] > 0) {
-        $iw = (int)$info[0]; $ih = (int)$info[1];
-        $maxSide = max($iw, $ih);
-        if ($maxSide > 2000) { $s = 2000 / $maxSide; $iw = (int)round($iw * $s); $ih = (int)round($ih * $s); }
-        $inputDims = ['width' => $iw, 'height' => $ih];
+        $inputDims = ['width' => (int)$info[0], 'height' => (int)$info[1]];
     }
-    $b64 = base64_encode((string)file_get_contents($tmp));
-    $ocr = ocr_business_card($apiKey, $b64, $mime);
-    if ($ocr['ok']) $cardFields = $ocr['fields']; else $ocrError = $ocr['error'] ?? 'OCR 실패';
+    if ($openaiKey !== '') {
+        $b64 = base64_encode((string)file_get_contents($tmp));
+        $ocr = ocr_business_card($openaiKey, $b64, $mime);
+        if ($ocr['ok']) $cardFields = $ocr['fields']; else $ocrError = $ocr['error'] ?? 'OCR 실패';
+    } else {
+        $ocrError = 'OPENAI_API_KEY 미설정 — OCR 건너뜀';
+    }
 }
 
 $siteMeta = null;
@@ -334,24 +316,40 @@ if ($siteUrl !== '') {
     $siteMeta = fetch_site_meta($siteUrl);
 }
 
-// Merge user-provided tone into fields so it can flow into decision context
 if (!$cardFields) $cardFields = [];
-if (!empty($tone) && empty($cardFields['tagline'])) $cardFields['tagline'] = '';
 
-$decision = template_palette_decision($apiKey, $cardFields, $siteMeta, $tone);
-$render = render_template($decision['template_id'], $cardFields, $decision['palette'], $inputDims);
-if (!$render['ok']) {
-    jout(['ok' => false, 'error' => $render['error'], 'decision' => $decision], 500);
+$sizePick = pick_recraft_size($inputDims);
+$prompt = build_recraft_prompt($cardFields, $siteMeta, $tone);
+
+// Default style for premium business cards: realistic_image gives best
+// professional look with text. vector_illustration is cleaner for simple
+// icons but text rendering can be weaker for Korean.
+$style = 'realistic_image';
+if (mb_stripos($tone, '벡터') !== false || mb_stripos($tone, 'vector') !== false || mb_stripos($tone, '일러스트') !== false) {
+    $style = 'vector_illustration';
 }
 
-$savedUrl = save_html($render['html']);
-if ($savedUrl === null) jout(['ok' => false, 'error' => '결과 저장 실패'], 500);
+$gen = recraft_generate($recraftKey, $prompt, $sizePick['size'], $style);
+if (!$gen['ok']) {
+    jout([
+        'ok' => false,
+        'error' => $gen['error'],
+        'fields' => $cardFields,
+        'ocr_error' => $ocrError,
+        'prompt_preview' => mb_substr($prompt, 0, 300),
+    ], 502);
+}
+
+$savedUrl = save_image_from_url($gen['url']) ?: $gen['url'];
 
 jout([
     'ok' => true,
     'fields' => $cardFields,
     'siteMeta' => $siteMeta,
-    'htmlUrl' => $savedUrl,
-    'decision' => $decision,
+    'imageUrl' => $savedUrl,
+    'recraftUrl' => $gen['url'],
+    'credits' => $gen['credits'],
+    'size' => $sizePick['size'],
+    'style' => $style,
     'note' => $ocrError ? ('OCR: ' . $ocrError) : null,
 ]);

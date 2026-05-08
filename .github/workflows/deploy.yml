@@ -74,6 +74,7 @@ jobs:
       - name: Assemble server .env from secrets
         env:
           OPENAI_KEY: ${{ secrets.OPENAI_API_KEY }}
+          RECRAFT_KEY: ${{ secrets.RECRAFT_API_KEY }}
         run: |
           set -e
           {
@@ -82,12 +83,19 @@ jobs:
             if [ -n "$OPENAI_KEY" ]; then
               echo "OPENAI_API_KEY=$OPENAI_KEY"
             else
-              echo "::warning::OPENAI_API_KEY GitHub secret is empty — AI endpoints will fail until set."
+              echo "::warning::OPENAI_API_KEY GitHub secret is empty — OCR will fail until set."
+            fi
+            if [ -n "$RECRAFT_KEY" ]; then
+              echo "RECRAFT_API_KEY=$RECRAFT_KEY"
+            else
+              echo "::warning::RECRAFT_API_KEY GitHub secret is empty — card design will fail until set."
             fi
           } > deploy/.env
-          # Mask first 6 chars so log doesn't reveal the value but confirms presence.
           if [ -n "$OPENAI_KEY" ]; then
             echo "OPENAI_API_KEY length=${#OPENAI_KEY}, prefix=$(printf '%s' "$OPENAI_KEY" | head -c6)…"
+          fi
+          if [ -n "$RECRAFT_KEY" ]; then
+            echo "RECRAFT_API_KEY length=${#RECRAFT_KEY}, prefix=$(printf '%s' "$RECRAFT_KEY" | head -c6)…"
           fi
 
       - name: Deploy to Cafe24 (FTP)

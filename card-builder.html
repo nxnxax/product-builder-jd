@@ -295,37 +295,46 @@
             resultBox.classList.add('visible');
             resultBody.innerHTML = '';
 
-            if (data.htmlUrl) {
-                const iframe = document.createElement('iframe');
-                iframe.src = data.htmlUrl;
-                iframe.style.cssText = 'width:100%;height:520px;border:1px solid var(--border);border-radius:var(--radius-md);background:#ececec;';
-                iframe.setAttribute('sandbox', 'allow-same-origin');
-                iframe.title = '생성된 명함';
-                resultBody.appendChild(iframe);
-
+            const url = data.imageUrl || data.htmlUrl;
+            if (url) {
                 const baseName = (data.fields?.name || data.fields?.company || 'business-card').replace(/[^A-Za-z0-9가-힣\-_]+/g, '_');
+                const isImage = /\.(png|jpe?g|webp|gif)(\?|$)/i.test(url) || data.imageUrl;
+                const isSvg = /\.svg(\?|$)/i.test(url);
+
+                if (isImage && !isSvg) {
+                    const img = document.createElement('img');
+                    img.src = url;
+                    img.alt = '생성된 명함';
+                    img.style.cssText = 'max-width:100%;height:auto;border-radius:var(--radius-md);box-shadow:0 12px 36px rgba(0,0,0,.12);';
+                    resultBody.appendChild(img);
+                } else if (isSvg) {
+                    const obj = document.createElement('object');
+                    obj.data = url;
+                    obj.type = 'image/svg+xml';
+                    obj.style.cssText = 'width:100%;max-height:600px;';
+                    resultBody.appendChild(obj);
+                } else {
+                    const iframe = document.createElement('iframe');
+                    iframe.src = url;
+                    iframe.style.cssText = 'width:100%;height:520px;border:1px solid var(--border);border-radius:var(--radius-md);background:#ececec;';
+                    iframe.setAttribute('sandbox', 'allow-same-origin');
+                    resultBody.appendChild(iframe);
+                }
 
                 const dlRow = document.createElement('div');
                 dlRow.style.cssText = 'display:flex;gap:.5rem;flex-wrap:wrap;margin-top:1rem;';
 
-                const dlPng = document.createElement('button');
-                dlPng.type = 'button';
-                dlPng.textContent = 'PNG 다운로드 (2x)';
-                dlPng.className = 'primary-btn';
-                dlPng.style.cssText = 'height:40px;padding:0 1.1rem;';
-                dlPng.addEventListener('click', () => downloadFromIframeAsPng(iframe, baseName + '.png', 2));
-                dlRow.appendChild(dlPng);
-
-                const dlHtml = document.createElement('a');
-                dlHtml.href = data.htmlUrl;
-                dlHtml.download = baseName + '.html';
-                dlHtml.textContent = 'HTML 다운로드';
-                dlHtml.className = 'secondary-btn';
-                dlHtml.style.cssText = 'height:40px;padding:0 1.1rem;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;';
-                dlRow.appendChild(dlHtml);
+                const ext = isSvg ? 'svg' : (url.match(/\.(png|jpe?g|webp|gif)(\?|$)/i)?.[1] || 'png');
+                const dlImg = document.createElement('a');
+                dlImg.href = url;
+                dlImg.download = baseName + '.' + ext;
+                dlImg.textContent = `${ext.toUpperCase()} 다운로드`;
+                dlImg.className = 'primary-btn';
+                dlImg.style.cssText = 'height:40px;padding:0 1.1rem;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;';
+                dlRow.appendChild(dlImg);
 
                 const openNew = document.createElement('a');
-                openNew.href = data.htmlUrl;
+                openNew.href = url;
                 openNew.target = '_blank';
                 openNew.rel = 'noopener';
                 openNew.textContent = '새 창에서 열기';
@@ -336,14 +345,18 @@
                 resultBody.appendChild(dlRow);
             }
 
-            if (data.decision) {
+            const metaParts = [];
+            if (data.style) metaParts.push(`<strong>스타일:</strong> ${data.style}`);
+            if (data.size) metaParts.push(`<strong>크기:</strong> ${data.size}`);
+            if (data.credits != null) metaParts.push(`<strong>잔여 크레딧:</strong> ${data.credits}`);
+            if (metaParts.length) {
                 const meta = document.createElement('div');
                 meta.style.cssText = 'margin-top:1rem;padding:.6rem .8rem;background:var(--bg-subtle);border-radius:var(--radius-md);font-size:.82rem;color:var(--fg-secondary);line-height:1.5;';
-                meta.innerHTML = `<strong style="color:var(--fg);">템플릿:</strong> ${data.decision.template_id} · <strong style="color:var(--fg);">컬러:</strong> ${data.decision.palette?.name || '—'} (${data.decision.palette?.primary || ''})${data.decision.reasoning ? '<br><span style="font-size:.78rem;">' + data.decision.reasoning + '</span>' : ''}`;
+                meta.innerHTML = metaParts.join(' · ');
                 resultBody.appendChild(meta);
             }
 
-            if (data.fields) {
+            if (data.fields && Object.values(data.fields).some(v => v && (typeof v !== 'string' || v.trim()))) {
                 const dl = document.createElement('dl');
                 dl.style.cssText = 'display:grid;grid-template-columns:auto 1fr;gap:.4rem 1rem;margin:1rem 0 0;font-size:.85rem;';
                 for (const [k, v] of Object.entries(data.fields)) {
@@ -364,35 +377,6 @@
                 p.style.cssText = 'margin:1rem 0 0;color:var(--fg-tertiary);font-size:.85rem;';
                 p.textContent = data.note;
                 resultBody.appendChild(p);
-            }
-        }
-
-        async function downloadFromIframeAsPng(iframe, filename, scale = 2) {
-            try {
-                if (!window.html2canvas) {
-                    await new Promise((resolve, reject) => {
-                        const s = document.createElement('script');
-                        s.src = 'https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js';
-                        s.onload = resolve; s.onerror = reject;
-                        document.head.appendChild(s);
-                    });
-                }
-                const inner = iframe.contentDocument || iframe.contentWindow.document;
-                const card = inner.querySelector('.card') || inner.body;
-                const canvas = await window.html2canvas(card, {
-                    backgroundColor: null, scale, useCORS: true, allowTaint: true,
-                });
-                canvas.toBlob((blob) => {
-                    const a = document.createElement('a');
-                    a.href = URL.createObjectURL(blob);
-                    a.download = filename;
-                    document.body.appendChild(a);
-                    a.click();
-                    a.remove();
-                    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-                }, 'image/png');
-            } catch (e) {
-                setStatus('PNG 변환 실패: ' + (e.message || e), 'error');
             }
         }
     </script>
