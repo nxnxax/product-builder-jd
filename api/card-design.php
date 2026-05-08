@@ -49,28 +49,72 @@ function openai_chat(string $apiKey, array $body, int $timeout = 60): array {
     return ['ok' => $status >= 200 && $status < 300, 'status' => $status, 'body' => $decoded, 'raw' => (string)$resp];
 }
 
-function openai_image(string $apiKey, array $body, int $timeout = 90): array {
-    $ch = curl_init('https://api.openai.com/v1/images/generations');
-    curl_setopt_array($ch, [
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_POST => true,
-        CURLOPT_POSTFIELDS => json_encode($body, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
-        CURLOPT_HTTPHEADER => [
-            'Authorization: Bearer ' . $apiKey,
-            'Content-Type: application/json',
-        ],
-        CURLOPT_TIMEOUT => $timeout,
-        CURLOPT_CONNECTTIMEOUT => 10,
-    ]);
-    $resp = curl_exec($ch);
-    $status = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    $err = curl_error($ch);
-    curl_close($ch);
-    if ($resp === false) {
-        return ['ok' => false, 'status' => 0, 'error' => 'curl: ' . $err];
+function generate_card_svg(string $apiKey, ?array $cardFields, ?array $siteMeta, string $tone): array {
+    $context = [];
+    if ($cardFields) {
+        $clean = [];
+        foreach (['name','title','company','email','phone','mobile','address','website','tagline'] as $k) {
+            $v = trim((string)($cardFields[$k] ?? ''));
+            if ($v !== '') $clean[$k] = $v;
+        }
+        if (!empty($cardFields['colors']) && is_array($cardFields['colors'])) {
+            $clean['brand_colors'] = array_slice(array_filter(array_map('strval', $cardFields['colors'])), 0, 3);
+        }
+        if (!empty($cardFields['language'])) $clean['language'] = $cardFields['language'];
+        if ($clean) $context[] = "OCR'd fields from the original card: " . json_encode($clean, JSON_UNESCAPED_UNICODE);
     }
-    $decoded = json_decode((string)$resp, true);
-    return ['ok' => $status >= 200 && $status < 300, 'status' => $status, 'body' => $decoded, 'raw' => (string)$resp];
+    if ($siteMeta) {
+        $hint = $siteMeta['og_description'] ?: $siteMeta['description'];
+        if ($hint !== '') $context[] = "Brand context from website: " . mb_substr($hint, 0, 240);
+        if (!empty($siteMeta['theme_color'])) $context[] = "Brand color hint: " . $siteMeta['theme_color'];
+    }
+    if ($tone !== '') $context[] = "Design tone requested: $tone";
+    if (!$context) $context[] = "No extracted info — design a clean placeholder card.";
+
+    $sys = "You are a senior brand designer. Output a SINGLE self-contained SVG business card. Rules:\n" .
+        "- viewBox=\"0 0 1050 600\" (3.5:2 ratio).\n" .
+        "- Pure SVG only. No external fonts, no <image>, no scripts. Use system fonts via font-family stack: -apple-system, 'SF Pro Text', 'Pretendard', 'Apple SD Gothic Neo', sans-serif.\n" .
+        "- Print every supplied field exactly as given — no spelling changes, no Romanization of Korean.\n" .
+        "- Premium, modern, Apple/Linear-quality typography. Plenty of whitespace. Clear visual hierarchy: name largest, then title/company, then contact details smaller.\n" .
+        "- Use the brand color (or a single tasteful accent) sparingly — one geometric mark or a thin accent line. No clip-art, no emojis, no fake QR codes.\n" .
+        "- Background can be solid or a subtle gradient. Do not put any placeholder text like 'Your name' or fake info.\n" .
+        "- Output ONLY the raw SVG starting with <svg> and ending with </svg>. No markdown, no commentary.";
+
+    $user = implode("\n", $context);
+
+    $resp = openai_chat($apiKey, [
+        'model' => 'gpt-4o',
+        'messages' => [
+            ['role' => 'system', 'content' => $sys],
+            ['role' => 'user', 'content' => $user],
+        ],
+        'max_tokens' => 4000,
+        'temperature' => 0.55,
+    ], 60);
+
+    if (!$resp['ok']) {
+        $msg = $resp['body']['error']['message'] ?? ($resp['error'] ?? 'OpenAI 호출 실패');
+        return ['ok' => false, 'error' => $msg, 'status' => $resp['status']];
+    }
+
+    $content = (string)($resp['body']['choices'][0]['message']['content'] ?? '');
+    // Strip optional ``` fences if the model still wraps.
+    $content = preg_replace('/^\s*```(?:svg|xml)?\s*/i', '', $content);
+    $content = preg_replace('/\s*```\s*$/', '', $content);
+    $content = trim((string)$content);
+
+    if (stripos($content, '<svg') === false) {
+        return ['ok' => false, 'error' => 'SVG 응답이 비어있습니다.', 'preview' => mb_substr($content, 0, 200)];
+    }
+    // Trim anything before <svg
+    $svgStart = stripos($content, '<svg');
+    $svgEnd = strripos($content, '</svg>');
+    if ($svgEnd === false) {
+        return ['ok' => false, 'error' => 'SVG 끝 태그가 없습니다.', 'preview' => mb_substr($content, 0, 200)];
+    }
+    $svg = substr($content, $svgStart, $svgEnd - $svgStart + 6);
+
+    return ['ok' => true, 'svg' => $svg];
 }
 
 function ocr_business_card(string $apiKey, string $imageBase64, string $mime): array {
@@ -145,6 +189,25 @@ function fetch_site_meta(string $url): ?array {
         'og_description' => mb_substr($ogDescription, 0, 400),
         'theme_color' => $themeColor,
     ];
+}
+
+function save_svg_string(string $svg): ?string {
+    $dir = __DIR__ . '/uploads/cards';
+    if (!is_dir($dir)) {
+        if (!@mkdir($dir, 0755, true) && !is_dir($dir)) return null;
+    }
+    try {
+        $rand = bin2hex(random_bytes(5));
+    } catch (Throwable $e) {
+        $rand = substr(sha1(uniqid('', true)), 0, 10);
+    }
+    $name = date('Ymd-His') . '-' . $rand . '.svg';
+    $path = $dir . '/' . $name;
+    if (@file_put_contents($path, $svg) === false) return null;
+    @chmod($path, 0644);
+    $proto = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+    $host = $_SERVER['HTTP_HOST'] ?? 'youngman-biz.com';
+    return $proto . '://' . $host . '/uploads/cards/' . $name;
 }
 
 function build_dalle_prompt(?array $cardFields, ?array $siteMeta, string $tone): string {
@@ -268,35 +331,22 @@ if ($siteUrl !== '') {
     $siteMeta = fetch_site_meta($siteUrl);
 }
 
-$prompt = build_dalle_prompt($cardFields, $siteMeta, $tone);
-
-$gen = openai_image($apiKey, [
-    'model' => 'dall-e-3',
-    'prompt' => mb_substr($prompt, 0, 4000),
-    'n' => 1,
-    'size' => '1792x1024',
-    'quality' => 'standard',
-    'response_format' => 'url',
-]);
+$gen = generate_card_svg($apiKey, $cardFields, $siteMeta, $tone);
 
 if (!$gen['ok']) {
-    $msg = $gen['body']['error']['message'] ?? ($gen['error'] ?? 'OpenAI 이미지 생성 실패');
     jout([
         'ok' => false,
-        'error' => $msg,
+        'error' => $gen['error'] ?? 'SVG 생성 실패',
         'fields' => $cardFields,
         'ocr_error' => $ocrError,
         'site_meta' => $siteMeta,
-        'prompt_preview' => mb_substr($prompt, 0, 200),
     ], 502);
 }
 
-$openaiUrl = $gen['body']['data'][0]['url'] ?? '';
-if ($openaiUrl === '') {
-    jout(['ok' => false, 'error' => '이미지 URL이 응답에 없습니다.', 'fields' => $cardFields], 502);
+$savedUrl = save_svg_string($gen['svg']);
+if ($savedUrl === null) {
+    jout(['ok' => false, 'error' => 'SVG 저장 실패', 'fields' => $cardFields], 500);
 }
-
-$savedUrl = save_image_from_url($openaiUrl) ?: $openaiUrl;
 
 jout([
     'ok' => true,
