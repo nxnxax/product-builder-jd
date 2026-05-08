@@ -3,14 +3,17 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>AI 점집 사주 로또 추천</title>
+<title>AI 점집 사주 로또 추천 · YOUNGMAN</title>
+<link rel="icon" type="image/png" href="logo_main.png">
+<link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
 <style>
 :root{
-  --bg:#fff; --fg:#0a0a0a; --secondary:#525252; --muted:#8e8e93;
-  --line:rgba(0,0,0,0.08); --line-strong:rgba(0,0,0,0.14); --bg-muted:#f5f5f7;
+  --bg:#fff; --fg:#0e0d0c; --secondary:#4f4943; --muted:#8a847e;
+  --line:rgba(20,14,8,0.09); --line-strong:rgba(20,14,8,0.16); --bg-muted:#f4efe7;
+  --accent:#c8362c; --bg-paper:#fbf7ef;
 }
 *{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--fg);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",Pretendard,Inter,sans-serif;letter-spacing:-.005em;-webkit-font-smoothing:antialiased}
+body{margin:0;background:linear-gradient(180deg, var(--bg) 0%, var(--bg-paper) 100%);min-height:100vh;color:var(--fg);font-family:'Pretendard',-apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif;letter-spacing:-.005em;-webkit-font-smoothing:antialiased}
 .app-header{position:sticky;top:0;z-index:80;background:rgba(255,255,255,.85);backdrop-filter:saturate(180%) blur(20px);-webkit-backdrop-filter:saturate(180%) blur(20px);border-bottom:1px solid var(--line)}
 .header-container{max-width:1180px;margin:0 auto;padding:0 24px;height:56px;display:flex;align-items:center;gap:28px}
 .header-container h1{font-size:15px;font-weight:600;letter-spacing:-.01em;color:var(--fg);text-transform:none;display:flex;align-items:center;gap:8px;margin:0}
@@ -34,7 +37,8 @@ input:focus,select:focus{border-color:rgba(0,0,0,0.85);box-shadow:0 0 0 3px rgba
 .gender button.active{background:var(--fg);color:#fff;border-color:var(--fg)}
 .main-btn{margin-top:28px;width:100%;height:42px;border:0;border-radius:6px;font-size:14px;font-weight:600;color:#fff;background:var(--fg);cursor:pointer;letter-spacing:-.005em;transition:opacity 180ms}
 .main-btn:hover{opacity:.85}
-.box{margin-top:24px;padding:24px;background:#fff;border:1px solid var(--line);border-radius:10px;line-height:1.6;color:var(--fg);font-size:14px}
+.box{margin-top:24px;padding:24px;background:#fff;border:1px solid var(--line);border-radius:12px;line-height:1.6;color:var(--fg);font-size:14px;box-shadow:0 1px 2px rgba(20,14,8,.04)}
+.box h3{font-size:15px;font-weight:600;letter-spacing:-.005em}
 .nums{display:flex;justify-content:space-between;gap:8px;margin-top:8px}
 .ball{width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:600;font-size:16px;color:#fff;letter-spacing:-.01em}
 .note{margin-top:16px;padding-top:14px;border-top:1px solid var(--line);font-size:13px;color:var(--muted);line-height:1.55}
@@ -77,8 +81,8 @@ input:focus,select:focus{border-color:rgba(0,0,0,0.85);box-shadow:0 0 0 3px rgba
 
 <div class="container">
 
-<h2>AI 사주 로또 추천</h2>
-<p class="subtitle">사주 정보를 입력하면 오늘의 추천 번호를 계산합니다.</p>
+<h2>도사의 사주 로또 풀이</h2>
+<p class="subtitle">사주를 들여다보고 오늘의 흐름을 풀어드립니다. 보완되는 기운으로 추천번호를 짜드려요.</p>
 
 <label>이름</label>
 <input id="userName" placeholder="이름 입력">

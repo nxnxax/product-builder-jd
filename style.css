@@ -1,27 +1,28 @@
 /* ========================================================================
-   JDHOON Console — Minimal Design System
-   Inspired by Apple HIG / Linear: generous whitespace, hairline rules,
-   restrained type, single accent.
+   YOUNGMAN — Minimal Design System
+   Korean traditional + modern fusion. Hairline rules, generous whitespace,
+   warm-cream surfaces, single seal-stamp red accent used very sparingly.
    ======================================================================== */
 
 :root {
-    /* Surface */
+    /* Surface — slightly warm to harmonize with seal-red accent + calligraphy */
     --bg: #ffffff;
-    --bg-subtle: #fafafa;
-    --bg-muted: #f5f5f7;
+    --bg-subtle: #faf8f4;
+    --bg-muted: #f4efe7;
+    --bg-paper: #fbf7ef;
 
     /* Foreground */
-    --fg: #0a0a0a;
-    --fg-secondary: #525252;
-    --fg-tertiary: #8e8e93;
-    --fg-quaternary: #c7c7cc;
+    --fg: #0e0d0c;
+    --fg-secondary: #4f4943;
+    --fg-tertiary: #8a847e;
+    --fg-quaternary: #c4beb7;
 
     /* Hairline borders */
-    --border: rgba(0, 0, 0, 0.08);
-    --border-strong: rgba(0, 0, 0, 0.14);
-    --border-focus: rgba(0, 0, 0, 0.85);
+    --border: rgba(20, 14, 8, 0.09);
+    --border-strong: rgba(20, 14, 8, 0.16);
+    --border-focus: rgba(14, 13, 12, 0.85);
 
-    /* Single accent — graphite blue, used very sparingly */
+    /* Single accent — seal-stamp red. Used sparingly: focus rings, active pills, key calls-to-action. */
     --accent: #c8362c;
     --accent-hover: #a82a21;
     --accent-soft: rgba(200, 54, 44, 0.08);
