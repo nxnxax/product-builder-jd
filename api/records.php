@@ -42,7 +42,7 @@ function normalize_resource($value) {
     $resource = strtolower(trim((string)$value));
     if ($resource === 'customer') $resource = 'customers';
     if ($resource === 'employee') $resource = 'employees';
-    if (!in_array($resource, ['customers', 'employees', 'auth-membership'], true)) {
+    if (!in_array($resource, ['customers', 'employees', 'auth-membership', 'auth-member'], true)) {
         respond(['ok' => false, 'error' => '지원하지 않는 리소스입니다.'], 400);
     }
     return $resource;
@@ -90,11 +90,18 @@ function find_member_store(PDO $pdo) {
         $columns = table_columns($pdo, $table);
         foreach (['email', 'user_email', 'mb_email'] as $emailColumn) {
             if (in_array($emailColumn, $columns, true)) {
-                return ['table' => $table, 'email_column' => $emailColumn];
+                return ['table' => $table, 'email_column' => $emailColumn, 'columns' => $columns];
             }
         }
     }
 
+    return null;
+}
+
+function first_existing_column($columns, $candidates) {
+    foreach ($candidates as $candidate) {
+        if (in_array($candidate, $columns, true)) return $candidate;
+    }
     return null;
 }
 
@@ -110,6 +117,69 @@ function member_exists_by_email(PDO $pdo, $email) {
     $stmt = $pdo->prepare("SELECT 1 FROM {$table} WHERE LOWER({$emailColumn}) = :email LIMIT 1");
     $stmt->execute([':email' => $email]);
     return (bool)$stmt->fetchColumn();
+}
+
+function create_member_from_google(PDO $pdo, $authUser, $data) {
+    if (!$authUser) respond(['ok' => false, 'error' => 'Google 인증 세션이 필요합니다.'], 401);
+
+    $email = strtolower(trim((string)($data['email'] ?? '')));
+    $authEmail = strtolower(trim((string)($authUser['email'] ?? '')));
+    if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        respond(['ok' => false, 'error' => '회원 이메일이 올바르지 않습니다.'], 400);
+    }
+    if ($authEmail === '' || $authEmail !== $email) {
+        respond(['ok' => false, 'error' => 'Google 인증 이메일과 가입 이메일이 일치하지 않습니다.'], 403);
+    }
+
+    $fullName = clean($data['fullName'] ?? $data['name'] ?? null);
+    $phone = clean($data['phone'] ?? null);
+    if (!$fullName) respond(['ok' => false, 'error' => '가입자 이름은 필수입니다.'], 400);
+    if (!$phone) respond(['ok' => false, 'error' => '휴대폰 번호는 필수입니다.'], 400);
+
+    $store = find_member_store($pdo);
+    if (!$store) respond(['ok' => false, 'error' => 'members 또는 users 회원 테이블을 찾을 수 없습니다.'], 500);
+    if (member_exists_by_email($pdo, $email) === true) {
+        respond(['ok' => false, 'error' => '이미 가입된 계정입니다.'], 409);
+    }
+
+    $columns = $store['columns'];
+    $row = [
+        $store['email_column'] => $email,
+    ];
+
+    $nameColumn = first_existing_column($columns, ['name', 'full_name', 'user_name', 'username', 'mb_name']);
+    if ($nameColumn) $row[$nameColumn] = $fullName;
+
+    $phoneColumn = first_existing_column($columns, ['phone', 'mobile', 'tel', 'contact', 'user_phone', 'mb_hp']);
+    if ($phoneColumn) $row[$phoneColumn] = $phone;
+
+    $providerColumn = first_existing_column($columns, ['provider', 'signup_method', 'oauth_provider']);
+    if ($providerColumn) $row[$providerColumn] = 'google';
+
+    $authIdColumn = first_existing_column($columns, ['supabase_id', 'auth_user_id', 'oauth_id']);
+    if ($authIdColumn && !empty($authUser['sub'])) $row[$authIdColumn] = $authUser['sub'];
+
+    $statusColumn = first_existing_column($columns, ['status', 'member_status']);
+    if ($statusColumn) $row[$statusColumn] = 'active';
+
+    $now = date('Y-m-d H:i:s');
+    $createdColumn = first_existing_column($columns, ['created_at', 'created', 'registered_at', 'reg_date']);
+    if ($createdColumn) $row[$createdColumn] = $now;
+    $updatedColumn = first_existing_column($columns, ['updated_at', 'modified_at']);
+    if ($updatedColumn) $row[$updatedColumn] = $now;
+
+    $fieldSql = implode(', ', array_map('quote_identifier', array_keys($row)));
+    $placeholderSql = implode(', ', array_map(function ($column) {
+        return ':' . $column;
+    }, array_keys($row)));
+    $stmt = $pdo->prepare("INSERT INTO " . quote_identifier($store['table']) . " ({$fieldSql}) VALUES ({$placeholderSql})");
+    $params = [];
+    foreach ($row as $column => $value) {
+        $params[':' . $column] = $value;
+    }
+    $stmt->execute($params);
+
+    respond(['ok' => true, 'created' => true]);
 }
 
 function enforce_registered_member(PDO $pdo, $authUser) {
@@ -245,6 +315,11 @@ try {
             'registered' => $registered === true,
             'source' => $registered === null ? 'not_configured' : 'database',
         ]);
+    }
+
+    if ($resource === 'auth-member') {
+        if ($method !== 'POST') respond(['ok' => false, 'error' => '지원하지 않는 요청 방식입니다.'], 405);
+        create_member_from_google($pdo, $authUser, $body);
     }
 
     enforce_registered_member($pdo, $authUser);

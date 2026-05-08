@@ -7,8 +7,11 @@ const API_URL = 'records.php';
 const MIGRATION_FLAG = 'erpDbMigrationComplete';
 const OAUTH_INTENT_KEY = 'erpOAuthIntent';
 const OAUTH_EMAIL_KEY = 'erpOAuthEmail';
+const OAUTH_PENDING_SIGNUP_KEY = 'erpOAuthPendingSignup';
+const AUTH_NOTICE_ACTION_KEY = 'erpAuthNoticeAction';
 const AUTH_NOTICE_KEY = 'erpAuthNotice';
 const SIGNUP_REQUIRED_MESSAGE = '회원가입이 필요합니다. 회원가입을 진행하시겠습니까?';
+const SIGNUP_EXISTING_MESSAGE = '이미 가입된 계정입니다. 로그인하시겠습니까?';
 
 let customers = [];
 let employees = [];
@@ -20,6 +23,7 @@ let authEnabled = false;
 let authMode = 'login';
 let supabaseClient = null;
 let currentSession = null;
+let oauthSignupPending = false;
 
 // --- DOM Elements ---
 const navCustomers = document.getElementById('nav-customers');
@@ -81,6 +85,11 @@ async function initApp() {
     try {
         await initAuth();
         applyInitialHash();
+        if (oauthSignupPending) {
+            renderAuthRequiredTables();
+            return;
+        }
+
         if (authEnabled && !currentSession) {
             renderSignedOut();
             renderAuthRequiredTables();
@@ -132,6 +141,10 @@ async function initAuth() {
                     showPendingAuthNotice();
                     return;
                 }
+                if (oauthSignupPending) {
+                    renderAuthRequiredTables();
+                    return;
+                }
 
                 renderSignedIn();
                 renderLoading();
@@ -176,16 +189,56 @@ async function handlePostOAuthSession() {
     const isGoogleUser = provider === 'google' || providers.includes('google');
     if (!isGoogleUser) return;
 
+    const intent = localStorage.getItem(OAUTH_INTENT_KEY)
+        || (localStorage.getItem(OAUTH_PENDING_SIGNUP_KEY) === '1' ? 'signup' : 'login');
     localStorage.removeItem(OAUTH_INTENT_KEY);
 
     const isRegistered = await isRegisteredMember(user);
     if (isRegistered) {
         localStorage.removeItem(OAUTH_EMAIL_KEY);
+        localStorage.removeItem(OAUTH_PENDING_SIGNUP_KEY);
+        oauthSignupPending = false;
+        if (intent === 'signup') {
+            localStorage.setItem(OAUTH_EMAIL_KEY, user.email || '');
+            localStorage.setItem(AUTH_NOTICE_KEY, SIGNUP_EXISTING_MESSAGE);
+            localStorage.setItem(AUTH_NOTICE_ACTION_KEY, 'login');
+            await supabaseClient.auth.signOut();
+            currentSession = null;
+        }
         return;
     }
 
-    if (user.email) localStorage.setItem(OAUTH_EMAIL_KEY, user.email);
+    if (intent === 'signup') {
+        startGoogleSignupFlow(user);
+        return;
+    }
+
+    await blockUnregisteredGoogleLogin(user.email);
+}
+
+function startGoogleSignupFlow(user) {
+    oauthSignupPending = true;
+    localStorage.setItem(OAUTH_PENDING_SIGNUP_KEY, '1');
+    if (user?.email) localStorage.setItem(OAUTH_EMAIL_KEY, user.email);
+
+    renderSignedOut();
+    renderAuthRequiredTables();
+    openAuthPanel('signup');
+    authEmail.value = user?.email || '';
+    authEmail.readOnly = true;
+    authPassword.required = false;
+    authPasswordConfirm.required = false;
+    authPassword.closest('.form-group')?.classList.add('hidden');
+    confirmPasswordField.classList.add('hidden');
+    authSubmit.textContent = '회원가입 완료';
+    setAuthMessage('Google 계정 확인이 완료되었습니다. 추가정보를 입력하면 회원가입이 완료됩니다.', 'success');
+    setTimeout(() => authName.focus(), 0);
+}
+
+async function blockUnregisteredGoogleLogin(email) {
+    if (email) localStorage.setItem(OAUTH_EMAIL_KEY, email);
     localStorage.setItem(AUTH_NOTICE_KEY, SIGNUP_REQUIRED_MESSAGE);
+    localStorage.setItem(AUTH_NOTICE_ACTION_KEY, 'signup');
     await supabaseClient.auth.signOut();
     currentSession = null;
 }
@@ -417,7 +470,11 @@ function setAuthMode(mode) {
     confirmPasswordField.classList.toggle('hidden', mode !== 'signup');
     authName.required = mode === 'signup';
     authPhone.required = mode === 'signup';
+    authPassword.required = true;
+    authPassword.readOnly = false;
+    authPassword.closest('.form-group')?.classList.remove('hidden');
     authPasswordConfirm.required = mode === 'signup';
+    authEmail.readOnly = false;
     if (mode === 'login') authPasswordConfirm.value = '';
     authSubmit.textContent = mode === 'login' ? '로그인' : '회원가입';
     if (googleLoginLabel) googleLoginLabel.textContent = mode === 'login' ? 'Google로 로그인' : 'Google로 회원가입';
@@ -426,6 +483,18 @@ function setAuthMode(mode) {
     setAuthMessage('', '');
     hideAuthNotice();
     setIdentityStatus('PASS/NICE/KCB 본인확인 연동 후 인증 완료 처리됩니다.', '');
+
+    if (oauthSignupPending && mode === 'signup') {
+        loginTab.classList.add('hidden');
+        signupTab.classList.add('hidden');
+        authSwitchText.textContent = 'Google 회원가입 추가정보 입력';
+        authEmail.readOnly = true;
+        authPassword.required = false;
+        authPasswordConfirm.required = false;
+        authPassword.closest('.form-group')?.classList.add('hidden');
+        confirmPasswordField.classList.add('hidden');
+        authSubmit.textContent = '회원가입 완료';
+    }
 }
 
 function openAuthPanel(mode = 'login') {
@@ -435,7 +504,26 @@ function openAuthPanel(mode = 'login') {
 }
 
 function closeAuthPanel() {
+    if (oauthSignupPending) {
+        cancelPendingGoogleSignup();
+        return;
+    }
+
     authScreen.classList.add('hidden');
+    hideAuthNotice();
+}
+
+async function cancelPendingGoogleSignup() {
+    oauthSignupPending = false;
+    localStorage.removeItem(OAUTH_PENDING_SIGNUP_KEY);
+    localStorage.removeItem(OAUTH_EMAIL_KEY);
+    authEmail.readOnly = false;
+    authPassword.required = true;
+    authPassword.closest('.form-group')?.classList.remove('hidden');
+    if (supabaseClient) await supabaseClient.auth.signOut();
+    currentSession = null;
+    renderSignedOut();
+    renderAuthRequiredTables();
     hideAuthNotice();
 }
 
@@ -493,6 +581,11 @@ async function handleAuthSubmit(event) {
     setAuthMessage('', '');
 
     try {
+        if (oauthSignupPending) {
+            await completeGoogleSignup({ fullName, phone });
+            return;
+        }
+
         if (authMode === 'signup') {
             const { data, error } = await supabaseClient.auth.signUp({
                 email,
@@ -523,6 +616,59 @@ async function handleAuthSubmit(event) {
         authSubmit.disabled = false;
         authSubmit.textContent = authMode === 'login' ? '로그인' : '회원가입';
     }
+}
+
+async function completeGoogleSignup({ fullName, phone }) {
+    const user = currentSession?.user;
+    const email = String(user?.email || authEmail.value || '').trim().toLowerCase();
+    if (!user || !email) throw new Error('Google 인증 세션이 없습니다. 다시 시도하세요.');
+
+    const response = await fetch(`${API_URL}?resource=auth-member`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${currentSession.access_token}`
+        },
+        body: JSON.stringify({
+            resource: 'auth-member',
+            email,
+            fullName,
+            phone,
+            provider: 'google'
+        })
+    });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok || !payload || payload.ok === false) {
+        throw new Error(payload?.error || '회원 정보를 저장하지 못했습니다.');
+    }
+
+    const { error } = await supabaseClient.auth.updateUser({
+        data: {
+            full_name: fullName,
+            phone,
+            phone_verified: false,
+            identity_verified: false,
+            app_registered: true,
+            signup_method: 'google'
+        }
+    });
+    if (error) throw error;
+
+    localStorage.removeItem(OAUTH_PENDING_SIGNUP_KEY);
+    localStorage.removeItem(OAUTH_EMAIL_KEY);
+    oauthSignupPending = false;
+    authEmail.readOnly = false;
+    authPassword.required = true;
+    authPassword.closest('.form-group')?.classList.remove('hidden');
+
+    const { data } = await supabaseClient.auth.getSession();
+    currentSession = data.session || currentSession;
+    closeAuthPanel();
+    renderSignedIn();
+    renderLoading();
+    await loadAll();
+    await migrateLocalStorageIfNeeded();
+    renderAll();
 }
 
 async function handleGoogleLogin() {
@@ -571,18 +717,22 @@ function hideAuthNotice() {
 
 function handleAuthNoticeAccept() {
     hideAuthNotice();
-    openAuthPanel('signup');
+    const action = localStorage.getItem(AUTH_NOTICE_ACTION_KEY) || 'signup';
+    localStorage.removeItem(AUTH_NOTICE_ACTION_KEY);
     const oauthEmail = localStorage.getItem(OAUTH_EMAIL_KEY);
     localStorage.removeItem(OAUTH_EMAIL_KEY);
+
+    openAuthPanel(action === 'login' ? 'login' : 'signup');
     if (oauthEmail) {
         authEmail.value = oauthEmail;
         authEmail.readOnly = false;
-        setTimeout(() => authName.focus(), 0);
+        setTimeout(() => (action === 'login' ? authPassword : authName).focus(), 0);
     }
 }
 
 function handleAuthNoticeCancel() {
     localStorage.removeItem(OAUTH_EMAIL_KEY);
+    localStorage.removeItem(AUTH_NOTICE_ACTION_KEY);
     hideAuthNotice();
     closeAuthPanel();
 }
