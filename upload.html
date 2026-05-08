@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>업로드 · JDHOON Console</title>
+  <link rel="stylesheet" href="style.css?v=20260508-upload">
+  <style>
+    .upload-wrap { max-width: 760px; margin: 3rem auto 5rem; padding: 0 1.5rem; }
+    .upload-wrap h2 { margin: 0 0 .35rem; font-size: 1.6rem; letter-spacing: -.01em; }
+    .upload-wrap .subtitle { color: var(--fg-secondary); margin: 0 0 1.75rem; font-size: .95rem; }
+    .drop-zone {
+      display: block;
+      border: 1.5px dashed var(--border-strong);
+      border-radius: var(--radius-lg);
+      padding: 3.25rem 1.5rem;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color .15s ease, background .15s ease;
+      background: var(--bg-subtle);
+    }
+    .drop-zone:hover, .drop-zone.dragover {
+      border-color: var(--accent);
+      background: var(--accent-soft);
+    }
+    .drop-zone input[type="file"] { position: absolute; left: -9999px; }
+    .drop-zone p { margin: .35rem 0; color: var(--fg-secondary); font-size: .9rem; }
+    .drop-zone .primary { color: var(--fg); font-weight: 600; font-size: 1rem; }
+    .upload-status {
+      margin-top: 1rem; padding: .75rem 1rem;
+      border-radius: var(--radius-md); font-size: .9rem;
+      display: none; word-break: break-all;
+    }
+    .upload-status.success { background: var(--success-soft); color: var(--success); display: block; }
+    .upload-status.error { background: var(--danger-soft); color: var(--danger); display: block; }
+    .upload-status code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: .85em; background: rgba(0,0,0,.04); padding: .1rem .35rem;
+      border-radius: var(--radius-xs);
+    }
+    .copy-btn {
+      margin-left: .5rem; padding: .25rem .6rem; font-size: .75rem;
+      background: var(--bg); border: 1px solid var(--border-strong);
+      border-radius: var(--radius-sm); cursor: pointer; color: var(--fg);
+    }
+    .copy-btn:hover { background: var(--bg-muted); }
+    .recent-head { display: flex; align-items: baseline; justify-content: space-between; margin: 2.5rem 0 1rem; }
+    .recent-head h3 { margin: 0; font-size: 1rem; font-weight: 600; }
+    .recent-head .hint { color: var(--fg-tertiary); font-size: .8rem; }
+    .recent-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+      gap: .75rem;
+    }
+    .recent-item {
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      overflow: hidden;
+      background: var(--bg);
+      transition: border-color .15s ease;
+    }
+    .recent-item:hover { border-color: var(--border-strong); }
+    .recent-item a.thumb { display: block; aspect-ratio: 4/3; overflow: hidden; background: var(--bg-muted); }
+    .recent-item img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .recent-item .meta {
+      padding: .45rem .6rem; font-size: .72rem;
+      color: var(--fg-tertiary); display: flex; justify-content: space-between; gap: .5rem;
+    }
+    .recent-item .meta a { color: var(--accent); text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1 1 auto; }
+    .recent-empty { color: var(--fg-tertiary); font-size: .9rem; padding: 1rem 0; }
+    .back-link { display: inline-block; margin-bottom: 1rem; color: var(--fg-secondary); text-decoration: none; font-size: .9rem; }
+    .back-link:hover { color: var(--fg); }
+  </style>
+</head>
+<body>
+  <header id="app-header" class="app-header">
+    <div class="header-container">
+      <h1><a href="index.html" style="color:inherit;text-decoration:none">JDHOON <span class="accent">Console</span></a></h1>
+    </div>
+  </header>
+
+  <main class="upload-wrap">
+    <a class="back-link" href="index.html">← 대시보드로</a>
+    <h2>이미지 업로드</h2>
+    <p class="subtitle">스크린샷을 드래그하거나 클릭해서 선택. 클립보드에서 <kbd>Ctrl/Cmd</kbd>+<kbd>V</kbd>로 붙여넣기도 됩니다. PNG / JPG / GIF / WebP, 최대 10MB.</p>
+
+    <label class="drop-zone" id="drop-zone" for="file-input">
+      <p class="primary">클릭하거나 드래그해서 업로드</p>
+      <p>또는 이 화면에서 Ctrl/Cmd+V</p>
+      <input type="file" id="file-input" accept="image/png,image/jpeg,image/gif,image/webp">
+    </label>
+
+    <div id="status" class="upload-status"></div>
+
+    <div class="recent-head">
+      <h3>최근 업로드</h3>
+      <span class="hint">최신 30개 · 자동 갱신</span>
+    </div>
+    <div id="recent" class="recent-grid"></div>
+  </main>
+
+  <script>
+    const fileInput = document.getElementById('file-input');
+    const dropZone = document.getElementById('drop-zone');
+    const statusEl = document.getElementById('status');
+    const recentEl = document.getElementById('recent');
+
+    function setStatus(html, type) {
+      statusEl.className = 'upload-status ' + (type || '');
+      statusEl.innerHTML = html;
+    }
+
+    async function copyText(text, btn) {
+      try {
+        await navigator.clipboard.writeText(text);
+        if (btn) { const old = btn.textContent; btn.textContent = '복사됨'; setTimeout(() => btn.textContent = old, 1200); }
+      } catch {}
+    }
+
+    async function upload(file) {
+      if (!file) return;
+      if (!file.type.startsWith('image/')) {
+        setStatus('이미지 파일만 가능합니다 (' + file.type + ')', 'error');
+        return;
+      }
+      if (file.size > 10 * 1024 * 1024) {
+        setStatus('파일이 너무 큽니다. 최대 10MB.', 'error');
+        return;
+      }
+      setStatus('업로드 중…', 'success');
+      const fd = new FormData();
+      fd.append('image', file);
+      try {
+        const res = await fetch('upload.php', { method: 'POST', body: fd });
+        const data = await res.json();
+        if (!data.ok) throw new Error(data.error || '업로드 실패');
+        statusEl.className = 'upload-status success';
+        statusEl.innerHTML = '';
+        const span = document.createElement('span');
+        span.innerHTML = '업로드 완료 — URL: <code></code>';
+        span.querySelector('code').textContent = data.url;
+        const btn = document.createElement('button');
+        btn.className = 'copy-btn';
+        btn.type = 'button';
+        btn.textContent = 'URL 복사';
+        btn.addEventListener('click', () => copyText(data.url, btn));
+        statusEl.appendChild(span);
+        statusEl.appendChild(btn);
+        loadRecent();
+      } catch (e) {
+        setStatus('실패: ' + (e.message || e), 'error');
+      }
+    }
+
+    async function loadRecent() {
+      try {
+        const res = await fetch('upload.php?cb=' + Date.now());
+        const data = await res.json();
+        if (!data.ok) throw new Error(data.error);
+        const files = data.files || [];
+        if (!files.length) {
+          recentEl.innerHTML = '<div class="recent-empty">아직 업로드된 이미지가 없습니다.</div>';
+          return;
+        }
+        recentEl.innerHTML = '';
+        for (const f of files) {
+          const item = document.createElement('div');
+          item.className = 'recent-item';
+          const a = document.createElement('a');
+          a.className = 'thumb';
+          a.href = '/uploads/' + encodeURIComponent(f.name);
+          a.target = '_blank';
+          const img = document.createElement('img');
+          img.src = '/uploads/' + encodeURIComponent(f.name);
+          img.loading = 'lazy';
+          img.alt = f.name;
+          a.appendChild(img);
+          const meta = document.createElement('div');
+          meta.className = 'meta';
+          const link = document.createElement('a');
+          link.href = '/uploads/' + encodeURIComponent(f.name);
+          link.target = '_blank';
+          link.textContent = f.name;
+          link.title = f.name;
+          const cp = document.createElement('button');
+          cp.className = 'copy-btn';
+          cp.type = 'button';
+          cp.textContent = '복사';
+          cp.style.padding = '0 .4rem';
+          cp.style.fontSize = '.7rem';
+          cp.addEventListener('click', (ev) => {
+            ev.preventDefault();
+            const url = location.origin + '/uploads/' + f.name;
+            copyText(url, cp);
+          });
+          meta.appendChild(link);
+          meta.appendChild(cp);
+          item.appendChild(a);
+          item.appendChild(meta);
+          recentEl.appendChild(item);
+        }
+      } catch (e) {
+        recentEl.innerHTML = '<div class="recent-empty">목록을 불러올 수 없습니다: ' + (e.message || e) + '</div>';
+      }
+    }
+
+    fileInput.addEventListener('change', () => upload(fileInput.files[0]));
+    ['dragenter', 'dragover'].forEach(t => dropZone.addEventListener(t, (e) => {
+      e.preventDefault(); e.stopPropagation();
+      dropZone.classList.add('dragover');
+    }));
+    ['dragleave', 'drop'].forEach(t => dropZone.addEventListener(t, (e) => {
+      e.preventDefault(); e.stopPropagation();
+      dropZone.classList.remove('dragover');
+    }));
+    dropZone.addEventListener('drop', (e) => {
+      const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+      if (f) upload(f);
+    });
+    document.addEventListener('paste', (e) => {
+      const items = (e.clipboardData && e.clipboardData.items) || [];
+      for (const it of items) {
+        if (it.type && it.type.startsWith('image/')) {
+          const f = it.getAsFile();
+          if (f) { upload(f); return; }
+        }
+      }
+    });
+
+    loadRecent();
+  </script>
+</body>
+</html>

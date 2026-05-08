@@ -28,11 +28,13 @@ jobs:
           test -f profile.js
           test -f admin.js
           test -f auth-shared.js
+          test -f upload.html
           grep -q 'main.js?v=' index.html
           grep -q 'profile.js?v=' profile.html
           grep -q 'admin.js?v=' admin.html
           php -l api/analyze.php
           php -l api/records.php
+          php -l api/upload.php
           php -l kapp_premium.php
 
       - name: Prepare deploy folder
@@ -42,8 +44,10 @@ jobs:
           mkdir -p deploy
           cp index.html style.css main.js Marketing.html kapp_premium.php lotto2233.html deploy/
           cp profile.html admin.html profile.js admin.js auth-shared.js deploy/
+          cp upload.html deploy/upload.html
           cp api/analyze.php deploy/analyze.php
           cp api/records.php deploy/records.php
+          cp api/upload.php deploy/upload.php
           if [ -f .htaccess ]; then cp .htaccess deploy/.htaccess; fi
           ls -la deploy/
 
@@ -85,7 +89,7 @@ jobs:
           set -euo pipefail
           CB="$(date +%s)"
           MISSING=0
-          for f in index.html style.css main.js admin.html admin.js profile.html profile.js auth-shared.js; do
+          for f in index.html style.css main.js admin.html admin.js profile.html profile.js auth-shared.js upload.html; do
             code=$(curl -sk -o /dev/null -w "%{http_code}" "https://youngman-biz.com/${f}?cb=${CB}")
             size=$(curl -sk -o /dev/null -w "%{size_download}" "https://youngman-biz.com/${f}?cb=${CB}")
             echo "  ${f}: HTTP ${code}  size=${size}"
@@ -93,6 +97,8 @@ jobs:
           done
           rcode=$(curl -sk -o /dev/null -w "%{http_code}" "https://youngman-biz.com/records.php?cb=${CB}")
           echo "  records.php: ${rcode}  (expected 401 without auth)"
+          ucode=$(curl -sk -o /dev/null -w "%{http_code}" "https://youngman-biz.com/upload.php?cb=${CB}")
+          echo "  upload.php (GET list): ${ucode}  (expected 200)"
           curl -sk "https://youngman-biz.com/?cb=${CB}" | grep -E '<title>|main\.js\?v=' | head -2 || true
           if [ "${MISSING}" -gt 0 ]; then
             echo "::error::${MISSING} file(s) returned non-200 — deploy did not propagate"
