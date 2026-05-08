@@ -39,6 +39,10 @@ input:focus,select:focus{border-color:rgba(0,0,0,0.85);box-shadow:0 0 0 3px rgba
 .main-btn:hover{opacity:.85}
 .box{margin-top:24px;padding:24px;background:#fff;border:1px solid var(--line);border-radius:12px;line-height:1.6;color:var(--fg);font-size:14px;box-shadow:0 1px 2px rgba(20,14,8,.04)}
 .box h3{font-size:15px;font-weight:600;letter-spacing:-.005em}
+.box.dosa{background:linear-gradient(180deg,var(--bg-paper) 0%,#fff 100%);border-color:rgba(200,54,44,.15);position:relative;padding:28px 26px}
+.box.dosa::before{content:'印';position:absolute;top:18px;right:20px;font-size:28px;color:var(--accent);opacity:.55;font-family:serif;letter-spacing:0;line-height:1}
+.box.dosa h3{font-size:16px;color:var(--accent-deep);margin-bottom:14px}
+.box.dosa .dosa-body{font-size:14.5px;line-height:1.95;color:#2a2520;letter-spacing:-.003em;white-space:pre-line}
 .nums{display:flex;justify-content:space-between;gap:8px;margin-top:8px}
 .ball{width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:600;font-size:16px;color:#fff;letter-spacing:-.01em}
 .note{margin-top:16px;padding-top:14px;border-top:1px solid var(--line);font-size:13px;color:var(--muted);line-height:1.55}
@@ -526,10 +530,10 @@ function generate(){
 
     const readingId = 'reading-' + Math.random().toString(36).slice(2, 9);
     html+=`
-    <div class="box">
-    <h3 style="margin-top:0;">🔮 도사가 풀어주는 운세</h3>
-    <div id="${readingId}" style="white-space:pre-line;line-height:1.85;color:#1a1a1a;font-size:14px;">
-        <em style="color:#888;">도사가 사주를 들여다보고 있습니다…</em>
+    <div class="box dosa">
+    <h3 style="margin-top:0;">도사가 풀어주는 운세</h3>
+    <div id="${readingId}" class="dosa-body">
+        <em style="color:#9b8d80;">도사가 사주를 들여다보고 있습니다…</em>
     </div>
     </div>
 

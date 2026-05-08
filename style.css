@@ -517,11 +517,28 @@ select:focus {
 .delete-btn:hover { background: var(--danger-soft); }
 
 .empty-state {
-    padding: 96px 24px;
+    padding: 80px 24px;
     text-align: center;
     color: var(--fg-tertiary);
     font-size: 14px;
+    background: var(--bg-subtle);
+    border: 1px dashed var(--border);
+    border-radius: var(--radius-md);
+    line-height: 1.7;
 }
+.empty-state::before {
+    content: '';
+    display: block;
+    width: 36px;
+    height: 36px;
+    margin: 0 auto 16px;
+    border: 1.5px solid var(--accent-soft);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    opacity: 0.4;
+}
+.empty-state p { margin: 0; }
+.empty-state p + p { margin-top: 6px; font-size: 13px; opacity: 0.85; }
 
 /* ------------------------------------------------------------------ Cards */
 .card {
