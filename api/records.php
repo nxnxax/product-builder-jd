@@ -109,6 +109,16 @@ function clean($value) {
     return $value === '' ? null : $value;
 }
 
+function admin_email_allowlist() {
+    return ['nxnxax@gmail.com'];
+}
+
+function is_admin_email($email) {
+    $normalized = strtolower(trim((string)$email));
+    if ($normalized === '') return false;
+    return in_array($normalized, admin_email_allowlist(), true);
+}
+
 function make_client_id() {
     return (string)round(microtime(true) * 1000) . bin2hex(random_bytes(3));
 }
@@ -255,6 +265,9 @@ function create_member_from_google(PDO $pdo, $authUser, $data) {
 
     $statusColumn = first_existing_column($columns, ['status', 'member_status']);
     if ($statusColumn) $row[$statusColumn] = 'active';
+
+    $roleColumn = first_existing_column($columns, ['role', 'member_role', 'user_role', 'level']);
+    if ($roleColumn) $row[$roleColumn] = is_admin_email($email) ? 'admin' : 'member';
 
     $now = date('Y-m-d H:i:s');
     $createdColumn = first_existing_column($columns, ['created_at', 'created', 'registered_at', 'reg_date']);
@@ -854,6 +867,63 @@ try {
     if ($resource === 'auth-member') {
         if ($method !== 'POST') respond(['ok' => false, 'error' => '지원하지 않는 요청 방식입니다.'], 405);
         create_member_from_google($pdo, $authUser, $body);
+    }
+
+    if ($resource === 'admin-bootstrap') {
+        if ($method !== 'POST') respond(['ok' => false, 'error' => '지원하지 않는 요청 방식입니다.'], 405);
+        if (!$authUser) respond(['ok' => false, 'error' => '로그인이 필요합니다.'], 401);
+
+        $email = strtolower((string)($authUser['email'] ?? ''));
+        if (!is_admin_email($email)) {
+            respond(['ok' => false, 'error' => '권한 없음.'], 403);
+        }
+
+        $store = find_member_store($pdo);
+        if (!$store) respond(['ok' => false, 'error' => '회원 테이블을 찾을 수 없습니다.'], 500);
+
+        $columns = $store['columns'];
+        $roleColumn = first_existing_column($columns, ['role', 'member_role', 'user_role', 'level']);
+        if (!$roleColumn) respond(['ok' => false, 'error' => 'role 컬럼이 없습니다.'], 500);
+
+        $tableQ = quote_identifier($store['table']);
+        $emailQ = quote_identifier($store['email_column']);
+        $roleQ = quote_identifier($roleColumn);
+
+        if (member_exists_by_email($pdo, $email) === true) {
+            $stmt = $pdo->prepare("UPDATE {$tableQ} SET {$roleQ} = :role WHERE LOWER({$emailQ}) = :email");
+            $stmt->execute([':role' => 'admin', ':email' => $email]);
+            respond(['ok' => true, 'action' => 'updated', 'email' => $email, 'role' => 'admin']);
+        }
+
+        $row = [$store['email_column'] => $email, $roleColumn => 'admin'];
+        $nameColumn = first_existing_column($columns, ['name', 'full_name', 'user_name', 'username', 'mb_name']);
+        if ($nameColumn) {
+            $row[$nameColumn] = (string)($authUser['user_metadata']['full_name']
+                ?? $authUser['user_metadata']['name']
+                ?? explode('@', $email)[0]);
+        }
+        $providerColumn = first_existing_column($columns, ['provider', 'signup_method', 'oauth_provider']);
+        if ($providerColumn) {
+            $row[$providerColumn] = (string)($authUser['app_metadata']['provider'] ?? 'email');
+        }
+        $authIdColumn = first_existing_column($columns, ['supabase_id', 'auth_user_id', 'oauth_id']);
+        if ($authIdColumn && !empty($authUser['sub'])) $row[$authIdColumn] = $authUser['sub'];
+        $statusColumn = first_existing_column($columns, ['status', 'member_status']);
+        if ($statusColumn) $row[$statusColumn] = 'active';
+        $now = date('Y-m-d H:i:s');
+        $createdColumn = first_existing_column($columns, ['created_at', 'created', 'registered_at', 'reg_date']);
+        if ($createdColumn) $row[$createdColumn] = $now;
+        $updatedColumn = first_existing_column($columns, ['updated_at', 'modified_at']);
+        if ($updatedColumn) $row[$updatedColumn] = $now;
+        $row = array_filter($row, function ($v) { return $v !== null; });
+
+        $fieldSql = implode(', ', array_map('quote_identifier', array_keys($row)));
+        $placeholderSql = implode(', ', array_map(function ($c) { return ':' . $c; }, array_keys($row)));
+        $stmt = $pdo->prepare("INSERT INTO {$tableQ} ({$fieldSql}) VALUES ({$placeholderSql})");
+        $params = [];
+        foreach ($row as $k => $v) $params[':' . $k] = $v;
+        $stmt->execute($params);
+        respond(['ok' => true, 'action' => 'created', 'email' => $email, 'role' => 'admin']);
     }
 
     if ($resource === 'auth-profile') {
