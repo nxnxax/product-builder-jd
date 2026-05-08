@@ -86,7 +86,16 @@ body {
 a { color: inherit; text-decoration: none; }
 button { font-family: inherit; }
 
-::selection { background: rgba(0, 102, 255, 0.18); }
+::selection { background: var(--accent-soft); color: var(--accent-deep); }
+
+::-webkit-scrollbar { width: 11px; height: 11px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(20,14,8,0.14); border-radius: 6px; border: 2px solid transparent; background-clip: padding-box; }
+::-webkit-scrollbar-thumb:hover { background: rgba(20,14,8,0.24); border: 2px solid transparent; background-clip: padding-box; }
+
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+button:focus-visible, a:focus-visible { outline-offset: 3px; }
+input:focus-visible, textarea:focus-visible, select:focus-visible { outline: none; }
 
 .hidden { display: none !important; }
 
@@ -191,6 +200,18 @@ small { color: var(--fg-tertiary); font-size: 13px; }
     background: var(--bg-muted);
     color: var(--fg);
     font-weight: 600;
+    position: relative;
+}
+
+.nav-link.active::after {
+    content: '';
+    position: absolute;
+    left: 12px;
+    right: 12px;
+    bottom: -1px;
+    height: 2px;
+    background: var(--accent);
+    border-radius: 1px;
 }
 
 .header-auth-btn {
@@ -332,13 +353,13 @@ textarea::placeholder { color: var(--fg-quaternary); }
 
 input:hover,
 textarea:hover,
-select:hover { border-color: rgba(0, 0, 0, 0.28); }
+select:hover { border-color: rgba(20, 14, 8, 0.28); }
 
 input:focus,
 textarea:focus,
 select:focus {
-    border-color: var(--border-focus);
-    box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.06);
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
 .search-box { position: relative; }
@@ -375,11 +396,17 @@ select:focus {
 .primary-btn {
     background: var(--fg);
     color: var(--bg);
+    box-shadow: 0 1px 2px rgba(20,14,8,0.08);
 }
 
-.primary-btn:hover { opacity: 0.85; }
+.primary-btn:hover {
+    background: #1f1d1a;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(20,14,8,0.12);
+}
+.primary-btn:active { transform: translateY(0); box-shadow: 0 1px 2px rgba(20,14,8,0.08); }
 
-.primary-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.primary-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; box-shadow: 0 1px 2px rgba(20,14,8,0.04); }
 
 .secondary-btn {
     background: var(--bg);
@@ -389,7 +416,7 @@ select:focus {
 
 .secondary-btn:hover {
     background: var(--bg-muted);
-    border-color: rgba(0, 0, 0, 0.22);
+    border-color: rgba(20, 14, 8, 0.22);
 }
 
 .ghost-btn {
