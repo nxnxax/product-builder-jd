@@ -346,14 +346,49 @@
             }
 
             const metaParts = [];
+            if (data.decision?.actual_template) metaParts.push(`<strong>템플릿:</strong> ${data.decision.actual_template}`);
+            if (data.decision?.palette?.name) metaParts.push(`<strong>팔레트:</strong> ${data.decision.palette.name}`);
             if (data.style) metaParts.push(`<strong>스타일:</strong> ${data.style}`);
             if (data.size) metaParts.push(`<strong>크기:</strong> ${data.size}`);
-            if (data.credits != null) metaParts.push(`<strong>잔여 크레딧:</strong> ${data.credits}`);
             if (metaParts.length) {
                 const meta = document.createElement('div');
                 meta.style.cssText = 'margin-top:1rem;padding:.6rem .8rem;background:var(--bg-subtle);border-radius:var(--radius-md);font-size:.82rem;color:var(--fg-secondary);line-height:1.5;';
                 meta.innerHTML = metaParts.join(' · ');
                 resultBody.appendChild(meta);
+            }
+
+            // Recraft status — make it loud so we know whether the bg layer fired.
+            if (data.recraft) {
+                const r = data.recraft;
+                const box = document.createElement('div');
+                const used = r.used === true;
+                const bg = used ? 'var(--success-soft)' : (r.attempted ? 'var(--danger-soft)' : 'var(--bg-subtle)');
+                const fg = used ? 'var(--success)' : (r.attempted ? 'var(--danger)' : 'var(--fg-secondary)');
+                box.style.cssText = `margin-top:.5rem;padding:.6rem .8rem;background:${bg};color:${fg};border-radius:var(--radius-md);font-size:.82rem;line-height:1.5;`;
+                let label;
+                if (used) {
+                    label = `Recraft 배경 적용됨 ✓${r.credits != null ? ` · 잔여 크레딧 ${r.credits}` : ''}`;
+                } else if (r.attempted) {
+                    label = `Recraft 호출 실패 ✗ — ${r.error || 'unknown'}`;
+                } else {
+                    label = 'Recraft 호출 안 됨 (RECRAFT_API_KEY가 서버 .env에 없음)';
+                }
+                box.textContent = label;
+                resultBody.appendChild(box);
+
+                if (used && data.bgImageUrl) {
+                    const bgPreview = document.createElement('details');
+                    bgPreview.style.cssText = 'margin-top:.4rem;padding:.55rem .75rem;background:var(--bg-subtle);border:1px solid var(--border);border-radius:var(--radius-md);font-size:.8rem;';
+                    const sum = document.createElement('summary');
+                    sum.style.cssText = 'cursor:pointer;color:var(--fg-secondary);';
+                    sum.textContent = 'Recraft 배경 이미지 보기';
+                    bgPreview.appendChild(sum);
+                    const img = document.createElement('img');
+                    img.src = data.bgImageUrl;
+                    img.style.cssText = 'max-width:100%;margin-top:.5rem;border-radius:var(--radius-sm);border:1px solid var(--border);';
+                    bgPreview.appendChild(img);
+                    resultBody.appendChild(bgPreview);
+                }
             }
 
             if (data.directorPlan) {
