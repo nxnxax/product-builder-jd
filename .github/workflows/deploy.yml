@@ -30,6 +30,7 @@ jobs:
           test -f auth-shared.js
           test -f upload.html
           test -f card-builder.html
+          test -f logo_main.png
           grep -q 'main.js?v=' index.html
           grep -q 'profile.js?v=' profile.html
           grep -q 'admin.js?v=' admin.html
@@ -46,6 +47,7 @@ jobs:
           rm -rf deploy
           mkdir -p deploy
           cp index.html style.css main.js Marketing.html kapp_premium.php lotto2233.html deploy/
+          cp logo_main.png deploy/logo_main.png
           cp profile.html admin.html profile.js admin.js auth-shared.js deploy/
           cp upload.html deploy/upload.html
           cp card-builder.html deploy/card-builder.html

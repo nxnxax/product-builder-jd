@@ -22,9 +22,10 @@
     --border-focus: rgba(0, 0, 0, 0.85);
 
     /* Single accent — graphite blue, used very sparingly */
-    --accent: #0066ff;
-    --accent-hover: #0052cc;
-    --accent-soft: rgba(0, 102, 255, 0.08);
+    --accent: #c8362c;
+    --accent-hover: #a82a21;
+    --accent-soft: rgba(200, 54, 44, 0.08);
+    --accent-deep: #7a1812;
 
     /* Status */
     --success: #047a55;
@@ -130,6 +131,23 @@ small { color: var(--fg-tertiary); font-size: 13px; }
     letter-spacing: -0.01em;
     color: var(--fg);
     text-transform: none;
+    margin: 0;
+    flex-shrink: 0;
+}
+
+.brand-logo {
+    display: inline-flex;
+    align-items: center;
+    line-height: 1;
+}
+.brand-logo img {
+    height: 32px;
+    width: auto;
+    display: block;
+    user-select: none;
+}
+@media (max-width: 768px) {
+    .brand-logo img { height: 28px; }
 }
 
 .header-container h1 .accent {
