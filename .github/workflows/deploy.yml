@@ -57,7 +57,7 @@ jobs:
           SFTP_HOST: ${{ secrets.SFTP_HOST || 'youngman-biz.com' }}
           SFTP_USER: ${{ secrets.SFTP_USER || 'nxnxqxx' }}
           SFTP_PORT: ${{ secrets.SFTP_PORT || '22' }}
-          SFTP_DIR: ${{ secrets.SFTP_DIR || '' }}
+          SFTP_DIR: ${{ secrets.SFTP_DIR || '/www' }}
           SFTP_KEY: ${{ secrets.SFTP_PRIVATE_KEY }}
         run: |
           set -euo pipefail
@@ -87,6 +87,15 @@ jobs:
               fi;
             done
           '
+
+          echo "==== Cleaning stray deploy artifacts from wrong dirs (best effort) ===="
+          $SSH "${SFTP_USER}@${SFTP_HOST}" '
+            for d in . www www/www; do
+              if [ -d "$d" ]; then
+                find "$d" -maxdepth 1 -type f \( -name "__probe.txt" -o -name "_deploy_audit_*.txt" \) -print -delete 2>/dev/null || true;
+              fi;
+            done
+          ' || true
 
           if [ -n "${SFTP_DIR}" ]; then
             TARGET="${SFTP_DIR}"
