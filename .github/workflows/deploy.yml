@@ -61,9 +61,9 @@ jobs:
           cp api/saju-reading.php deploy/saju-reading.php
           cp api/lotto-recommend.php deploy/lotto-recommend.php
           cp lotto_db_import.php deploy/lotto_db_import.php
-          # NOTE: lotto_db_config.php는 의도적으로 자동 배포에서 제외.
-          # 서버에 실제 DB 자격증명이 채워진 사본이 있을 수 있어, 자리표시자로
-          # 덮어쓰지 않도록 함. 최초 1회만 사용자가 FTP로 직접 업로드한다.
+          cp lotto_db_config.php deploy/lotto_db_config.php
+          # NOTE: lotto_db_config.php 는 자격증명을 담지 않음.
+          # 실제 DB 정보는 .env (GitHub Secrets) 에서 읽어들임 — 아래 .env 조립 단계 참조.
           mkdir -p deploy/templates/cards
           cp templates/cards/*.html deploy/templates/cards/
           if [ -f .htaccess ]; then cp .htaccess deploy/.htaccess; fi
@@ -88,14 +88,24 @@ jobs:
           OPENAI_KEY: ${{ secrets.OPENAI_API_KEY }}
           RECRAFT_KEY: ${{ secrets.RECRAFT_API_KEY }}
           IDEOGRAM_KEY: ${{ secrets.IDEOGRAM_API_KEY }}
+          LOTTO_DB_HOST: ${{ secrets.LOTTO_DB_HOST }}
+          LOTTO_DB_NAME: ${{ secrets.LOTTO_DB_NAME }}
+          LOTTO_DB_USER: ${{ secrets.LOTTO_DB_USER }}
+          LOTTO_DB_PASS: ${{ secrets.LOTTO_DB_PASS }}
+          LOTTO_CRON_TOKEN: ${{ secrets.LOTTO_CRON_TOKEN }}
         run: |
           set -e
           {
             echo "VITE_SUPABASE_URL=https://xktjucyijpkopkyvxovh.supabase.co/rest/v1/"
             echo "VITE_SUPABASE_ANON_KEY=sb_publishable_Qg7NbgXvnIEchsjR18X8Mw_d8YsqVbS"
-            [ -n "$OPENAI_KEY" ]   && echo "OPENAI_API_KEY=$OPENAI_KEY"     || echo "::warning::OPENAI_API_KEY missing"
-            [ -n "$RECRAFT_KEY" ]  && echo "RECRAFT_API_KEY=$RECRAFT_KEY"   || true
-            [ -n "$IDEOGRAM_KEY" ] && echo "IDEOGRAM_API_KEY=$IDEOGRAM_KEY" || echo "::warning::IDEOGRAM_API_KEY missing"
+            [ -n "$OPENAI_KEY" ]    && echo "OPENAI_API_KEY=$OPENAI_KEY"       || echo "::warning::OPENAI_API_KEY missing"
+            [ -n "$RECRAFT_KEY" ]   && echo "RECRAFT_API_KEY=$RECRAFT_KEY"     || true
+            [ -n "$IDEOGRAM_KEY" ]  && echo "IDEOGRAM_API_KEY=$IDEOGRAM_KEY"   || echo "::warning::IDEOGRAM_API_KEY missing"
+            [ -n "$LOTTO_DB_HOST" ] && echo "LOTTO_DB_HOST=$LOTTO_DB_HOST"     || echo "LOTTO_DB_HOST=localhost"
+            [ -n "$LOTTO_DB_NAME" ] && echo "LOTTO_DB_NAME=$LOTTO_DB_NAME"     || echo "::warning::LOTTO_DB_NAME missing — 로또 DB 기능 비활성"
+            [ -n "$LOTTO_DB_USER" ] && echo "LOTTO_DB_USER=$LOTTO_DB_USER"     || echo "::warning::LOTTO_DB_USER missing"
+            [ -n "$LOTTO_DB_PASS" ] && echo "LOTTO_DB_PASS=$LOTTO_DB_PASS"     || echo "::warning::LOTTO_DB_PASS missing"
+            [ -n "$LOTTO_CRON_TOKEN" ] && echo "LOTTO_CRON_TOKEN=$LOTTO_CRON_TOKEN" || true
           } > deploy/.env
           [ -n "$OPENAI_KEY" ]   && echo "OPENAI_API_KEY len=${#OPENAI_KEY}, prefix=$(printf '%s' "$OPENAI_KEY" | head -c6)…"   || true
           [ -n "$RECRAFT_KEY" ]  && echo "RECRAFT_API_KEY len=${#RECRAFT_KEY}, prefix=$(printf '%s' "$RECRAFT_KEY" | head -c6)…"  || true
@@ -135,6 +145,10 @@ jobs:
           echo "  records.php: ${rcode}  (expected 401 without auth)"
           ucode=$(curl -sk -o /dev/null -w "%{http_code}" "https://youngman-biz.com/upload.php?cb=${CB}")
           echo "  upload.php (GET list): ${ucode}  (expected 200)"
+          lcode=$(curl -sk -o /dev/null -w "%{http_code}" "https://youngman-biz.com/lotto-recommend.php?cb=${CB}")
+          echo "  lotto-recommend.php (GET): ${lcode}  (expected 405 — POST only)"
+          icode=$(curl -sk -o /dev/null -w "%{http_code}" "https://youngman-biz.com/lotto_db_import.php?cb=${CB}")
+          echo "  lotto_db_import.php: ${icode}  (expected 200)"
           curl -sk "https://youngman-biz.com/?cb=${CB}" | grep -E '<title>|main\.js\?v=' | head -2 || true
           if [ "${MISSING}" -gt 0 ]; then
             echo "::error::${MISSING} file(s) returned non-200 — deploy did not propagate"
