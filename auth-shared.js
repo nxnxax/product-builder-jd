@@ -238,8 +238,6 @@ export function mountAppHeader(opts) {
             <nav class="nav-primary">${primaryHtml}</nav>
             <nav class="nav-secondary">${secondaryHtml}</nav>
             <div class="mobile-drawer-account">
-                <div class="mobile-drawer-account-name" data-anon-hide>${escapeHtmlSafe(cachedName) || '게스트'}</div>
-                <a href="profile.html" class="mobile-drawer-account-link" data-anon-hide><span class="mobile-drawer-icon">${ICON.users}</span><span>내 정보</span></a>
                 <a href="admin.html" class="mobile-drawer-account-link" data-admin-only data-anon-hide><span class="mobile-drawer-icon">⚙</span><span>관리자</span></a>
                 <button type="button" class="mobile-drawer-account-link" id="drawer-logout-btn" data-anon-hide><span class="mobile-drawer-icon">↩</span><span>로그아웃</span></button>
                 <a href="index.html#login" class="mobile-drawer-account-link" data-anon-show><span class="mobile-drawer-icon">→</span><span>로그인</span></a>

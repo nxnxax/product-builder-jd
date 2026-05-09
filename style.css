@@ -1798,14 +1798,17 @@ select:focus {
     #user-menu { order: 2; flex-shrink: 0; }
     .mobile-menu-toggle { order: 3; flex-shrink: 0; margin-left: auto; }
 
-    /* 사용자 메뉴는 닉네임만 보이게 (내정보/관리자/로그아웃 강제 숨김) */
-    .app-header #user-menu .user-menu-link,
-    .app-header #user-menu .user-menu-btn,
-    .app-header #user-menu #profile-link,
+    /* 모바일: 닉네임 + 내정보 만 노출. 관리자/로그아웃은 드로어에 */
     .app-header #user-menu #admin-link,
     .app-header #user-menu #logout-btn { display: none !important; }
-    #user-menu { padding-left: 0; margin-left: 0; border-left: 0; }
-    #user-menu .user-display { font-size: 12.5px; max-width: 80px; padding: 4px 8px; }
+    #user-menu { padding-left: 0; margin-left: 0; border-left: 0; gap: 2px; }
+    #user-menu .user-display { font-size: 12.5px; max-width: 80px; padding: 4px 6px; }
+    #user-menu #profile-link {
+        font-size: 12px;
+        padding: 5px 8px;
+        background: var(--bg-muted);
+        border-radius: 6px;
+    }
 
     .header-auth-btn { padding: 7px 14px; font-size: 12.5px; }
 
