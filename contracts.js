@@ -135,6 +135,7 @@ async function loadGroups() {
 
 function bindUI() {
     document.getElementById('newGroupBtn').addEventListener('click', () => openGroupModal(null));
+    document.getElementById('newFromOrgBtn').addEventListener('click', () => openOrgPickerModal());
     document.getElementById('settleBtn').addEventListener('click', openSettleModal);
 
     document.getElementById('groupCancelBtn').addEventListener('click', () => closeModal('groupModal'));
@@ -298,7 +299,6 @@ function renderExtraPicker(others) {
                     <h4>현장목록</h4>
                     <span class="count-pill">${others.length}개${showing > 0 ? ` · ${showing}개 표시 중` : ''}</span>
                 </button>
-                <button class="tiny-btn primary extra-side-btn" type="button" data-pick-org>+ 조직도에서 선택</button>
             </div>
             <div class="extra-picker">
                 ${others.map(g => `
@@ -324,9 +324,6 @@ function bindExtraPickerEvents() {
             renderRecords();
         });
     });
-    document.querySelectorAll('[data-pick-org]').forEach(b => {
-        b.addEventListener('click', (e) => { e.stopPropagation(); openOrgPickerModal(); });
-    });
 }
 
 /* ============== 조직도에서 현장 만들기 ============== */
@@ -343,6 +340,9 @@ async function openOrgPickerModal() {
     const existingNames = new Set(groups.map(g => g.name));
     const existingLinks = new Set(groups.map(g => g.settings?.linkedOrgGroupId).filter(Boolean));
 
+    // 각 조직도 그룹의 직원 정보 미리 받기 — 사용자가 어떤 그룹인지 알아볼 수 있도록.
+    await Promise.all(sorted.map(g => loadOrgEmployeesForGroup(g.id)));
+
     const md = document.createElement('div');
     md.className = 'modal-backdrop org-picker-modal';
     md.innerHTML = `
@@ -350,16 +350,25 @@ async function openOrgPickerModal() {
             <header class="modal-header">
                 <div>
                     <h2>조직도에서 현장 만들기</h2>
-                    <p class="modal-subtitle">선택한 조직도 그룹과 동일한 이름으로 현장을 만들고 자동 연동합니다.</p>
+                    <p class="modal-subtitle">선택한 조직도 그룹과 동일한 이름으로 현장을 만들고 자동 연동합니다. 그룹 옆 인원수·이름 미리보기로 어느 그룹인지 확인하세요.</p>
                 </div>
             </header>
             <div class="modal-body">
                 <div class="org-pick-list">
                     ${sorted.map(g => {
                         const dup = existingLinks.has(g.id) || existingNames.has(g.name);
+                        const emps = orgEmployeesByGroup.get(g.id) || [];
+                        const names = emps.map(e => e.data?.name).filter(Boolean).slice(0, 3);
+                        const preview = names.length === 0
+                            ? '비어있음'
+                            : names.join(', ') + (emps.length > names.length ? ` 외 ${emps.length - names.length}명` : '');
                         return `
                             <button type="button" class="org-pick-item ${dup ? 'dup' : ''}" data-org-id="${g.id}" ${dup ? 'disabled' : ''}>
-                                <span class="org-pick-name">${escapeHtml(g.name)}</span>
+                                <div class="org-pick-main">
+                                    <span class="org-pick-name">${escapeHtml(g.name)}</span>
+                                    <span class="org-pick-preview">${escapeHtml(preview)}</span>
+                                </div>
+                                <span class="org-pick-count">${emps.length}명</span>
                                 ${g.isDefault ? '<span class="org-pick-badge">메인</span>' : ''}
                                 ${dup ? '<span class="org-pick-badge dim">이미 등록됨</span>' : ''}
                             </button>

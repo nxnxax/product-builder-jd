@@ -6,7 +6,7 @@
 <title>계약자 관리대장 · YOUNGMAN</title>
 <link rel="icon" type="image/png" href="logo_main.png">
 <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
-<link rel="stylesheet" href="style.css?v=20260509-settings-delete">
+<link rel="stylesheet" href="style.css?v=20260509-pick-toolbar">
 <style>
 :root{
     --ledger-line:rgba(20,14,8,.09); --ledger-line-strong:rgba(20,14,8,.16);
@@ -194,6 +194,7 @@ table.ledger-tbl{width:100%;border-collapse:collapse;font-size:13px;min-width:13
         <span class="label">현장</span>
         <span class="spacer"></span>
         <button class="tiny-btn primary" id="newGroupBtn" type="button">+ 새 현장</button>
+        <button class="tiny-btn primary" id="newFromOrgBtn" type="button">+ 조직도에서 선택</button>
         <button class="tiny-btn gold" id="settleBtn" type="button">💰 수수료 정산</button>
     </div>
 
@@ -289,9 +290,9 @@ table.ledger-tbl{width:100%;border-collapse:collapse;font-size:13px;min-width:13
     </div>
 </div>
 
-<script type="module" src="contracts.js?v=20260509-settings-delete"></script>
+<script type="module" src="contracts.js?v=20260509-pick-toolbar"></script>
 <script type="module">
-    import { initSupabase, setupHeaderUser } from './auth-shared.js?v=20260509-settings-delete';
+    import { initSupabase, setupHeaderUser } from './auth-shared.js?v=20260509-pick-toolbar';
     try {
         await initSupabase();
         setupHeaderUser({

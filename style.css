@@ -1535,7 +1535,20 @@ select:focus {
 }
 .org-pick-item:hover:not([disabled]) { background: #fbf7ef; border-color: rgba(200, 54, 44, 0.4); }
 .org-pick-item[disabled] { cursor: not-allowed; background: #fbfaf5; opacity: 0.7; }
-.org-pick-item .org-pick-name { font-size: 14px; font-weight: 500; }
+.org-pick-item .org-pick-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+.org-pick-item .org-pick-name { font-size: 14px; font-weight: 600; color: #0e0d0c; }
+.org-pick-item .org-pick-preview { font-size: 11.5px; color: #8a847e; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.org-pick-item .org-pick-count {
+    flex-shrink: 0;
+    padding: 3px 9px;
+    background: #fbf7ef;
+    border: 1px solid rgba(20, 14, 8, 0.09);
+    border-radius: 99px;
+    font-size: 11px;
+    font-weight: 600;
+    color: #4f4943;
+    font-variant-numeric: tabular-nums;
+}
 .org-pick-item .org-pick-badge {
     margin-left: auto;
     padding: 3px 9px;
