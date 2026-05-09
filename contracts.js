@@ -10,8 +10,8 @@
  *  - 본부장 계약 → 본부장(=팀원+팀장+본부장 셋 다 받음)
  */
 
-import { initSupabase, apiRequest, getSession } from './auth-shared.js?v=20260508-tight';
-import { attachColumnFilters, applyColumnFilters, openRowAddModal } from './ledger-shared.js?v=20260509-filter2';
+import { initSupabase, apiRequest, getSession } from './auth-shared.js?v=20260509-phone-toggle';
+import { attachColumnFilters, applyColumnFilters, openRowAddModal, attachPhoneAutoFormat } from './ledger-shared.js?v=20260509-phone-toggle';
 
 const PAGE_TYPE = 'contract';
 const TAX_RATE = 0.033;   // 실수령액 = commission * (1 - TAX_RATE)
@@ -428,7 +428,7 @@ function renderCell(f, r, d, displayNo, group) {
         return `<span class="commission-cell">₩${formatNum(calc.amount)}<span class="net">→ ₩${formatNum(calc.net)}</span></span>`;
     }
     if (f.type === 'date') return `<input type="date" data-field="${f.key}" data-id="${id}" value="${escapeAttr(d[f.key] || '')}">`;
-    if (f.type === 'tel')  return `<input type="tel"  data-field="${f.key}" data-id="${id}" value="${escapeAttr(d[f.key] || '')}" placeholder="010-...">`;
+    if (f.type === 'tel')  return `<input type="tel"  data-field="${f.key}" data-id="${id}" value="${escapeAttr(d[f.key] || '')}" placeholder="010-0000-0000">`;
     return `<input type="text" data-field="${f.key}" data-id="${id}" value="${escapeAttr(d[f.key] || '')}" placeholder="${escapeAttr(f.label)}">`;
 }
 
@@ -456,6 +456,7 @@ function bindTableEvents() {
     document.querySelectorAll('[data-delete-row]').forEach(b => {
         b.addEventListener('click', () => deleteRow(parseInt(b.dataset.deleteRow, 10)));
     });
+    attachPhoneAutoFormat();
     document.querySelectorAll('[data-select]').forEach(cb => {
         cb.addEventListener('change', () => {
             const id = parseInt(cb.dataset.select, 10);

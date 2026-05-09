@@ -8,7 +8,7 @@
     <link rel="apple-touch-icon" href="logo_main.png">
     <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
     <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
-    <link rel="stylesheet" href="style.css?v=20260509-picker-sticky">
+    <link rel="stylesheet" href="style.css?v=20260509-phone-toggle">
 </head>
 <body>
     <section id="auth-screen" class="auth-screen hidden" aria-modal="true" role="dialog">
@@ -91,8 +91,8 @@
                 <a class="nav-link" href="contracts.html">계약자 관리대장</a>
                 <button id="nav-marketing" class="nav-link">마케팅</button>
                 <a class="nav-link" href="lotto2233.html">Lotto</a>
-                <a class="nav-link" href="card-builder.html">온라인 명함 제작</a>
-                <a class="nav-link" href="upload.html">업로드</a>
+                <a class="nav-link" href="card-builder.html" data-admin-only>온라인 명함 제작</a>
+                <a class="nav-link" href="upload.html" data-admin-only>업로드</a>
             </nav>
             <button type="button" id="open-login-btn" class="header-auth-btn">로그인</button>
             <div id="user-menu" class="user-menu hidden">
@@ -228,6 +228,6 @@
             if (frame) frame.addEventListener('load', resizeMarketingFrame);
         });
     </script>
-    <script src="main.js?v=20260509-picker-sticky" type="module"></script>
+    <script src="main.js?v=20260509-phone-toggle" type="module"></script>
 </body>
 </html>

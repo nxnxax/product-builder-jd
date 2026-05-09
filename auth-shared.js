@@ -92,13 +92,26 @@ export function getInitial(name, email) {
 }
 
 export function setupHeaderUser({ userMenu, userEmail, adminLink, logoutBtn }) {
-    if (!currentSession?.user) {
+    const loggedIn = !!currentSession?.user;
+    const admin = loggedIn && isAdmin(currentSession);
+
+    // 로그인 버튼 — 비로그인 시만 노출.
+    document.querySelectorAll('#open-login-btn').forEach(btn => {
+        btn.classList.toggle('hidden', loggedIn);
+    });
+
+    // admin 전용 메뉴 (업로드 / 명함 제작 등) — admin 만 노출.
+    document.querySelectorAll('[data-admin-only]').forEach(el => {
+        el.classList.toggle('hidden', !admin);
+    });
+
+    if (!loggedIn) {
         if (userMenu) userMenu.classList.add('hidden');
         return;
     }
     if (userEmail) userEmail.textContent = currentSession.user.email || '';
     if (userMenu) userMenu.classList.remove('hidden');
-    if (adminLink) adminLink.classList.toggle('hidden', !isAdmin(currentSession));
+    if (adminLink) adminLink.classList.toggle('hidden', !admin);
     if (logoutBtn && !logoutBtn.dataset.bound) {
         logoutBtn.dataset.bound = '1';
         logoutBtn.addEventListener('click', async () => {
@@ -106,4 +119,20 @@ export function setupHeaderUser({ userMenu, userEmail, adminLink, logoutBtn }) {
             window.location.href = 'index.html';
         });
     }
+}
+
+/**
+ * admin 페이지 진입 차단 — admin 이 아니면 index 로 리다이렉트.
+ * upload.html / card-builder.html 같은 페이지에서 boot 시 호출.
+ */
+export function requireAdmin() {
+    if (!currentSession?.user) {
+        window.location.replace('index.html');
+        return false;
+    }
+    if (!isAdmin(currentSession)) {
+        window.location.replace('index.html');
+        return false;
+    }
+    return true;
 }

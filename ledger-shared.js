@@ -22,6 +22,35 @@
 let activePop = null;
 let docClickBound = false;
 
+/** 한국 휴대폰 번호 포맷 — 숫자만 남기고 010-XXXX-XXXX 형태로. */
+export function formatKoreanPhone(raw) {
+    const digits = String(raw || '').replace(/\D/g, '').slice(0, 11);
+    if (!digits) return '';
+    if (digits.length <= 3) return digits;
+    if (digits.length <= 7) return digits.slice(0, 3) + '-' + digits.slice(3);
+    return digits.slice(0, 3) + '-' + digits.slice(3, 7) + '-' + digits.slice(7);
+}
+
+/** 모든 tel input 에 자동 포맷 + '010-' 기본값 바인딩. 재렌더 후 매번 호출 가능. */
+export function attachPhoneAutoFormat(root) {
+    const scope = root || document;
+    scope.querySelectorAll('input[type=tel]').forEach(input => {
+        if (input.dataset.phoneFmtBound) return;
+        input.dataset.phoneFmtBound = '1';
+        input.addEventListener('focus', () => {
+            if (!input.value.trim()) input.value = '010-';
+        });
+        input.addEventListener('input', () => {
+            input.value = formatKoreanPhone(input.value);
+        });
+        input.addEventListener('blur', () => {
+            if (input.value === '010-' || input.value === '010') input.value = '';
+        });
+        // 기존 값이 포맷 안 돼 있으면 한 번 정리.
+        if (input.value && /\d/.test(input.value)) input.value = formatKoreanPhone(input.value);
+    });
+}
+
 /** 외부 클릭 시 popup 닫기 — 한번만 등록. */
 function ensureOutsideClickHandler() {
     if (docClickBound) return;
@@ -260,6 +289,7 @@ export function openRowAddModal(opts) {
             md.querySelector('[data-confirm]').click();
         }
     });
+    attachPhoneAutoFormat(md);
     setTimeout(() => md.querySelector('input,select,textarea')?.focus(), 30);
 }
 

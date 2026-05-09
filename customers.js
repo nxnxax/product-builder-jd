@@ -9,8 +9,8 @@
  *  - client_idempotency_key 로 같은 통화의 중복 전송 차단
  */
 
-import { initSupabase, apiRequest, getSession } from './auth-shared.js?v=20260508-tight';
-import { attachColumnFilters, applyColumnFilters, openRowAddModal } from './ledger-shared.js?v=20260509-filter2';
+import { initSupabase, apiRequest, getSession } from './auth-shared.js?v=20260509-phone-toggle';
+import { attachColumnFilters, applyColumnFilters, openRowAddModal, attachPhoneAutoFormat } from './ledger-shared.js?v=20260509-phone-toggle';
 
 const PAGE_TYPE = 'customer';
 
@@ -294,8 +294,13 @@ async function setMainGroup(gid) {
 
 function renderRow(r, displayNo, gid) {
     const d = r.data || {};
+    const dead = !d.managed;
+    const cls = [
+        selectedIds.has(r.id) ? 'selected' : '',
+        dead ? 'row-dead' : '',
+    ].filter(Boolean).join(' ');
     return `
-        <tr data-id="${r.id}" data-gid="${gid}" class="${selectedIds.has(r.id) ? 'selected' : ''}">
+        <tr data-id="${r.id}" data-gid="${gid}" class="${cls}">
             <td class="col-check"><input type="checkbox" data-select="${r.id}" ${selectedIds.has(r.id) ? 'checked' : ''}></td>
             ${DEFAULT_FIELDS.map(f => `<td>${renderCell(f, r, d, displayNo)}</td>`).join('')}
             <td class="col-action"><button class="row-action-btn" data-delete-row="${r.id}" title="삭제">×</button></td>
@@ -307,10 +312,13 @@ function renderCell(f, r, d, displayNo) {
     if (f.type === 'auto_number') return `<span class="col-no">${displayNo}</span>`;
     if (f.type === 'manage_switch') {
         const on = !!d.managed;
-        return `<button class="manage-switch ${on ? 'on' : 'off'}" data-manage-switch data-id="${id}">${on ? '관리중' : '관리X'}</button>`;
+        return `
+            <label class="toggle-switch ${on ? 'on' : 'off'}" data-manage-switch data-id="${id}" title="${on ? '관리중' : '관리 안함'}">
+                <span class="toggle-track"><span class="toggle-thumb"></span></span>
+            </label>`;
     }
     if (f.type === 'date') return `<input type="date" data-field="${f.key}" data-id="${id}" value="${escapeAttr(d[f.key] || '')}">`;
-    if (f.type === 'tel')  return `<input type="tel"  data-field="${f.key}" data-id="${id}" value="${escapeAttr(d[f.key] || '')}" placeholder="010-...">`;
+    if (f.type === 'tel')  return `<input type="tel"  data-field="${f.key}" data-id="${id}" value="${escapeAttr(d[f.key] || '')}" placeholder="010-0000-0000" data-phone-input>`;
     if (f.type === 'textarea') return `<textarea data-field="${f.key}" data-id="${id}" rows="1" placeholder="${escapeAttr(f.label)}">${escapeHtml(d[f.key] || '')}</textarea>`;
     return `<input type="text" data-field="${f.key}" data-id="${id}" value="${escapeAttr(d[f.key] || '')}" placeholder="${escapeAttr(f.label)}">`;
 }
@@ -331,11 +339,12 @@ function bindTableEvents() {
         el.addEventListener('change', () => updateRowField(parseInt(el.dataset.id, 10), el.dataset.field, el.value));
     });
     document.querySelectorAll('[data-manage-switch]').forEach(b => {
-        b.addEventListener('click', () => toggleManaged(parseInt(b.dataset.id, 10)));
+        b.addEventListener('click', (e) => { e.preventDefault(); toggleManaged(parseInt(b.dataset.id, 10)); });
     });
     document.querySelectorAll('[data-delete-row]').forEach(b => {
         b.addEventListener('click', () => deleteRow(parseInt(b.dataset.deleteRow, 10)));
     });
+    attachPhoneAutoFormat();
     document.querySelectorAll('[data-select]').forEach(cb => {
         cb.addEventListener('change', () => {
             const id = parseInt(cb.dataset.select, 10);

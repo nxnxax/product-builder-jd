@@ -6,7 +6,7 @@
 <title>고객 관리대장 · YOUNGMAN</title>
 <link rel="icon" type="image/png" href="logo_main.png">
 <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
-<link rel="stylesheet" href="style.css?v=20260509-picker-sticky">
+<link rel="stylesheet" href="style.css?v=20260509-phone-toggle">
 <style>
 :root{
     --ledger-line:rgba(20,14,8,.09); --ledger-line-strong:rgba(20,14,8,.16);
@@ -58,10 +58,20 @@ table.ledger-tbl{width:100%;border-collapse:collapse;font-size:13.5px;min-width:
 .row-action-btn{border:0;background:transparent;color:#8a847e;font-size:13px;cursor:pointer;padding:4px 6px;border-radius:5px;font-family:inherit}
 .row-action-btn:hover{color:var(--ledger-accent);background:#fff8f7}
 
-/* 관리유무 스위치 */
-.manage-switch{display:inline-flex;align-items:center;gap:6px;padding:4px 12px;border-radius:99px;cursor:pointer;font-size:11.5px;font-weight:700;letter-spacing:.02em;border:1px solid;transition:all 160ms;font-family:inherit;background:#fff}
-.manage-switch.on{background:rgba(37,99,235,.1);color:var(--status-on);border-color:rgba(37,99,235,.4)}
-.manage-switch.off{background:#f4efe7;color:#a3a39a;border-color:#d7d2c8}
+/* 관리 토글 — 동그란 thumb 좌우 슬라이드 */
+.toggle-switch{display:inline-flex;align-items:center;cursor:pointer;user-select:none;line-height:0}
+.toggle-switch .toggle-track{display:inline-block;width:36px;height:20px;background:#cfcabf;border-radius:99px;position:relative;transition:background 200ms}
+.toggle-switch .toggle-thumb{position:absolute;top:2px;left:2px;width:16px;height:16px;background:#fff;border-radius:50%;box-shadow:0 1px 3px rgba(0,0,0,.18);transition:transform 200ms}
+.toggle-switch.on .toggle-track{background:var(--status-on)}
+.toggle-switch.on .toggle-thumb{transform:translateX(16px)}
+.toggle-switch:hover .toggle-track{filter:brightness(.95)}
+
+/* 관리 안되는 행 — 죽어있는 느낌 */
+.ledger-tbl tbody tr.row-dead{background:#ebe7df;opacity:.62}
+.ledger-tbl tbody tr.row-dead td{color:#7a756e}
+.ledger-tbl tbody tr.row-dead td input,
+.ledger-tbl tbody tr.row-dead td textarea{color:#7a756e}
+.ledger-tbl tbody tr.row-dead.selected{opacity:.78}
 
 .bulk-bar{position:sticky;bottom:0;background:#fff;border-top:1px solid var(--ledger-line-strong);padding:12px 16px;display:none;align-items:center;justify-content:space-between;gap:10px;border-radius:0 0 12px 12px;box-shadow:0 -8px 24px rgba(20,14,8,.08);z-index:5}
 .bulk-bar.active{display:flex}
@@ -135,14 +145,17 @@ table.ledger-tbl{width:100%;border-collapse:collapse;font-size:13.5px;min-width:
         <a class="nav-link active" href="customers.html">고객 관리대장</a>
         <a class="nav-link" href="org.html">조직도</a>
         <a class="nav-link" href="contracts.html">계약자 관리대장</a>
+        <a class="nav-link" href="index.html#marketing">마케팅</a>
         <a class="nav-link" href="lotto2233.html">Lotto</a>
-        <a class="nav-link" href="card-builder.html">온라인 명함 제작</a>
+        <a class="nav-link" href="card-builder.html" data-admin-only>온라인 명함 제작</a>
+        <a class="nav-link" href="upload.html" data-admin-only>업로드</a>
     </nav>
-    <div id="user-menu" class="user-menu hidden" style="display:flex;align-items:center;gap:12px;">
+    <a href="index.html#login" class="header-auth-btn" id="open-login-btn">로그인</a>
+    <div id="user-menu" class="user-menu hidden">
         <a href="profile.html" id="profile-link" title="내 정보">내 정보</a>
         <a href="admin.html" id="admin-link" class="hidden" title="관리자">관리자</a>
-        <span id="user-email" style="color:var(--fg-tertiary);font-size:13px;"></span>
-        <button type="button" id="logout-btn" class="secondary-btn" style="padding:5px 10px;font-size:12px;">로그아웃</button>
+        <span id="user-email"></span>
+        <button type="button" id="logout-btn">로그아웃</button>
     </div>
 </div>
 </header>
@@ -210,9 +223,9 @@ table.ledger-tbl{width:100%;border-collapse:collapse;font-size:13.5px;min-width:
     </div>
 </div>
 
-<script type="module" src="customers.js?v=20260509-picker-sticky"></script>
+<script type="module" src="customers.js?v=20260509-phone-toggle"></script>
 <script type="module">
-    import { initSupabase, setupHeaderUser } from './auth-shared.js?v=20260508-tight';
+    import { initSupabase, setupHeaderUser } from './auth-shared.js?v=20260509-phone-toggle';
     try {
         await initSupabase();
         setupHeaderUser({

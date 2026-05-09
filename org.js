@@ -6,8 +6,8 @@
  * Phase 3 의 계약자 관리대장이 이 그룹의 settings.commissions 를 읽어 정산.
  */
 
-import { initSupabase, apiRequest, getSession } from './auth-shared.js?v=20260508-tight';
-import { attachColumnFilters, applyColumnFilters, openRowAddModal } from './ledger-shared.js?v=20260509-filter2';
+import { initSupabase, apiRequest, getSession } from './auth-shared.js?v=20260509-phone-toggle';
+import { attachColumnFilters, applyColumnFilters, openRowAddModal, attachPhoneAutoFormat } from './ledger-shared.js?v=20260509-phone-toggle';
 
 const PAGE_TYPE = 'org';
 
@@ -445,7 +445,7 @@ function renderRow(r, displayNo) {
                 ${TITLE_OPTIONS.map(t => `<option value="${t}" ${d.title === t ? 'selected' : ''}>${t}</option>`).join('')}
             </select></td>
             <td><input type="text" data-field="name" data-id="${r.id}" value="${escapeAttr(d.name || '')}" placeholder="이름"></td>
-            <td><input type="tel"  data-field="phone" data-id="${r.id}" value="${escapeAttr(d.phone || '')}" placeholder="010-..."></td>
+            <td><input type="tel"  data-field="phone" data-id="${r.id}" value="${escapeAttr(d.phone || '')}" placeholder="010-0000-0000"></td>
             <td><input type="text" data-field="account" data-id="${r.id}" value="${escapeAttr(d.account || '')}" placeholder="계좌"></td>
             <td><input type="text" data-field="memo" data-id="${r.id}" value="${escapeAttr(d.memo || '')}" placeholder="비고"></td>
             <td class="col-action"><button class="row-action-btn" data-delete-row="${r.id}" title="삭제">×</button></td>
@@ -479,6 +479,7 @@ function bindTableEvents() {
     document.querySelectorAll('[data-delete-row]').forEach(b => {
         b.addEventListener('click', () => deleteRow(parseInt(b.dataset.deleteRow, 10)));
     });
+    attachPhoneAutoFormat();
     // 체크박스
     document.querySelectorAll('[data-select]').forEach(cb => {
         cb.addEventListener('change', () => {
