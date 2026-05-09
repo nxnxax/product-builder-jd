@@ -222,6 +222,37 @@ async function loadStats() {
     }
 }
 
+const cleanupBtn = document.getElementById('cleanup-orphans-btn');
+const cleanupMessage = document.getElementById('cleanup-message');
+
+if (cleanupBtn) {
+    cleanupBtn.addEventListener('click', async () => {
+        const confirmed = window.confirm(
+            '소유자(owner_email)가 비어있는 모든 고객/직원 행을 영구 삭제합니다.\n\n복구 불가능합니다. 진행하시겠습니까?'
+        );
+        if (!confirmed) return;
+
+        cleanupBtn.disabled = true;
+        cleanupMessage.textContent = '삭제 중…';
+        cleanupMessage.className = 'form-help';
+        try {
+            const payload = await apiRequest('admin-cleanup-orphans', {
+                method: 'POST',
+                body: JSON.stringify({ resource: 'admin-cleanup-orphans' }),
+            });
+            const c = payload?.deleted?.customers ?? 0;
+            const e = payload?.deleted?.employees ?? 0;
+            cleanupMessage.textContent = `삭제 완료: 고객 ${c}건, 직원 ${e}건`;
+            cleanupMessage.className = 'form-help success';
+        } catch (error) {
+            cleanupMessage.textContent = error.message || '삭제 실패';
+            cleanupMessage.className = 'form-help error';
+        } finally {
+            cleanupBtn.disabled = false;
+        }
+    });
+}
+
 settingsForm.addEventListener('submit', async (event) => {
     event.preventDefault();
     settingsSave.disabled = true;

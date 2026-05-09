@@ -175,6 +175,15 @@
                         </div>
                     </form>
                 </div>
+
+                <div class="card" style="margin-top:24px;border-color:rgba(200,54,44,.25);">
+                    <h3 style="color:#c8362c;">데이터 정리 (위험)</h3>
+                    <p class="card-subtitle">소유자가 지정되지 않은 옛 고객/직원 행 (2026-05-09 보안 마이그레이션 이전 데이터) 을 일괄 삭제합니다. 복구 불가능합니다.</p>
+                    <div class="form-actions" style="margin-top:14px;">
+                        <span id="cleanup-message" class="form-help" style="margin-right:auto;"></span>
+                        <button type="button" class="secondary-btn" id="cleanup-orphans-btn" style="border-color:#c8362c;color:#c8362c;">소유자 없는 레거시 행 삭제</button>
+                    </div>
+                </div>
             </section>
 
             <!-- Logs -->
@@ -231,6 +240,6 @@
         </div>
     </div>
 
-    <script src="admin.js?v=20260508-minimal-redesign" type="module"></script>
+    <script src="admin.js?v=20260509-cleanup-orphans" type="module"></script>
 </body>
 </html>

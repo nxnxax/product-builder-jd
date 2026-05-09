@@ -97,7 +97,7 @@ function normalize_resource($value) {
         'auth-membership', 'auth-member', 'auth-availability',
         'auth-profile',
         'admin-members', 'admin-stats', 'admin-logs', 'admin-settings',
-        'admin-bootstrap',
+        'admin-bootstrap', 'admin-cleanup-orphans',
     ];
     if (!in_array($resource, $allowed, true)) {
         respond(['ok' => false, 'error' => '지원하지 않는 리소스입니다.'], 400);
@@ -1262,6 +1262,29 @@ try {
                 'createdAt' => $r['created_at'] ?? '',
             ];
         }, $items)]);
+    }
+
+    if ($resource === 'admin-cleanup-orphans') {
+        enforce_admin($pdo, $authUser);
+        if ($method !== 'POST') respond(['ok' => false, 'error' => '지원하지 않는 요청 방식입니다.'], 405);
+
+        // 보안 마이그레이션 이전에 owner 없이 들어간 레거시 행을 일괄 삭제.
+        // owner_email IS NULL OR '' 인 행이 대상.
+        $deleted = ['customers' => 0, 'employees' => 0];
+        foreach (['customers', 'employees'] as $tbl) {
+            try {
+                ensure_owner_column($pdo, $tbl);
+                $stmt = $pdo->prepare("DELETE FROM " . quote_identifier($tbl)
+                    . " WHERE owner_email IS NULL OR owner_email = ''");
+                $stmt->execute();
+                $deleted[$tbl] = $stmt->rowCount();
+            } catch (Throwable $e) {
+                respond(['ok' => false, 'error' => $tbl . ' 삭제 실패: ' . $e->getMessage()], 500);
+            }
+        }
+        record_activity($pdo, (string)($authUser['email'] ?? ''), 'admin.cleanup.orphans',
+            "customers={$deleted['customers']}, employees={$deleted['employees']}");
+        respond(['ok' => true, 'deleted' => $deleted]);
     }
 
     if ($resource === 'admin-settings') {
