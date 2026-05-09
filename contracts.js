@@ -274,11 +274,14 @@ function renderExtraPicker(others) {
     const showing = others.filter(g => selectedExtraIds.has(g.id)).length;
     return `
         <div class="extra-groups ${extraPanelOpen ? 'open' : ''}">
-            <button class="extra-head" data-toggle-extra type="button">
-                <span class="extra-arrow">▶</span>
-                <h4>현장목록</h4>
-                <span class="count-pill">${others.length}개${showing > 0 ? ` · ${showing}개 표시 중` : ''}</span>
-            </button>
+            <div class="extra-head">
+                <button class="extra-toggle" data-toggle-extra type="button">
+                    <span class="extra-arrow">▶</span>
+                    <h4>현장목록</h4>
+                    <span class="count-pill">${others.length}개${showing > 0 ? ` · ${showing}개 표시 중` : ''}</span>
+                </button>
+                <button class="tiny-btn primary extra-side-btn" type="button" data-pick-org>+ 조직도에서 선택</button>
+            </div>
             <div class="extra-picker">
                 ${others.map(g => `
                     <button type="button"
@@ -303,6 +306,86 @@ function bindExtraPickerEvents() {
             renderRecords();
         });
     });
+    document.querySelectorAll('[data-pick-org]').forEach(b => {
+        b.addEventListener('click', (e) => { e.stopPropagation(); openOrgPickerModal(); });
+    });
+}
+
+/* ============== 조직도에서 현장 만들기 ============== */
+function openOrgPickerModal() {
+    if (!orgGroups.length) {
+        alert('등록된 조직도 그룹이 없습니다. 먼저 조직도 페이지에서 그룹을 만들어 주세요.');
+        return;
+    }
+    closeOrgPickerModal();
+    // 최신 등록순 (id 큰 것부터)
+    const sorted = [...orgGroups].sort((a, b) => b.id - a.id);
+    const existingNames = new Set(groups.map(g => g.name));
+    const existingLinks = new Set(groups.map(g => g.settings?.linkedOrgGroupId).filter(Boolean));
+
+    const md = document.createElement('div');
+    md.className = 'modal-backdrop org-picker-modal';
+    md.innerHTML = `
+        <div class="modal-panel narrow">
+            <header class="modal-header">
+                <div>
+                    <h2>조직도에서 현장 만들기</h2>
+                    <p class="modal-subtitle">선택한 조직도 그룹과 동일한 이름으로 현장을 만들고 자동 연동합니다.</p>
+                </div>
+            </header>
+            <div class="modal-body">
+                <div class="org-pick-list">
+                    ${sorted.map(g => {
+                        const dup = existingLinks.has(g.id) || existingNames.has(g.name);
+                        return `
+                            <button type="button" class="org-pick-item ${dup ? 'dup' : ''}" data-org-id="${g.id}" ${dup ? 'disabled' : ''}>
+                                <span class="org-pick-name">${escapeHtml(g.name)}</span>
+                                ${g.isDefault ? '<span class="org-pick-badge">메인</span>' : ''}
+                                ${dup ? '<span class="org-pick-badge dim">이미 등록됨</span>' : ''}
+                            </button>
+                        `;
+                    }).join('')}
+                </div>
+            </div>
+            <footer class="modal-footer">
+                <button class="tiny-btn" type="button" data-close-org-picker>닫기</button>
+            </footer>
+        </div>
+    `;
+    document.body.appendChild(md);
+
+    md.addEventListener('click', (e) => { if (e.target === md) closeOrgPickerModal(); });
+    md.querySelector('[data-close-org-picker]').addEventListener('click', closeOrgPickerModal);
+    md.querySelectorAll('[data-org-id]:not([disabled])').forEach(btn => {
+        btn.addEventListener('click', () => createContractFromOrg(parseInt(btn.dataset.orgId, 10)));
+    });
+}
+
+function closeOrgPickerModal() {
+    document.querySelectorAll('.org-picker-modal').forEach(m => m.remove());
+}
+
+async function createContractFromOrg(orgGroupId) {
+    const og = orgGroups.find(g => g.id === orgGroupId);
+    if (!og) return;
+    try {
+        const created = await api('ledger-groups', {
+            method: 'POST',
+            body: {
+                pageType: PAGE_TYPE,
+                name: og.name,
+                isDefault: false,
+                fieldSchema: { fields: DEFAULT_FIELDS },
+                settings: { linkedOrgGroupId: og.id },
+            },
+        });
+        selectedExtraIds.add(created.id);
+        extraPanelOpen = true;
+        closeOrgPickerModal();
+        await loadGroups();
+    } catch (e) {
+        alert('현장 만들기 실패: ' + (e.message || ''));
+    }
 }
 
 function applyFilters(rows) {

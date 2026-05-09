@@ -1454,9 +1454,16 @@ select:focus {
 
 .extra-groups .extra-head {
     display: flex;
+    align-items: stretch;
+    gap: 6px;
+    padding: 0 14px 0 0;
+}
+
+.extra-groups .extra-toggle {
+    flex: 1;
+    display: flex;
     align-items: center;
     gap: 10px;
-    width: 100%;
     padding: 13px 18px;
     border: 0;
     background: transparent;
@@ -1465,11 +1472,13 @@ select:focus {
     font-family: inherit;
     text-align: left;
     transition: background 160ms;
+    color: inherit;
+    min-width: 0;
 }
 
-.extra-groups .extra-head:hover { background: #fbfaf5; }
+.extra-groups .extra-toggle:hover { background: #fbfaf5; }
 
-.extra-groups .extra-head h4 {
+.extra-groups .extra-toggle h4 {
     margin: 0;
     font-size: 13.5px;
     font-weight: 600;
@@ -1487,7 +1496,7 @@ select:focus {
 
 .extra-groups.open .extra-arrow { transform: rotate(90deg); color: #c8362c; }
 
-.extra-groups .extra-head .count-pill {
+.extra-groups .extra-toggle .count-pill {
     margin-left: auto;
     padding: 3px 10px;
     background: #fbf7ef;
@@ -1498,6 +1507,45 @@ select:focus {
     font-weight: 600;
     font-variant-numeric: tabular-nums;
 }
+
+.extra-groups .extra-side-btn {
+    align-self: center;
+    flex-shrink: 0;
+    white-space: nowrap;
+    font-size: 12px;
+    padding: 7px 12px;
+}
+
+/* 조직도에서 현장 만들기 — picker 모달 row */
+.org-pick-list { display: flex; flex-direction: column; gap: 6px; }
+.org-pick-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 12px 14px;
+    border: 1px solid rgba(20, 14, 8, 0.09);
+    border-radius: 8px;
+    background: #fff;
+    color: #0e0d0c;
+    cursor: pointer;
+    font-family: inherit;
+    text-align: left;
+    transition: all 160ms;
+}
+.org-pick-item:hover:not([disabled]) { background: #fbf7ef; border-color: rgba(200, 54, 44, 0.4); }
+.org-pick-item[disabled] { cursor: not-allowed; background: #fbfaf5; opacity: 0.7; }
+.org-pick-item .org-pick-name { font-size: 14px; font-weight: 500; }
+.org-pick-item .org-pick-badge {
+    margin-left: auto;
+    padding: 3px 9px;
+    background: rgba(200, 54, 44, 0.08);
+    color: #8a2620;
+    border-radius: 99px;
+    font-size: 11px;
+    font-weight: 600;
+}
+.org-pick-item .org-pick-badge.dim { background: #f4efe7; color: #8a847e; }
 
 .extra-groups .extra-picker {
     display: none;

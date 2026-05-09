@@ -293,11 +293,13 @@ function renderExtraPicker(others) {
     const showing = others.filter(g => selectedExtraIds.has(g.id)).length;
     return `
         <div class="extra-groups ${extraPanelOpen ? 'open' : ''}">
-            <button class="extra-head" data-toggle-extra type="button">
-                <span class="extra-arrow">▶</span>
-                <h4>그룹목록</h4>
-                <span class="count-pill">${others.length}개${showing > 0 ? ` · ${showing}개 표시 중` : ''}</span>
-            </button>
+            <div class="extra-head">
+                <button class="extra-toggle" data-toggle-extra type="button">
+                    <span class="extra-arrow">▶</span>
+                    <h4>그룹목록</h4>
+                    <span class="count-pill">${others.length}개${showing > 0 ? ` · ${showing}개 표시 중` : ''}</span>
+                </button>
+            </div>
             <div class="extra-picker">
                 ${others.map(g => `
                     <button type="button"
