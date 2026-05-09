@@ -323,14 +323,7 @@ small { color: var(--fg-tertiary); font-size: 13px; }
 }
 .nav-secondary .nav-static:hover { background: var(--bg-muted); color: var(--fg); }
 .nav-secondary .nav-dropdown.is-active .nav-static { color: var(--fg); font-weight: 600; }
-.nav-secondary .nav-caret {
-    font-size: 9px;
-    margin-left: 3px;
-    opacity: 0.6;
-    transition: transform 160ms;
-    display: inline-block;
-}
-.nav-secondary .nav-dropdown:hover .nav-caret { transform: rotate(180deg); opacity: 1; }
+.nav-secondary .nav-caret { display: none; }
 
 .nav-dropdown-menu {
     position: absolute;

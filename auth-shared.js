@@ -188,7 +188,7 @@ export function mountAppHeader(opts) {
         <div class="nav-dropdown ${isCommunityActive ? 'is-active' : ''}">
             <span class="nav-link nav-link-secondary nav-static" tabindex="0">
                 <span class="nav-icon">${ICON.users}</span>
-                <span class="nav-label">커뮤니티 <span class="nav-caret">▾</span></span>
+                <span class="nav-label">커뮤니티</span>
             </span>
             <div class="nav-dropdown-menu">
                 ${communityItems.map(i => `
