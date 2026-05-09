@@ -7,7 +7,7 @@
  */
 
 import { initSupabase, apiRequest, getSession } from './auth-shared.js?v=20260509-phone-toggle';
-import { attachColumnFilters, applyColumnFilters, openRowAddModal, attachPhoneAutoFormat } from './ledger-shared.js?v=20260509-phone-toggle';
+import { attachColumnFilters, applyColumnFilters, openRowAddModal, attachPhoneAutoFormat, attachThousandFormat, formatThousand, unformatThousand } from './ledger-shared.js?v=20260509-thousand';
 
 const PAGE_TYPE = 'org';
 
@@ -215,16 +215,18 @@ function openSettingsModal(groupId) {
         cb.checked = (s.active_teams || []).includes(parseInt(cb.value, 10));
     });
     const dc = s.default_commissions || {};
-    document.getElementById('commHQ').value = dc['본부장'] ?? 0;
-    document.getElementById('commTL').value = dc['팀장']   ?? 0;
-    document.getElementById('commTM').value = dc['팀원']   ?? 0;
-    // owner_role 에 따라 본부장 칸 숨김.
+    document.getElementById('commHQ').value = formatThousand(dc['본부장'] ?? 0);
+    document.getElementById('commTL').value = formatThousand(dc['팀장']   ?? 0);
+    document.getElementById('commTM').value = formatThousand(dc['팀원']   ?? 0);
+    // owner_role 에 따라 본부장 칸 숨김 + 활성팀 row 숨김.
     const role = s.owner_role === 'lead' ? 'lead' : 'head';
     document.getElementById('defaultCommGrid').classList.toggle('role-lead', role === 'lead');
+    document.getElementById('activeTeamsRow').classList.toggle('hidden', role === 'lead');
     typeCommissionRows = JSON.parse(JSON.stringify(s.type_commissions || []));
     renderTypeCommList(role);
     document.getElementById('settingsErrorMsg').textContent = '';
     document.getElementById('settingsModal').classList.remove('hidden');
+    attachThousandFormat(document.getElementById('settingsModal'));
 }
 
 function renderTypeCommList(role) {
@@ -237,11 +239,12 @@ function renderTypeCommList(role) {
     el.innerHTML = typeCommissionRows.map((r, i) => `
         <div class="type-comm-row ${role === 'lead' ? 'role-lead' : ''}" data-i="${i}">
             <input type="text" placeholder="타입(예: 59A)" data-f="type" value="${escapeAttr(r.type || '')}">
-            <input type="number" placeholder="본부장" data-f="본부장" data-role-cell="head" value="${r['본부장'] ?? 0}" min="0" step="10000">
-            <input type="number" placeholder="팀장" data-f="팀장" value="${r['팀장'] ?? 0}" min="0" step="10000">
-            <input type="number" placeholder="팀원" data-f="팀원" value="${r['팀원'] ?? 0}" min="0" step="10000">
+            <input type="text" inputmode="numeric" data-thousand placeholder="본부장" data-f="본부장" data-role-cell="head" value="${formatThousand(r['본부장'] ?? 0)}">
+            <input type="text" inputmode="numeric" data-thousand placeholder="팀장" data-f="팀장" value="${formatThousand(r['팀장'] ?? 0)}">
+            <input type="text" inputmode="numeric" data-thousand placeholder="팀원" data-f="팀원" value="${formatThousand(r['팀원'] ?? 0)}">
             <button class="x" type="button" data-del>×</button>
         </div>`).join('');
+    attachThousandFormat(el);
     el.querySelectorAll('[data-del]').forEach(b => {
         b.addEventListener('click', () => {
             const i = parseInt(b.closest('.type-comm-row').dataset.i, 10);
@@ -253,7 +256,7 @@ function renderTypeCommList(role) {
         inp.addEventListener('input', () => {
             const i = parseInt(inp.closest('.type-comm-row').dataset.i, 10);
             const f = inp.dataset.f;
-            typeCommissionRows[i][f] = (f === 'type') ? inp.value : (parseInt(inp.value, 10) || 0);
+            typeCommissionRows[i][f] = (f === 'type') ? inp.value : unformatThousand(inp.value);
         });
     });
 }
@@ -264,9 +267,9 @@ async function saveSettings() {
     const active_teams = Array.from(document.querySelectorAll('#activeTeamsBox input[data-team]:checked'))
         .map(cb => parseInt(cb.value, 10));
     const default_commissions = {
-        '본부장': parseInt(document.getElementById('commHQ').value, 10) || 0,
-        '팀장':   parseInt(document.getElementById('commTL').value, 10) || 0,
-        '팀원':   parseInt(document.getElementById('commTM').value, 10) || 0,
+        '본부장': unformatThousand(document.getElementById('commHQ').value),
+        '팀장':   unformatThousand(document.getElementById('commTL').value),
+        '팀원':   unformatThousand(document.getElementById('commTM').value),
     };
     const type_commissions = typeCommissionRows.filter(r => r.type && r.type.trim());
 
@@ -363,21 +366,31 @@ function renderGroupCard(group) {
 
     // 활성 팀 (이 그룹의 settings)
     const s = { ...DEFAULT_SETTINGS, ...(group.settings || {}) };
+    const isLeadMode = ownerRoleOf(group) === 'lead';
     const activeTeams = new Set(s.active_teams && s.active_teams.length > 0 ? s.active_teams : [1, 2, 3]);
 
     // 필터는 모든 그룹에 동일 적용
     const filtered = applyColumnFilters(filterState.filters, groupRecs, (r, k) => r.data?.[k]);
 
+    // 본부장은 어느 팀에도 속하지 않는 별도 셀.
+    const heads = filtered.filter(r => r.data?.title === '본부장');
+    const others = filtered.filter(r => r.data?.title !== '본부장');
+
     const byTeam = {};
     [...activeTeams].sort((a, b) => a - b).forEach(t => byTeam[t] = []);
     byTeam.unassigned = [];
-    filtered.forEach(r => {
+    others.forEach(r => {
         const t = parseInt(r.data?.team, 10);
         if (activeTeams.has(t)) byTeam[t].push(r);
         else byTeam.unassigned.push(r);
     });
 
-    let bodyHtml = [...activeTeams].sort((a, b) => a - b).map(t => renderTeamSection(t + '팀', t, byTeam[t], group)).join('');
+    let bodyHtml = '';
+    // 팀장 모드가 아니면 본부장 섹션을 가장 상단에 노출 (비어있어도 추가 버튼 노출).
+    if (!isLeadMode) {
+        bodyHtml += renderTeamSection('본부장', 0, heads, group, { hq: true });
+    }
+    bodyHtml += [...activeTeams].sort((a, b) => a - b).map(t => renderTeamSection(t + '팀', t, byTeam[t], group)).join('');
     if (byTeam.unassigned.length > 0) bodyHtml += renderTeamSection('미지정', null, byTeam.unassigned, group);
 
     const role = ownerRoleOf(group);
@@ -454,18 +467,19 @@ async function setMainGroup(gid) {
     }
 }
 
-function renderTeamSection(title, teamNo, rows, group) {
+function renderTeamSection(title, teamNo, rows, group, opts) {
     const fields = DEFAULT_FIELD_SCHEMA.fields;
     const allowedTitles = rolesAllowedFor(ownerRoleOf(group));
+    const isHq = !!(opts && opts.hq);   // 본부장 전용 섹션
     return `
-        <section class="team-section" data-team="${teamNo ?? ''}">
+        <section class="team-section ${isHq ? 'team-section-hq' : ''}" data-team="${teamNo ?? ''}" ${isHq ? 'data-hq="1"' : ''}>
             <div class="team-head">
                 <div>
                     <h3>${escapeHtml(title)}</h3>
                     <span class="count">${rows.length}명</span>
                 </div>
                 <div class="actions">
-                    <button class="tiny-btn primary" type="button" data-add-row data-team="${teamNo ?? ''}">+ 직원 추가</button>
+                    <button class="tiny-btn primary" type="button" data-add-row data-team="${teamNo ?? ''}" ${isHq ? 'data-hq="1"' : ''}>+ 직원 추가</button>
                 </div>
             </div>
             <div class="tbl-wrap">
@@ -525,7 +539,8 @@ function bindTableEvents() {
             // 가장 가까운 accordion-card 의 data-gid 로 그룹 식별
             const gid = parseInt(b.closest('.accordion-card')?.dataset.gid, 10);
             const teamNo = b.dataset.team ? parseInt(b.dataset.team, 10) : null;
-            addRow(gid, teamNo);
+            const isHq = b.dataset.hq === '1';
+            addRow(gid, teamNo, isHq);
         });
     });
     // 셀 인라인 편집 (blur 시 저장)
@@ -562,14 +577,16 @@ function bindTableEvents() {
     });
 }
 
-function addRow(gid, teamNo) {
+function addRow(gid, teamNo, isHq) {
     if (!gid) return;
     const group = groups.find(g => g.id === gid);
-    const allowedTitles = rolesAllowedFor(ownerRoleOf(group));
+    const allowedTitles = isHq ? ['본부장'] : rolesAllowedFor(ownerRoleOf(group)).filter(t => t !== '본부장');
+    const titleDefault = isHq ? '본부장' : '팀원';
+    const modalTitle = isHq ? '본부장 추가' : `${teamNo || '?'}팀 새 직원 추가`;
     openRowAddModal({
-        title: `${teamNo || '?'}팀 새 직원 추가`,
+        title: modalTitle,
         fields: DEFAULT_FIELD_SCHEMA.fields,
-        defaults: { title: '팀원' },
+        defaults: { title: titleDefault },
         customRender: (f, defaults) => {
             if (f.type !== 'title_select') return null;
             const v = defaults[f.key] ?? '';
@@ -580,7 +597,9 @@ function addRow(gid, teamNo) {
             return `<div class="modal-row">${lbl}<div class="row-control"><select data-field="${f.key}">${opts}</select></div></div>`;
         },
         onSubmit: async (data) => {
-            data.team = teamNo || 1;
+            // 본부장은 어느 팀에도 속하지 않음 (team=0).
+            if (data.title === '본부장') data.team = 0;
+            else data.team = teamNo || 1;
             await api('ledger-records', { method: 'POST', body: { groupId: gid, data, source: 'web' } });
             await loadRecords();
         },

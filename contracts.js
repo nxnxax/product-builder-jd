@@ -11,7 +11,7 @@
  */
 
 import { initSupabase, apiRequest, getSession } from './auth-shared.js?v=20260509-phone-toggle';
-import { attachColumnFilters, applyColumnFilters, openRowAddModal, attachPhoneAutoFormat } from './ledger-shared.js?v=20260509-phone-toggle';
+import { attachColumnFilters, applyColumnFilters, openRowAddModal, attachPhoneAutoFormat, attachThousandFormat, formatThousand, unformatThousand } from './ledger-shared.js?v=20260509-thousand';
 
 const PAGE_TYPE = 'contract';
 const TAX_RATE = 0.033;   // 실수령액 = commission * (1 - TAX_RATE)
@@ -809,7 +809,7 @@ function openSettleModal() {
                     ${lines.map((l, i) => `
                         <li>
                             <span style="font-size:11.5px;color:#4f4943;">${escapeHtml(l.role)} · ${escapeHtml(l.label)}</span>
-                            <input type="number" data-payout-edit="${i}" data-emp="${emp.id}" data-cid="${l.cid}" data-role="${escapeAttr(l.role)}" value="${l.amount}" min="0" step="10000">
+                            <input type="text" inputmode="numeric" data-thousand data-payout-edit="${i}" data-emp="${emp.id}" data-cid="${l.cid}" data-role="${escapeAttr(l.role)}" value="${formatThousand(l.amount)}">
                         </li>`).join('')}
                 </ul>
                 <div class="settle-totals">
@@ -836,11 +836,12 @@ function openSettleModal() {
             const netEl = document.querySelector(`[data-net-emp="${empId}"]`);
             const allInps = document.querySelectorAll(`[data-payout-edit][data-emp="${empId}"]`);
             let sum = 0;
-            allInps.forEach(i => sum += parseInt(i.value, 10) || 0);
+            allInps.forEach(i => sum += unformatThousand(i.value));
             sumEl.textContent = '₩' + formatNum(sum);
             netEl.textContent = '₩' + formatNum(Math.round(sum * (1 - TAX_RATE)));
         });
     });
+    attachThousandFormat(document.getElementById('settleModal'));
 
     // 모달이 한 번에 처리할 계약 ID 들 저장
     document.getElementById('settleModal').dataset.contractIds = JSON.stringify([...grandContracts]);

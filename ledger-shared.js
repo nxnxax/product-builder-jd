@@ -31,6 +31,42 @@ export function formatKoreanPhone(raw) {
     return digits.slice(0, 3) + '-' + digits.slice(3, 7) + '-' + digits.slice(7);
 }
 
+/** 숫자에 천단위 쉼표 — '1000000' → '1,000,000'. */
+export function formatThousand(val) {
+    const digits = String(val ?? '').replace(/[^\d]/g, '');
+    if (!digits) return '';
+    return parseInt(digits, 10).toLocaleString('en-US');
+}
+
+/** 쉼표 포함된 문자열 → 정수. '1,000,000' → 1000000. */
+export function unformatThousand(val) {
+    const n = parseInt(String(val ?? '').replace(/[^\d]/g, ''), 10);
+    return isNaN(n) ? 0 : n;
+}
+
+/** input[data-thousand] 에 입력 중 자동 쉼표 삽입. 초기값도 포맷. 재렌더 후 매번 호출. */
+export function attachThousandFormat(root) {
+    const scope = root || document;
+    scope.querySelectorAll('input[data-thousand]').forEach(input => {
+        if (input.dataset.thousandBound) return;
+        input.dataset.thousandBound = '1';
+        if (input.value) input.value = formatThousand(input.value);
+        input.addEventListener('input', () => {
+            const before = input.value;
+            const cursor = input.selectionStart || 0;
+            const formatted = formatThousand(before);
+            input.value = formatted;
+            // 단순 cursor 처리 — 쉼표 추가/제거된 만큼 보정.
+            const diff = formatted.length - before.length;
+            try { input.setSelectionRange(cursor + diff, cursor + diff); } catch {}
+        });
+        input.addEventListener('focus', () => {
+            // 0 인 채로 있으면 통째 선택해서 바로 입력하기 쉽게.
+            if (input.value === '0') input.select();
+        });
+    });
+}
+
 /** 모든 tel input 에 자동 포맷 + '010-' 기본값 바인딩. 재렌더 후 매번 호출 가능. */
 export function attachPhoneAutoFormat(root) {
     const scope = root || document;
