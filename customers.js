@@ -371,8 +371,8 @@ function renderRow(r, displayNo, group) {
             <td class="col-check"><input type="checkbox" data-select="${r.id}" ${selectedIds.has(r.id) ? 'checked' : ''}></td>
             ${fields.map(f => `<td>${renderCell(f, r, d, displayNo)}</td>`).join('')}
             <td class="col-action">
-                <button class="row-action-btn" data-edit-row="${r.id}" title="수정">✎</button>
-                <button class="row-action-btn danger" data-delete-row="${r.id}" title="삭제">×</button>
+                <button class="row-action-btn" data-edit-row="${r.id}" title="수정"><span class="ico">✎</span><span class="lbl">수정</span></button>
+                <button class="row-action-btn danger" data-delete-row="${r.id}" title="삭제"><span class="ico">×</span><span class="lbl">삭제</span></button>
             </td>
         </tr>`;
 }

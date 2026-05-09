@@ -1951,8 +1951,18 @@ select:focus {
     font-weight: 600;
 }
 
-/* 행 액션 버튼 — 수정 + 삭제 두 개 */
-.ledger-tbl .col-action { width: 80px !important; }
+/* 행 액션 버튼 — 아이콘 + 텍스트 */
+.ledger-tbl .col-action { width: 130px !important; white-space: nowrap; }
+.row-action-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 4px 8px !important;
+    font-size: 12px;
+    font-weight: 500;
+}
+.row-action-btn .ico { font-size: 13px; line-height: 1; }
+.row-action-btn .lbl { font-size: 11.5px; }
 .row-action-btn.danger:hover { color: #c8362c; background: rgba(200, 54, 44, 0.06); }
 
 /* 모달 안 read-only span (담당자 직함 등) */
