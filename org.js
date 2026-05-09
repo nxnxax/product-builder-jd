@@ -410,16 +410,16 @@ function renderGroupCard(group) {
     return `
         <div class="accordion-card open" data-gid="${group.id}">
             <div class="accordion-head">
-                <h3>${escapeHtml(group.name)}</h3>
+                <h3>${escapeHtml(group.name)} <span class="head-count">(${groupRecs.length}명)</span></h3>
+                <span class="role-label">내 직책</span>
                 <select class="owner-role-select" data-set-role="${group.id}" title="내 직책">
                     <option value="head" ${role === 'head' ? 'selected' : ''}>본부장</option>
                     <option value="lead" ${role === 'lead' ? 'selected' : ''}>팀장</option>
                 </select>
-                <label class="main-checkbox" title="이 그룹을 메인으로 설정">
+                <label class="main-checkbox" title="이 현장을 메인으로 설정">
                     <input type="checkbox" data-set-main="${group.id}" ${group.isDefault ? 'checked' : ''}>
                     <span>메인그룹</span>
                 </label>
-                <span class="count-pill">${groupRecs.length}명</span>
                 <div class="head-actions">
                     <button type="button" data-edit-gid="${group.id}">편집</button>
                     <button type="button" data-settings-gid="${group.id}">⚙ 설정</button>

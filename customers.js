@@ -283,12 +283,11 @@ function renderGroupCard(group) {
     return `
         <div class="accordion-card open" data-gid="${group.id}">
             <div class="accordion-head">
-                <h3>${escapeHtml(group.name)}</h3>
+                <h3>${escapeHtml(group.name)} <span class="head-count">(${grpRecs.length}건)</span></h3>
                 <label class="main-checkbox" title="이 그룹을 메인으로 설정">
                     <input type="checkbox" data-set-main="${group.id}" ${group.isDefault ? 'checked' : ''}>
                     <span>메인그룹</span>
                 </label>
-                <span class="count-pill">${grpRecs.length}건</span>
                 <div class="head-actions">
                     <button type="button" data-edit-gid="${group.id}">편집</button>
                     <button type="button" data-settings-gid="${group.id}">⚙ 설정</button>

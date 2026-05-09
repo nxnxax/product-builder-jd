@@ -2040,6 +2040,25 @@ select:focus {
 }
 .org-pick-item .org-pick-badge.dim { background: #f4efe7; color: #8a847e; }
 
+/* 그룹 카드 헤더 — 제목 옆 갯수 inline */
+.accordion-head h3 .head-count {
+    margin-left: 6px;
+    font-size: 14px;
+    font-weight: 500;
+    color: #8a847e;
+    letter-spacing: 0;
+}
+
+/* '내 직책' 라벨 (조직도 카드 헤더) */
+.accordion-head .role-label {
+    font-size: 11.5px;
+    font-weight: 500;
+    color: #8a847e;
+    letter-spacing: -0.005em;
+    margin-left: 8px;
+    margin-right: -2px;
+}
+
 /* 그룹 owner_role select — 카드 헤더에 inline */
 .accordion-head .owner-role-select {
     flex: 0 0 auto;
