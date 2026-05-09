@@ -190,7 +190,7 @@ function renderExtraPicker(others) {
         <div class="extra-groups ${extraPanelOpen ? 'open' : ''}">
             <button class="extra-head" data-toggle-extra type="button">
                 <span class="extra-arrow">▶</span>
-                <h4>다른 그룹</h4>
+                <h4>그룹목록</h4>
                 <span class="count-pill">${others.length}개${showing > 0 ? ` · ${showing}개 표시 중` : ''}</span>
             </button>
             <div class="extra-picker">
@@ -226,7 +226,10 @@ function renderGroupCard(group) {
         <div class="accordion-card open" data-gid="${group.id}">
             <div class="accordion-head">
                 <h3>${escapeHtml(group.name)}</h3>
-                ${group.isDefault ? '<span class="star">기본</span>' : ''}
+                <label class="main-checkbox" title="이 그룹을 메인으로 설정">
+                    <input type="checkbox" data-set-main="${group.id}" ${group.isDefault ? 'checked' : ''}>
+                    <span>메인그룹</span>
+                </label>
                 <span class="count-pill">${grpRecs.length}건</span>
                 <div class="head-actions">
                     <button type="button" data-edit-gid="${group.id}">편집</button>
@@ -263,6 +266,31 @@ function bindAccordionEvents() {
     document.querySelectorAll('[data-edit-gid]').forEach(b => {
         b.addEventListener('click', (e) => { e.stopPropagation(); openGroupModal(parseInt(b.dataset.editGid, 10)); });
     });
+    document.querySelectorAll('[data-set-main]').forEach(cb => {
+        cb.addEventListener('change', () => {
+            const id = parseInt(cb.dataset.setMain, 10);
+            if (cb.checked) setMainGroup(id);
+            else cb.checked = true;  // 메인은 항상 1개 — 단독으로 해제 불가
+        });
+    });
+}
+
+async function setMainGroup(gid) {
+    const target = groups.find(g => g.id === gid);
+    if (!target || target.isDefault) return;
+    const currentMain = groups.find(g => g.isDefault);
+    try {
+        // 백엔드가 같은 owner+page_type 내 다른 default 를 자동 해제 — PATCH 한 번으로 OK.
+        await api('ledger-groups', { method: 'PATCH', body: { id: gid, isDefault: true } });
+        if (currentMain) {
+            selectedExtraIds.add(currentMain.id);   // 옛 메인은 picker 에 선택 상태로 유지
+            extraPanelOpen = true;
+        }
+        selectedExtraIds.delete(gid);
+        await loadGroups();
+    } catch (e) {
+        alert('메인 그룹 변경 실패: ' + (e.message || ''));
+    }
 }
 
 function renderRow(r, displayNo, gid) {
