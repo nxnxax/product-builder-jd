@@ -126,13 +126,14 @@ small { color: var(--fg-tertiary); font-size: 13px; }
 }
 
 .header-container {
-    max-width: var(--container);
+    max-width: 1440px;
     margin: 0 auto;
     padding: 0 24px;
     height: var(--header-h);
     display: flex;
     align-items: center;
-    gap: 28px;
+    gap: 16px;
+    flex-wrap: nowrap;
 }
 
 .header-container h1 {
@@ -171,25 +172,29 @@ small { color: var(--fg-tertiary); font-size: 13px; }
     letter-spacing: 0.02em;
 }
 
-/* 주 기능 (관리대장 3종) — pill 버튼으로 항상 강조 */
+/* 주 기능 (관리대장 3종) — pill 버튼, 모두 동일 폭으로 시각 통일 */
 .nav-primary {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 8px;
     flex: 0 0 auto;
+    flex-wrap: nowrap;
 }
 
 .nav-pill {
     display: inline-flex;
     align-items: center;
+    justify-content: center;
+    min-width: 132px;
+    height: 38px;
+    padding: 0 18px;
     background: var(--bg-muted);
     border: 1px solid transparent;
     color: var(--fg);
     font-size: 13.5px;
     font-weight: 600;
     letter-spacing: -0.01em;
-    padding: 9px 18px;
-    border-radius: 999px;
+    border-radius: 10px;
     cursor: pointer;
     text-decoration: none;
     transition: all 160ms cubic-bezier(0.16, 1, 0.3, 1);
@@ -210,33 +215,37 @@ small { color: var(--fg-tertiary); font-size: 13px; }
 .nav-pill.active:hover {
     background: var(--fg);
     color: var(--bg);
-    opacity: 0.92;
+    opacity: 0.94;
 }
 
-/* 보조 기능 (마케팅 / Lotto / 명함 / 업로드) — 우측에 작게 */
+/* 보조 기능 (마케팅 / Lotto / 명함 / 업로드) — 우측에 점 separator 로 압축 */
 .nav-secondary {
     display: flex;
     align-items: center;
     gap: 0;
     flex: 1 1 auto;
     justify-content: flex-end;
-    margin-left: 18px;
-    padding-left: 18px;
+    margin-left: 14px;
+    padding-left: 14px;
     border-left: 1px solid var(--border);
+    flex-wrap: nowrap;
+    white-space: nowrap;
+    overflow: hidden;
 }
 
 .nav-link {
     background: none;
     border: 0;
     color: var(--fg-tertiary);
-    font-size: 13px;
+    font-size: 12.5px;
     font-weight: 500;
-    padding: 6px 10px;
+    padding: 6px 8px;
     border-radius: var(--radius-sm);
     cursor: pointer;
     transition: var(--transition);
     letter-spacing: -0.005em;
     text-decoration: none;
+    white-space: nowrap;
 }
 
 .nav-link:hover {
@@ -247,6 +256,15 @@ small { color: var(--fg-tertiary); font-size: 13px; }
 .nav-link.active {
     color: var(--fg);
     font-weight: 600;
+}
+
+/* 점 separator — 보조 메뉴 사이 */
+.nav-secondary .nav-link + .nav-link::before {
+    content: "·";
+    margin: 0 4px;
+    color: var(--fg-tertiary);
+    opacity: 0.5;
+    pointer-events: none;
 }
 
 .header-auth-btn {
@@ -268,34 +286,42 @@ small { color: var(--fg-tertiary); font-size: 13px; }
 .user-menu {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 4px;
     color: var(--fg-secondary);
-    font-size: 13px;
+    font-size: 12.5px;
     font-weight: 500;
+    flex: 0 0 auto;
+    flex-wrap: nowrap;
+    margin-left: 14px;
+    padding-left: 14px;
+    border-left: 1px solid var(--border);
+    white-space: nowrap;
 }
 
 .user-menu .user-display {
-    max-width: 200px;
+    max-width: 110px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
     color: var(--fg);
-    font-weight: 600;
-    padding: 6px 0;
+    font-weight: 700;
+    padding: 6px 8px;
+    font-size: 13px;
 }
 
 .user-menu .user-menu-link,
 .user-menu .user-menu-btn {
     background: transparent;
-    color: var(--fg-secondary);
+    color: var(--fg-tertiary);
     border: 0;
-    padding: 6px 10px;
+    padding: 6px 8px;
     border-radius: var(--radius-sm);
-    font-size: 13px;
+    font-size: 12.5px;
     font-weight: 500;
     cursor: pointer;
     text-decoration: none;
     transition: var(--transition);
+    white-space: nowrap;
 }
 
 .user-menu .user-menu-link:hover,
