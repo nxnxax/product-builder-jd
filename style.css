@@ -297,14 +297,15 @@ small { color: var(--fg-tertiary); font-size: 13px; }
 .nav-dropdown-menu {
     position: absolute;
     top: 100%;
-    right: 0;
-    min-width: 150px;
+    left: 50%;
+    transform: translateX(-50%);
+    min-width: max-content;   /* 내용 폭만큼만 — 너무 넓지 않게 */
     background: #fff;
     border: 1px solid var(--border);
     border-radius: 10px;
     box-shadow: 0 8px 24px rgba(20, 14, 8, 0.12);
     padding: 6px;
-    margin-top: 8px;   /* 시각적 갭 — 마진은 hover 영역 안에 들어감 */
+    margin-top: 8px;
     display: none;
     z-index: 200;
 }
