@@ -107,6 +107,7 @@ function bindUI() {
     document.getElementById('groupDeleteBtn').addEventListener('click', deleteGroup);
 
     document.getElementById('settingsCancelBtn').addEventListener('click', () => closeModal('settingsModal'));
+    document.getElementById('settingsDeleteBtn').addEventListener('click', deleteGroupFromSettings);
     document.getElementById('settingsSaveBtn').addEventListener('click', saveSettings);
     document.getElementById('addTypeCommBtn').addEventListener('click', () => {
         typeCommissionRows.push({ type: '', '본부장': 0, '팀장': 0, '팀원': 0 });
@@ -173,6 +174,23 @@ async function deleteGroup() {
         await loadGroups();
     } catch (e) {
         document.getElementById('groupErrorMsg').textContent = e.message;
+    }
+}
+
+async function deleteGroupFromSettings() {
+    if (!settingsGroupId) return;
+    const g = groups.find(x => x.id === settingsGroupId);
+    if (!g) return;
+    if (!confirm(`"${g.name}" 그룹과 그 안의 모든 행을 영구 삭제합니다. 진행하시겠습니까?`)) return;
+    try {
+        await api('ledger-groups', { method: 'DELETE', body: { id: settingsGroupId } });
+        closeModal('settingsModal');
+        expandedGroupIds.delete(settingsGroupId);
+        selectedExtraIds.delete(settingsGroupId);
+        settingsGroupId = null;
+        await loadGroups();
+    } catch (e) {
+        document.getElementById('settingsErrorMsg').textContent = e.message;
     }
 }
 

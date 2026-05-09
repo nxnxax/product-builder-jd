@@ -6,7 +6,7 @@
 <title>조직도 · YOUNGMAN</title>
 <link rel="icon" type="image/png" href="logo_main.png">
 <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
-<link rel="stylesheet" href="style.css?v=20260509-org-picker">
+<link rel="stylesheet" href="style.css?v=20260509-settings-delete">
 <style>
 :root{
     --ledger-line:rgba(20,14,8,.09); --ledger-line-strong:rgba(20,14,8,.16);
@@ -274,15 +274,16 @@ table.ledger-tbl{width:100%;border-collapse:collapse;font-size:13.5px}
             <p class="form-help error" id="settingsErrorMsg" style="margin-top:8px;"></p>
         </div>
         <footer class="modal-footer">
+            <button class="tiny-btn danger modal-footer-spacer" id="settingsDeleteBtn" type="button">그룹 삭제</button>
             <button class="tiny-btn" id="settingsCancelBtn" type="button">취소</button>
             <button class="tiny-btn primary" id="settingsSaveBtn" type="button">저장</button>
         </footer>
     </div>
 </div>
 
-<script type="module" src="org.js?v=20260509-org-picker"></script>
+<script type="module" src="org.js?v=20260509-settings-delete"></script>
 <script type="module">
-    import { initSupabase, setupHeaderUser } from './auth-shared.js?v=20260509-org-picker';
+    import { initSupabase, setupHeaderUser } from './auth-shared.js?v=20260509-settings-delete';
     try {
         await initSupabase();
         setupHeaderUser({

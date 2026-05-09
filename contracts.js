@@ -143,6 +143,7 @@ function bindUI() {
 
     document.getElementById('settingsCancelBtn').addEventListener('click', () => closeModal('settingsModal'));
     document.getElementById('settingsSaveBtn').addEventListener('click', saveSettings);
+    document.getElementById('settingsDeleteBtn').addEventListener('click', deleteGroupFromSettings);
 
     document.getElementById('settleCloseBtn').addEventListener('click', () => closeModal('settleModal'));
     document.getElementById('settleMarkPaidBtn').addEventListener('click', markPaidFromSettle);
@@ -201,6 +202,23 @@ async function deleteGroup() {
         await loadGroups();
     } catch (e) {
         document.getElementById('groupErrorMsg').textContent = e.message;
+    }
+}
+
+async function deleteGroupFromSettings() {
+    if (!settingsGroupId) return;
+    const g = groups.find(x => x.id === settingsGroupId);
+    if (!g) return;
+    if (!confirm(`"${g.name}" 현장과 그 안의 모든 계약을 영구 삭제합니다. 진행하시겠습니까?`)) return;
+    try {
+        await api('ledger-groups', { method: 'DELETE', body: { id: settingsGroupId } });
+        closeModal('settingsModal');
+        expandedGroupIds.delete(settingsGroupId);
+        selectedExtraIds.delete(settingsGroupId);
+        settingsGroupId = null;
+        await loadGroups();
+    } catch (e) {
+        document.getElementById('settingsErrorMsg').textContent = e.message;
     }
 }
 
@@ -312,7 +330,9 @@ function bindExtraPickerEvents() {
 }
 
 /* ============== 조직도에서 현장 만들기 ============== */
-function openOrgPickerModal() {
+async function openOrgPickerModal() {
+    // 조직도 페이지에서 새로 만들어진 그룹이 있을 수 있으니 매번 새로 받기.
+    await loadOrgIndex();
     if (!orgGroups.length) {
         alert('등록된 조직도 그룹이 없습니다. 먼저 조직도 페이지에서 그룹을 만들어 주세요.');
         return;
@@ -379,6 +399,8 @@ async function createContractFromOrg(orgGroupId) {
                 settings: { linkedOrgGroupId: og.id },
             },
         });
+        // 캐시 무효화 — 조직도 페이지에서 직원이 추가/변경됐을 수 있으니 새로 fetch.
+        orgEmployeesByGroup.delete(og.id);
         selectedExtraIds.add(created.id);
         extraPanelOpen = true;
         closeOrgPickerModal();
@@ -558,8 +580,14 @@ function bindTableEvents() {
     });
 }
 
-function addRow(gid) {
+async function addRow(gid) {
     const group = groups.find(x => x.id === gid);
+    // 연동 조직도 직원 정보 fresh fetch — 조직도 페이지에서 추가/수정됐을 수 있음.
+    const linkedId = linkedOrgIdFor(group);
+    if (linkedId) {
+        orgEmployeesByGroup.delete(linkedId);
+        await loadOrgEmployeesForGroup(linkedId);
+    }
     const employees = orgEmployeesFor(group);
     openRowAddModal({
         title: '새 계약 추가',
