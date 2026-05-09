@@ -10,3 +10,10 @@ supabase_config.js
 supabase_config.php
 api/supabase_config.php
 .claude/
+
+# 사용자 작업 폴더에 직접 올린 데이터/문서 파일 (PII 가능성)
+*.xlsx
+*.xls
+*.csv
+*.pdf
+*.zip
