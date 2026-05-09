@@ -474,6 +474,44 @@ function record_activity(PDO $pdo, $email, $eventType, $detail = null) {
     }
 }
 
+/**
+ * 보안: customers / employees 테이블에 owner_email 컬럼이 없으면 자동으로 추가한다.
+ * 기존 행은 owner_email = NULL 로 남고, 일반 조회에서 자동으로 숨겨진다.
+ * 한번 실행되면 정적 캐시에 기록해 같은 요청 내에서 반복 호출되지 않는다.
+ */
+function ensure_owner_column(PDO $pdo, string $table): bool {
+    static $cache = [];
+    if (isset($cache[$table])) return $cache[$table];
+
+    try {
+        $cols = table_columns($pdo, $table);
+        if (!in_array('owner_email', $cols, true)) {
+            $pdo->exec("ALTER TABLE " . quote_identifier($table)
+                . " ADD COLUMN owner_email VARCHAR(255) NULL DEFAULT NULL,"
+                . " ADD INDEX idx_{$table}_owner_email (owner_email)");
+        }
+        return $cache[$table] = true;
+    } catch (Throwable $e) {
+        // ALTER 실패 시 (권한/락) — 보안 우선 정책이라 false 로 false-close.
+        // 호출부에서 false 면 모든 데이터 거부하도록 처리.
+        error_log('[records] ensure_owner_column failed for ' . $table . ': ' . $e->getMessage());
+        return $cache[$table] = false;
+    }
+}
+
+/** 현재 사용자의 owner 식별자 (이메일 소문자). 빈 문자열이면 인증 실패로 간주. */
+function current_owner_email($authUser): string {
+    return strtolower((string)($authUser['email'] ?? ''));
+}
+
+/** 본 요청의 사용자가 어드민/오너인지 판단. 기존 is_admin_user($authUser, $memberRecord) 활용. */
+function current_user_is_admin(PDO $pdo, $authUser): bool {
+    if (!$authUser) return false;
+    $email = (string)($authUser['email'] ?? '');
+    $memberRecord = $email !== '' ? fetch_member_by_email($pdo, $email) : null;
+    return is_admin_user($authUser, $memberRecord);
+}
+
 function customer_row($row) {
     return [
         'id' => $row['client_id'],
@@ -1262,14 +1300,30 @@ try {
 
     enforce_registered_member($pdo, $authUser);
 
-    if ($method === 'GET') {
-        if ($resource === 'customers') {
-            $rows = $pdo->query("SELECT * FROM customers ORDER BY id DESC")->fetchAll();
-            respond(['ok' => true, 'items' => array_map('customer_row', $rows)]);
-        }
+    // ===== 보안: 사용자별 데이터 격리 (PII 보호) =====
+    // owner_email 컬럼이 없으면 자동 추가.
+    $table = $resource === 'customers' ? 'customers' : 'employees';
+    $migrationOk = ensure_owner_column($pdo, $table);
+    if (!$migrationOk) {
+        respond(['ok' => false, 'error' => '데이터 격리 마이그레이션이 적용되지 않았습니다. 잠시 후 다시 시도해주세요.'], 503);
+    }
 
-        $rows = $pdo->query("SELECT * FROM employees ORDER BY id DESC")->fetchAll();
-        respond(['ok' => true, 'items' => array_map('employee_row', $rows)]);
+    $owner = current_owner_email($authUser);
+    if ($owner === '') {
+        // 이메일을 알 수 없는 인증은 PII 데이터 접근 불가.
+        respond(['ok' => false, 'error' => '인증된 사용자 정보를 확인할 수 없습니다.'], 401);
+    }
+
+    // 정책: 고객/직원 PII 는 어떤 사용자도 (관리자 포함) 다른 사람의 데이터를
+    // 일반 대시보드에서 볼 수 없음. 운영 통계는 admin-stats 엔드포인트가 별도로
+    // 집계만 제공 (개인 식별 정보 노출 없이).
+    if ($method === 'GET') {
+        $sql  = "SELECT * FROM " . quote_identifier($table) . " WHERE owner_email = :owner ORDER BY id DESC";
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute([':owner' => $owner]);
+        $rows = $stmt->fetchAll();
+        $mapper = $resource === 'customers' ? 'customer_row' : 'employee_row';
+        respond(['ok' => true, 'items' => array_map($mapper, $rows)]);
     }
 
     if ($method === 'POST') {
@@ -1280,19 +1334,22 @@ try {
             $name = clean($data['name'] ?? null);
             if (!$name) respond(['ok' => false, 'error' => '고객 이름은 필수입니다.'], 400);
 
+            // 신규 INSERT 는 owner_email 항상 설정.
+            // ON DUPLICATE KEY UPDATE: client_id 가 다른 사용자 소유면 갱신 거부 (owner_email 일치 시에만 갱신).
             $stmt = $pdo->prepare("
-                INSERT INTO customers (client_id, name, phone, notes)
-                VALUES (:client_id, :name, :phone, :notes)
+                INSERT INTO customers (client_id, owner_email, name, phone, notes)
+                VALUES (:client_id, :owner, :name, :phone, :notes)
                 ON DUPLICATE KEY UPDATE
-                    name = VALUES(name),
-                    phone = VALUES(phone),
-                    notes = VALUES(notes)
+                    name  = IF(owner_email = VALUES(owner_email), VALUES(name),  name),
+                    phone = IF(owner_email = VALUES(owner_email), VALUES(phone), phone),
+                    notes = IF(owner_email = VALUES(owner_email), VALUES(notes), notes)
             ");
             $stmt->execute([
                 ':client_id' => $clientId,
-                ':name' => $name,
-                ':phone' => clean($data['phone'] ?? null),
-                ':notes' => clean($data['notes'] ?? null),
+                ':owner'     => $owner,
+                ':name'      => $name,
+                ':phone'     => clean($data['phone'] ?? null),
+                ':notes'     => clean($data['notes'] ?? null),
             ]);
         } else {
             $name = clean($data['name'] ?? null);
@@ -1300,22 +1357,23 @@ try {
             if (!$name || !$title) respond(['ok' => false, 'error' => '직원 이름과 직함은 필수입니다.'], 400);
 
             $stmt = $pdo->prepare("
-                INSERT INTO employees (client_id, name, title, contact, start_date, notes)
-                VALUES (:client_id, :name, :title, :contact, :start_date, :notes)
+                INSERT INTO employees (client_id, owner_email, name, title, contact, start_date, notes)
+                VALUES (:client_id, :owner, :name, :title, :contact, :start_date, :notes)
                 ON DUPLICATE KEY UPDATE
-                    name = VALUES(name),
-                    title = VALUES(title),
-                    contact = VALUES(contact),
-                    start_date = VALUES(start_date),
-                    notes = VALUES(notes)
+                    name       = IF(owner_email = VALUES(owner_email), VALUES(name),       name),
+                    title      = IF(owner_email = VALUES(owner_email), VALUES(title),      title),
+                    contact    = IF(owner_email = VALUES(owner_email), VALUES(contact),    contact),
+                    start_date = IF(owner_email = VALUES(owner_email), VALUES(start_date), start_date),
+                    notes      = IF(owner_email = VALUES(owner_email), VALUES(notes),      notes)
             ");
             $stmt->execute([
-                ':client_id' => $clientId,
-                ':name' => $name,
-                ':title' => $title,
-                ':contact' => clean($data['contact'] ?? null),
+                ':client_id'  => $clientId,
+                ':owner'      => $owner,
+                ':name'       => $name,
+                ':title'      => $title,
+                ':contact'    => clean($data['contact'] ?? null),
                 ':start_date' => clean($data['startDate'] ?? null),
-                ':notes' => clean($data['notes'] ?? null),
+                ':notes'      => clean($data['notes'] ?? null),
             ]);
         }
 
@@ -1331,10 +1389,12 @@ try {
             $name = clean($data['name'] ?? null);
             if (!$name) respond(['ok' => false, 'error' => '고객 이름은 필수입니다.'], 400);
 
-            $stmt = $pdo->prepare("UPDATE customers SET name = :name, phone = :phone, notes = :notes WHERE client_id = :id");
+            $stmt = $pdo->prepare("UPDATE customers SET name = :name, phone = :phone, notes = :notes
+                                    WHERE client_id = :id AND owner_email = :owner");
             $stmt->execute([
-                ':id' => $id,
-                ':name' => $name,
+                ':id'    => $id,
+                ':owner' => $owner,
+                ':name'  => $name,
                 ':phone' => clean($data['phone'] ?? null),
                 ':notes' => clean($data['notes'] ?? null),
             ]);
@@ -1343,19 +1403,22 @@ try {
             $title = clean($data['title'] ?? null);
             if (!$name || !$title) respond(['ok' => false, 'error' => '직원 이름과 직함은 필수입니다.'], 400);
 
-            $stmt = $pdo->prepare("
-                UPDATE employees
-                SET name = :name, title = :title, contact = :contact, start_date = :start_date, notes = :notes
-                WHERE client_id = :id
-            ");
+            $stmt = $pdo->prepare("UPDATE employees
+                                    SET name = :name, title = :title, contact = :contact,
+                                        start_date = :start_date, notes = :notes
+                                    WHERE client_id = :id AND owner_email = :owner");
             $stmt->execute([
-                ':id' => $id,
-                ':name' => $name,
-                ':title' => $title,
-                ':contact' => clean($data['contact'] ?? null),
+                ':id'         => $id,
+                ':owner'      => $owner,
+                ':name'       => $name,
+                ':title'      => $title,
+                ':contact'    => clean($data['contact'] ?? null),
                 ':start_date' => clean($data['startDate'] ?? null),
-                ':notes' => clean($data['notes'] ?? null),
+                ':notes'      => clean($data['notes'] ?? null),
             ]);
+        }
+        if ($stmt->rowCount() === 0) {
+            respond(['ok' => false, 'error' => '수정할 권한이 없거나 존재하지 않는 항목입니다.'], 404);
         }
 
         respond(['ok' => true]);
@@ -1365,9 +1428,12 @@ try {
         $id = clean($body['id'] ?? null);
         if (!$id) respond(['ok' => false, 'error' => '삭제할 ID가 없습니다.'], 400);
 
-        $table = $resource === 'customers' ? 'customers' : 'employees';
-        $stmt = $pdo->prepare("DELETE FROM {$table} WHERE client_id = :id");
-        $stmt->execute([':id' => $id]);
+        $stmt = $pdo->prepare("DELETE FROM " . quote_identifier($table)
+            . " WHERE client_id = :id AND owner_email = :owner");
+        $stmt->execute([':id' => $id, ':owner' => $owner]);
+        if ($stmt->rowCount() === 0) {
+            respond(['ok' => false, 'error' => '삭제할 권한이 없거나 존재하지 않는 항목입니다.'], 404);
+        }
         respond(['ok' => true]);
     }
 
