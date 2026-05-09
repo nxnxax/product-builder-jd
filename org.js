@@ -274,35 +274,30 @@ function renderRecords() {
 }
 
 function renderGroupCard(group) {
-    const isOpen = expandedGroupIds.has(group.id);
     const groupRecs = records.filter(r => r.groupId === group.id);
 
-    let bodyHtml = '';
-    if (isOpen) {
-        // 활성 팀 (이 그룹의 settings)
-        const s = { ...DEFAULT_SETTINGS, ...(group.settings || {}) };
-        const activeTeams = new Set(s.active_teams && s.active_teams.length > 0 ? s.active_teams : [1, 2, 3]);
+    // 활성 팀 (이 그룹의 settings)
+    const s = { ...DEFAULT_SETTINGS, ...(group.settings || {}) };
+    const activeTeams = new Set(s.active_teams && s.active_teams.length > 0 ? s.active_teams : [1, 2, 3]);
 
-        // 필터는 모든 그룹에 동일 적용
-        const filtered = applyColumnFilters(filterState.filters, groupRecs, (r, k) => r.data?.[k]);
+    // 필터는 모든 그룹에 동일 적용
+    const filtered = applyColumnFilters(filterState.filters, groupRecs, (r, k) => r.data?.[k]);
 
-        const byTeam = {};
-        [...activeTeams].sort((a, b) => a - b).forEach(t => byTeam[t] = []);
-        byTeam.unassigned = [];
-        filtered.forEach(r => {
-            const t = parseInt(r.data?.team, 10);
-            if (activeTeams.has(t)) byTeam[t].push(r);
-            else byTeam.unassigned.push(r);
-        });
+    const byTeam = {};
+    [...activeTeams].sort((a, b) => a - b).forEach(t => byTeam[t] = []);
+    byTeam.unassigned = [];
+    filtered.forEach(r => {
+        const t = parseInt(r.data?.team, 10);
+        if (activeTeams.has(t)) byTeam[t].push(r);
+        else byTeam.unassigned.push(r);
+    });
 
-        bodyHtml = [...activeTeams].sort((a, b) => a - b).map(t => renderTeamSection(t + '팀', t, byTeam[t])).join('');
-        if (byTeam.unassigned.length > 0) bodyHtml += renderTeamSection('미지정', null, byTeam.unassigned);
-    }
+    let bodyHtml = [...activeTeams].sort((a, b) => a - b).map(t => renderTeamSection(t + '팀', t, byTeam[t])).join('');
+    if (byTeam.unassigned.length > 0) bodyHtml += renderTeamSection('미지정', null, byTeam.unassigned);
 
     return `
-        <div class="accordion-card ${isOpen ? 'open' : ''}" data-gid="${group.id}">
-            <div class="accordion-head" data-toggle-gid="${group.id}">
-                <span class="arrow">▶</span>
+        <div class="accordion-card open" data-gid="${group.id}">
+            <div class="accordion-head">
                 <h3>${escapeHtml(group.name)}</h3>
                 ${group.isDefault ? '<span class="star">기본</span>' : ''}
                 <span class="count-pill">${groupRecs.length}명</span>
@@ -318,16 +313,6 @@ function renderGroupCard(group) {
 }
 
 function bindAccordionEvents() {
-    document.querySelectorAll('[data-toggle-gid]').forEach(head => {
-        head.addEventListener('click', (e) => {
-            // 액션 버튼 클릭은 토글 안 함
-            if (e.target.closest('.head-actions')) return;
-            const gid = parseInt(head.dataset.toggleGid, 10);
-            if (expandedGroupIds.has(gid)) expandedGroupIds.delete(gid);
-            else expandedGroupIds.add(gid);
-            renderRecords();
-        });
-    });
     document.querySelectorAll('[data-edit-gid]').forEach(b => {
         b.addEventListener('click', (e) => { e.stopPropagation(); openGroupModal(parseInt(b.dataset.editGid, 10)); });
     });

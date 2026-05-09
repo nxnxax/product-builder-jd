@@ -167,13 +167,11 @@ function renderRecords() {
 }
 
 function renderGroupCard(group) {
-    const isOpen = expandedGroupIds.has(group.id);
     const grpRecs = records.filter(r => r.groupId === group.id);
-    const bodyHtml = isOpen ? renderTable(group, applyFilters(grpRecs)) : '';
+    const bodyHtml = renderTable(group, applyFilters(grpRecs));
     return `
-        <div class="accordion-card ${isOpen ? 'open' : ''}" data-gid="${group.id}">
-            <div class="accordion-head" data-toggle-gid="${group.id}">
-                <span class="arrow">▶</span>
+        <div class="accordion-card open" data-gid="${group.id}">
+            <div class="accordion-head">
                 <h3>${escapeHtml(group.name)}</h3>
                 ${group.isDefault ? '<span class="star">기본</span>' : ''}
                 <span class="count-pill">${grpRecs.length}건</span>
@@ -209,15 +207,6 @@ function renderTable(group, rows) {
 }
 
 function bindAccordionEvents() {
-    document.querySelectorAll('[data-toggle-gid]').forEach(head => {
-        head.addEventListener('click', (e) => {
-            if (e.target.closest('.head-actions')) return;
-            const gid = parseInt(head.dataset.toggleGid, 10);
-            if (expandedGroupIds.has(gid)) expandedGroupIds.delete(gid);
-            else expandedGroupIds.add(gid);
-            renderRecords();
-        });
-    });
     document.querySelectorAll('[data-edit-gid]').forEach(b => {
         b.addEventListener('click', (e) => { e.stopPropagation(); openGroupModal(parseInt(b.dataset.editGid, 10)); });
     });
