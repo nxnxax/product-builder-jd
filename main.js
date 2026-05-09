@@ -759,8 +759,9 @@ function switchView(view) {
     });
 
     if (view === 'customers') {
-        navCustomers.classList.add('active');
-        customerSection.classList.remove('hidden');
+        // 고객 관리대장 페이지로 통합됨. 옛 #customers 해시는 자동 리디렉션.
+        window.location.href = 'customers.html';
+        return;
     } else if (view === 'employees') {
         // 조직도 페이지로 통합됨. 옛 #employees 해시는 자동 리디렉션.
         window.location.href = 'org.html';

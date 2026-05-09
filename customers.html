@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>조직도 · YOUNGMAN</title>
+<title>고객 관리대장 · YOUNGMAN</title>
 <link rel="icon" type="image/png" href="logo_main.png">
 <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
 <link rel="stylesheet" href="style.css?v=20260509-brand5">
@@ -11,8 +11,9 @@
 :root{
     --ledger-line:rgba(20,14,8,.09); --ledger-line-strong:rgba(20,14,8,.16);
     --ledger-bg:#fbf7ef; --ledger-accent:#c8362c; --ledger-accent-deep:#8a2620;
+    --status-on:#2563eb; --status-off:#a3a39a;
 }
-.ledger-shell{max-width:1280px;margin:0 auto;padding:32px 24px 80px}
+.ledger-shell{max-width:1380px;margin:0 auto;padding:32px 24px 80px}
 .ledger-head{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:18px}
 .ledger-title{margin:0;font-size:24px;letter-spacing:-.02em}
 .ledger-sub{margin:6px 0 0;color:#8a847e;font-size:13.5px;line-height:1.55}
@@ -32,80 +33,60 @@
 .tiny-btn.primary{background:#0e0d0c;color:#fff;border-color:#0e0d0c}
 .tiny-btn.primary:hover{background:#2a2520}
 
-.team-section{background:#fff;border:1px solid var(--ledger-line);border-radius:12px;padding:0;margin-bottom:18px;overflow:hidden}
-.team-head{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--ledger-line);background:#fbf7ef}
-.team-head h3{margin:0;font-size:15px;font-weight:700;letter-spacing:-.005em}
-.team-head .count{color:#8a847e;font-size:12.5px;margin-left:8px;font-weight:500}
-.team-head .actions{display:flex;gap:6px}
+.cust-section{background:#fff;border:1px solid var(--ledger-line);border-radius:12px;padding:0;margin-bottom:18px;overflow:hidden}
+.cust-head{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--ledger-line);background:#fbf7ef}
+.cust-head h3{margin:0;font-size:15px;font-weight:700;letter-spacing:-.005em}
+.cust-head .count{color:#8a847e;font-size:12.5px;margin-left:8px;font-weight:500}
 
 .tbl-wrap{overflow-x:auto}
-table.ledger-tbl{width:100%;border-collapse:collapse;font-size:13.5px}
-.ledger-tbl thead th{position:sticky;top:0;background:#fbf7ef;border-bottom:1px solid var(--ledger-line-strong);text-align:left;padding:10px 12px;font-weight:600;font-size:12.5px;color:#4f4943;letter-spacing:.01em;white-space:nowrap}
+table.ledger-tbl{width:100%;border-collapse:collapse;font-size:13.5px;min-width:1100px}
+.ledger-tbl thead th{position:sticky;top:0;background:#fbf7ef;border-bottom:1px solid var(--ledger-line-strong);text-align:left;padding:10px 12px;font-weight:600;font-size:12.5px;color:#4f4943;letter-spacing:.01em;white-space:nowrap;z-index:1}
 .ledger-tbl thead .filter-row th{background:#fff;border-bottom:1px solid var(--ledger-line);padding:6px 8px}
 .ledger-tbl thead .filter-row input{width:100%;height:28px;padding:0 8px;border:1px solid var(--ledger-line);border-radius:6px;font-size:12px;background:#fbf7ef;color:#0e0d0c;font-family:inherit;outline:none}
 .ledger-tbl thead .filter-row input:focus{border-color:#0e0d0c;background:#fff}
-.ledger-tbl tbody td{padding:10px 12px;border-bottom:1px solid var(--ledger-line);vertical-align:middle}
+.ledger-tbl tbody td{padding:9px 12px;border-bottom:1px solid var(--ledger-line);vertical-align:middle}
 .ledger-tbl tbody tr:hover{background:#fbfaf5}
 .ledger-tbl tbody tr.selected{background:#fff8f7}
-.ledger-tbl tbody td input,.ledger-tbl tbody td select{width:100%;height:30px;padding:0 8px;border:1px solid transparent;background:transparent;border-radius:5px;font-size:13px;color:#0e0d0c;font-family:inherit;outline:none;transition:all 120ms}
-.ledger-tbl tbody td input:focus,.ledger-tbl tbody td select:focus{border-color:#0e0d0c;background:#fff}
-.ledger-tbl tbody td input:hover,.ledger-tbl tbody td select:hover{background:#fff;border-color:var(--ledger-line)}
+.ledger-tbl tbody td input,.ledger-tbl tbody td textarea{width:100%;padding:6px 8px;border:1px solid transparent;background:transparent;border-radius:5px;font-size:13px;color:#0e0d0c;font-family:inherit;outline:none;transition:all 120ms;height:30px;line-height:18px;resize:vertical}
+.ledger-tbl tbody td textarea{min-height:30px;height:auto;line-height:1.4}
+.ledger-tbl tbody td input:focus,.ledger-tbl tbody td textarea:focus{border-color:#0e0d0c;background:#fff}
+.ledger-tbl tbody td input:hover,.ledger-tbl tbody td textarea:hover{background:#fff;border-color:var(--ledger-line)}
 .ledger-tbl .col-no{width:48px;text-align:center;color:#8a847e;font-variant-numeric:tabular-nums}
 .ledger-tbl .col-check{width:36px;text-align:center}
 .ledger-tbl .col-check input[type=checkbox]{width:15px;height:15px;cursor:pointer;accent-color:var(--ledger-accent)}
-.ledger-tbl .col-action{width:72px;text-align:right;white-space:nowrap}
+.ledger-tbl .col-action{width:60px;text-align:right;white-space:nowrap}
 .row-action-btn{border:0;background:transparent;color:#8a847e;font-size:13px;cursor:pointer;padding:4px 6px;border-radius:5px;font-family:inherit}
 .row-action-btn:hover{color:var(--ledger-accent);background:#fff8f7}
 
-.team-foot{padding:10px 18px;border-top:1px solid var(--ledger-line);background:#fbfaf5}
+/* 관리유무 스위치 */
+.manage-switch{display:inline-flex;align-items:center;gap:6px;padding:4px 12px;border-radius:99px;cursor:pointer;font-size:11.5px;font-weight:700;letter-spacing:.02em;border:1px solid;transition:all 160ms;font-family:inherit;background:#fff}
+.manage-switch.on{background:rgba(37,99,235,.1);color:var(--status-on);border-color:rgba(37,99,235,.4)}
+.manage-switch.off{background:#f4efe7;color:#a3a39a;border-color:#d7d2c8}
 
 .bulk-bar{position:sticky;bottom:0;background:#fff;border-top:1px solid var(--ledger-line-strong);padding:12px 16px;display:none;align-items:center;justify-content:space-between;gap:10px;border-radius:0 0 12px 12px;box-shadow:0 -8px 24px rgba(20,14,8,.08);z-index:5}
 .bulk-bar.active{display:flex}
 .bulk-bar .info{font-size:13px;color:#4f4943}
 .bulk-bar .info b{color:var(--ledger-accent);font-weight:700}
 
-.notice-foot{margin-top:24px;padding:14px 18px;background:rgba(200,54,44,.06);border:1px solid rgba(200,54,44,.18);border-radius:10px;color:var(--ledger-accent-deep);font-size:13px;line-height:1.6}
-
 .empty{text-align:center;padding:60px 24px;color:#8a847e;font-size:14px;line-height:1.7;background:#fff;border:1px dashed var(--ledger-line-strong);border-radius:12px}
 .empty b{color:#0e0d0c}
 
 .modal-backdrop{position:fixed;inset:0;background:rgba(20,14,8,.45);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;z-index:100;padding:20px}
 .modal-backdrop.hidden{display:none}
-.modal{background:#fff;border-radius:14px;max-width:560px;width:100%;max-height:85vh;overflow-y:auto;padding:26px 28px;box-shadow:0 24px 60px rgba(20,14,8,.22)}
+.modal{background:#fff;border-radius:14px;max-width:480px;width:100%;max-height:85vh;overflow-y:auto;padding:26px 28px;box-shadow:0 24px 60px rgba(20,14,8,.22)}
 .modal h2{margin:0 0 6px;font-size:18px;letter-spacing:-.01em}
 .modal .desc{color:#8a847e;font-size:13px;margin:0 0 18px;line-height:1.55}
 .modal label{display:block;margin-top:14px;margin-bottom:6px;font-size:13px;color:#4f4943;font-weight:500}
-.modal input[type=text],.modal input[type=number],.modal input[type=date]{width:100%;height:38px;padding:0 12px;border:1px solid var(--ledger-line-strong);border-radius:7px;font-size:14px;color:#0e0d0c;font-family:inherit;outline:none}
+.modal input[type=text]{width:100%;height:38px;padding:0 12px;border:1px solid var(--ledger-line-strong);border-radius:7px;font-size:14px;color:#0e0d0c;font-family:inherit;outline:none}
 .modal input:focus{border-color:#0e0d0c}
-.modal .checkboxes{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
-.modal .checkboxes label{display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border:1px solid var(--ledger-line-strong);border-radius:999px;font-weight:500;cursor:pointer;margin:0;font-size:13px;background:#fff;transition:all 160ms}
-.modal .checkboxes label:has(input:checked){background:#0e0d0c;color:#fff;border-color:#0e0d0c}
-.modal .checkboxes input[type=checkbox]{width:14px;height:14px;margin:0;accent-color:var(--ledger-accent)}
-.modal .row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
-.modal .row3 label{margin-top:0}
 .modal .actions{display:flex;justify-content:flex-end;gap:8px;margin-top:22px;padding-top:16px;border-top:1px solid var(--ledger-line)}
-.modal .actions button{padding:9px 18px;font-size:13.5px}
 
-.type-comm-list{margin-top:8px;border:1px solid var(--ledger-line);border-radius:8px;padding:8px;background:#fbf7ef}
-.type-comm-row{display:grid;grid-template-columns:140px 1fr 1fr 1fr 32px;gap:6px;align-items:center;margin-bottom:6px}
-.type-comm-row:last-child{margin-bottom:0}
-.type-comm-row input{height:32px !important;font-size:12.5px !important}
-.type-comm-row .x{border:0;background:transparent;color:#b91c1c;cursor:pointer;font-size:16px;line-height:1}
-
-.dropdown{position:relative;display:inline-block}
-.dropdown-menu{position:absolute;top:calc(100% + 6px);left:0;background:#fff;border:1px solid var(--ledger-line-strong);border-radius:8px;box-shadow:0 8px 24px rgba(20,14,8,.12);min-width:240px;max-height:300px;overflow-y:auto;z-index:50;padding:6px;display:none}
-.dropdown-menu.open{display:block}
-.dropdown-menu .item{padding:9px 12px;border-radius:6px;cursor:pointer;font-size:13px;display:flex;align-items:center;gap:8px}
-.dropdown-menu .item:hover{background:#fbf7ef}
-.dropdown-menu .item.current{font-weight:600}
-.dropdown-menu .divider{height:1px;background:var(--ledger-line);margin:4px 0}
+.app-note{margin-top:24px;padding:14px 18px;background:rgba(37,99,235,.05);border:1px solid rgba(37,99,235,.15);border-radius:10px;color:#1e3a8a;font-size:12.5px;line-height:1.6}
+.app-note b{color:#1e40af}
 
 @media (max-width:768px){
     .ledger-shell{padding:20px 14px 60px}
-    .ledger-tbl{font-size:12.5px}
-    .ledger-tbl thead th,.ledger-tbl tbody td{padding:8px 8px}
     .modal{padding:20px}
-    .modal .row3{grid-template-columns:1fr}
 }
 </style>
 </head>
@@ -115,8 +96,8 @@ table.ledger-tbl{width:100%;border-collapse:collapse;font-size:13.5px}
 <div class="header-container">
     <h1><a href="index.html" class="brand-logo" aria-label="YOUNGMAN 홈"><img src="logo_main.png" alt="YOUNGMAN"></a></h1>
     <nav class="main-nav">
-        <a class="nav-link" href="customers.html">고객 관리대장</a>
-        <a class="nav-link active" href="org.html">조직도</a>
+        <a class="nav-link active" href="customers.html">고객 관리대장</a>
+        <a class="nav-link" href="org.html">조직도</a>
         <a class="nav-link" href="contracts.html">계약자 관리대장</a>
         <a class="nav-link" href="lotto2233.html">Lotto</a>
         <a class="nav-link" href="card-builder.html">온라인 명함 제작</a>
@@ -134,46 +115,45 @@ table.ledger-tbl{width:100%;border-collapse:collapse;font-size:13.5px}
 <main class="ledger-shell">
     <div class="ledger-head">
         <div>
-            <h1 class="ledger-title">조직도</h1>
-            <p class="ledger-sub">팀 구성과 직급별 수수료를 관리합니다. 입력한 수수료는 계약자 관리대장의 정산에 자동 반영됩니다.</p>
+            <h1 class="ledger-title">고객 관리대장</h1>
+            <p class="ledger-sub">상담·통화 이력 등 고객 접점을 그룹별로 관리합니다. 추후 모바일 앱의 통화 요약이 자동으로 이 대장에 입력됩니다.</p>
         </div>
     </div>
 
-    <div class="group-bar" id="groupBar">
+    <div class="group-bar">
         <span class="label">그룹</span>
         <div id="groupPills" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
         <span style="flex:1"></span>
         <button class="tiny-btn" id="multiToggleBtn" type="button">멀티 선택</button>
         <button class="tiny-btn" id="newGroupBtn" type="button">+ 새 그룹</button>
         <button class="tiny-btn" id="editGroupBtn" type="button">그룹 편집</button>
-        <button class="tiny-btn primary" id="settingsBtn" type="button">⚙ 설정</button>
     </div>
 
     <div id="content"></div>
 
     <div class="bulk-bar" id="bulkBar">
-        <div class="info"><b id="bulkCount">0</b>개 선택됨</div>
+        <div class="info"><b id="bulkCount">0</b>건 선택됨</div>
         <div style="display:flex;gap:8px;">
             <button class="tiny-btn" id="bulkClearBtn" type="button">선택 해제</button>
             <button class="tiny-btn danger" id="bulkDeleteBtn" type="button">선택 삭제</button>
         </div>
     </div>
 
-    <div class="notice-foot">
-        ※ 여기에서 입력한 직급별·타입별 수수료는 <b>계약자 관리대장</b>에서 지급수수료 자동계산에 활용됩니다.
+    <div class="app-note">
+        📱 <b>모바일 앱 연동 준비 완료</b> — 통화 후 AI 가 요약한 내용을 앱에서 "전송" 누르면 자동으로 이 대장의 새 행으로 들어옵니다. 네트워크가 끊겼다 다시 보내도 같은 통화가 중복 입력되지 않도록 멱등성 키가 적용됩니다.
     </div>
 </main>
 
-<!-- 그룹 생성/편집 모달 -->
+<!-- 그룹 모달 -->
 <div class="modal-backdrop hidden" id="groupModal">
     <div class="modal">
         <h2 id="groupModalTitle">새 그룹 만들기</h2>
-        <p class="desc">조직도를 분리해서 관리할 단위입니다 (예: 본사, 지점명, 사업부).</p>
+        <p class="desc">고객을 모아 관리할 단위 (예: 브래인시티비스타동원, 수원롯데캐슬, 오산서희스타힐스).</p>
         <label>그룹 이름</label>
-        <input type="text" id="groupNameInput" placeholder="예: 본사, 강남점, 1팀그룹...">
+        <input type="text" id="groupNameInput" placeholder="예: 브래인시티비스타동원">
         <div style="margin-top:14px;display:flex;align-items:center;gap:10px;">
             <input type="checkbox" id="groupIsDefaultInput" style="width:auto;">
-            <label for="groupIsDefaultInput" style="margin:0;cursor:pointer;">기본 그룹으로 설정 (접속 시 자동 노출)</label>
+            <label for="groupIsDefaultInput" style="margin:0;cursor:pointer;">기본 그룹 (접속 시 자동 노출)</label>
         </div>
         <div class="actions">
             <button class="tiny-btn danger" id="groupDeleteBtn" type="button" style="margin-right:auto;display:none;">그룹 삭제</button>
@@ -184,53 +164,7 @@ table.ledger-tbl{width:100%;border-collapse:collapse;font-size:13.5px}
     </div>
 </div>
 
-<!-- 설정 모달 -->
-<div class="modal-backdrop hidden" id="settingsModal">
-    <div class="modal" style="max-width:680px;">
-        <h2>조직도 설정</h2>
-        <p class="desc">현재 그룹 (<b id="settingsGroupName">-</b>) 의 팀 구성과 수수료 기준을 설정합니다.</p>
-
-        <label>활성 팀 (사용할 팀만 체크)</label>
-        <div class="checkboxes" id="activeTeamsBox">
-            <label><input type="checkbox" value="1" data-team>1팀</label>
-            <label><input type="checkbox" value="2" data-team>2팀</label>
-            <label><input type="checkbox" value="3" data-team>3팀</label>
-            <label><input type="checkbox" value="4" data-team>4팀</label>
-            <label><input type="checkbox" value="5" data-team>5팀</label>
-        </div>
-
-        <label style="margin-top:18px;">기본 수수료 (직급별)</label>
-        <div class="row3">
-            <div>
-                <label style="font-size:12px;color:#8a847e;margin-bottom:4px;">본부장</label>
-                <input type="number" id="commHQ" min="0" step="10000" placeholder="0">
-            </div>
-            <div>
-                <label style="font-size:12px;color:#8a847e;margin-bottom:4px;">팀장</label>
-                <input type="number" id="commTL" min="0" step="10000" placeholder="0">
-            </div>
-            <div>
-                <label style="font-size:12px;color:#8a847e;margin-bottom:4px;">팀원</label>
-                <input type="number" id="commTM" min="0" step="10000" placeholder="0">
-            </div>
-        </div>
-
-        <label style="margin-top:18px;display:flex;align-items:center;justify-content:space-between;">
-            <span>타입별 수수료 (선택)</span>
-            <button class="tiny-btn" id="addTypeCommBtn" type="button" style="font-size:11.5px;padding:4px 9px;">+ 타입 추가</button>
-        </label>
-        <p class="desc" style="margin:0 0 8px;font-size:12px;">특정 평형/타입은 수수료가 다를 때만 추가하세요. 미설정 타입은 위 기본 수수료를 사용합니다.</p>
-        <div class="type-comm-list" id="typeCommList"></div>
-
-        <div class="actions">
-            <button class="tiny-btn" id="settingsCancelBtn" type="button">취소</button>
-            <button class="tiny-btn primary" id="settingsSaveBtn" type="button">저장</button>
-        </div>
-        <p class="desc" id="settingsErrorMsg" style="color:#b91c1c;margin-top:10px;"></p>
-    </div>
-</div>
-
-<script type="module" src="org.js?v=20260509-org1"></script>
+<script type="module" src="customers.js?v=20260509-customers1"></script>
 <script type="module">
     import { initSupabase, setupHeaderUser } from './auth-shared.js?v=20260508-tight';
     try {
