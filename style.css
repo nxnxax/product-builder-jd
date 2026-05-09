@@ -1923,6 +1923,49 @@ select:focus {
 .ledger-tbl .col-check,
 .ledger-tbl .col-action { text-align: center !important; }
 
+/* read-only 셀 표시 — 인라인 편집 비활성화 후 */
+.ledger-tbl tbody td .cell-text {
+    display: inline-block;
+    font-size: 13px;
+    color: var(--fg);
+    line-height: 1.4;
+    word-break: break-word;
+}
+.ledger-tbl tbody td .cell-multiline {
+    white-space: pre-wrap;
+    text-align: left !important;
+    max-width: 320px;
+    font-size: 12.5px;
+    color: var(--fg-secondary);
+}
+.ledger-tbl tbody td .cell-empty {
+    color: #c4bfb8;
+    font-size: 13px;
+}
+.ledger-tbl tbody td .level-pill {
+    padding: 3px 10px;
+    background: rgba(200, 54, 44, 0.06);
+    color: #8a2620;
+    border-radius: 99px;
+    font-size: 11.5px;
+    font-weight: 600;
+}
+
+/* 행 액션 버튼 — 수정 + 삭제 두 개 */
+.ledger-tbl .col-action { width: 80px !important; }
+.row-action-btn.danger:hover { color: #c8362c; background: rgba(200, 54, 44, 0.06); }
+
+/* 모달 안 read-only span (담당자 직함 등) */
+.modal-row .row-static {
+    display: inline-flex;
+    align-items: center;
+    height: 38px;
+    padding: 0 12px;
+    color: var(--fg-secondary);
+    font-size: 13.5px;
+    font-weight: 500;
+}
+
 /* ==================== 필드 관리 (사용자 정의 필드) ==================== */
 .field-mgr-list {
     border: 1px solid var(--border);

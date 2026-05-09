@@ -519,29 +519,26 @@ function renderTeamSection(title, teamNo, rows, group, opts) {
 function renderRow(r, displayNo, allowedTitles, fields) {
     const d = r.data || {};
     const checked = selectedIds.has(r.id) ? 'checked' : '';
-    const titles = allowedTitles || TITLE_OPTIONS;
     const cellHtml = (f) => {
-        const v = d[f.key] ?? '';
+        const v = d[f.key];
         if (f.type === 'auto_number') return `<td class="col-no">${displayNo}</td>`;
-        if (f.type === 'title_select') {
-            return `<td><select data-field="${f.key}" data-id="${r.id}">
-                <option value="">-</option>
-                ${titles.map(t => `<option value="${t}" ${v === t ? 'selected' : ''}>${t}</option>`).join('')}
-            </select></td>`;
+        if (f.type === 'textarea') {
+            return v ? `<td><span class="cell-text cell-multiline">${escapeHtml(v)}</span></td>` : `<td><span class="cell-empty">-</span></td>`;
         }
-        if (f.type === 'date') return `<td><input type="text" data-field="${f.key}" data-id="${r.id}" value="${escapeAttr(v)}" placeholder="YYYY.MM.DD"></td>`;
-        if (f.type === 'tel')  return `<td><input type="tel"  data-field="${f.key}" data-id="${r.id}" value="${escapeAttr(v)}" placeholder="010-0000-0000"></td>`;
-        if (f.type === 'textarea') return `<td><textarea data-field="${f.key}" data-id="${r.id}" rows="1" placeholder="${escapeAttr(f.label)}">${escapeHtml(v)}</textarea></td>`;
-        if (f.type === 'number') return `<td><input type="text" inputmode="numeric" data-field="${f.key}" data-id="${r.id}" value="${escapeAttr(v)}" placeholder="${escapeAttr(f.label)}"></td>`;
-        // 'rrn' 은 일반 text 로 처리되며 placeholder 만 다름
-        const placeholder = (f.key === 'rrn') ? '000000-0000000' : (f.key === 'name' ? '이름' : (f.key === 'account' ? '계좌' : (f.key === 'memo' ? '비고' : f.label)));
-        return `<td><input type="text" data-field="${f.key}" data-id="${r.id}" value="${escapeAttr(v)}" placeholder="${escapeAttr(placeholder)}"></td>`;
+        if (f.type === 'date') {
+            return v ? `<td><span class="cell-text">${escapeHtml(String(v).replace(/-/g, '.'))}</span></td>` : `<td><span class="cell-empty">-</span></td>`;
+        }
+        // 모두 read-only span (편집은 ✎ 버튼 → 모달)
+        return v ? `<td><span class="cell-text">${escapeHtml(v)}</span></td>` : `<td><span class="cell-empty">-</span></td>`;
     };
     return `
         <tr data-id="${r.id}" class="${selectedIds.has(r.id) ? 'selected' : ''}">
             <td class="col-check"><input type="checkbox" data-select="${r.id}" ${checked}></td>
             ${(fields || DEFAULT_FIELD_SCHEMA.fields).map(cellHtml).join('')}
-            <td class="col-action"><button class="row-action-btn" data-delete-row="${r.id}" title="삭제">×</button></td>
+            <td class="col-action">
+                <button class="row-action-btn" data-edit-row="${r.id}" title="수정">✎</button>
+                <button class="row-action-btn danger" data-delete-row="${r.id}" title="삭제">×</button>
+            </td>
         </tr>`;
 }
 
@@ -565,15 +562,14 @@ function bindTableEvents() {
             addRow(gid, teamNo, isHq);
         });
     });
-    // 셀 인라인 편집 (blur 시 저장)
-    document.querySelectorAll('[data-field][data-id]').forEach(el => {
-        el.addEventListener('change', () => updateRowField(parseInt(el.dataset.id, 10), el.dataset.field, el.value));
+    // 행 수정
+    document.querySelectorAll('[data-edit-row]').forEach(b => {
+        b.addEventListener('click', () => editRow(parseInt(b.dataset.editRow, 10)));
     });
     // 개별 삭제
     document.querySelectorAll('[data-delete-row]').forEach(b => {
         b.addEventListener('click', () => deleteRow(parseInt(b.dataset.deleteRow, 10)));
     });
-    attachPhoneAutoFormat();
     // 체크박스
     document.querySelectorAll('[data-select]').forEach(cb => {
         cb.addEventListener('change', () => {
@@ -605,26 +601,59 @@ function addRow(gid, teamNo, isHq) {
     const allowedTitles = isHq ? ['본부장'] : rolesAllowedFor(ownerRoleOf(group)).filter(t => t !== '본부장');
     const titleDefault = isHq ? '본부장' : '팀원';
     const modalTitle = isHq ? '본부장 추가' : `${teamNo || '?'}팀 새 직원 추가`;
-    openRowAddModal({
+    openOrgEntryModal({
         title: modalTitle,
-        fields: getEffectiveFields(group, DEFAULT_FIELD_SCHEMA.fields),
+        confirmLabel: '추가',
         defaults: { title: titleDefault },
-        customRender: (f, defaults) => {
+        group,
+        allowedTitles,
+        onSubmit: async (data) => {
+            if (data.title === '본부장') data.team = 0;
+            else data.team = teamNo || 1;
+            await api('ledger-records', { method: 'POST', body: { groupId: gid, data, source: 'web' } });
+            await loadRecords();
+        },
+    });
+}
+
+function editRow(id) {
+    const r = records.find(x => x.id === id);
+    if (!r) return;
+    const group = groups.find(g => g.id === r.groupId);
+    const isHq = (r.data?.title === '본부장');
+    const allowedTitles = isHq ? ['본부장'] : rolesAllowedFor(ownerRoleOf(group)).filter(t => t !== '본부장');
+    openOrgEntryModal({
+        title: '직원 정보 수정',
+        confirmLabel: '저장',
+        defaults: { ...r.data },
+        group,
+        allowedTitles,
+        onSubmit: async (data) => {
+            // team 은 기존 값 유지 (본부장 → 0)
+            if (data.title === '본부장') data.team = 0;
+            else if (!data.team) data.team = r.data?.team || 1;
+            await api('ledger-records', { method: 'PATCH', body: { id, data } });
+            await loadRecords();
+        },
+    });
+}
+
+function openOrgEntryModal({ title, confirmLabel, defaults, group, allowedTitles, onSubmit }) {
+    openRowAddModal({
+        title,
+        confirmLabel,
+        fields: getEffectiveFields(group, DEFAULT_FIELD_SCHEMA.fields),
+        defaults,
+        customRender: (f, defs) => {
             if (f.type !== 'title_select') return null;
-            const v = defaults[f.key] ?? '';
+            const v = defs[f.key] ?? '';
             const lbl = `<label class="row-label">${escapeHtml(f.label)}</label>`;
             const opts = ['<option value="">-</option>']
                 .concat(allowedTitles.map(t => `<option value="${t}" ${v === t ? 'selected' : ''}>${t}</option>`))
                 .join('');
             return `<div class="modal-row">${lbl}<div class="row-control"><select data-field="${f.key}">${opts}</select></div></div>`;
         },
-        onSubmit: async (data) => {
-            // 본부장은 어느 팀에도 속하지 않음 (team=0).
-            if (data.title === '본부장') data.team = 0;
-            else data.team = teamNo || 1;
-            await api('ledger-records', { method: 'POST', body: { groupId: gid, data, source: 'web' } });
-            await loadRecords();
-        },
+        onSubmit,
     });
 }
 

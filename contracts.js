@@ -19,20 +19,21 @@ const TAX_RATE = 0.033;   // 실수령액 = commission * (1 - TAX_RATE)
 const TITLES = ['본부장', '팀장', '팀원'];
 
 const DEFAULT_FIELDS = [
-    { key: 'no',        label: 'NO',        type: 'auto_number',   filterable: false, width: 42 },
-    { key: 'paid',      label: '수수료',    type: 'pay_switch',    filterable: true,  width: 80 },
-    { key: 'manager',   label: '담당자',    type: 'manager_select',filterable: true,  width: 110 },
-    { key: 'unitType',  label: '타입',      type: 'text',          filterable: true,  width: 80 },
-    { key: 'dong',      label: '동',        type: 'text',          filterable: true,  width: 60 },
-    { key: 'ho',        label: '호',        type: 'text',          filterable: true,  width: 60 },
-    { key: 'customer',  label: '고객명',    type: 'text',          filterable: true,  width: 100 },
-    { key: 'subDate',   label: '청약일',    type: 'date',          filterable: true,  width: 120 },
-    { key: 'mainDate',  label: '정계약일',  type: 'date',          filterable: true,  width: 120 },
-    { key: 'docs',      label: '서류보완',  type: 'text',          filterable: true,  width: 100 },
-    { key: 'phone',     label: '연락처',    type: 'tel',           filterable: false, width: 130 },
-    { key: 'commission',label: '수수료/실수령',type: 'commission_view',filterable:false, width: 110 },
-    { key: 'status',    label: '계약상태',  type: 'status_switch', filterable: true,  width: 80 },
-    { key: 'memo',      label: '비고',      type: 'text',          filterable: false, width: 140 },
+    { key: 'no',           label: 'NO',          type: 'auto_number',    filterable: false, width: 42 },
+    { key: 'paid',         label: '수수료',      type: 'pay_switch',     filterable: true,  width: 80 },
+    { key: 'manager',      label: '담당자',      type: 'manager_select', filterable: true,  width: 100 },
+    { key: 'managerTitle', label: '직함',        type: 'manager_title',  filterable: true,  width: 70 },
+    { key: 'unitType',     label: '타입',        type: 'text',           filterable: true,  width: 70 },
+    { key: 'dong',         label: '동',          type: 'text',           filterable: true,  width: 60 },
+    { key: 'ho',           label: '호',          type: 'text',           filterable: true,  width: 60 },
+    { key: 'customer',     label: '고객명',      type: 'text',           filterable: true,  width: 100 },
+    { key: 'subDate',      label: '청약일',      type: 'date',           filterable: true,  width: 120 },
+    { key: 'mainDate',     label: '정계약일',    type: 'date',           filterable: true,  width: 120 },
+    { key: 'docs',         label: '서류보완',    type: 'text',           filterable: true,  width: 100 },
+    { key: 'phone',        label: '연락처',      type: 'tel',            filterable: false, width: 130 },
+    { key: 'commission',   label: '수수료/실수령', type: 'commission_view', filterable: false, width: 110 },
+    { key: 'status',       label: '계약상태',    type: 'status_switch',  filterable: true,  width: 80 },
+    { key: 'memo',         label: '비고',        type: 'text',           filterable: false, width: 140 },
 ];
 
 /* ============== State ============== */
@@ -430,7 +431,18 @@ async function createContractFromOrg(orgGroupId) {
 }
 
 function applyFilters(rows) {
-    return applyColumnFilters(filterState.filters, rows, (r, k) => r.data?.[k]);
+    return applyColumnFilters(filterState.filters, rows, (r, k) => {
+        if (k === 'paid') return r.data?.paid_unpaid;
+        if (k === 'managerTitle') {
+            const mgr = r.data?.manager;
+            if (!mgr) return '';
+            const grp = groups.find(g => g.id === r.groupId);
+            const employees = orgEmployeesFor(grp);
+            const emp = employees.find(e => (e.data?.name || '') === mgr);
+            return emp?.data?.title || '';
+        }
+        return r.data?.[k];
+    });
 }
 
 function renderGroupCard(group) {
@@ -523,7 +535,10 @@ function renderRow(r, displayNo, group) {
         <tr data-id="${r.id}" data-gid="${group.id}" class="${cls}">
             <td class="col-check"><input type="checkbox" data-select="${r.id}" ${selectedIds.has(r.id) ? 'checked' : ''}></td>
             ${fields.map(f => `<td>${renderCell(f, r, d, displayNo, group)}</td>`).join('')}
-            <td class="col-action"><button class="row-action-btn" data-delete-row="${r.id}" title="삭제">×</button></td>
+            <td class="col-action">
+                <button class="row-action-btn" data-edit-row="${r.id}" title="수정">✎</button>
+                <button class="row-action-btn danger" data-delete-row="${r.id}" title="삭제">×</button>
+            </td>
         </tr>`;
 }
 
@@ -545,27 +560,32 @@ function renderCell(f, r, d, displayNo, group) {
         return `<button class="status-pill ${cls}" data-status-switch data-id="${id}">${lbl}</button>`;
     }
     if (f.type === 'manager_select') {
+        // 인라인 표시 — 이름만 read-only span (수정은 ✎ 버튼 → 모달)
+        return d.manager ? `<span class="cell-text">${escapeHtml(d.manager)}</span>` : `<span class="cell-empty">-</span>`;
+    }
+    if (f.type === 'manager_title') {
+        // 담당자에 매칭되는 직원의 직함 자동 도출
         const employees = orgEmployeesFor(group);
-        const opts = ['<option value="">-</option>']
-            .concat(employees.map(e => {
-                const name = e.data?.name || '';
-                const team = e.data?.team || '';
-                const title = e.data?.title || '';
-                return `<option value="${escapeAttr(name)}" ${d.manager === name ? 'selected' : ''}>${escapeHtml(name)} (${team}팀·${title})</option>`;
-            }))
-            .join('');
-        return `<select data-field="manager" data-id="${id}">${opts}</select>`;
+        const emp = d.manager ? employees.find(e => (e.data?.name || '') === d.manager) : null;
+        const title = emp?.data?.title || '';
+        return title ? `<span class="cell-text">${escapeHtml(title)}</span>` : `<span class="cell-empty">-</span>`;
     }
     if (f.type === 'commission_view') {
         const calc = computeCommissionForRow(d, group);
-        if (!calc.amount) return `<span style="color:#a3a39a;font-size:11px;">-</span>`;
-        return `<span class="commission-cell">₩${formatNum(calc.amount)}<span class="net">→ ₩${formatNum(calc.net)}</span></span>`;
+        // 사용자가 수동으로 입력한 manualCommission 이 있으면 그걸 우선
+        const amount = (d.manualCommission != null && d.manualCommission !== '') ? Number(d.manualCommission) : calc.amount;
+        if (!amount) return `<span class="cell-empty">-</span>`;
+        const net = Math.round(amount * (1 - TAX_RATE));
+        return `<span class="commission-cell">₩${formatNum(amount)}<span class="net">→ ₩${formatNum(net)}</span></span>`;
     }
-    if (f.type === 'date') return `<input type="text" data-field="${f.key}" data-id="${id}" value="${escapeAttr(d[f.key] || '')}" placeholder="YYYY.MM.DD">`;
-    if (f.type === 'tel')  return `<input type="tel"  data-field="${f.key}" data-id="${id}" value="${escapeAttr(d[f.key] || '')}" placeholder="010-0000-0000">`;
-    if (f.type === 'textarea') return `<textarea data-field="${f.key}" data-id="${id}" rows="1" placeholder="${escapeAttr(f.label)}">${escapeHtml(d[f.key] || '')}</textarea>`;
-    if (f.type === 'number') return `<input type="text" inputmode="numeric" data-field="${f.key}" data-id="${id}" value="${escapeAttr(d[f.key] || '')}" placeholder="${escapeAttr(f.label)}">`;
-    return `<input type="text" data-field="${f.key}" data-id="${id}" value="${escapeAttr(d[f.key] || '')}" placeholder="${escapeAttr(f.label)}">`;
+    if (f.type === 'textarea') {
+        return d[f.key] ? `<span class="cell-text cell-multiline">${escapeHtml(d[f.key])}</span>` : `<span class="cell-empty">-</span>`;
+    }
+    if (f.type === 'date') {
+        return d[f.key] ? `<span class="cell-text">${escapeHtml(String(d[f.key]).replace(/-/g, '.'))}</span>` : `<span class="cell-empty">-</span>`;
+    }
+    // tel / text / number / 기타 모두 read-only span
+    return d[f.key] ? `<span class="cell-text">${escapeHtml(d[f.key])}</span>` : `<span class="cell-empty">-</span>`;
 }
 
 function bindTableEvents() {
@@ -574,14 +594,41 @@ function bindTableEvents() {
         headers: document.querySelectorAll('.ledger-tbl thead th[data-col-key]'),
         fields: DEFAULT_FIELDS,
         getRows: () => records,
-        getValue: (r, k) => r.data?.[k],
+        getValue: (r, k) => {
+            // 'paid' 컬럼은 data.paid_unpaid 에 저장됨 (알리아스).
+            if (k === 'paid') return r.data?.paid_unpaid;
+            // 'managerTitle' 은 data 에 없고 담당자에서 자동 도출 — getValue 에서 도출.
+            if (k === 'managerTitle') {
+                const mgr = r.data?.manager;
+                if (!mgr) return '';
+                const grp = groups.find(g => g.id === r.groupId);
+                const employees = orgEmployeesFor(grp);
+                const emp = employees.find(e => (e.data?.name || '') === mgr);
+                return emp?.data?.title || '';
+            }
+            return r.data?.[k];
+        },
         onChange: () => renderRecords(),
+        labelFor: (field, raw) => {
+            if (field.key === 'status') {
+                if (raw === 'active') return '정계약';
+                if (raw === 'cancel') return '해지';
+                if (raw === '' || raw == null) return '가계약';
+                return raw;
+            }
+            if (field.key === 'paid') {
+                if (raw === 'true' || raw === true) return '미지급';
+                if (raw === 'false' || raw === false) return '지급';
+                return raw;
+            }
+            return undefined;
+        },
     });
     document.querySelectorAll('[data-add-row]').forEach(b => {
         b.addEventListener('click', () => addRow(parseInt(b.dataset.gid, 10)));
     });
-    document.querySelectorAll('[data-field][data-id]').forEach(el => {
-        el.addEventListener('change', () => updateRowField(parseInt(el.dataset.id, 10), el.dataset.field, el.value));
+    document.querySelectorAll('[data-edit-row]').forEach(b => {
+        b.addEventListener('click', () => editRow(parseInt(b.dataset.editRow, 10)));
     });
     document.querySelectorAll('[data-pay-switch]').forEach(b => {
         b.addEventListener('click', (e) => { e.preventDefault(); togglePay(parseInt(b.dataset.id, 10)); });
@@ -592,7 +639,6 @@ function bindTableEvents() {
     document.querySelectorAll('[data-delete-row]').forEach(b => {
         b.addEventListener('click', () => deleteRow(parseInt(b.dataset.deleteRow, 10)));
     });
-    attachPhoneAutoFormat();
     document.querySelectorAll('[data-select]').forEach(cb => {
         cb.addEventListener('change', () => {
             const id = parseInt(cb.dataset.select, 10);
@@ -613,46 +659,130 @@ function bindTableEvents() {
 
 async function addRow(gid) {
     const group = groups.find(x => x.id === gid);
-    // 연동 조직도 직원 정보 fresh fetch — 조직도 페이지에서 추가/수정됐을 수 있음.
     const linkedId = linkedOrgIdFor(group);
     if (linkedId) {
         orgEmployeesByGroup.delete(linkedId);
         await loadOrgEmployeesForGroup(linkedId);
     }
-    const employees = orgEmployeesFor(group);
-    openRowAddModal({
+    openContractEntryModal({
         title: '새 계약 추가',
-        fields: getEffectiveFields(group, DEFAULT_FIELDS),
+        confirmLabel: '추가',
         defaults: { paid_unpaid: true, status: 'active' },
-        customRender: (f) => {
-            const lbl = `<label class="row-label">${escapeHtml(f.label)}</label>`;
-            if (f.type === 'manager_select') {
-                const opts = ['<option value="">-</option>']
-                    .concat(employees.map(e => {
-                        const name = e.data?.name || '';
-                        const team = e.data?.team || '?';
-                        const title = e.data?.title || '';
-                        return `<option value="${escapeAttr(name)}">${escapeHtml(name)} (${team}팀·${title})</option>`;
-                    })).join('');
-                return `<div class="modal-row">${lbl}<div class="row-control"><select data-field="manager" style="width:100%">${opts}</select></div></div>`;
-            }
-            if (f.type === 'status_switch') {
-                return `<div class="modal-row">${lbl}<div class="row-control"><select data-field="status" style="width:100%">
-                    <option value="">가계약</option>
-                    <option value="active" selected>정계약</option>
-                    <option value="cancel">해지</option>
-                </select></div></div>`;
-            }
-            if (f.type === 'pay_switch') {
-                return `<div class="modal-row">${lbl}<div class="row-control"><label style="display:flex;align-items:center;gap:8px;font-size:13px;color:#4f4943;font-weight:400;cursor:pointer;margin:0;">
-                    <input type="checkbox" data-field="paid_unpaid" checked style="width:auto;accent-color:#c8362c;"> 미지급 (체크 해제 시 지급완료로 시작)
-                </label></div></div>`;
-            }
-            return null;
-        },
+        group,
         onSubmit: async (data) => {
             await api('ledger-records', { method: 'POST', body: { groupId: gid, data, source: 'web' } });
             await loadRecords();
+        },
+    });
+}
+
+async function editRow(id) {
+    const r = records.find(x => x.id === id);
+    if (!r) return;
+    const group = groups.find(g => g.id === r.groupId);
+    const linkedId = linkedOrgIdFor(group);
+    if (linkedId) {
+        orgEmployeesByGroup.delete(linkedId);
+        await loadOrgEmployeesForGroup(linkedId);
+    }
+    openContractEntryModal({
+        title: '계약 정보 수정',
+        confirmLabel: '저장',
+        defaults: { ...r.data },
+        group,
+        onSubmit: async (data) => {
+            await api('ledger-records', { method: 'PATCH', body: { id, data } });
+            await loadRecords();
+        },
+    });
+}
+
+function openContractEntryModal({ title, confirmLabel, defaults, group, onSubmit }) {
+    const employees = orgEmployeesFor(group);
+    openRowAddModal({
+        title,
+        confirmLabel,
+        fields: getEffectiveFields(group, DEFAULT_FIELDS),
+        defaults,
+        customRender: (f, defs) => {
+            const lbl = `<label class="row-label">${escapeHtml(f.label)}</label>`;
+            if (f.type === 'manager_select') {
+                const cur = defs.manager || '';
+                const opts = ['<option value="">-</option>']
+                    .concat(employees.map(e => {
+                        const name = e.data?.name || '';
+                        return `<option value="${escapeAttr(name)}" ${cur === name ? 'selected' : ''}>${escapeHtml(name)}</option>`;
+                    })).join('');
+                return `<div class="modal-row">${lbl}<div class="row-control"><select data-field="manager" data-manager-select>${opts}</select></div></div>`;
+            }
+            if (f.type === 'manager_title') {
+                const emp = defs.manager ? employees.find(e => (e.data?.name || '') === defs.manager) : null;
+                const title = emp?.data?.title || '';
+                return `<div class="modal-row">${lbl}<div class="row-control"><span class="row-static" data-field="managerTitle" data-readonly data-manager-title>${title ? escapeHtml(title) : '<i style="color:#a3a39a;">담당자 선택 시 자동</i>'}</span></div></div>`;
+            }
+            if (f.type === 'status_switch') {
+                const cur = defs.status || '';
+                return `<div class="modal-row">${lbl}<div class="row-control"><select data-field="status">
+                    <option value="" ${cur === '' ? 'selected' : ''}>가계약</option>
+                    <option value="active" ${cur === 'active' ? 'selected' : ''}>정계약</option>
+                    <option value="cancel" ${cur === 'cancel' ? 'selected' : ''}>해지</option>
+                </select></div></div>`;
+            }
+            if (f.type === 'pay_switch') {
+                const checked = defs.paid_unpaid !== false ? 'checked' : '';
+                return `<div class="modal-row">${lbl}<div class="row-control"><label style="display:flex;align-items:center;gap:8px;font-size:13px;color:#4f4943;font-weight:400;cursor:pointer;margin:0;">
+                    <input type="checkbox" data-field="paid_unpaid" ${checked} style="width:auto;accent-color:#c8362c;"> 미지급 (체크 해제 시 지급완료)
+                </label></div></div>`;
+            }
+            if (f.type === 'commission_view') {
+                // 수수료/실수령 input — 기본값은 자동 계산, 사용자 수정 가능
+                const calc = computeCommissionForRow(defs, group);
+                const initial = (defs.manualCommission != null && defs.manualCommission !== '')
+                    ? Number(defs.manualCommission) : calc.amount;
+                return `<div class="modal-row" style="align-items:start;">${lbl}<div class="row-control" style="flex-direction:column;align-items:stretch;">
+                    <div style="display:flex;gap:8px;align-items:center;">
+                        <input type="text" inputmode="numeric" data-thousand data-field="manualCommission" data-commission-input value="${initial ? formatThousand(initial) : ''}" placeholder="자동: ${formatThousand(calc.amount || 0)}" style="flex:1;">
+                        <span style="font-size:12px;color:#8a847e;white-space:nowrap;">실수령 → <b data-net-display>₩${formatThousand(initial ? Math.round(initial * (1 - TAX_RATE)) : (calc.net || 0))}</b></span>
+                    </div>
+                    <span class="row-help">담당자/타입 기준 자동 계산값. 직접 수정 가능. (3.3% 차감 후 실수령액 자동 갱신)</span>
+                </div></div>`;
+            }
+            return null;
+        },
+        onSubmit,
+        afterRender: (md) => {
+            // 담당자 변경 시 직함 자동 채우기 + 수수료 자동 재계산
+            const sel = md.querySelector('[data-manager-select]');
+            const titleEl = md.querySelector('[data-manager-title]');
+            const commInput = md.querySelector('[data-commission-input]');
+            const netDisplay = md.querySelector('[data-net-display]');
+            const recompute = () => {
+                const name = sel ? sel.value : '';
+                const emp = name ? employees.find(e => (e.data?.name || '') === name) : null;
+                if (titleEl) {
+                    const t = emp?.data?.title || '';
+                    titleEl.innerHTML = t ? escapeHtml(t) : '<i style="color:#a3a39a;">담당자 선택 시 자동</i>';
+                }
+                // 수수료 자동값 갱신 (사용자가 안 만진 경우만)
+                if (commInput && !commInput.dataset.userEdited) {
+                    const tempData = { ...defaults, manager: name, unitType: md.querySelector('[data-field="unitType"]')?.value || defaults.unitType };
+                    const calc = computeCommissionForRow(tempData, group);
+                    commInput.value = calc.amount ? formatThousand(calc.amount) : '';
+                    commInput.placeholder = '자동: ' + formatThousand(calc.amount || 0);
+                    if (netDisplay) netDisplay.textContent = '₩' + formatThousand(calc.amount ? Math.round(calc.amount * (1 - TAX_RATE)) : 0);
+                }
+            };
+            if (sel) sel.addEventListener('change', recompute);
+            const unitInput = md.querySelector('[data-field="unitType"]');
+            if (unitInput) unitInput.addEventListener('input', recompute);
+            if (commInput) {
+                commInput.addEventListener('input', () => {
+                    commInput.dataset.userEdited = '1';
+                    const digits = String(commInput.value || '').replace(/[^\d]/g, '');
+                    const amount = parseInt(digits, 10) || 0;
+                    if (netDisplay) netDisplay.textContent = '₩' + formatThousand(Math.round(amount * (1 - TAX_RATE)));
+                });
+            }
         },
     });
 }
@@ -662,7 +792,6 @@ async function updateRowField(id, field, value) {
         await api('ledger-records', { method: 'PATCH', body: { id, data: { [field]: value } } });
         const r = records.find(x => x.id === id);
         if (r) { r.data = r.data || {}; r.data[field] = value; }
-        // 담당자/타입 바뀌면 수수료 셀도 다시 그려야 함.
         if (field === 'manager' || field === 'unitType') renderRecords();
     } catch (e) {
         showError('저장 실패: ' + e.message);

@@ -14,10 +14,13 @@ import { attachColumnFilters, applyColumnFilters, openRowAddModal, attachPhoneAu
 
 const PAGE_TYPE = 'customer';
 
+const LEVEL_OPTIONS = ['계약예정', '관심도 상', '관심도 중', '관심도 하'];
+
 const DEFAULT_FIELDS = [
     { key: 'no',       label: 'NO',     type: 'auto_number',  filterable: false, width: 48 },
     { key: 'managed',  label: '관리',   type: 'manage_switch',filterable: true,  width: 80 },
     { key: 'date',     label: '날짜',   type: 'date',         filterable: true,  width: 130 },
+    { key: 'level',    label: '레벨',   type: 'level_select', filterable: true,  width: 110 },
     { key: 'customer', label: '고객명', type: 'text',         filterable: true,  width: 110 },
     { key: 'phone',    label: '연락처', type: 'tel',          filterable: false, width: 130 },
     { key: 'region',   label: '거주지역',type:'text',          filterable: true,  width: 130 },
@@ -367,25 +370,43 @@ function renderRow(r, displayNo, group) {
         <tr data-id="${r.id}" data-gid="${group.id}" class="${cls}">
             <td class="col-check"><input type="checkbox" data-select="${r.id}" ${selectedIds.has(r.id) ? 'checked' : ''}></td>
             ${fields.map(f => `<td>${renderCell(f, r, d, displayNo)}</td>`).join('')}
-            <td class="col-action"><button class="row-action-btn" data-delete-row="${r.id}" title="삭제">×</button></td>
+            <td class="col-action">
+                <button class="row-action-btn" data-edit-row="${r.id}" title="수정">✎</button>
+                <button class="row-action-btn danger" data-delete-row="${r.id}" title="삭제">×</button>
+            </td>
         </tr>`;
 }
 
 function renderCell(f, r, d, displayNo) {
     const id = r.id;
+    const v = d[f.key];
     if (f.type === 'auto_number') return `<span class="col-no">${displayNo}</span>`;
     if (f.type === 'manage_switch') {
         const on = !!d.managed;
         return `
-            <label class="toggle-switch ${on ? 'on' : 'off'}" data-manage-switch data-id="${id}" title="${on ? '관리중' : '관리 안함'}">
+            <label class="toggle-switch ${on ? 'on' : 'off'}" data-manage-switch data-id="${id}" title="${on ? '관리중' : '비관리중'}">
                 <span class="toggle-track"><span class="toggle-thumb"></span></span>
+                <span class="toggle-label">${on ? '관리중' : '비관리중'}</span>
             </label>`;
     }
-    if (f.type === 'date') return `<input type="text" data-field="${f.key}" data-id="${id}" value="${escapeAttr(d[f.key] || '')}" placeholder="YYYY.MM.DD">`;
-    if (f.type === 'tel')  return `<input type="tel"  data-field="${f.key}" data-id="${id}" value="${escapeAttr(d[f.key] || '')}" placeholder="010-0000-0000" data-phone-input>`;
-    if (f.type === 'textarea') return `<textarea data-field="${f.key}" data-id="${id}" rows="1" placeholder="${escapeAttr(f.label)}">${escapeHtml(d[f.key] || '')}</textarea>`;
-    if (f.type === 'number') return `<input type="text" inputmode="numeric" data-field="${f.key}" data-id="${id}" value="${escapeAttr(d[f.key] || '')}" placeholder="${escapeAttr(f.label)}">`;
-    return `<input type="text" data-field="${f.key}" data-id="${id}" value="${escapeAttr(d[f.key] || '')}" placeholder="${escapeAttr(f.label)}">`;
+    if (f.type === 'level_select') {
+        const text = v || '';
+        return text ? `<span class="cell-text level-pill">${escapeHtml(text)}</span>` : `<span class="cell-empty">-</span>`;
+    }
+    if (f.type === 'textarea') {
+        return v ? `<span class="cell-text cell-multiline">${escapeHtml(v)}</span>` : `<span class="cell-empty">-</span>`;
+    }
+    if (f.type === 'date') {
+        return v ? `<span class="cell-text">${formatDateDisplay(v)}</span>` : `<span class="cell-empty">-</span>`;
+    }
+    // tel / text / number / 기타: 모두 read-only span (편집은 ✎ 수정 버튼 → 모달)
+    return v ? `<span class="cell-text">${escapeHtml(v)}</span>` : `<span class="cell-empty">-</span>`;
+}
+
+function formatDateDisplay(v) {
+    if (!v) return '';
+    // YYYY-MM-DD → YYYY.MM.DD (있으면 그대로 표시)
+    return escapeHtml(String(v).replace(/-/g, '.'));
 }
 
 function bindTableEvents() {
@@ -396,12 +417,20 @@ function bindTableEvents() {
         getRows: () => records,
         getValue: (r, k) => r.data?.[k],
         onChange: () => renderRecords(),
+        labelFor: (field, raw) => {
+            if (field.key === 'managed') {
+                if (raw === 'true' || raw === true) return '관리중';
+                if (raw === 'false' || raw === false) return '비관리중';
+                return raw;
+            }
+            return undefined;
+        },
     });
     document.querySelectorAll('[data-add-row]').forEach(b => {
         b.addEventListener('click', () => addRow(parseInt(b.dataset.gid, 10)));
     });
-    document.querySelectorAll('[data-field][data-id]').forEach(el => {
-        el.addEventListener('change', () => updateRowField(parseInt(el.dataset.id, 10), el.dataset.field, el.value));
+    document.querySelectorAll('[data-edit-row]').forEach(b => {
+        b.addEventListener('click', () => editRow(parseInt(b.dataset.editRow, 10)));
     });
     document.querySelectorAll('[data-manage-switch]').forEach(b => {
         b.addEventListener('click', (e) => { e.preventDefault(); toggleManaged(parseInt(b.dataset.id, 10)); });
@@ -409,7 +438,6 @@ function bindTableEvents() {
     document.querySelectorAll('[data-delete-row]').forEach(b => {
         b.addEventListener('click', () => deleteRow(parseInt(b.dataset.deleteRow, 10)));
     });
-    attachPhoneAutoFormat();
     document.querySelectorAll('[data-select]').forEach(cb => {
         cb.addEventListener('change', () => {
             const id = parseInt(cb.dataset.select, 10);
@@ -434,21 +462,48 @@ function addRow(gid) {
     openRowAddModal({
         title: '새 고객 추가',
         fields: getEffectiveFields(group, DEFAULT_FIELDS),
-        defaults: { date: today, managed: true },
-        customRender: (f) => {
-            const lbl = `<label class="row-label">${escapeHtml(f.label)}</label>`;
-            if (f.type === 'manage_switch') {
-                return `<div class="modal-row">${lbl}<div class="row-control"><label style="display:flex;align-items:center;gap:8px;font-size:13px;color:#4f4943;font-weight:400;cursor:pointer;margin:0;">
-                    <input type="checkbox" data-field="managed" checked style="width:auto;accent-color:#c8362c;"> 관리 대상
-                </label></div></div>`;
-            }
-            return null;
-        },
+        defaults: { date: today, managed: true, level: '계약예정' },
+        customRender: customerCustomRender,
         onSubmit: async (data) => {
             await api('ledger-records', { method: 'POST', body: { groupId: gid, data, source: 'web' } });
             await loadRecords();
         },
     });
+}
+
+function editRow(id) {
+    const r = records.find(x => x.id === id);
+    if (!r) return;
+    const group = groups.find(g => g.id === r.groupId);
+    openRowAddModal({
+        title: '고객 정보 수정',
+        confirmLabel: '저장',
+        fields: getEffectiveFields(group, DEFAULT_FIELDS),
+        defaults: { ...r.data },
+        customRender: customerCustomRender,
+        onSubmit: async (data) => {
+            await api('ledger-records', { method: 'PATCH', body: { id, data } });
+            await loadRecords();
+        },
+    });
+}
+
+function customerCustomRender(f, defaults) {
+    const lbl = `<label class="row-label">${escapeHtml(f.label)}</label>`;
+    if (f.type === 'manage_switch') {
+        const checked = defaults.managed !== false ? 'checked' : '';
+        return `<div class="modal-row">${lbl}<div class="row-control"><label style="display:flex;align-items:center;gap:8px;font-size:13px;color:#4f4943;font-weight:400;cursor:pointer;margin:0;">
+            <input type="checkbox" data-field="managed" ${checked} style="width:auto;accent-color:#c8362c;"> 관리 대상 (체크 해제 시 비관리)
+        </label></div></div>`;
+    }
+    if (f.type === 'level_select') {
+        const v = defaults.level || '';
+        const opts = ['<option value="">-</option>']
+            .concat(LEVEL_OPTIONS.map(o => `<option value="${escapeAttr(o)}" ${v === o ? 'selected' : ''}>${escapeHtml(o)}</option>`))
+            .join('');
+        return `<div class="modal-row">${lbl}<div class="row-control"><select data-field="level">${opts}</select></div></div>`;
+    }
+    return null;
 }
 
 async function updateRowField(id, field, value) {

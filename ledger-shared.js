@@ -237,7 +237,7 @@ export function applyColumnFilters(filters, rows, getValue) {
 }
 
 /** 컬럼별 필터 dropdown 을 헤더 셀에 부착. */
-export function attachColumnFilters({ state, headers, fields, getRows, getValue, onChange }) {
+export function attachColumnFilters({ state, headers, fields, getRows, getValue, onChange, labelFor }) {
     ensureOutsideClickHandler();
     state.filters = state.filters || {};
 
@@ -267,12 +267,12 @@ export function attachColumnFilters({ state, headers, fields, getRows, getValue,
             e.stopPropagation();
             // 같은 컬럼 다시 클릭 = 닫기
             if (activePop && activePop.dataset.col === key) { closePopup(); return; }
-            openFilterPopup(th, key, f, state, getRows, getValue, onChange);
+            openFilterPopup(th, key, f, state, getRows, getValue, onChange, labelFor);
         });
     });
 }
 
-function openFilterPopup(th, key, field, state, getRows, getValue, onChange) {
+function openFilterPopup(th, key, field, state, getRows, getValue, onChange, labelFor) {
     closePopup();
     const rows = getRows() || [];
     // 컬럼의 모든 unique 값 + 건수.
@@ -281,11 +281,18 @@ function openFilterPopup(th, key, field, state, getRows, getValue, onChange) {
         const v = String(getValue(r, key) ?? '').trim();
         counts.set(v, (counts.get(v) || 0) + 1);
     });
+    const fmtLabel = (raw) => {
+        if (typeof labelFor === 'function') {
+            const out = labelFor(field, raw);
+            if (out !== undefined && out !== null) return out;
+        }
+        return raw;
+    };
     const sorted = [...counts.entries()].sort((a, b) => {
         // 빈 값은 맨 아래
         if (a[0] === '' && b[0] !== '') return 1;
         if (b[0] === '' && a[0] !== '') return -1;
-        return a[0].localeCompare(b[0], 'ko');
+        return String(fmtLabel(a[0])).localeCompare(String(fmtLabel(b[0])), 'ko');
     });
 
     const current = state.filters[key] instanceof Set ? state.filters[key] : new Set();
@@ -301,7 +308,10 @@ function openFilterPopup(th, key, field, state, getRows, getValue, onChange) {
         <div class="filter-pop-list">
             ${sorted.map(([v, c]) => {
                 const checked = noneActive || current.has(v);
-                const display = v === '' ? '<i style="color:#a3a39a;">(빈 값)</i>' : escapeHtml(v);
+                const labeled = fmtLabel(v);
+                const display = (labeled === '' || labeled === null || labeled === undefined)
+                    ? '<i style="color:#a3a39a;">(빈 값)</i>'
+                    : escapeHtml(String(labeled));
                 return `<label><input type="checkbox" data-val="${escapeAttr(v)}" ${checked ? 'checked' : ''}>${display}<span class="count">${c}</span></label>`;
             }).join('')}
         </div>
@@ -408,7 +418,7 @@ export function openRowAddModal(opts) {
             </div>
             <footer class="modal-footer">
                 <button class="tiny-btn" type="button" data-cancel>취소</button>
-                <button class="tiny-btn primary" type="button" data-confirm>확인</button>
+                <button class="tiny-btn primary" type="button" data-confirm>${escapeHtml(opts.confirmLabel || '확인')}</button>
             </footer>
         </div>
     `;
@@ -440,6 +450,10 @@ export function openRowAddModal(opts) {
         }
     });
     attachPhoneAutoFormat(md);
+    attachThousandFormat(md);
+    if (typeof opts.afterRender === 'function') {
+        try { opts.afterRender(md); } catch (e) { console.error('[openRowAddModal afterRender]', e); }
+    }
     setTimeout(() => md.querySelector('input,select,textarea')?.focus(), 30);
 }
 
@@ -448,19 +462,25 @@ function closeRowAddModal() {
 }
 
 function renderEntryField(f, defaults, customRender) {
-    if (f.type === 'auto_number' || f.type === 'commission_view') return '';
+    if (f.type === 'auto_number') return '';
     if (customRender) {
         const ch = customRender(f, defaults);
         if (ch !== undefined && ch !== null) return ch;
     }
+    if (f.type === 'commission_view') return '';   // 페이지 customRender 가 처리 안 했으면 모달에서 생략
     const v = defaults[f.key] ?? '';
     const lbl = `<label class="row-label">${escapeHtml(f.label)}</label>`;
     const wrap = (control, extra = '') => `<div class="modal-row" ${extra}>${lbl}<div class="row-control">${control}</div></div>`;
 
-    if (f.type === 'date')     return wrap(`<input type="text" data-field="${f.key}" value="${escapeAttr(v)}" placeholder="YYYY.MM.DD">`);
+    if (f.type === 'date')     return wrap(`<input type="date" data-field="${f.key}" value="${escapeAttr(v)}">`);
     if (f.type === 'tel')      return wrap(`<input type="tel"  data-field="${f.key}" value="${escapeAttr(v)}" placeholder="010-...">`);
     if (f.type === 'textarea') return wrap(`<textarea data-field="${f.key}" rows="3" placeholder="${escapeAttr(f.label)}">${escapeHtml(v)}</textarea>`, 'style="align-items:start;"');
+    if (f.type === 'number')   return wrap(`<input type="text" inputmode="numeric" data-thousand data-field="${f.key}" value="${escapeAttr(v)}" placeholder="0">`);
     if (f.type === 'title_select') return wrap(`<select data-field="${f.key}"><option value="">-</option>${['본부장','팀장','팀원'].map(t => `<option value="${t}" ${v === t ? 'selected' : ''}>${t}</option>`).join('')}</select>`);
+    if (f.type === 'manager_title') {
+        // 자동 도출 — 모달에서는 read-only 표시 (담당자 선택에 따라 자동)
+        return wrap(`<span class="row-static" data-field="${f.key}" data-readonly>${escapeHtml(v) || '<i style="color:#a3a39a;">담당자 선택 시 자동</i>'}</span>`);
+    }
     return wrap(`<input type="text" data-field="${f.key}" value="${escapeAttr(v)}" placeholder="${escapeAttr(f.label)}">`);
 }
 
@@ -470,8 +490,16 @@ function collectEntry(fields, defaults, md) {
         if (f.type === 'auto_number' || f.type === 'commission_view') return;
         const el = md.querySelector(`[data-field="${f.key}"]`);
         if (!el) return;
+        if (el.dataset && el.dataset.readonly !== undefined) {
+            // span 등 read-only — defaults 값 그대로 유지 (변경 없음)
+            return;
+        }
         if (el.type === 'checkbox') {
             data[f.key] = el.checked;
+        } else if (el.dataset && el.dataset.thousand !== undefined) {
+            // 천단위 쉼표 input — 숫자만 추출
+            const digits = String(el.value || '').replace(/[^\d]/g, '');
+            data[f.key] = digits === '' ? '' : parseInt(digits, 10);
         } else {
             const val = el.value;
             data[f.key] = val === '' ? '' : val;
