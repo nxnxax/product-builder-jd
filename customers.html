@@ -6,7 +6,7 @@
 <title>고객 관리대장 · YOUNGMAN</title>
 <link rel="icon" type="image/png" href="logo_main.png">
 <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
-<link rel="stylesheet" href="style.css?v=20260509-batch-tweaks">
+<link rel="stylesheet" href="style.css?v=20260509-fields">
 <style>
 :root{
     --ledger-line:rgba(20,14,8,.09); --ledger-line-strong:rgba(20,14,8,.16);
@@ -197,9 +197,33 @@ table.ledger-tbl{width:100%;border-collapse:collapse;font-size:13.5px;min-width:
     </div>
 </div>
 
-<script type="module" src="customers.js?v=20260509-batch-tweaks"></script>
+<!-- 설정 모달 (필드 관리 전용) -->
+<div class="modal-backdrop hidden" id="settingsModal">
+    <div class="modal-panel">
+        <header class="modal-header">
+            <div>
+                <h2>그룹 설정</h2>
+                <p class="modal-subtitle">현재 그룹 (<b id="settingsGroupName">-</b>) 의 양식 필드를 관리합니다.</p>
+            </div>
+        </header>
+        <div class="modal-body">
+            <div class="modal-row align-start">
+                <label class="row-label">필드 관리</label>
+                <div class="row-control" id="fieldManagerBox"></div>
+            </div>
+            <p class="form-help error" id="settingsErrorMsg" style="margin-top:8px;"></p>
+        </div>
+        <footer class="modal-footer">
+            <button class="tiny-btn danger modal-footer-spacer" id="settingsDeleteBtn" type="button">그룹 삭제</button>
+            <button class="tiny-btn" id="settingsCancelBtn" type="button">취소</button>
+            <button class="tiny-btn primary" id="settingsSaveBtn" type="button">저장</button>
+        </footer>
+    </div>
+</div>
+
+<script type="module" src="customers.js?v=20260509-fields"></script>
 <script type="module">
-    import { bootApp } from './auth-shared.js?v=20260509-batch-tweaks';
+    import { bootApp } from './auth-shared.js?v=20260509-fields';
     bootApp();
 </script>
 </body>

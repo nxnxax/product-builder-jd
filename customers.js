@@ -10,7 +10,7 @@
  */
 
 import { initSupabase, apiRequest, getSession } from './auth-shared.js?v=20260509-phone-toggle';
-import { attachColumnFilters, applyColumnFilters, openRowAddModal, attachPhoneAutoFormat } from './ledger-shared.js?v=20260509-phone-toggle';
+import { attachColumnFilters, applyColumnFilters, openRowAddModal, attachPhoneAutoFormat, getEffectiveFields, mountFieldManager } from './ledger-shared.js?v=20260509-fields';
 
 const PAGE_TYPE = 'customer';
 
@@ -90,8 +90,63 @@ function bindUI() {
     document.getElementById('groupSaveBtn').addEventListener('click', saveGroup);
     document.getElementById('groupDeleteBtn').addEventListener('click', deleteGroup);
 
+    document.getElementById('settingsCancelBtn').addEventListener('click', () => closeModal('settingsModal'));
+    document.getElementById('settingsSaveBtn').addEventListener('click', saveSettings);
+    document.getElementById('settingsDeleteBtn').addEventListener('click', deleteGroupFromSettings);
+
     document.getElementById('bulkClearBtn').addEventListener('click', () => { selectedIds.clear(); renderRecords(); });
     document.getElementById('bulkDeleteBtn').addEventListener('click', bulkDelete);
+}
+
+/* ============== 설정 모달 (필드 관리) ============== */
+let settingsGroupId = null;
+let settingsFieldDraft = [];
+
+function openSettingsModal(groupId) {
+    settingsGroupId = groupId;
+    const g = groups.find(x => x.id === groupId);
+    if (!g) return;
+    document.getElementById('settingsGroupName').textContent = g.name;
+    document.getElementById('settingsErrorMsg').textContent = '';
+    settingsFieldDraft = JSON.parse(JSON.stringify(g.settings?.customFields || []));
+    mountFieldManager({
+        container: document.getElementById('fieldManagerBox'),
+        defaultFields: DEFAULT_FIELDS,
+        customFields: settingsFieldDraft,
+        onChange: (next) => { settingsFieldDraft = next; },
+    });
+    document.getElementById('settingsModal').classList.remove('hidden');
+}
+
+async function saveSettings() {
+    const g = groups.find(x => x.id === settingsGroupId);
+    if (!g) return;
+    const newSettings = { ...(g.settings || {}), customFields: settingsFieldDraft };
+    try {
+        await api('ledger-groups', { method: 'PATCH', body: { id: g.id, settings: newSettings } });
+        g.settings = newSettings;
+        closeModal('settingsModal');
+        renderRecords();
+    } catch (e) {
+        document.getElementById('settingsErrorMsg').textContent = e.message;
+    }
+}
+
+async function deleteGroupFromSettings() {
+    if (!settingsGroupId) return;
+    const g = groups.find(x => x.id === settingsGroupId);
+    if (!g) return;
+    if (!confirm(`"${g.name}" 그룹과 그 안의 모든 행을 영구 삭제합니다. 진행하시겠습니까?`)) return;
+    try {
+        await api('ledger-groups', { method: 'DELETE', body: { id: settingsGroupId } });
+        closeModal('settingsModal');
+        expandedGroupIds.delete(settingsGroupId);
+        selectedExtraIds.delete(settingsGroupId);
+        settingsGroupId = null;
+        await loadGroups();
+    } catch (e) {
+        document.getElementById('settingsErrorMsg').textContent = e.message;
+    }
 }
 
 /* ============== Group modal ============== */
@@ -236,6 +291,7 @@ function renderGroupCard(group) {
                 <span class="count-pill">${grpRecs.length}건</span>
                 <div class="head-actions">
                     <button type="button" data-edit-gid="${group.id}">편집</button>
+                    <button type="button" data-settings-gid="${group.id}">⚙ 설정</button>
                 </div>
             </div>
             <div class="accordion-body">${bodyHtml}</div>
@@ -243,6 +299,7 @@ function renderGroupCard(group) {
 }
 
 function renderTable(group, rows) {
+    const fields = getEffectiveFields(group, DEFAULT_FIELDS);
     return `
         <div style="display:flex;justify-content:flex-end;padding:10px 18px;border-bottom:1px solid var(--ledger-line);background:#fbfaf5;">
             <button class="tiny-btn primary" type="button" data-add-row data-gid="${group.id}">+ 행 추가</button>
@@ -252,14 +309,14 @@ function renderTable(group, rows) {
                 <thead>
                     <tr>
                         <th class="col-check"><input type="checkbox" data-select-all="${group.id}"></th>
-                        ${DEFAULT_FIELDS.map(f => `<th style="min-width:${f.width || 90}px;" data-col-key="${f.key}">${escapeHtml(f.label)}</th>`).join('')}
+                        ${fields.map(f => `<th style="min-width:${f.width || 110}px;" data-col-key="${f.key}">${escapeHtml(f.label)}</th>`).join('')}
                         <th class="col-action"></th>
                     </tr>
                 </thead>
                 <tbody>
                     ${rows.length === 0
-                        ? `<tr><td colspan="${DEFAULT_FIELDS.length + 2}" style="text-align:center;color:#8a847e;padding:24px;font-size:13px;">표시할 항목이 없습니다.</td></tr>`
-                        : rows.map((r, i) => renderRow(r, i + 1, group.id)).join('')}
+                        ? `<tr><td colspan="${fields.length + 2}" style="text-align:center;color:#8a847e;padding:24px;font-size:13px;">표시할 항목이 없습니다.</td></tr>`
+                        : rows.map((r, i) => renderRow(r, i + 1, group)).join('')}
                 </tbody>
             </table>
         </div>`;
@@ -268,6 +325,9 @@ function renderTable(group, rows) {
 function bindAccordionEvents() {
     document.querySelectorAll('[data-edit-gid]').forEach(b => {
         b.addEventListener('click', (e) => { e.stopPropagation(); openGroupModal(parseInt(b.dataset.editGid, 10)); });
+    });
+    document.querySelectorAll('[data-settings-gid]').forEach(b => {
+        b.addEventListener('click', (e) => { e.stopPropagation(); openSettingsModal(parseInt(b.dataset.settingsGid, 10)); });
     });
     document.querySelectorAll('[data-set-main]').forEach(cb => {
         cb.addEventListener('change', () => {
@@ -296,17 +356,18 @@ async function setMainGroup(gid) {
     }
 }
 
-function renderRow(r, displayNo, gid) {
+function renderRow(r, displayNo, group) {
     const d = r.data || {};
     const dead = !d.managed;
     const cls = [
         selectedIds.has(r.id) ? 'selected' : '',
         dead ? 'row-dead' : '',
     ].filter(Boolean).join(' ');
+    const fields = getEffectiveFields(group, DEFAULT_FIELDS);
     return `
-        <tr data-id="${r.id}" data-gid="${gid}" class="${cls}">
+        <tr data-id="${r.id}" data-gid="${group.id}" class="${cls}">
             <td class="col-check"><input type="checkbox" data-select="${r.id}" ${selectedIds.has(r.id) ? 'checked' : ''}></td>
-            ${DEFAULT_FIELDS.map(f => `<td>${renderCell(f, r, d, displayNo)}</td>`).join('')}
+            ${fields.map(f => `<td>${renderCell(f, r, d, displayNo)}</td>`).join('')}
             <td class="col-action"><button class="row-action-btn" data-delete-row="${r.id}" title="삭제">×</button></td>
         </tr>`;
 }
@@ -324,6 +385,7 @@ function renderCell(f, r, d, displayNo) {
     if (f.type === 'date') return `<input type="text" data-field="${f.key}" data-id="${id}" value="${escapeAttr(d[f.key] || '')}" placeholder="YYYY.MM.DD">`;
     if (f.type === 'tel')  return `<input type="tel"  data-field="${f.key}" data-id="${id}" value="${escapeAttr(d[f.key] || '')}" placeholder="010-0000-0000" data-phone-input>`;
     if (f.type === 'textarea') return `<textarea data-field="${f.key}" data-id="${id}" rows="1" placeholder="${escapeAttr(f.label)}">${escapeHtml(d[f.key] || '')}</textarea>`;
+    if (f.type === 'number') return `<input type="text" inputmode="numeric" data-field="${f.key}" data-id="${id}" value="${escapeAttr(d[f.key] || '')}" placeholder="${escapeAttr(f.label)}">`;
     return `<input type="text" data-field="${f.key}" data-id="${id}" value="${escapeAttr(d[f.key] || '')}" placeholder="${escapeAttr(f.label)}">`;
 }
 
@@ -369,9 +431,10 @@ function bindTableEvents() {
 
 function addRow(gid) {
     const today = new Date().toISOString().slice(0, 10);
+    const group = groups.find(g => g.id === gid);
     openRowAddModal({
         title: '새 고객 추가',
-        fields: DEFAULT_FIELDS,
+        fields: getEffectiveFields(group, DEFAULT_FIELDS),
         defaults: { date: today, managed: true },
         customRender: (f) => {
             const lbl = `<label class="row-label">${escapeHtml(f.label)}</label>`;

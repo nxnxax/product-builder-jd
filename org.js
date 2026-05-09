@@ -7,7 +7,7 @@
  */
 
 import { initSupabase, apiRequest, getSession } from './auth-shared.js?v=20260509-phone-toggle';
-import { attachColumnFilters, applyColumnFilters, openRowAddModal, attachPhoneAutoFormat, attachThousandFormat, formatThousand, unformatThousand } from './ledger-shared.js?v=20260509-thousand';
+import { attachColumnFilters, applyColumnFilters, openRowAddModal, attachPhoneAutoFormat, attachThousandFormat, formatThousand, unformatThousand, getEffectiveFields, mountFieldManager } from './ledger-shared.js?v=20260509-fields';
 
 const PAGE_TYPE = 'org';
 
@@ -55,6 +55,7 @@ let settingsGroupId = null;       // settings 모달이 열려있는 그룹
 let filterState = { filters: {} };// { [key]: Set<value> }
 let selectedIds = new Set();
 let typeCommissionRows = [];      // working copy in settings modal
+let settingsFieldDraft = [];      // working copy of custom fields
 
 /* ============== Boot ============== */
 (async function boot() {
@@ -230,6 +231,13 @@ function openSettingsModal(groupId) {
     document.getElementById('activeTeamsRow').classList.toggle('hidden', role === 'lead');
     typeCommissionRows = JSON.parse(JSON.stringify(s.type_commissions || []));
     renderTypeCommList(role);
+    settingsFieldDraft = JSON.parse(JSON.stringify(s.customFields || []));
+    mountFieldManager({
+        container: document.getElementById('fieldManagerBox'),
+        defaultFields: DEFAULT_FIELD_SCHEMA.fields,
+        customFields: settingsFieldDraft,
+        onChange: (next) => { settingsFieldDraft = next; },
+    });
     document.getElementById('settingsErrorMsg').textContent = '';
     document.getElementById('settingsModal').classList.remove('hidden');
     attachThousandFormat(document.getElementById('settingsModal'));
@@ -279,7 +287,7 @@ async function saveSettings() {
     };
     const type_commissions = typeCommissionRows.filter(r => r.type && r.type.trim());
 
-    const newSettings = { ...g.settings, active_teams, default_commissions, type_commissions };
+    const newSettings = { ...g.settings, active_teams, default_commissions, type_commissions, customFields: settingsFieldDraft };
     try {
         await api('ledger-groups', { method: 'PATCH', body: { id: g.id, settings: newSettings } });
         g.settings = newSettings;
@@ -473,7 +481,7 @@ async function setMainGroup(gid) {
 }
 
 function renderTeamSection(title, teamNo, rows, group, opts) {
-    const fields = DEFAULT_FIELD_SCHEMA.fields;
+    const fields = getEffectiveFields(group, DEFAULT_FIELD_SCHEMA.fields);
     const allowedTitles = rolesAllowedFor(ownerRoleOf(group));
     const isHq = !!(opts && opts.hq);   // 본부장 전용 섹션
     return `
@@ -492,39 +500,47 @@ function renderTeamSection(title, teamNo, rows, group, opts) {
                     <thead>
                         <tr>
                             <th class="col-check"><input type="checkbox" data-select-all="${teamNo ?? ''}"></th>
-                            <th class="col-no">NO</th>
-                            ${fields.filter(f => f.key !== 'no').map(f => `<th data-col-key="${f.key}">${escapeHtml(f.label)}</th>`).join('')}
+                            ${fields.map(f => f.type === 'auto_number'
+                                ? `<th class="col-no">NO</th>`
+                                : `<th data-col-key="${f.key}">${escapeHtml(f.label)}</th>`).join('')}
                             <th class="col-action"></th>
                         </tr>
                     </thead>
                     <tbody>
                         ${rows.length === 0
                             ? `<tr><td colspan="${fields.length + 2}" style="text-align:center;color:#8a847e;padding:24px;font-size:13px;">${title}에 등록된 인원이 없습니다.</td></tr>`
-                            : rows.map((r, idx) => renderRow(r, idx + 1, allowedTitles)).join('')}
+                            : rows.map((r, idx) => renderRow(r, idx + 1, allowedTitles, fields)).join('')}
                     </tbody>
                 </table>
             </div>
         </section>`;
 }
 
-function renderRow(r, displayNo, allowedTitles) {
+function renderRow(r, displayNo, allowedTitles, fields) {
     const d = r.data || {};
     const checked = selectedIds.has(r.id) ? 'checked' : '';
     const titles = allowedTitles || TITLE_OPTIONS;
+    const cellHtml = (f) => {
+        const v = d[f.key] ?? '';
+        if (f.type === 'auto_number') return `<td class="col-no">${displayNo}</td>`;
+        if (f.type === 'title_select') {
+            return `<td><select data-field="${f.key}" data-id="${r.id}">
+                <option value="">-</option>
+                ${titles.map(t => `<option value="${t}" ${v === t ? 'selected' : ''}>${t}</option>`).join('')}
+            </select></td>`;
+        }
+        if (f.type === 'date') return `<td><input type="text" data-field="${f.key}" data-id="${r.id}" value="${escapeAttr(v)}" placeholder="YYYY.MM.DD"></td>`;
+        if (f.type === 'tel')  return `<td><input type="tel"  data-field="${f.key}" data-id="${r.id}" value="${escapeAttr(v)}" placeholder="010-0000-0000"></td>`;
+        if (f.type === 'textarea') return `<td><textarea data-field="${f.key}" data-id="${r.id}" rows="1" placeholder="${escapeAttr(f.label)}">${escapeHtml(v)}</textarea></td>`;
+        if (f.type === 'number') return `<td><input type="text" inputmode="numeric" data-field="${f.key}" data-id="${r.id}" value="${escapeAttr(v)}" placeholder="${escapeAttr(f.label)}"></td>`;
+        // 'rrn' 은 일반 text 로 처리되며 placeholder 만 다름
+        const placeholder = (f.key === 'rrn') ? '000000-0000000' : (f.key === 'name' ? '이름' : (f.key === 'account' ? '계좌' : (f.key === 'memo' ? '비고' : f.label)));
+        return `<td><input type="text" data-field="${f.key}" data-id="${r.id}" value="${escapeAttr(v)}" placeholder="${escapeAttr(placeholder)}"></td>`;
+    };
     return `
         <tr data-id="${r.id}" class="${selectedIds.has(r.id) ? 'selected' : ''}">
             <td class="col-check"><input type="checkbox" data-select="${r.id}" ${checked}></td>
-            <td class="col-no">${displayNo}</td>
-            <td><input type="text" data-field="joined" data-id="${r.id}" value="${escapeAttr(d.joined || '')}" placeholder="YYYY.MM.DD"></td>
-            <td><select data-field="title" data-id="${r.id}">
-                <option value="">-</option>
-                ${titles.map(t => `<option value="${t}" ${d.title === t ? 'selected' : ''}>${t}</option>`).join('')}
-            </select></td>
-            <td><input type="text" data-field="name" data-id="${r.id}" value="${escapeAttr(d.name || '')}" placeholder="이름"></td>
-            <td><input type="text" data-field="rrn"  data-id="${r.id}" value="${escapeAttr(d.rrn || '')}" placeholder="000000-0000000"></td>
-            <td><input type="tel"  data-field="phone" data-id="${r.id}" value="${escapeAttr(d.phone || '')}" placeholder="010-0000-0000"></td>
-            <td><input type="text" data-field="account" data-id="${r.id}" value="${escapeAttr(d.account || '')}" placeholder="계좌"></td>
-            <td><input type="text" data-field="memo" data-id="${r.id}" value="${escapeAttr(d.memo || '')}" placeholder="비고"></td>
+            ${(fields || DEFAULT_FIELD_SCHEMA.fields).map(cellHtml).join('')}
             <td class="col-action"><button class="row-action-btn" data-delete-row="${r.id}" title="삭제">×</button></td>
         </tr>`;
 }
@@ -591,7 +607,7 @@ function addRow(gid, teamNo, isHq) {
     const modalTitle = isHq ? '본부장 추가' : `${teamNo || '?'}팀 새 직원 추가`;
     openRowAddModal({
         title: modalTitle,
-        fields: DEFAULT_FIELD_SCHEMA.fields,
+        fields: getEffectiveFields(group, DEFAULT_FIELD_SCHEMA.fields),
         defaults: { title: titleDefault },
         customRender: (f, defaults) => {
             if (f.type !== 'title_select') return null;

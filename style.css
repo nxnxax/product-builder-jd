@@ -1599,18 +1599,86 @@ select:focus {
 
 .extra-groups .extra-toggle .count-pill { display: none; }
 
-/* 주요 메뉴 (관리대장) 표 — 모든 항목 가운데 정렬 */
+/* 주요 메뉴 (관리대장) 표 — 모든 항목 가운데 정렬 (페이지 inline CSS 가 left 로 잡혀있어서 !important) */
 .ledger-tbl thead th,
 .ledger-tbl tbody td {
-    text-align: center;
+    text-align: center !important;
 }
 .ledger-tbl tbody td input,
 .ledger-tbl tbody td select,
 .ledger-tbl tbody td textarea {
-    text-align: center;
+    text-align: center !important;
 }
-.ledger-tbl thead th[data-col-key] { padding-left: 14px !important; }
-.ledger-tbl .col-no, .ledger-tbl .col-check, .ledger-tbl .col-action { text-align: center; }
+.ledger-tbl .col-no,
+.ledger-tbl .col-check,
+.ledger-tbl .col-action { text-align: center !important; }
+
+/* ==================== 필드 관리 (사용자 정의 필드) ==================== */
+.field-mgr-list {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+    margin-top: 6px;
+    margin-bottom: 10px;
+}
+.field-mgr-row {
+    display: grid;
+    grid-template-columns: 1fr 80px 60px;
+    gap: 10px;
+    align-items: center;
+    padding: 9px 14px;
+    border-bottom: 1px solid var(--border);
+    font-size: 13px;
+}
+.field-mgr-row:last-child { border-bottom: 0; }
+.field-mgr-row.built-in { background: #fbfaf5; color: var(--fg-secondary); }
+.field-mgr-row .field-mgr-name { font-weight: 500; color: var(--fg); }
+.field-mgr-row .field-mgr-type { font-size: 11.5px; color: var(--fg-tertiary); text-align: center; }
+.field-mgr-row .field-mgr-tag {
+    font-size: 11px;
+    color: var(--fg-tertiary);
+    padding: 2px 8px;
+    background: var(--bg-muted);
+    border-radius: 99px;
+    text-align: center;
+    justify-self: end;
+}
+.field-mgr-row .field-mgr-del {
+    border: 0;
+    background: transparent;
+    color: #c8362c;
+    font-size: 16px;
+    cursor: pointer;
+    line-height: 1;
+    justify-self: end;
+    padding: 4px 8px;
+    border-radius: 6px;
+}
+.field-mgr-row .field-mgr-del:hover { background: rgba(200, 54, 44, 0.08); }
+.field-mgr-add {
+    display: grid;
+    grid-template-columns: 1fr 110px auto;
+    gap: 6px;
+    align-items: center;
+    margin-top: 6px;
+}
+.field-mgr-add input,
+.field-mgr-add select {
+    height: 34px;
+    padding: 0 10px;
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    font-size: 13px;
+    font-family: inherit;
+    background: #fff;
+}
+.field-mgr-add input:focus,
+.field-mgr-add select:focus { outline: 0; border-color: var(--fg); }
+.field-mgr-help {
+    font-size: 12px;
+    color: var(--fg-tertiary);
+    margin: 8px 0 0;
+}
 
 .extra-groups .extra-side-btn {
     align-self: center;

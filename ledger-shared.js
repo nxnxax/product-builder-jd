@@ -22,6 +22,120 @@
 let activePop = null;
 let docClickBound = false;
 
+/* =========================================================================
+   사용자 정의 필드 (custom fields) — 그룹 settings.customFields 에 저장.
+   { key, label, type } 형태. type 은 text / date / tel / textarea / number.
+   ========================================================================= */
+
+const FIELD_TYPE_LABELS = {
+    text: '텍스트', date: '날짜', tel: '전화번호',
+    textarea: '긴 텍스트', number: '숫자',
+    auto_number: '번호', title_select: '직함',
+    manage_switch: '관리', manager_select: '담당자',
+    pay_switch: '수수료', commission_view: '수수료(자동)',
+    status_switch: '계약상태',
+};
+
+export function getCustomFields(group) {
+    const arr = group?.settings?.customFields;
+    return Array.isArray(arr) ? arr : [];
+}
+
+/** default + custom 합쳐서 반환. 렌더에 바로 사용. */
+export function getEffectiveFields(group, defaultFields) {
+    return [...(defaultFields || []), ...getCustomFields(group)];
+}
+
+/** 사용자 정의 필드 관리 UI 를 컨테이너에 렌더. onChange 가 변경된 customFields 배열을 받음. */
+export function mountFieldManager({ container, defaultFields, customFields, onChange }) {
+    const ALLOWED_TYPES = [
+        { value: 'text',     label: '텍스트' },
+        { value: 'number',   label: '숫자' },
+        { value: 'date',     label: '날짜' },
+        { value: 'tel',      label: '전화번호' },
+        { value: 'textarea', label: '긴 텍스트' },
+    ];
+    const state = Array.isArray(customFields) ? [...customFields] : [];
+
+    function render() {
+        const def = (defaultFields || []).filter(f => f.type !== 'auto_number');
+        container.innerHTML = `
+            <div class="field-mgr-list">
+                ${def.map(f => `
+                    <div class="field-mgr-row built-in">
+                        <span class="field-mgr-name">${escapeHtml(f.label)}</span>
+                        <span class="field-mgr-type">${FIELD_TYPE_LABELS[f.type] || f.type}</span>
+                        <span class="field-mgr-tag">기본</span>
+                    </div>
+                `).join('')}
+                ${state.map((f, i) => `
+                    <div class="field-mgr-row custom" data-i="${i}">
+                        <span class="field-mgr-name">${escapeHtml(f.label)}</span>
+                        <span class="field-mgr-type">${FIELD_TYPE_LABELS[f.type] || f.type}</span>
+                        <button type="button" class="field-mgr-del" data-i="${i}" title="삭제">×</button>
+                    </div>
+                `).join('')}
+            </div>
+            <div class="field-mgr-add">
+                <input type="text" placeholder="새 필드 이름 (예: 특기, 비상연락처)" data-add-label maxlength="30">
+                <select data-add-type>
+                    ${ALLOWED_TYPES.map(t => `<option value="${t.value}">${t.label}</option>`).join('')}
+                </select>
+                <button type="button" class="tiny-btn primary" data-add-go>+ 추가</button>
+            </div>
+            <p class="field-mgr-help">기본 필드는 삭제할 수 없습니다. 추가한 필드는 × 로 삭제 가능합니다.</p>
+        `;
+
+        container.querySelectorAll('[data-i]').forEach(btn => {
+            if (btn.classList.contains('field-mgr-del')) {
+                btn.addEventListener('click', () => {
+                    const i = parseInt(btn.dataset.i, 10);
+                    if (!isNaN(i)) {
+                        if (!confirm(`"${state[i]?.label}" 필드를 삭제할까요? (입력된 데이터는 그대로 남지만 표에 안 보입니다)`)) return;
+                        state.splice(i, 1);
+                        notify();
+                        render();
+                    }
+                });
+            }
+        });
+
+        const addBtn = container.querySelector('[data-add-go]');
+        const labelInput = container.querySelector('[data-add-label]');
+        const typeSelect = container.querySelector('[data-add-type]');
+
+        function tryAdd() {
+            const label = (labelInput.value || '').trim();
+            const type = typeSelect.value || 'text';
+            if (!label) { labelInput.focus(); return; }
+            if (label.length > 30) return;
+            // 중복 라벨 차단
+            const existing = [...(defaultFields || []), ...state].some(f => f.label === label);
+            if (existing) {
+                alert('이미 같은 이름의 필드가 있습니다.');
+                return;
+            }
+            const key = `cf_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
+            state.push({ key, label, type, custom: true });
+            labelInput.value = '';
+            notify();
+            render();
+        }
+
+        addBtn.addEventListener('click', tryAdd);
+        labelInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') { e.preventDefault(); tryAdd(); }
+        });
+    }
+
+    function notify() { onChange?.(state); }
+
+    render();
+    return {
+        getFields: () => [...state],
+    };
+}
+
 /** 한국 휴대폰 번호 포맷 — 숫자만 남기고 010-XXXX-XXXX 형태로. */
 export function formatKoreanPhone(raw) {
     const digits = String(raw || '').replace(/\D/g, '').slice(0, 11);

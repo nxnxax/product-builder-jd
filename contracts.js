@@ -11,7 +11,7 @@
  */
 
 import { initSupabase, apiRequest, getSession } from './auth-shared.js?v=20260509-phone-toggle';
-import { attachColumnFilters, applyColumnFilters, openRowAddModal, attachPhoneAutoFormat, attachThousandFormat, formatThousand, unformatThousand } from './ledger-shared.js?v=20260509-thousand';
+import { attachColumnFilters, applyColumnFilters, openRowAddModal, attachPhoneAutoFormat, attachThousandFormat, formatThousand, unformatThousand, getEffectiveFields, mountFieldManager } from './ledger-shared.js?v=20260509-fields';
 
 const PAGE_TYPE = 'contract';
 const TAX_RATE = 0.033;   // 실수령액 = commission * (1 - TAX_RATE)
@@ -226,6 +226,8 @@ async function deleteGroupFromSettings() {
 }
 
 /* ============== Settings modal ============== */
+let settingsFieldDraft = [];
+
 function openSettingsModal(groupId) {
     settingsGroupId = groupId;
     const g = groups.find(x => x.id === groupId);
@@ -236,6 +238,13 @@ function openSettingsModal(groupId) {
         orgGroups.map(o => `<option value="${o.id}" ${(g.settings?.linkedOrgGroupId === o.id) ? 'selected' : ''}>${escapeHtml(o.name)}${o.isDefault ? ' ★' : ''}</option>`).join('');
     document.getElementById('settingsErrorMsg').textContent = orgGroups.length === 0
         ? '아직 조직도 그룹이 없습니다. 조직도 페이지에서 먼저 만들어 주세요.' : '';
+    settingsFieldDraft = JSON.parse(JSON.stringify(g.settings?.customFields || []));
+    mountFieldManager({
+        container: document.getElementById('fieldManagerBox'),
+        defaultFields: DEFAULT_FIELDS,
+        customFields: settingsFieldDraft,
+        onChange: (next) => { settingsFieldDraft = next; },
+    });
     document.getElementById('settingsModal').classList.remove('hidden');
 }
 
@@ -243,7 +252,7 @@ async function saveSettings() {
     const g = groups.find(x => x.id === settingsGroupId);
     if (!g) return;
     const linkedId = parseInt(document.getElementById('linkedOrgSelect').value, 10) || null;
-    const newSettings = { ...(g.settings || {}), linkedOrgGroupId: linkedId };
+    const newSettings = { ...(g.settings || {}), linkedOrgGroupId: linkedId, customFields: settingsFieldDraft };
     try {
         await api('ledger-groups', { method: 'PATCH', body: { id: g.id, settings: newSettings } });
         g.settings = newSettings;
@@ -446,6 +455,7 @@ function renderGroupCard(group) {
 }
 
 function renderTable(group, rows) {
+    const fields = getEffectiveFields(group, DEFAULT_FIELDS);
     return `
         <div style="display:flex;justify-content:flex-end;padding:10px 18px;border-bottom:1px solid var(--ledger-line);background:#fbfaf5;">
             <button class="tiny-btn primary" type="button" data-add-row data-gid="${group.id}">+ 계약 추가</button>
@@ -455,13 +465,13 @@ function renderTable(group, rows) {
                 <thead>
                     <tr>
                         <th class="col-check"><input type="checkbox" data-select-all="${group.id}"></th>
-                        ${DEFAULT_FIELDS.map(f => `<th style="min-width:${f.width || 90}px;" data-col-key="${f.key}">${escapeHtml(f.label)}</th>`).join('')}
+                        ${fields.map(f => `<th style="min-width:${f.width || 90}px;" data-col-key="${f.key}">${escapeHtml(f.label)}</th>`).join('')}
                         <th class="col-action"></th>
                     </tr>
                 </thead>
                 <tbody>
                     ${rows.length === 0
-                        ? `<tr><td colspan="${DEFAULT_FIELDS.length + 2}" style="text-align:center;color:#8a847e;padding:24px;font-size:13px;">표시할 계약이 없습니다. 우상단 "+ 계약 추가" 로 등록하세요.</td></tr>`
+                        ? `<tr><td colspan="${fields.length + 2}" style="text-align:center;color:#8a847e;padding:24px;font-size:13px;">표시할 계약이 없습니다. 우상단 "+ 계약 추가" 로 등록하세요.</td></tr>`
                         : rows.map((r, i) => renderRow(r, i + 1, group)).join('')}
                 </tbody>
             </table>
@@ -509,10 +519,11 @@ function renderRow(r, displayNo, group) {
         d.paid_unpaid ? '' : 'row-paid',     // 지급 완료된 행 = 회색
         d.status === 'cancel' ? 'row-cancel' : '',  // 해지된 행 = 분홍
     ].filter(Boolean).join(' ');
+    const fields = getEffectiveFields(group, DEFAULT_FIELDS);
     return `
         <tr data-id="${r.id}" data-gid="${group.id}" class="${cls}">
             <td class="col-check"><input type="checkbox" data-select="${r.id}" ${selectedIds.has(r.id) ? 'checked' : ''}></td>
-            ${DEFAULT_FIELDS.map(f => `<td>${renderCell(f, r, d, displayNo, group)}</td>`).join('')}
+            ${fields.map(f => `<td>${renderCell(f, r, d, displayNo, group)}</td>`).join('')}
             <td class="col-action"><button class="row-action-btn" data-delete-row="${r.id}" title="삭제">×</button></td>
         </tr>`;
 }
@@ -553,6 +564,8 @@ function renderCell(f, r, d, displayNo, group) {
     }
     if (f.type === 'date') return `<input type="text" data-field="${f.key}" data-id="${id}" value="${escapeAttr(d[f.key] || '')}" placeholder="YYYY.MM.DD">`;
     if (f.type === 'tel')  return `<input type="tel"  data-field="${f.key}" data-id="${id}" value="${escapeAttr(d[f.key] || '')}" placeholder="010-0000-0000">`;
+    if (f.type === 'textarea') return `<textarea data-field="${f.key}" data-id="${id}" rows="1" placeholder="${escapeAttr(f.label)}">${escapeHtml(d[f.key] || '')}</textarea>`;
+    if (f.type === 'number') return `<input type="text" inputmode="numeric" data-field="${f.key}" data-id="${id}" value="${escapeAttr(d[f.key] || '')}" placeholder="${escapeAttr(f.label)}">`;
     return `<input type="text" data-field="${f.key}" data-id="${id}" value="${escapeAttr(d[f.key] || '')}" placeholder="${escapeAttr(f.label)}">`;
 }
 
@@ -610,7 +623,7 @@ async function addRow(gid) {
     const employees = orgEmployeesFor(group);
     openRowAddModal({
         title: '새 계약 추가',
-        fields: DEFAULT_FIELDS,
+        fields: getEffectiveFields(group, DEFAULT_FIELDS),
         defaults: { paid_unpaid: true, status: 'active' },
         customRender: (f) => {
             const lbl = `<label class="row-label">${escapeHtml(f.label)}</label>`;

@@ -6,7 +6,7 @@
 <title>계약자 관리대장 · YOUNGMAN</title>
 <link rel="icon" type="image/png" href="logo_main.png">
 <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
-<link rel="stylesheet" href="style.css?v=20260509-status-uniform">
+<link rel="stylesheet" href="style.css?v=20260509-fields">
 <style>
 :root{
     --ledger-line:rgba(20,14,8,.09); --ledger-line-strong:rgba(20,14,8,.16);
@@ -245,6 +245,10 @@ table.ledger-tbl{width:100%;border-collapse:collapse;font-size:13px;min-width:13
                     <span class="row-help">담당자 목록과 수수료(직급별·타입별) 를 이 그룹에서 가져옵니다.</span>
                 </div>
             </div>
+            <div class="modal-row align-start">
+                <label class="row-label">필드 관리</label>
+                <div class="row-control" id="fieldManagerBox"></div>
+            </div>
             <p class="form-help error" id="settingsErrorMsg" style="margin-top:8px;"></p>
         </div>
         <footer class="modal-footer">
@@ -274,9 +278,9 @@ table.ledger-tbl{width:100%;border-collapse:collapse;font-size:13px;min-width:13
     </div>
 </div>
 
-<script type="module" src="contracts.js?v=20260509-status-uniform"></script>
+<script type="module" src="contracts.js?v=20260509-fields"></script>
 <script type="module">
-    import { bootApp } from './auth-shared.js?v=20260509-status-uniform';
+    import { bootApp } from './auth-shared.js?v=20260509-fields';
     bootApp();
 </script>
 </body>
