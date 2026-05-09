@@ -114,6 +114,7 @@ jobs:
           OPENAI_KEY: ${{ secrets.OPENAI_API_KEY }}
           RECRAFT_KEY: ${{ secrets.RECRAFT_API_KEY }}
           IDEOGRAM_KEY: ${{ secrets.IDEOGRAM_API_KEY }}
+          ANTHROPIC_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           LOTTO_DB_HOST: ${{ secrets.LOTTO_DB_HOST }}
           LOTTO_DB_NAME: ${{ secrets.LOTTO_DB_NAME }}
           LOTTO_DB_USER: ${{ secrets.LOTTO_DB_USER }}
@@ -127,15 +128,17 @@ jobs:
             [ -n "$OPENAI_KEY" ]    && echo "OPENAI_API_KEY=$OPENAI_KEY"       || echo "::warning::OPENAI_API_KEY missing"
             [ -n "$RECRAFT_KEY" ]   && echo "RECRAFT_API_KEY=$RECRAFT_KEY"     || true
             [ -n "$IDEOGRAM_KEY" ]  && echo "IDEOGRAM_API_KEY=$IDEOGRAM_KEY"   || echo "::warning::IDEOGRAM_API_KEY missing"
+            [ -n "$ANTHROPIC_KEY" ] && echo "ANTHROPIC_API_KEY=$ANTHROPIC_KEY" || echo "::warning::ANTHROPIC_API_KEY missing — Claude HTML 명함 기능 비활성"
             [ -n "$LOTTO_DB_HOST" ] && echo "LOTTO_DB_HOST=$LOTTO_DB_HOST"     || echo "LOTTO_DB_HOST=localhost"
             [ -n "$LOTTO_DB_NAME" ] && echo "LOTTO_DB_NAME=$LOTTO_DB_NAME"     || echo "::warning::LOTTO_DB_NAME missing — 로또 DB 기능 비활성"
             [ -n "$LOTTO_DB_USER" ] && echo "LOTTO_DB_USER=$LOTTO_DB_USER"     || echo "::warning::LOTTO_DB_USER missing"
             [ -n "$LOTTO_DB_PASS" ] && echo "LOTTO_DB_PASS=$LOTTO_DB_PASS"     || echo "::warning::LOTTO_DB_PASS missing"
             [ -n "$LOTTO_CRON_TOKEN" ] && echo "LOTTO_CRON_TOKEN=$LOTTO_CRON_TOKEN" || true
           } > deploy/.env
-          [ -n "$OPENAI_KEY" ]   && echo "OPENAI_API_KEY len=${#OPENAI_KEY}, prefix=$(printf '%s' "$OPENAI_KEY" | head -c6)…"   || true
-          [ -n "$RECRAFT_KEY" ]  && echo "RECRAFT_API_KEY len=${#RECRAFT_KEY}, prefix=$(printf '%s' "$RECRAFT_KEY" | head -c6)…"  || true
-          [ -n "$IDEOGRAM_KEY" ] && echo "IDEOGRAM_API_KEY len=${#IDEOGRAM_KEY}, prefix=$(printf '%s' "$IDEOGRAM_KEY" | head -c6)…" || true
+          [ -n "$OPENAI_KEY" ]    && echo "OPENAI_API_KEY len=${#OPENAI_KEY}, prefix=$(printf '%s' "$OPENAI_KEY" | head -c6)…"     || true
+          [ -n "$RECRAFT_KEY" ]   && echo "RECRAFT_API_KEY len=${#RECRAFT_KEY}, prefix=$(printf '%s' "$RECRAFT_KEY" | head -c6)…"   || true
+          [ -n "$IDEOGRAM_KEY" ]  && echo "IDEOGRAM_API_KEY len=${#IDEOGRAM_KEY}, prefix=$(printf '%s' "$IDEOGRAM_KEY" | head -c6)…" || true
+          [ -n "$ANTHROPIC_KEY" ] && echo "ANTHROPIC_API_KEY len=${#ANTHROPIC_KEY}, prefix=$(printf '%s' "$ANTHROPIC_KEY" | head -c10)…" || true
 
       - name: Deploy to Cafe24 (FTP)
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5

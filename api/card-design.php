@@ -46,6 +46,95 @@ function openai_chat(string $apiKey, array $body, int $timeout = 60): array {
     return ['ok' => $status >= 200 && $status < 300, 'status' => $status, 'body' => json_decode((string)$resp, true), 'raw' => (string)$resp];
 }
 
+function anthropic_message(string $apiKey, array $body, int $timeout = 90): array {
+    $ch = curl_init('https://api.anthropic.com/v1/messages');
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST => true,
+        CURLOPT_POSTFIELDS => json_encode($body, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+        CURLOPT_HTTPHEADER => [
+            'x-api-key: ' . $apiKey,
+            'anthropic-version: 2023-06-01',
+            'Content-Type: application/json',
+        ],
+        CURLOPT_TIMEOUT => $timeout,
+        CURLOPT_CONNECTTIMEOUT => 10,
+    ]);
+    $resp = curl_exec($ch);
+    $status = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $err = curl_error($ch);
+    curl_close($ch);
+    if ($resp === false) return ['ok' => false, 'status' => 0, 'error' => 'curl: ' . $err];
+    return ['ok' => $status >= 200 && $status < 300, 'status' => $status, 'body' => json_decode((string)$resp, true), 'raw' => (string)$resp];
+}
+
+/** Claude Sonnet 가 OCR 필드 + 톤 + 치수 → 완성된 1장 HTML 명함 반환. */
+function claude_design_html_card(string $apiKey, array $cardFields, ?array $siteMeta, string $tone, array $dims): array {
+    $width = (int)$dims['width']; $height = (int)$dims['height'];
+    $fieldsJson = json_encode($cardFields, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    $siteHint = '';
+    if ($siteMeta) {
+        $siteHint = trim(($siteMeta['title'] ?? '') . ' — ' . ($siteMeta['description'] ?? ''));
+        $siteHint = mb_substr($siteHint, 0, 280, 'UTF-8');
+    }
+
+    $sys = <<<SYS
+You are a senior brand designer. Given a brief, design a single-side business card as a standalone HTML document.
+
+OUTPUT RULES (strict):
+- Return ONLY the complete HTML document, starting with <!DOCTYPE html> and ending with </html>.
+- No markdown fences, no commentary, no preamble — raw HTML only.
+- All CSS inline in a single <style> block in <head>.
+- No external scripts. External fonts allowed (Pretendard CDN already known).
+- Body must center the card. The card element must be exactly {$width}x{$height}px (use width/height in CSS, not aspect-ratio).
+- Use class "card" on the main card container so screenshot tooling can target it.
+- All Korean text from the brief must appear VERBATIM. If a field is empty, omit it gracefully — never invent contact info or company names.
+- Single accent color used sparingly. Generous whitespace. Strong typographic hierarchy.
+- No raster images, no <img>, no QR codes, no fake icons. Inline SVG and CSS shapes only.
+- Hierarchy rule: if `brand_title` exists in OCR, it is the visual hero (largest). The legal `company` is smaller (caption). Person `name` is sub-hero.
+- Korean font: 'Pretendard', -apple-system, sans-serif. Pretendard CDN: https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css
+
+DESIGN PRINCIPLES:
+- Pick a layout that fits the industry (real estate → premium / luxury, tech → modern grid, marketing → editorial bold, law/finance → conservative serif accents).
+- Korean 부동산 분양 → premium feel: cream/charcoal/burgundy, refined serifs allowed for hero.
+- 마케팅/광고 → editorial energy, oversized typographic hero.
+- 미니멀 톤 → tons of whitespace, mono accent.
+
+Return ONLY the HTML document. Begin output with <!DOCTYPE html> immediately.
+SYS;
+
+    $user = "OCR fields (JSON): {$fieldsJson}\n";
+    if ($siteHint !== '') $user .= "Site context: {$siteHint}\n";
+    if ($tone !== '')     $user .= "User tone: {$tone}\n";
+    $user .= "Card dimensions: {$width} x {$height} px\n\nGo.";
+
+    $resp = anthropic_message($apiKey, [
+        'model' => 'claude-sonnet-4-6',
+        'max_tokens' => 8000,
+        'system' => $sys,
+        'messages' => [['role' => 'user', 'content' => $user]],
+    ], 120);
+
+    if (!$resp['ok']) {
+        $msg = $resp['body']['error']['message'] ?? ($resp['error'] ?? 'Anthropic 호출 실패');
+        return ['ok' => false, 'error' => 'Anthropic ' . ($resp['status'] ?? '') . ': ' . $msg];
+    }
+    $blocks = $resp['body']['content'] ?? [];
+    $text = '';
+    foreach ($blocks as $b) {
+        if (($b['type'] ?? '') === 'text') $text .= (string)($b['text'] ?? '');
+    }
+    $text = trim($text);
+    // strip accidental markdown fences
+    $text = preg_replace('/^```(?:html)?\s*/i', '', $text);
+    $text = preg_replace('/```\s*$/', '', (string)$text);
+    $text = trim((string)$text);
+    if (stripos($text, '<!DOCTYPE') === false && stripos($text, '<html') === false) {
+        return ['ok' => false, 'error' => 'Claude 응답에서 HTML 문서를 찾지 못했습니다.', 'preview' => mb_substr($text, 0, 200, 'UTF-8')];
+    }
+    return ['ok' => true, 'html' => $text, 'usage' => $resp['body']['usage'] ?? null];
+}
+
 function ocr_business_card(string $apiKey, string $imageBase64, string $mime): array {
     $resp = openai_chat($apiKey, [
         'model' => 'gpt-4o',
@@ -434,9 +523,10 @@ if ($method === 'GET' && (($_GET['test'] ?? '') === 'connectivity')) {
     jout([
         'ok' => true,
         'env' => [
-            'OPENAI_API_KEY_present'   => load_env_value('OPENAI_API_KEY')   !== '',
-            'RECRAFT_API_KEY_present'  => load_env_value('RECRAFT_API_KEY')  !== '',
-            'IDEOGRAM_API_KEY_present' => load_env_value('IDEOGRAM_API_KEY') !== '',
+            'OPENAI_API_KEY_present'    => load_env_value('OPENAI_API_KEY')    !== '',
+            'RECRAFT_API_KEY_present'   => load_env_value('RECRAFT_API_KEY')   !== '',
+            'IDEOGRAM_API_KEY_present'  => load_env_value('IDEOGRAM_API_KEY')  !== '',
+            'ANTHROPIC_API_KEY_present' => load_env_value('ANTHROPIC_API_KEY') !== '',
             'php_version' => PHP_VERSION,
         ],
         'templates' => array_values(array_map(function ($p) { return basename($p, '.html'); }, glob(dirname(__DIR__) . '/templates/cards/*.html') ?: [])),
@@ -446,11 +536,20 @@ if ($method === 'GET' && (($_GET['test'] ?? '') === 'connectivity')) {
 if ($method !== 'POST') jout(['ok' => false, 'error' => 'POST only'], 405);
 
 $openaiKey = load_env_value('OPENAI_API_KEY');
-if ($openaiKey === '') jout(['ok' => false, 'error' => 'OPENAI_API_KEY가 서버 .env에 설정되지 않았습니다.'], 500);
+$mode = trim((string)($_POST['mode'] ?? 'ideogram'));   // 'ideogram' (default) | 'claude_html'
 
+// claude_html 모드는 OpenAI 키 없어도 OK (OCR 안 쓰면), 단 Anthropic 키는 필수.
+// 단 image 가 있으면 OCR 위해 OpenAI 가 필요.
 $siteUrl = trim((string)($_POST['siteUrl'] ?? ''));
 $tone = trim((string)($_POST['tone'] ?? ''));
 $hasImage = !empty($_FILES['image']) && is_array($_FILES['image']) && (int)($_FILES['image']['error'] ?? 1) === UPLOAD_ERR_OK;
+
+if ($mode !== 'claude_html' && $openaiKey === '') {
+    jout(['ok' => false, 'error' => 'OPENAI_API_KEY가 서버 .env에 설정되지 않았습니다.'], 500);
+}
+if ($mode === 'claude_html' && $hasImage && $openaiKey === '') {
+    jout(['ok' => false, 'error' => '이미지 OCR 위해 OPENAI_API_KEY 가 필요합니다 (또는 이미지 없이 톤만 입력).'], 500);
+}
 
 if (!$hasImage && $siteUrl === '' && $tone === '') {
     jout(['ok' => false, 'error' => '명함 이미지 / 사이트 주소 / 톤 설명 중 하나는 필요합니다.'], 400);
@@ -483,6 +582,29 @@ if ($siteUrl !== '') {
 }
 
 if (!$cardFields) $cardFields = [];
+
+// === Claude HTML 직접 디자인 모드 ===
+if ($mode === 'claude_html') {
+    $anthropicKey = load_env_value('ANTHROPIC_API_KEY');
+    if ($anthropicKey === '') {
+        jout(['ok' => false, 'error' => 'ANTHROPIC_API_KEY가 서버 .env에 설정되지 않았습니다.'], 500);
+    }
+    $claude = claude_design_html_card($anthropicKey, $cardFields, $siteMeta, $tone, $inputDims);
+    if (!$claude['ok']) {
+        jout(['ok' => false, 'error' => $claude['error'] ?? 'Claude 호출 실패', 'preview' => $claude['preview'] ?? null], 502);
+    }
+    $savedUrl = save_html($claude['html']);
+    if ($savedUrl === null) jout(['ok' => false, 'error' => 'HTML 저장 실패'], 500);
+    jout([
+        'ok'        => true,
+        'mode'      => 'claude_html',
+        'fields'    => $cardFields,
+        'siteMeta'  => $siteMeta,
+        'htmlUrl'   => $savedUrl,
+        'usage'     => $claude['usage'] ?? null,
+        'note'      => $ocrError ? ('OCR: ' . $ocrError) : null,
+    ]);
+}
 
 // Director decides palette + hero/sub/tertiary/etc. (used by both Ideogram and template fallback)
 $decision = template_palette_decision($openaiKey, $cardFields, $siteMeta, $tone);

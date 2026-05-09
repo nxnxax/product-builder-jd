@@ -6,7 +6,7 @@
     <title>온라인 명함 제작 · YOUNGMAN</title>
     <link rel="icon" type="image/png" href="logo_main.png">
     <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
-    <link rel="stylesheet" href="style.css?v=20260510-content-tight">
+    <link rel="stylesheet" href="style.css?v=20260510-claude-card">
     <style>
         .cb-wrap { max-width: 760px; margin: 3rem auto 5rem; padding: 0 1.5rem; }
         .cb-wrap h2 { margin: 0 0 .35rem; font-size: 1.6rem; letter-spacing: -.01em; }
@@ -87,6 +87,22 @@
 
         .back-link { display: inline-block; margin-bottom: 1rem; color: var(--fg-secondary); text-decoration: none; font-size: .9rem; }
         .back-link:hover { color: var(--fg); }
+
+        .cb-mode-row { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem; margin-bottom: 1.25rem; }
+        .cb-mode-btn {
+            display: flex; flex-direction: column; align-items: flex-start; gap: .15rem;
+            padding: .85rem 1rem;
+            border: 1.5px solid var(--border); border-radius: var(--radius-md);
+            background: var(--bg); color: var(--fg);
+            font-family: inherit; font-size: .9rem; cursor: pointer; text-align: left;
+            transition: border-color .15s, background .15s, color .15s;
+        }
+        .cb-mode-btn .mode-title { font-weight: 600; font-size: .95rem; }
+        .cb-mode-btn .mode-sub { font-size: .75rem; color: var(--fg-tertiary); }
+        .cb-mode-btn:hover { border-color: var(--border-strong); }
+        .cb-mode-btn.active { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+        .cb-mode-btn.active .mode-sub { color: var(--accent); opacity: .85; }
+        @media (max-width: 480px) { .cb-mode-row { grid-template-columns: 1fr; } }
     </style>
 </head>
 <body>
@@ -95,6 +111,17 @@
     <main class="cb-wrap">
         <h2>온라인 명함 제작</h2>
         <p class="subtitle">기존 명함을 촬영하거나 이미지로 업로드하면 AI가 내용을 인식해 고급스러운 디자인으로 재구성합니다. 회사 사이트 주소를 함께 입력하면 사이트의 분위기와 정보를 반영합니다.</p>
+
+        <div class="cb-mode-row" role="tablist" aria-label="디자인 방식">
+            <button type="button" class="cb-mode-btn active" id="mode-ideogram" role="tab" aria-selected="true">
+                <span class="mode-title">AI 이미지 생성</span>
+                <span class="mode-sub">Ideogram + 템플릿 — 사진 같은 디자인 결과</span>
+            </button>
+            <button type="button" class="cb-mode-btn" id="mode-claude" role="tab" aria-selected="false">
+                <span class="mode-title">HTML 직접 디자인</span>
+                <span class="mode-sub">Claude — 편집 가능한 텍스트 기반 명함</span>
+            </button>
+        </div>
 
         <section class="cb-section">
             <h3>1. 명함 이미지</h3>
@@ -154,7 +181,7 @@
     </main>
 
     <script type="module">
-        import { bootApp } from './auth-shared.js?v=20260510-content-tight';
+        import { bootApp } from './auth-shared.js?v=20260510-claude-card';
         bootApp({ requireAdmin: true });
     </script>
     <script>
@@ -175,6 +202,19 @@
         const resultBody = $('cb-result-body');
 
         let currentFile = null;
+        let currentMode = 'ideogram';   // 'ideogram' | 'claude_html'
+
+        const modeIdeogram = $('mode-ideogram');
+        const modeClaude = $('mode-claude');
+        function setMode(m) {
+            currentMode = m;
+            modeIdeogram.classList.toggle('active', m === 'ideogram');
+            modeIdeogram.setAttribute('aria-selected', String(m === 'ideogram'));
+            modeClaude.classList.toggle('active', m === 'claude_html');
+            modeClaude.setAttribute('aria-selected', String(m === 'claude_html'));
+        }
+        modeIdeogram.addEventListener('click', () => setMode('ideogram'));
+        modeClaude.addEventListener('click', () => setMode('claude_html'));
 
         function setStatus(text, type) {
             statusEl.className = 'cb-status visible' + (type ? ' ' + type : '');
@@ -236,8 +276,14 @@
 
         generateBtn.addEventListener('click', async () => {
             const url = urlInput.value.trim();
-            if (!currentFile && !url) {
+            const tone = toneInput.value.trim();
+            // claude_html 모드는 톤만 있어도 OK
+            if (currentMode !== 'claude_html' && !currentFile && !url) {
                 setStatus('명함 이미지나 회사 사이트 주소 중 하나는 입력해 주세요.', 'error');
+                return;
+            }
+            if (currentMode === 'claude_html' && !currentFile && !url && !tone) {
+                setStatus('이미지 / 사이트 주소 / 디자인 톤 중 하나는 입력해 주세요.', 'error');
                 return;
             }
             if (url && !/^https?:\/\//i.test(url)) {
@@ -246,12 +292,13 @@
             }
             generateBtn.disabled = true;
             generateBtn.textContent = '생성 중…';
-            setStatus('명함 정보를 분석하고 있습니다…', '');
+            setStatus(currentMode === 'claude_html' ? 'Claude가 HTML 명함을 디자인 중…' : '명함 정보를 분석하고 있습니다…', '');
             try {
                 const fd = new FormData();
                 if (currentFile) fd.append('image', currentFile);
                 if (url) fd.append('siteUrl', url);
-                if (toneInput.value.trim()) fd.append('tone', toneInput.value.trim());
+                if (tone) fd.append('tone', tone);
+                fd.append('mode', currentMode);
                 const res = await fetch('card-design.php', { method: 'POST', body: fd });
                 const data = await res.json().catch(() => null);
                 if (!res.ok || !data || data.ok === false) {
