@@ -211,7 +211,6 @@ export function mountAppHeader(opts) {
             <button type="button" class="mobile-menu-toggle" aria-label="메뉴 열기" aria-expanded="false">
                 <span></span><span></span><span></span>
             </button>
-            <div class="mobile-drawer-backdrop" data-mobile-drawer-close></div>
             <div class="mobile-drawer">
                 <div class="mobile-drawer-head">
                     <span class="mobile-drawer-title">메뉴</span>
@@ -230,6 +229,22 @@ export function mountAppHeader(opts) {
         </div>
     `;
 
+    // 드로어와 백드롭은 body 직속으로 이동시켜 .app-header 의 stacking context 에서 빼냄.
+    // (그래야 z-index 가 페이지 다른 요소 위로 안정적으로 올라감)
+    const drawerEl = root.querySelector('.mobile-drawer');
+    if (drawerEl) {
+        // 기존 백드롭 제거 후 새로 만듦.
+        document.querySelectorAll('.mobile-drawer-backdrop[data-yman-drawer]').forEach(el => el.remove());
+        document.querySelectorAll('.mobile-drawer[data-yman-drawer]').forEach(el => el.remove());
+        const backdrop = document.createElement('div');
+        backdrop.className = 'mobile-drawer-backdrop';
+        backdrop.setAttribute('data-mobile-drawer-close', '');
+        backdrop.setAttribute('data-yman-drawer', '1');
+        document.body.appendChild(backdrop);
+        drawerEl.setAttribute('data-yman-drawer', '1');
+        document.body.appendChild(drawerEl);
+    }
+
     // logout 핸들러
     const logoutBtn = root.querySelector('#logout-btn');
     if (logoutBtn) {
@@ -243,7 +258,8 @@ export function mountAppHeader(opts) {
 
     // 모바일 사이드 드로어 — 햄버거 토글 / 아코디언 서브메뉴
     const hamburger = root.querySelector('.mobile-menu-toggle');
-    const drawer = root.querySelector('.mobile-drawer');
+    const drawer = drawerEl;   // body 로 이동된 드로어 참조
+    const backdropEl = document.querySelector('.mobile-drawer-backdrop[data-yman-drawer]');
     const closeDrawer = () => {
         drawer?.classList.remove('open');
         hamburger?.classList.remove('open');
@@ -258,7 +274,8 @@ export function mountAppHeader(opts) {
             document.body.classList.toggle('mobile-drawer-open', isOpen);
         });
         // backdrop / X 버튼 → 닫힘
-        root.querySelectorAll('[data-mobile-drawer-close]').forEach(el => {
+        if (backdropEl) backdropEl.addEventListener('click', closeDrawer);
+        drawer.querySelectorAll('[data-mobile-drawer-close]').forEach(el => {
             el.addEventListener('click', closeDrawer);
         });
         // a[href] 링크 클릭 시 자동 닫힘 (드롭다운 트리거 제외)
