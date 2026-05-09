@@ -652,10 +652,12 @@ small { color: var(--fg-tertiary); font-size: 13px; }
 body.is-anon #user-menu { display: none; }
 body:not(.is-anon) #open-login-btn { display: none; }
 body.is-anon #open-login-btn { display: inline-flex; }
-[data-admin-only] { display: none; }
-body.is-admin [data-admin-only] { display: inline-flex; }
-#admin-link { display: none; }
-body.is-admin #admin-link { display: inline-flex; }
+/* admin-only 메뉴 — 비admin/비로그인 시 강제 숨김.
+   secondary nav 의 .nav-link CSS 가 specificity 가 더 높아 일반 규칙으로는 못 덮음. */
+[data-admin-only] { display: none !important; }
+body.is-admin [data-admin-only] { display: inline-flex !important; }
+#admin-link { display: none !important; }
+body.is-admin #admin-link { display: inline-flex !important; }
 
 /* ------------------------------------------------------------------ Layout */
 .dashboard {
