@@ -98,6 +98,7 @@ function normalize_resource($value) {
         'auth-profile',
         'admin-members', 'admin-stats', 'admin-logs', 'admin-settings',
         'admin-bootstrap', 'admin-cleanup-orphans',
+        'ledger-groups', 'ledger-records', 'ledger-records-bulk',
     ];
     if (!in_array($resource, $allowed, true)) {
         respond(['ok' => false, 'error' => '지원하지 않는 리소스입니다.'], 400);
@@ -502,6 +503,102 @@ function ensure_owner_column(PDO $pdo, string $table): bool {
 /** 현재 사용자의 owner 식별자 (이메일 소문자). 빈 문자열이면 인증 실패로 간주. */
 function current_owner_email($authUser): string {
     return strtolower((string)($authUser['email'] ?? ''));
+}
+
+/* ============================================================
+   계약자 / 조직도 / 고객 관리대장 — 공통 ledger 시스템 (Phase 1)
+   ============================================================ */
+
+/**
+ * 그룹과 레코드 테이블 자동 마이그레이션.
+ * 한 요청 내에서 한 번만 실행 (정적 캐시).
+ */
+function ensure_ledger_tables(PDO $pdo): bool {
+    static $done = null;
+    if ($done !== null) return $done;
+    try {
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS ledger_groups (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                owner_email VARCHAR(255) NOT NULL,
+                page_type VARCHAR(20) NOT NULL,
+                name VARCHAR(120) NOT NULL,
+                is_default TINYINT(1) NOT NULL DEFAULT 0,
+                sort_order INT NOT NULL DEFAULT 0,
+                field_schema_json LONGTEXT NULL,
+                settings_json LONGTEXT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                INDEX idx_lg_owner_page (owner_email, page_type),
+                INDEX idx_lg_owner_default (owner_email, is_default)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        ");
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS ledger_records (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                group_id INT NOT NULL,
+                owner_email VARCHAR(255) NOT NULL,
+                sort_no INT NOT NULL DEFAULT 0,
+                data_json LONGTEXT NULL,
+                client_idempotency_key VARCHAR(120) NULL DEFAULT NULL,
+                source VARCHAR(40) NOT NULL DEFAULT 'web',
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                INDEX idx_lr_group_sort (group_id, sort_no),
+                INDEX idx_lr_owner (owner_email),
+                UNIQUE KEY uniq_lr_idempotency (owner_email, client_idempotency_key)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        ");
+        return $done = true;
+    } catch (Throwable $e) {
+        error_log('[records] ensure_ledger_tables failed: ' . $e->getMessage());
+        return $done = false;
+    }
+}
+
+/** 페이지 타입 검증. 허용된 값만 통과. */
+function valid_ledger_page_type(string $v): bool {
+    return in_array($v, ['contract', 'org', 'customer'], true);
+}
+
+/** 그룹 행 → 응답 형태로 변환. JSON 컬럼 디코딩. */
+function ledger_group_row(array $row): array {
+    return [
+        'id'           => (int)$row['id'],
+        'pageType'     => $row['page_type'],
+        'name'         => $row['name'],
+        'isDefault'    => (bool)$row['is_default'],
+        'sortOrder'    => (int)$row['sort_order'],
+        'fieldSchema'  => $row['field_schema_json'] ? json_decode($row['field_schema_json'], true) : null,
+        'settings'     => $row['settings_json']     ? json_decode($row['settings_json'],     true) : null,
+        'createdAt'    => $row['created_at'] ?? null,
+        'updatedAt'    => $row['updated_at'] ?? null,
+    ];
+}
+
+/** 레코드 행 → 응답 형태. */
+function ledger_record_row(array $row): array {
+    return [
+        'id'         => (int)$row['id'],
+        'groupId'    => (int)$row['group_id'],
+        'sortNo'     => (int)$row['sort_no'],
+        'data'       => $row['data_json'] ? json_decode($row['data_json'], true) : new stdClass(),
+        'source'     => $row['source'] ?? 'web',
+        'createdAt'  => $row['created_at'] ?? null,
+        'updatedAt'  => $row['updated_at'] ?? null,
+    ];
+}
+
+/** 사용자가 해당 그룹의 소유자임을 확인. 아니면 즉시 403. */
+function ensure_ledger_group_owner(PDO $pdo, int $groupId, string $owner): array {
+    $stmt = $pdo->prepare('SELECT * FROM ledger_groups WHERE id = :id LIMIT 1');
+    $stmt->execute([':id' => $groupId]);
+    $row = $stmt->fetch();
+    if (!$row) respond(['ok' => false, 'error' => '존재하지 않는 그룹입니다.'], 404);
+    if (strtolower((string)$row['owner_email']) !== $owner) {
+        respond(['ok' => false, 'error' => '해당 그룹에 접근 권한이 없습니다.'], 403);
+    }
+    return $row;
 }
 
 /** 본 요청의 사용자가 어드민/오너인지 판단. 기존 is_admin_user($authUser, $memberRecord) 활용. */
@@ -1319,6 +1416,237 @@ try {
         }
 
         respond(['ok' => false, 'error' => '지원하지 않는 요청 방식입니다.'], 405);
+    }
+
+    /* ============================================================
+       Ledger 시스템 — 그룹/레코드 (계약자·조직도·고객 관리대장 공통)
+       ============================================================ */
+    if ($resource === 'ledger-groups' || $resource === 'ledger-records' || $resource === 'ledger-records-bulk') {
+        enforce_registered_member($pdo, $authUser);
+        if (!ensure_ledger_tables($pdo)) {
+            respond(['ok' => false, 'error' => 'ledger 마이그레이션 실패 — 잠시 후 다시 시도'], 503);
+        }
+        $owner = current_owner_email($authUser);
+        if ($owner === '') respond(['ok' => false, 'error' => '인증된 사용자 정보가 없습니다.'], 401);
+
+        if ($resource === 'ledger-groups') {
+            if ($method === 'GET') {
+                $pageType = (string)($_GET['page_type'] ?? '');
+                if ($pageType !== '' && !valid_ledger_page_type($pageType)) {
+                    respond(['ok' => false, 'error' => 'page_type 값이 올바르지 않습니다.'], 400);
+                }
+                $sql = 'SELECT * FROM ledger_groups WHERE owner_email = :o';
+                $params = [':o' => $owner];
+                if ($pageType !== '') { $sql .= ' AND page_type = :pt'; $params[':pt'] = $pageType; }
+                $sql .= ' ORDER BY sort_order ASC, id ASC';
+                $stmt = $pdo->prepare($sql);
+                $stmt->execute($params);
+                respond(['ok' => true, 'items' => array_map('ledger_group_row', $stmt->fetchAll())]);
+            }
+
+            if ($method === 'POST') {
+                $pageType = (string)($body['pageType'] ?? '');
+                $name = trim((string)($body['name'] ?? ''));
+                if (!valid_ledger_page_type($pageType)) respond(['ok' => false, 'error' => 'pageType 이 올바르지 않습니다.'], 400);
+                if ($name === '') respond(['ok' => false, 'error' => '그룹 이름은 필수입니다.'], 400);
+
+                $isDefault = !empty($body['isDefault']) ? 1 : 0;
+                $sortOrder = (int)($body['sortOrder'] ?? 0);
+                $fieldSchema = isset($body['fieldSchema']) ? json_encode($body['fieldSchema'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) : null;
+                $settings    = isset($body['settings'])    ? json_encode($body['settings'],    JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) : null;
+
+                // is_default 가 켜진 그룹은 같은 owner+page_type 내에서 1개만 유지.
+                if ($isDefault) {
+                    $unset = $pdo->prepare('UPDATE ledger_groups SET is_default = 0 WHERE owner_email = :o AND page_type = :pt');
+                    $unset->execute([':o' => $owner, ':pt' => $pageType]);
+                }
+
+                $stmt = $pdo->prepare('
+                    INSERT INTO ledger_groups (owner_email, page_type, name, is_default, sort_order, field_schema_json, settings_json)
+                    VALUES (:o, :pt, :name, :def, :so, :fs, :st)
+                ');
+                $stmt->execute([
+                    ':o' => $owner, ':pt' => $pageType, ':name' => $name,
+                    ':def' => $isDefault, ':so' => $sortOrder,
+                    ':fs' => $fieldSchema, ':st' => $settings,
+                ]);
+                respond(['ok' => true, 'id' => (int)$pdo->lastInsertId()]);
+            }
+
+            if ($method === 'PATCH' || $method === 'PUT') {
+                $id = (int)($body['id'] ?? $_GET['id'] ?? 0);
+                if (!$id) respond(['ok' => false, 'error' => 'id 가 필요합니다.'], 400);
+                $existing = ensure_ledger_group_owner($pdo, $id, $owner);
+
+                $assignments = [];
+                $params = [':id' => $id];
+
+                if (array_key_exists('name', $body)) {
+                    $assignments[] = 'name = :name';
+                    $params[':name'] = trim((string)$body['name']);
+                }
+                if (array_key_exists('sortOrder', $body)) {
+                    $assignments[] = 'sort_order = :so';
+                    $params[':so'] = (int)$body['sortOrder'];
+                }
+                if (array_key_exists('fieldSchema', $body)) {
+                    $assignments[] = 'field_schema_json = :fs';
+                    $params[':fs'] = json_encode($body['fieldSchema'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                }
+                if (array_key_exists('settings', $body)) {
+                    $assignments[] = 'settings_json = :st';
+                    $params[':st'] = json_encode($body['settings'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                }
+                if (array_key_exists('isDefault', $body)) {
+                    $isDef = !empty($body['isDefault']) ? 1 : 0;
+                    if ($isDef) {
+                        // 같은 owner+page_type 내 다른 그룹 default 해제.
+                        $unset = $pdo->prepare('UPDATE ledger_groups SET is_default = 0 WHERE owner_email = :o AND page_type = :pt AND id != :id');
+                        $unset->execute([':o' => $owner, ':pt' => $existing['page_type'], ':id' => $id]);
+                    }
+                    $assignments[] = 'is_default = :def';
+                    $params[':def'] = $isDef;
+                }
+                if (!$assignments) respond(['ok' => false, 'error' => '수정할 필드가 없습니다.'], 400);
+
+                $stmt = $pdo->prepare('UPDATE ledger_groups SET ' . implode(', ', $assignments) . ' WHERE id = :id');
+                $stmt->execute($params);
+                respond(['ok' => true]);
+            }
+
+            if ($method === 'DELETE') {
+                $id = (int)($body['id'] ?? $_GET['id'] ?? 0);
+                if (!$id) respond(['ok' => false, 'error' => 'id 가 필요합니다.'], 400);
+                ensure_ledger_group_owner($pdo, $id, $owner);
+                // 레코드도 함께 삭제 (FK CASCADE 가 없는 환경 대비 명시적 삭제).
+                $pdo->prepare('DELETE FROM ledger_records WHERE group_id = :g AND owner_email = :o')
+                    ->execute([':g' => $id, ':o' => $owner]);
+                $pdo->prepare('DELETE FROM ledger_groups WHERE id = :id AND owner_email = :o')
+                    ->execute([':id' => $id, ':o' => $owner]);
+                respond(['ok' => true]);
+            }
+
+            respond(['ok' => false, 'error' => '지원하지 않는 요청 방식입니다.'], 405);
+        }
+
+        if ($resource === 'ledger-records') {
+            if ($method === 'GET') {
+                // group_id 단일 또는 group_ids=1,2,3 멀티 지원.
+                $rawIds = (string)($_GET['group_ids'] ?? $_GET['group_id'] ?? '');
+                $ids = array_values(array_filter(array_map('intval', preg_split('/[,\s]+/', $rawIds)), function ($v) { return $v > 0; }));
+                if (!$ids) respond(['ok' => false, 'error' => 'group_id 또는 group_ids 가 필요합니다.'], 400);
+
+                // 모든 그룹이 현재 사용자 소유인지 확인.
+                $placeholders = implode(',', array_fill(0, count($ids), '?'));
+                $check = $pdo->prepare('SELECT id, owner_email FROM ledger_groups WHERE id IN (' . $placeholders . ')');
+                $check->execute($ids);
+                $found = $check->fetchAll();
+                if (count($found) !== count($ids)) {
+                    respond(['ok' => false, 'error' => '존재하지 않는 그룹이 포함됨.'], 404);
+                }
+                foreach ($found as $g) {
+                    if (strtolower((string)$g['owner_email']) !== $owner) {
+                        respond(['ok' => false, 'error' => '권한 없는 그룹이 포함됨.'], 403);
+                    }
+                }
+
+                $sql = 'SELECT * FROM ledger_records WHERE group_id IN (' . $placeholders . ') AND owner_email = ?
+                        ORDER BY group_id ASC, sort_no ASC, id ASC';
+                $stmt = $pdo->prepare($sql);
+                $stmt->execute(array_merge($ids, [$owner]));
+                respond(['ok' => true, 'items' => array_map('ledger_record_row', $stmt->fetchAll())]);
+            }
+
+            if ($method === 'POST') {
+                $groupId = (int)($body['groupId'] ?? 0);
+                if (!$groupId) respond(['ok' => false, 'error' => 'groupId 가 필요합니다.'], 400);
+                ensure_ledger_group_owner($pdo, $groupId, $owner);
+
+                $data = isset($body['data']) ? (array)$body['data'] : [];
+                $idemKey = trim((string)($body['clientIdempotencyKey'] ?? ''));
+                $source  = trim((string)($body['source'] ?? 'web'));
+                if (strlen($source) > 40) $source = substr($source, 0, 40);
+
+                // 멱등성: 같은 owner_email + idempotency_key 가 이미 있으면 그 row 반환.
+                if ($idemKey !== '') {
+                    $existing = $pdo->prepare('SELECT id FROM ledger_records WHERE owner_email = :o AND client_idempotency_key = :k LIMIT 1');
+                    $existing->execute([':o' => $owner, ':k' => $idemKey]);
+                    $hit = $existing->fetchColumn();
+                    if ($hit) respond(['ok' => true, 'id' => (int)$hit, 'duplicate' => true]);
+                }
+
+                // sort_no = 그룹 내 max + 1 (자동 NO).
+                $next = $pdo->prepare('SELECT IFNULL(MAX(sort_no), 0) + 1 FROM ledger_records WHERE group_id = :g');
+                $next->execute([':g' => $groupId]);
+                $sortNo = (int)$next->fetchColumn();
+
+                $stmt = $pdo->prepare('
+                    INSERT INTO ledger_records (group_id, owner_email, sort_no, data_json, client_idempotency_key, source)
+                    VALUES (:g, :o, :sn, :d, :k, :s)
+                ');
+                $stmt->execute([
+                    ':g' => $groupId, ':o' => $owner, ':sn' => $sortNo,
+                    ':d' => json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+                    ':k' => $idemKey !== '' ? $idemKey : null,
+                    ':s' => $source,
+                ]);
+                respond(['ok' => true, 'id' => (int)$pdo->lastInsertId(), 'sortNo' => $sortNo]);
+            }
+
+            if ($method === 'PATCH' || $method === 'PUT') {
+                $id = (int)($body['id'] ?? 0);
+                if (!$id) respond(['ok' => false, 'error' => 'id 가 필요합니다.'], 400);
+                $stmt = $pdo->prepare('SELECT * FROM ledger_records WHERE id = :id LIMIT 1');
+                $stmt->execute([':id' => $id]);
+                $row = $stmt->fetch();
+                if (!$row) respond(['ok' => false, 'error' => '존재하지 않는 레코드.'], 404);
+                if (strtolower((string)$row['owner_email']) !== $owner) respond(['ok' => false, 'error' => '권한 없음.'], 403);
+
+                $assignments = [];
+                $params = [':id' => $id];
+                if (array_key_exists('data', $body)) {
+                    // 부분 머지 — 기존 data 와 새 data 를 합쳐 저장 (덮어쓰기).
+                    $existing = $row['data_json'] ? (array)json_decode($row['data_json'], true) : [];
+                    $merged = array_replace($existing, (array)$body['data']);
+                    $assignments[] = 'data_json = :d';
+                    $params[':d'] = json_encode($merged, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                }
+                if (array_key_exists('sortNo', $body)) {
+                    $assignments[] = 'sort_no = :sn';
+                    $params[':sn'] = (int)$body['sortNo'];
+                }
+                if (!$assignments) respond(['ok' => false, 'error' => '수정할 필드가 없습니다.'], 400);
+                $upd = $pdo->prepare('UPDATE ledger_records SET ' . implode(', ', $assignments) . ' WHERE id = :id AND owner_email = :o');
+                $params[':o'] = $owner;
+                $upd->execute($params);
+                respond(['ok' => true]);
+            }
+
+            if ($method === 'DELETE') {
+                $id = (int)($body['id'] ?? $_GET['id'] ?? 0);
+                if (!$id) respond(['ok' => false, 'error' => 'id 가 필요합니다.'], 400);
+                $del = $pdo->prepare('DELETE FROM ledger_records WHERE id = :id AND owner_email = :o');
+                $del->execute([':id' => $id, ':o' => $owner]);
+                if ($del->rowCount() === 0) respond(['ok' => false, 'error' => '삭제할 권한이 없거나 존재하지 않음.'], 404);
+                respond(['ok' => true]);
+            }
+
+            respond(['ok' => false, 'error' => '지원하지 않는 요청 방식입니다.'], 405);
+        }
+
+        if ($resource === 'ledger-records-bulk') {
+            // 선택삭제: { ids: [1,2,3, ...] }
+            if ($method !== 'POST' && $method !== 'DELETE') {
+                respond(['ok' => false, 'error' => '지원하지 않는 요청 방식입니다.'], 405);
+            }
+            $ids = is_array($body['ids'] ?? null) ? array_values(array_filter(array_map('intval', $body['ids']), fn($v) => $v > 0)) : [];
+            if (!$ids) respond(['ok' => false, 'error' => 'ids 배열이 필요합니다.'], 400);
+
+            $placeholders = implode(',', array_fill(0, count($ids), '?'));
+            $del = $pdo->prepare('DELETE FROM ledger_records WHERE id IN (' . $placeholders . ') AND owner_email = ?');
+            $del->execute(array_merge($ids, [$owner]));
+            respond(['ok' => true, 'deleted' => $del->rowCount()]);
+        }
     }
 
     enforce_registered_member($pdo, $authUser);
