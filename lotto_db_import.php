@@ -52,20 +52,70 @@ function create_table(PDO $pdo): void {
 
 function fetch_lotto(int $draw_no): ?array {
     $url = "https://www.dhlottery.co.kr/common.do?method=getLottoNumber&drwNo=" . $draw_no;
-    $ctx = stream_context_create([
-        'http' => [
-            'method'  => 'GET',
-            'timeout' => 8,
-            'header'  => "User-Agent: Mozilla/5.0\r\nAccept: application/json\r\n",
-        ],
-    ]);
-    $json = @file_get_contents($url, false, $ctx);
-    if ($json === false || trim($json) === '') return null;
 
-    $data = json_decode($json, true);
+    // 카페24 호스팅은 allow_url_fopen 이 꺼져 있는 경우가 많아 cURL 사용.
+    if (!function_exists('curl_init')) return null;
+
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT        => 8,
+        CURLOPT_CONNECTTIMEOUT => 5,
+        CURLOPT_SSL_VERIFYPEER => false,   // 카페24 일부 환경에서 CA 번들 미설치
+        CURLOPT_SSL_VERIFYHOST => 0,
+        CURLOPT_FOLLOWLOCATION => true,
+        CURLOPT_USERAGENT      => 'Mozilla/5.0 (compatible; YOUNGMAN/1.0)',
+        CURLOPT_HTTPHEADER     => ['Accept: application/json'],
+    ]);
+    $body   = curl_exec($ch);
+    $status = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+
+    if ($body === false || $status < 200 || $status >= 300) return null;
+    if (!is_string($body) || trim($body) === '')           return null;
+
+    $data = json_decode($body, true);
     if (!is_array($data)) return null;
     if (($data['returnValue'] ?? '') !== 'success') return null;
     return $data;
+}
+
+/**
+ * 진단용: 외부 동행복권 API 가 실제로 접속 가능한지 확인.
+ * UI 의 "연결 진단" 버튼이 호출.
+ */
+function diagnose_fetch(): array {
+    $out = [
+        'php_version'      => PHP_VERSION,
+        'curl_available'   => function_exists('curl_init'),
+        'allow_url_fopen'  => (string)ini_get('allow_url_fopen'),
+        'openssl_loaded'   => extension_loaded('openssl'),
+        'sample_call'      => null,
+    ];
+    if (!$out['curl_available']) return $out;
+
+    $url = "https://www.dhlottery.co.kr/common.do?method=getLottoNumber&drwNo=1";
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT        => 8,
+        CURLOPT_CONNECTTIMEOUT => 5,
+        CURLOPT_SSL_VERIFYPEER => false,
+        CURLOPT_SSL_VERIFYHOST => 0,
+        CURLOPT_FOLLOWLOCATION => true,
+        CURLOPT_USERAGENT      => 'Mozilla/5.0 (compatible; YOUNGMAN/1.0)',
+    ]);
+    $body   = curl_exec($ch);
+    $status = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $err    = curl_error($ch);
+    curl_close($ch);
+
+    $out['sample_call'] = [
+        'http_status' => $status,
+        'curl_error'  => $err,
+        'body_head'   => is_string($body) ? substr($body, 0, 200) : '(no body)',
+    ];
+    return $out;
 }
 
 function find_latest_draw_no(): int {
@@ -133,6 +183,9 @@ function update_latest(PDO $pdo): array {
     $latest  = find_latest_draw_no();
     $current = (int)$pdo->query("SELECT IFNULL(MAX(draw_no), 0) FROM lotto_winning_numbers")->fetchColumn();
 
+    if ($latest < 1) {
+        throw new RuntimeException('동행복권 API 에 접속할 수 없습니다. "연결 진단" 버튼으로 cURL/SSL 상태를 확인하세요.');
+    }
     if ($latest <= $current) {
         return ['saved' => 0, 'latest' => $latest, 'current' => $current, 'message' => "이미 최신 상태입니다. 현재 DB 최신회차: {$current}회차"];
     }
@@ -167,6 +220,7 @@ if ($queryAction === 'update_latest' && $cronToken !== '' && hash_equals($cronTo
     exit;
 }
 
+$diag = null;
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
         $pdo = lotto_db();
@@ -174,7 +228,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         $action = $_POST['action'] ?? '';
 
-        if ($action === 'install_all') {
+        if ($action === 'diagnose') {
+            $diag = diagnose_fetch();
+            $result_message = '연결 진단 완료 — 아래 결과 박스 참고';
+        } elseif ($action === 'install_all') {
             $latest = find_latest_draw_no();
             if ($latest < 1) throw new Exception('최신 회차를 찾지 못했습니다.');
             $saved = 0; $failed = 0;
@@ -183,6 +240,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if ($data) { save_lotto($pdo, $data); $saved++; } else { $failed++; }
                 usleep(90000);
             }
+            if ($latest < 1) throw new Exception('최신 회차를 찾지 못했습니다.');
             $result_message = "완료: 1회차부터 {$latest}회차까지 처리. 저장/갱신 {$saved}건, 실패 {$failed}건";
         } elseif ($action === 'update_latest') {
             $info = update_latest($pdo);
@@ -257,9 +315,25 @@ button{border:0;border-radius:8px;padding:12px;font-weight:600;cursor:pointer;fo
             <button class="primary" name="action" value="install_all"   type="submit">전체 당첨번호 가져오기</button>
             <button class="green"   name="action" value="update_latest" type="submit">최신 회차만 업데이트</button>
         </form>
+        <form method="post" style="margin-top:8px;">
+            <button class="gray" name="action" value="diagnose" type="submit" style="width:100%;">🔌 연결 진단 (외부 API 접속 가능 여부)</button>
+        </form>
 
         <?php if ($result_message): ?><div class="msg"><?= h($result_message) ?></div><?php endif; ?>
         <?php if ($error_message): ?><div class="err"><?= h($error_message) ?></div><?php endif; ?>
+
+        <?php if ($diag): ?>
+        <div class="flow" style="font-family:ui-monospace,Menlo,monospace;white-space:pre-wrap;font-size:12px;">PHP            <?= h($diag['php_version']) ?>
+cURL           <?= $diag['curl_available'] ? 'OK' : '없음' ?>
+allow_url_fopen <?= h($diag['allow_url_fopen']) ?>
+openssl        <?= $diag['openssl_loaded'] ? '로드됨' : '없음' ?>
+
+<?php if ($diag['sample_call']): ?>샘플 호출 (1회차):
+  HTTP   <?= (int)$diag['sample_call']['http_status'] ?>
+  cURL   <?= $diag['sample_call']['curl_error'] ? h($diag['sample_call']['curl_error']) : '(에러 없음)' ?>
+  body   <?= h($diag['sample_call']['body_head']) ?>
+<?php endif; ?></div>
+        <?php endif; ?>
 
         <div class="flow">
             <b>주간 갱신 흐름</b><br>
