@@ -343,7 +343,7 @@ function renderEntryField(f, defaults, customRender) {
     const lbl = `<label class="row-label">${escapeHtml(f.label)}</label>`;
     const wrap = (control, extra = '') => `<div class="modal-row" ${extra}>${lbl}<div class="row-control">${control}</div></div>`;
 
-    if (f.type === 'date')     return wrap(`<input type="date" data-field="${f.key}" value="${escapeAttr(v)}">`);
+    if (f.type === 'date')     return wrap(`<input type="text" data-field="${f.key}" value="${escapeAttr(v)}" placeholder="YYYY.MM.DD">`);
     if (f.type === 'tel')      return wrap(`<input type="tel"  data-field="${f.key}" value="${escapeAttr(v)}" placeholder="010-...">`);
     if (f.type === 'textarea') return wrap(`<textarea data-field="${f.key}" rows="3" placeholder="${escapeAttr(f.label)}">${escapeHtml(v)}</textarea>`, 'style="align-items:start;"');
     if (f.type === 'title_select') return wrap(`<select data-field="${f.key}"><option value="">-</option>${['본부장','팀장','팀원'].map(t => `<option value="${t}" ${v === t ? 'selected' : ''}>${t}</option>`).join('')}</select>`);

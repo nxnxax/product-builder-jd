@@ -21,6 +21,7 @@ const DEFAULT_FIELD_SCHEMA = {
         { key: 'joined',  label: '투입일', type: 'date',        filterable: true  },
         { key: 'title',   label: '직함',   type: 'title_select',filterable: true  },
         { key: 'name',    label: '이름',   type: 'text',        filterable: true  },
+        { key: 'rrn',     label: '주민번호', type: 'text',      filterable: false },
         { key: 'phone',   label: '연락처', type: 'tel',         filterable: false },
         { key: 'account', label: '계좌번호', type: 'text',      filterable: true  },
         { key: 'memo',    label: '비고',   type: 'text',        filterable: false },
@@ -96,7 +97,7 @@ async function loadGroups() {
         document.getElementById('content').innerHTML = `
             <div class="empty">
                 <b>아직 조직도 그룹이 없습니다.</b><br>
-                상단의 <b>+ 새 그룹</b> 버튼을 눌러 첫 그룹을 만들어 주세요.
+                상단의 <b>+ 새 현장 추가</b> 버튼을 눌러 첫 현장을 만들어 주세요.
             </div>`;
         return;
     }
@@ -135,7 +136,7 @@ function bindUI() {
 function openGroupModal(groupId) {
     editingGroupId = groupId;
     const g = groupId ? groups.find(x => x.id === groupId) : null;
-    document.getElementById('groupModalTitle').textContent = g ? '그룹 편집' : '새 그룹 만들기';
+    document.getElementById('groupModalTitle').textContent = g ? '현장 편집' : '새 현장 만들기';
     document.getElementById('groupNameInput').value = g?.name || '';
     document.getElementById('groupIsDefaultInput').checked = !!g?.isDefault;
     document.getElementById('groupDeleteBtn').style.display = g ? '' : 'none';
@@ -147,7 +148,12 @@ async function saveGroup() {
     const name = document.getElementById('groupNameInput').value.trim();
     const isDefault = document.getElementById('groupIsDefaultInput').checked;
     if (!name) {
-        document.getElementById('groupErrorMsg').textContent = '그룹 이름을 입력해주세요.';
+        document.getElementById('groupErrorMsg').textContent = '현장 이름을 입력해주세요.';
+        return;
+    }
+    const dup = groups.find(g => g.name === name && g.id !== editingGroupId);
+    if (dup) {
+        document.getElementById('groupErrorMsg').textContent = `이미 같은 이름의 현장이 있습니다 ("${name}"). 다른 이름을 사용해 주세요.`;
         return;
     }
     try {
@@ -175,7 +181,7 @@ async function saveGroup() {
 
 async function deleteGroup() {
     if (!editingGroupId) return;
-    if (!confirm('이 그룹과 그 안의 모든 행을 영구 삭제합니다. 진행하시겠습니까?')) return;
+    if (!confirm('이 현장과 그 안의 모든 행을 영구 삭제합니다. 진행하시겠습니까?')) return;
     try {
         await api('ledger-groups', { method: 'DELETE', body: { id: editingGroupId } });
         closeModal('groupModal');
@@ -191,7 +197,7 @@ async function deleteGroupFromSettings() {
     if (!settingsGroupId) return;
     const g = groups.find(x => x.id === settingsGroupId);
     if (!g) return;
-    if (!confirm(`"${g.name}" 그룹과 그 안의 모든 행을 영구 삭제합니다. 진행하시겠습니까?`)) return;
+    if (!confirm(`"${g.name}" 현장과 그 안의 모든 행을 영구 삭제합니다. 진행하시겠습니까?`)) return;
     try {
         await api('ledger-groups', { method: 'DELETE', body: { id: settingsGroupId } });
         closeModal('settingsModal');
@@ -240,7 +246,7 @@ function renderTypeCommList(role) {
         <div class="type-comm-row ${role === 'lead' ? 'role-lead' : ''}" data-i="${i}">
             <input type="text" placeholder="타입(예: 59A)" data-f="type" value="${escapeAttr(r.type || '')}">
             <input type="text" inputmode="numeric" data-thousand placeholder="본부장" data-f="본부장" data-role-cell="head" value="${formatThousand(r['본부장'] ?? 0)}">
-            <input type="text" inputmode="numeric" data-thousand placeholder="팀장" data-f="팀장" value="${formatThousand(r['팀장'] ?? 0)}">
+            <input type="text" inputmode="numeric" data-thousand placeholder="팀장" data-f="팀장" data-role-cell="lead" value="${formatThousand(r['팀장'] ?? 0)}">
             <input type="text" inputmode="numeric" data-thousand placeholder="팀원" data-f="팀원" value="${formatThousand(r['팀원'] ?? 0)}">
             <button class="x" type="button" data-del>×</button>
         </div>`).join('');
@@ -331,8 +337,7 @@ function renderExtraPicker(others) {
             <div class="extra-head">
                 <button class="extra-toggle" data-toggle-extra type="button">
                     <span class="extra-arrow">▶</span>
-                    <h4>그룹목록</h4>
-                    <span class="count-pill">${others.length}개${showing > 0 ? ` · ${showing}개 표시 중` : ''}</span>
+                    <h4>그룹목록 <span class="extra-count">${others.length}개</span>${showing > 0 ? `<span class="extra-count-sub">· ${showing}개 표시 중</span>` : ''}</h4>
                 </button>
             </div>
             <div class="extra-picker">
@@ -510,12 +515,13 @@ function renderRow(r, displayNo, allowedTitles) {
         <tr data-id="${r.id}" class="${selectedIds.has(r.id) ? 'selected' : ''}">
             <td class="col-check"><input type="checkbox" data-select="${r.id}" ${checked}></td>
             <td class="col-no">${displayNo}</td>
-            <td><input type="date" data-field="joined" data-id="${r.id}" value="${escapeAttr(d.joined || '')}"></td>
+            <td><input type="text" data-field="joined" data-id="${r.id}" value="${escapeAttr(d.joined || '')}" placeholder="YYYY.MM.DD"></td>
             <td><select data-field="title" data-id="${r.id}">
                 <option value="">-</option>
                 ${titles.map(t => `<option value="${t}" ${d.title === t ? 'selected' : ''}>${t}</option>`).join('')}
             </select></td>
             <td><input type="text" data-field="name" data-id="${r.id}" value="${escapeAttr(d.name || '')}" placeholder="이름"></td>
+            <td><input type="text" data-field="rrn"  data-id="${r.id}" value="${escapeAttr(d.rrn || '')}" placeholder="000000-0000000"></td>
             <td><input type="tel"  data-field="phone" data-id="${r.id}" value="${escapeAttr(d.phone || '')}" placeholder="010-0000-0000"></td>
             <td><input type="text" data-field="account" data-id="${r.id}" value="${escapeAttr(d.account || '')}" placeholder="계좌"></td>
             <td><input type="text" data-field="memo" data-id="${r.id}" value="${escapeAttr(d.memo || '')}" placeholder="비고"></td>

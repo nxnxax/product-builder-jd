@@ -145,17 +145,18 @@ export function mountAppHeader(opts) {
         { key: 'contracts.html', label: '계약자 관리대장', href: 'contracts.html' },
     ];
     const secondaryItems = [
-        { key: 'index.html',        label: '마케팅', href: 'index.html#marketing' },
-        { key: 'lotto2233.html',    label: 'Lotto',  href: 'lotto2233.html' },
-        { key: 'card-builder.html', label: '명함',   href: 'card-builder.html', adminOnly: true },
-        { key: 'upload.html',       label: '업로드', href: 'upload.html', adminOnly: true },
+        { key: 'index.html',        label: 'N키워드 분석', href: 'index.html#marketing' },
+        { key: 'lotto2233.html',    label: '재미로 보는<br>사주+로또추천', href: 'lotto2233.html', extraCls: 'nav-link-multi', rawLabel: true },
+        { key: 'card-builder.html', label: '명함',         href: 'card-builder.html', adminOnly: true },
+        { key: 'upload.html',       label: '업로드',       href: 'upload.html', adminOnly: true },
     ];
 
     const renderItem = (item, baseCls) => {
         const isActive = path === item.key.toLowerCase();
-        const cls = `${baseCls}${isActive ? ' active' : ''}`;
+        const cls = `${baseCls}${isActive ? ' active' : ''}${item.extraCls ? ' ' + item.extraCls : ''}`;
         const dataAttr = item.adminOnly ? ' data-admin-only' : '';
-        return `<a class="${cls}" href="${item.href}"${dataAttr}>${escapeHtmlSafe(item.label)}</a>`;
+        const labelHtml = item.rawLabel ? item.label : escapeHtmlSafe(item.label);
+        return `<a class="${cls}" href="${item.href}"${dataAttr}>${labelHtml}</a>`;
     };
 
     const primaryHtml = primaryItems.map(i => renderItem(i, 'nav-pill')).join('');

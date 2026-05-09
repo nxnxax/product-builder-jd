@@ -169,6 +169,8 @@ async function saveGroup() {
     const name = document.getElementById('groupNameInput').value.trim();
     const isDefault = document.getElementById('groupIsDefaultInput').checked;
     if (!name) { document.getElementById('groupErrorMsg').textContent = '현장 이름을 입력해주세요.'; return; }
+    const dup = groups.find(g => g.name === name && g.id !== editingGroupId);
+    if (dup) { document.getElementById('groupErrorMsg').textContent = `이미 같은 이름의 현장이 있습니다 ("${name}"). 다른 이름을 사용해 주세요.`; return; }
     try {
         if (editingGroupId) {
             await api('ledger-groups', { method: 'PATCH', body: { id: editingGroupId, name, isDefault } });
@@ -296,8 +298,7 @@ function renderExtraPicker(others) {
             <div class="extra-head">
                 <button class="extra-toggle" data-toggle-extra type="button">
                     <span class="extra-arrow">▶</span>
-                    <h4>현장목록</h4>
-                    <span class="count-pill">${others.length}개${showing > 0 ? ` · ${showing}개 표시 중` : ''}</span>
+                    <h4>현장목록 <span class="extra-count">${others.length}개</span>${showing > 0 ? `<span class="extra-count-sub">· ${showing}개 표시 중</span>` : ''}</h4>
                 </button>
             </div>
             <div class="extra-picker">
@@ -550,7 +551,7 @@ function renderCell(f, r, d, displayNo, group) {
         if (!calc.amount) return `<span style="color:#a3a39a;font-size:11px;">-</span>`;
         return `<span class="commission-cell">₩${formatNum(calc.amount)}<span class="net">→ ₩${formatNum(calc.net)}</span></span>`;
     }
-    if (f.type === 'date') return `<input type="date" data-field="${f.key}" data-id="${id}" value="${escapeAttr(d[f.key] || '')}">`;
+    if (f.type === 'date') return `<input type="text" data-field="${f.key}" data-id="${id}" value="${escapeAttr(d[f.key] || '')}" placeholder="YYYY.MM.DD">`;
     if (f.type === 'tel')  return `<input type="tel"  data-field="${f.key}" data-id="${id}" value="${escapeAttr(d[f.key] || '')}" placeholder="010-0000-0000">`;
     return `<input type="text" data-field="${f.key}" data-id="${id}" value="${escapeAttr(d[f.key] || '')}" placeholder="${escapeAttr(f.label)}">`;
 }

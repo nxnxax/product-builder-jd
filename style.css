@@ -267,6 +267,16 @@ small { color: var(--fg-tertiary); font-size: 13px; }
     pointer-events: none;
 }
 
+/* 재미로 보는 사주+로또추천 — 두 줄 라벨, 헤더 높이는 그대로 유지 */
+.nav-secondary .nav-link-multi {
+    white-space: normal;
+    text-align: center;
+    line-height: 1.15;
+    font-size: 11px;
+    padding: 4px 8px;
+    max-width: 110px;
+}
+
 .header-auth-btn {
     background: var(--fg);
     color: var(--bg);
@@ -1556,9 +1566,24 @@ select:focus {
 
 .extra-groups .extra-toggle h4 {
     margin: 0;
+    font-size: 15px;
+    font-weight: 700;
+    color: #2a2520;
+    display: inline-flex;
+    align-items: baseline;
+    gap: 8px;
+}
+
+.extra-groups .extra-toggle h4 .extra-count {
     font-size: 13.5px;
     font-weight: 600;
-    color: #4f4943;
+    color: #c8362c;
+}
+
+.extra-groups .extra-toggle h4 .extra-count-sub {
+    font-size: 12px;
+    font-weight: 500;
+    color: #8a847e;
 }
 
 .extra-groups .extra-arrow {
@@ -1572,17 +1597,20 @@ select:focus {
 
 .extra-groups.open .extra-arrow { transform: rotate(90deg); color: #c8362c; }
 
-.extra-groups .extra-toggle .count-pill {
-    margin-left: auto;
-    padding: 3px 10px;
-    background: #fbf7ef;
-    border: 1px solid rgba(20, 14, 8, 0.09);
-    border-radius: 99px;
-    font-size: 11px;
-    color: #4f4943;
-    font-weight: 600;
-    font-variant-numeric: tabular-nums;
+.extra-groups .extra-toggle .count-pill { display: none; }
+
+/* 주요 메뉴 (관리대장) 표 — 모든 항목 가운데 정렬 */
+.ledger-tbl thead th,
+.ledger-tbl tbody td {
+    text-align: center;
 }
+.ledger-tbl tbody td input,
+.ledger-tbl tbody td select,
+.ledger-tbl tbody td textarea {
+    text-align: center;
+}
+.ledger-tbl thead th[data-col-key] { padding-left: 14px !important; }
+.ledger-tbl .col-no, .ledger-tbl .col-check, .ledger-tbl .col-action { text-align: center; }
 
 .extra-groups .extra-side-btn {
     align-self: center;
@@ -1731,14 +1759,11 @@ select:focus {
 }
 .toggle-switch:hover .toggle-track { filter: brightness(0.95); }
 
-/* 관리 토글 (customers) — 켜짐: 파랑 */
-.toggle-switch.on .toggle-track { background: #2563eb; }
-
-/* 수수료 토글 (contracts) — 켜짐(미지급)=연노랑, 꺼짐(지급)=회색 */
-.toggle-switch.pay-toggle.on .toggle-track { background: #fbc400; }
-.toggle-switch.pay-toggle.on .toggle-label { color: #8a6500; }
+/* 켜짐 기본 색상 — 연노랑 (관리 토글 / 수수료 토글 공통) */
+.toggle-switch.on .toggle-track { background: #fbc400; }
+.toggle-switch.on .toggle-label { color: #8a6500; }
+.toggle-switch.off .toggle-label { color: #8a847e; }
 .toggle-switch.pay-toggle.off .toggle-track { background: #d7d2c8; }
-.toggle-switch.pay-toggle.off .toggle-label { color: #8a847e; }
 
 .extra-groups .extra-picker {
     display: none;
