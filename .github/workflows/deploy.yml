@@ -40,9 +40,13 @@ jobs:
           php -l api/card-design.php
           php -l api/saju-reading.php
           php -l api/lotto-recommend.php
+          php -l lotto_offline_json_import.php
           php -l lotto_db_import.php
           php -l lotto_db_config.php
           php -l kapp_premium.php
+          test -f lotto_numbers_all.json
+          # Validate JSON parses
+          php -r 'json_decode(file_get_contents("lotto_numbers_all.json"), true) ?: exit(1);'
 
       - name: Prepare deploy folder
         run: |
@@ -60,7 +64,9 @@ jobs:
           cp api/card-design.php deploy/card-design.php
           cp api/saju-reading.php deploy/saju-reading.php
           cp api/lotto-recommend.php deploy/lotto-recommend.php
-          cp lotto_db_import.php deploy/lotto_db_import.php
+          cp lotto_offline_json_import.php deploy/lotto_offline_json_import.php
+          cp lotto_numbers_all.json deploy/lotto_numbers_all.json
+          cp lotto_db_import.php deploy/lotto_db_import.php  # 폐기 페이지 — 옛 북마크용 301 리디렉트
           cp lotto_db_config.php deploy/lotto_db_config.php
           # NOTE: lotto_db_config.php 는 자격증명을 담지 않음.
           # 실제 DB 정보는 .env (GitHub Secrets) 에서 읽어들임 — 아래 .env 조립 단계 참조.
@@ -147,8 +153,10 @@ jobs:
           echo "  upload.php (GET list): ${ucode}  (expected 200)"
           lcode=$(curl -sk -o /dev/null -w "%{http_code}" "https://youngman-biz.com/lotto-recommend.php?cb=${CB}")
           echo "  lotto-recommend.php (GET): ${lcode}  (expected 405 — POST only)"
-          icode=$(curl -sk -o /dev/null -w "%{http_code}" "https://youngman-biz.com/lotto_db_import.php?cb=${CB}")
-          echo "  lotto_db_import.php: ${icode}  (expected 200)"
+          ocode=$(curl -sk -o /dev/null -w "%{http_code}" "https://youngman-biz.com/lotto_offline_json_import.php?cb=${CB}")
+          echo "  lotto_offline_json_import.php: ${ocode}  (expected 200)"
+          jsize=$(curl -sk -o /dev/null -w "%{size_download}" "https://youngman-biz.com/lotto_numbers_all.json?cb=${CB}")
+          echo "  lotto_numbers_all.json size: ${jsize} bytes (expected ~400KB)"
           curl -sk "https://youngman-biz.com/?cb=${CB}" | grep -E '<title>|main\.js\?v=' | head -2 || true
           if [ "${MISSING}" -gt 0 ]; then
             echo "::error::${MISSING} file(s) returned non-200 — deploy did not propagate"
