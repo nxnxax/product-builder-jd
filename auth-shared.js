@@ -211,7 +211,12 @@ export function mountAppHeader(opts) {
             <button type="button" class="mobile-menu-toggle" aria-label="메뉴 열기" aria-expanded="false">
                 <span></span><span></span><span></span>
             </button>
+            <div class="mobile-drawer-backdrop" data-mobile-drawer-close></div>
             <div class="mobile-drawer">
+                <div class="mobile-drawer-head">
+                    <span class="mobile-drawer-title">메뉴</span>
+                    <button type="button" class="mobile-drawer-close" data-mobile-drawer-close aria-label="닫기">×</button>
+                </div>
                 <nav class="nav-primary">${primaryHtml}</nav>
                 <nav class="nav-secondary">${secondaryHtml}</nav>
             </div>
@@ -236,9 +241,15 @@ export function mountAppHeader(opts) {
         });
     }
 
-    // 햄버거 메뉴 토글
+    // 모바일 사이드 드로어 — 햄버거 토글 / 아코디언 서브메뉴
     const hamburger = root.querySelector('.mobile-menu-toggle');
     const drawer = root.querySelector('.mobile-drawer');
+    const closeDrawer = () => {
+        drawer?.classList.remove('open');
+        hamburger?.classList.remove('open');
+        hamburger?.setAttribute('aria-expanded', 'false');
+        document.body.classList.remove('mobile-drawer-open');
+    };
     if (hamburger && drawer) {
         hamburger.addEventListener('click', () => {
             const isOpen = drawer.classList.toggle('open');
@@ -246,14 +257,30 @@ export function mountAppHeader(opts) {
             hamburger.setAttribute('aria-expanded', String(isOpen));
             document.body.classList.toggle('mobile-drawer-open', isOpen);
         });
-        // drawer 안 링크 클릭 시 자동 닫힘
+        // backdrop / X 버튼 → 닫힘
+        root.querySelectorAll('[data-mobile-drawer-close]').forEach(el => {
+            el.addEventListener('click', closeDrawer);
+        });
+        // a[href] 링크 클릭 시 자동 닫힘 (드롭다운 트리거 제외)
         drawer.addEventListener('click', (e) => {
-            if (e.target.closest('a[href]')) {
-                drawer.classList.remove('open');
-                hamburger.classList.remove('open');
-                hamburger.setAttribute('aria-expanded', 'false');
-                document.body.classList.remove('mobile-drawer-open');
-            }
+            const link = e.target.closest('a[href]');
+            if (link) closeDrawer();
+        });
+        // 커뮤니티 등 dropdown 의 nav-static 클릭 → 아코디언 토글 (모바일에서만)
+        drawer.querySelectorAll('.nav-dropdown').forEach(dd => {
+            const trigger = dd.querySelector('.nav-static');
+            if (!trigger) return;
+            trigger.addEventListener('click', (e) => {
+                if (window.matchMedia('(max-width: 860px)').matches) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    dd.classList.toggle('expanded');
+                }
+            });
+        });
+        // ESC → 닫힘
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && drawer.classList.contains('open')) closeDrawer();
         });
     }
 }
