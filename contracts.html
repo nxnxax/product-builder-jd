@@ -6,7 +6,7 @@
 <title>계약자 관리대장 · YOUNGMAN</title>
 <link rel="icon" type="image/png" href="logo_main.png">
 <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
-<link rel="stylesheet" href="style.css?v=20260510-hamburger-flush">
+<link rel="stylesheet" href="style.css?v=20260510-content-tight">
 <style>
 :root{
     --ledger-line:rgba(20,14,8,.09); --ledger-line-strong:rgba(20,14,8,.16);
@@ -107,7 +107,7 @@ table.ledger-tbl{width:100%;border-collapse:collapse;font-size:13px;min-width:13
 .settle-account{margin-top:6px;font-size:11.5px;color:#4f4943;background:#fbf7ef;padding:5px 8px;border-radius:5px;font-family:ui-monospace,Menlo,monospace}
 
 @media (max-width:768px){
-    .ledger-shell{padding:20px 14px 60px}
+    .ledger-shell{padding:20px 8px 60px}
     .settle-totals{grid-template-columns:1fr}
 }
 
@@ -278,9 +278,9 @@ table.ledger-tbl{width:100%;border-collapse:collapse;font-size:13px;min-width:13
     </div>
 </div>
 
-<script type="module" src="contracts.js?v=20260510-hamburger-flush"></script>
+<script type="module" src="contracts.js?v=20260510-content-tight"></script>
 <script type="module">
-    import { bootApp } from './auth-shared.js?v=20260510-hamburger-flush';
+    import { bootApp } from './auth-shared.js?v=20260510-content-tight';
     bootApp();
 </script>
 </body>

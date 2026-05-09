@@ -579,7 +579,7 @@ small { color: var(--fg-tertiary); font-size: 13px; }
 .board-forbidden p { color: var(--fg-tertiary); margin: 0 0 20px; line-height: 1.6; }
 
 @media (max-width: 640px) {
-    .board-shell { padding: 24px 14px 60px; }
+    .board-shell { padding: 24px 8px 60px; }
     .board-table .col-author, .board-table .col-views { display: none; }
     .board-table thead th, .board-table tbody td { padding: 10px 8px; font-size: 13px; }
     .board-detail { padding: 22px 20px; }
@@ -2086,7 +2086,7 @@ select:focus {
     body:not(.is-anon) .mobile-drawer [data-anon-show] { display: none !important; }
     body:not(.is-admin) .mobile-drawer [data-admin-only] { display: none !important; }
 
-    .dashboard, .page-shell { padding: 32px 16px 64px; }
+    .dashboard, .page-shell { padding: 32px 10px 64px; }
 
     .section-header { flex-direction: column; align-items: flex-start; gap: 16px; }
     .controls { width: 100%; flex-wrap: wrap; }
