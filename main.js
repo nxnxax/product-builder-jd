@@ -337,7 +337,7 @@ let isProcessingOAuth = false;
 
 async function handlePostOAuthSession() {
     if (isProcessingOAuth) return;
-    
+
     const user = currentSession?.user;
     if (!user) return;
 
@@ -349,35 +349,50 @@ async function handlePostOAuthSession() {
     isProcessingOAuth = true;
     try {
         const intent = getStoredOAuthIntent();
-        console.log('[Auth] Processing OAuth session. Intent:', intent);
+        console.log('[Auth] Processing OAuth session. Intent:', intent, 'Email:', user.email);
+        clearOAuthIntent();
 
-        if (intent === 'signup') {
-            clearOAuthIntent();
-            const fullName = user.user_metadata?.full_name || user.user_metadata?.name || user.email?.split('@')[0] || '';
-            console.log('[Auth] Creating Google signup member:', {
-                email: user.email || '',
-                hasName: Boolean(fullName)
-            });
-            await completeGoogleSignup({ fullName, phone: '' });
-            return;
+        // 1) 이미 회원인지 확인. 회원이면 그대로 통과.
+        let isRegistered = false;
+        try {
+            isRegistered = await isRegisteredMember(user);
+        } catch (e) {
+            console.warn('[Auth] Membership check failed, treating as unregistered:', e);
         }
 
-        const isRegistered = await isRegisteredMember(user);
         if (isRegistered) {
-            clearOAuthIntent();
             localStorage.removeItem(OAUTH_EMAIL_KEY);
             localStorage.removeItem(OAUTH_PENDING_SIGNUP_KEY);
             oauthSignupPending = false;
             return;
         }
 
-        // Default: login intent or unknown
-        clearOAuthIntent();
-        await blockUnregisteredGoogleLogin(user.email);
+        // 2) 회원이 아니면 — 의도(login/signup) 상관 없이 Google 프로필 정보로 자동 회원가입.
+        //    사용자 입장에선 Google 로그인 한 번으로 가입+로그인 동시에 끝나야 자연스러움.
+        const fullName = user.user_metadata?.full_name
+                       || user.user_metadata?.name
+                       || (user.email ? user.email.split('@')[0] : '');
+        console.log('[Auth] Auto-registering Google user as member:', user.email);
+        try {
+            await completeGoogleSignup({ fullName, phone: '', nickname: '' });
+            // completeGoogleSignup 가 closeAuthPanel + renderSignedIn 까지 처리.
+        } catch (e) {
+            // 자동가입 실패 시 사용자에게 명확히 알리고 패널 띄움.
+            console.error('[Auth] Auto-signup failed:', e);
+            try { openAuthPanel('login'); } catch {}
+            const msg = (e && e.message) ? e.message : '회원 정보를 저장하지 못했습니다.';
+            setAuthMessage('Google 로그인은 됐지만 회원 등록에 실패했습니다: ' + msg + ' — 잠시 후 다시 시도해주세요.', 'error');
+            try { await supabaseClient.auth.signOut(); } catch {}
+        }
     } catch (error) {
         console.error('[Auth] OAuth session processing failed:', error);
+        try { openAuthPanel('login'); } catch {}
+        const msg = (error && error.message) ? error.message : String(error);
+        try { setAuthMessage('Google 로그인 처리 중 오류: ' + msg, 'error'); } catch {}
     } finally {
         isProcessingOAuth = false;
+        // 어떤 경로로 끝나든 버튼은 다시 클릭 가능하게.
+        if (googleLoginBtn) googleLoginBtn.disabled = false;
     }
 }
 
@@ -1048,7 +1063,12 @@ async function completeGoogleSignup({ fullName, phone, nickname }) {
 }
 
 async function handleGoogleLogin() {
-    if (!supabaseClient) return;
+    if (!supabaseClient) {
+        // 인증 시스템 자체가 안 떠 있는 경우 — 사용자에게 명확히 알림.
+        try { openAuthPanel('login'); } catch {}
+        setAuthMessage('인증 시스템이 아직 준비되지 않았습니다. 페이지를 새로고침 후 다시 시도해주세요.', 'error');
+        return;
+    }
 
     googleLoginBtn.disabled = true;
     setAuthMessage('', '');
@@ -1060,16 +1080,17 @@ async function handleGoogleLogin() {
             provider: 'google',
             options: {
                 redirectTo: buildOAuthRedirectTo(intent),
-                queryParams: {
-                    prompt: 'select_account'
-                }
+                queryParams: { prompt: 'select_account' }
             }
         });
         if (error) throw error;
+        // 정상이면 페이지가 Google로 리디렉트되므로 이 라인 이후는 거의 도달 안함.
     } catch (error) {
         clearOAuthIntent();
         googleLoginBtn.disabled = false;
-        setAuthMessage(error?.message || 'Google 로그인에 실패했습니다.', 'error');
+        const msg = error?.message || 'Google 로그인에 실패했습니다.';
+        console.error('[Auth] handleGoogleLogin error:', error);
+        setAuthMessage(msg, 'error');
     }
 }
 
