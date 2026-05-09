@@ -46,6 +46,7 @@ jobs:
           php -l api/card-design.php
           php -l api/saju-reading.php
           php -l api/lotto-recommend.php
+          php -l api/ledger-mobile.php
           php -l lotto_offline_json_import.php
           php -l lotto_db_import.php
           php -l lotto_db_config.php
@@ -76,6 +77,7 @@ jobs:
           cp api/card-design.php deploy/card-design.php
           cp api/saju-reading.php deploy/saju-reading.php
           cp api/lotto-recommend.php deploy/lotto-recommend.php
+          cp api/ledger-mobile.php deploy/ledger-mobile.php
           cp lotto_offline_json_import.php deploy/lotto_offline_json_import.php
           cp lotto_numbers_all.json deploy/lotto_numbers_all.json
           cp lotto_db_import.php deploy/lotto_db_import.php  # 폐기 페이지 — 옛 북마크용 301 리디렉트

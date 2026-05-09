@@ -99,6 +99,7 @@ function normalize_resource($value) {
         'admin-members', 'admin-stats', 'admin-logs', 'admin-settings',
         'admin-bootstrap', 'admin-cleanup-orphans',
         'ledger-groups', 'ledger-records', 'ledger-records-bulk',
+        'mobile-tokens',
     ];
     if (!in_array($resource, $allowed, true)) {
         respond(['ok' => false, 'error' => '지원하지 않는 리소스입니다.'], 400);
@@ -587,6 +588,33 @@ function ledger_record_row(array $row): array {
         'createdAt'  => $row['created_at'] ?? null,
         'updatedAt'  => $row['updated_at'] ?? null,
     ];
+}
+
+/** 모바일 API 토큰 테이블 자동 마이그레이션. */
+function ensure_mobile_tokens_table(PDO $pdo): bool {
+    static $done = null;
+    if ($done !== null) return $done;
+    try {
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS mobile_api_tokens (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                owner_email VARCHAR(255) NOT NULL,
+                token_hash CHAR(64) NOT NULL,
+                token_prefix VARCHAR(12) NOT NULL,
+                label VARCHAR(120) NOT NULL DEFAULT '',
+                last_used_at DATETIME NULL DEFAULT NULL,
+                last_used_ip VARCHAR(45) NULL DEFAULT NULL,
+                revoked_at DATETIME NULL DEFAULT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE KEY uniq_token_hash (token_hash),
+                INDEX idx_mt_owner (owner_email)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        ");
+        return $done = true;
+    } catch (Throwable $e) {
+        error_log('[records] ensure_mobile_tokens_table failed: ' . $e->getMessage());
+        return $done = false;
+    }
 }
 
 /** 사용자가 해당 그룹의 소유자임을 확인. 아니면 즉시 403. */
@@ -1421,9 +1449,9 @@ try {
     /* ============================================================
        Ledger 시스템 — 그룹/레코드 (계약자·조직도·고객 관리대장 공통)
        ============================================================ */
-    if ($resource === 'ledger-groups' || $resource === 'ledger-records' || $resource === 'ledger-records-bulk') {
+    if ($resource === 'ledger-groups' || $resource === 'ledger-records' || $resource === 'ledger-records-bulk' || $resource === 'mobile-tokens') {
         enforce_registered_member($pdo, $authUser);
-        if (!ensure_ledger_tables($pdo)) {
+        if ($resource !== 'mobile-tokens' && !ensure_ledger_tables($pdo)) {
             respond(['ok' => false, 'error' => 'ledger 마이그레이션 실패 — 잠시 후 다시 시도'], 503);
         }
         $owner = current_owner_email($authUser);
@@ -1628,6 +1656,59 @@ try {
                 $del = $pdo->prepare('DELETE FROM ledger_records WHERE id = :id AND owner_email = :o');
                 $del->execute([':id' => $id, ':o' => $owner]);
                 if ($del->rowCount() === 0) respond(['ok' => false, 'error' => '삭제할 권한이 없거나 존재하지 않음.'], 404);
+                respond(['ok' => true]);
+            }
+
+            respond(['ok' => false, 'error' => '지원하지 않는 요청 방식입니다.'], 405);
+        }
+
+        if ($resource === 'mobile-tokens') {
+            if (!ensure_mobile_tokens_table($pdo)) {
+                respond(['ok' => false, 'error' => '토큰 테이블 마이그레이션 실패'], 503);
+            }
+
+            if ($method === 'GET') {
+                $stmt = $pdo->prepare('SELECT id, token_prefix, label, last_used_at, last_used_ip, revoked_at, created_at
+                                       FROM mobile_api_tokens WHERE owner_email = :o ORDER BY id DESC');
+                $stmt->execute([':o' => $owner]);
+                respond(['ok' => true, 'items' => array_map(function ($r) {
+                    return [
+                        'id'         => (int)$r['id'],
+                        'prefix'     => $r['token_prefix'],
+                        'label'      => $r['label'],
+                        'lastUsedAt' => $r['last_used_at'],
+                        'lastUsedIp' => $r['last_used_ip'],
+                        'revokedAt'  => $r['revoked_at'],
+                        'createdAt'  => $r['created_at'],
+                    ];
+                }, $stmt->fetchAll())]);
+            }
+
+            if ($method === 'POST') {
+                $label = trim((string)($body['label'] ?? ''));
+                if ($label === '') $label = '이름 없음';
+                if (mb_strlen($label) > 120) $label = mb_substr($label, 0, 120);
+
+                // 32 hex (16 bytes) plaintext, 'yman_' 접두.
+                $plain = 'yman_' . bin2hex(random_bytes(16));
+                $hash  = hash('sha256', $plain);
+                $prefix = substr($plain, 0, 12);   // 'yman_a4f9b3c2'
+
+                $ins = $pdo->prepare('INSERT INTO mobile_api_tokens (owner_email, token_hash, token_prefix, label)
+                                      VALUES (:o, :h, :p, :l)');
+                $ins->execute([':o' => $owner, ':h' => $hash, ':p' => $prefix, ':l' => $label]);
+                $id = (int)$pdo->lastInsertId();
+
+                respond(['ok' => true, 'id' => $id, 'token' => $plain, 'prefix' => $prefix, 'label' => $label]);
+            }
+
+            if ($method === 'DELETE') {
+                $id = (int)($body['id'] ?? $_GET['id'] ?? 0);
+                if (!$id) respond(['ok' => false, 'error' => 'id 가 필요합니다.'], 400);
+                $upd = $pdo->prepare('UPDATE mobile_api_tokens SET revoked_at = NOW()
+                                      WHERE id = :id AND owner_email = :o AND revoked_at IS NULL');
+                $upd->execute([':id' => $id, ':o' => $owner]);
+                if ($upd->rowCount() === 0) respond(['ok' => false, 'error' => '존재하지 않거나 이미 폐기된 토큰입니다.'], 404);
                 respond(['ok' => true]);
             }
 
