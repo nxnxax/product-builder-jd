@@ -36,11 +36,11 @@ const DEFAULT_SETTINGS = {
 /* ============== State ============== */
 let supabaseClient = null;
 let groups = [];                  // all groups for this page+user
-let activeGroupIds = [];          // selected group(s) — single by default
-let multiMode = false;
-let records = [];                 // records for activeGroupIds
+let expandedGroupIds = new Set(); // 펼쳐진 그룹들 (accordion)
+let records = [];                 // 모든 그룹의 records 한꺼번에
 let editingGroupId = null;        // group being edited in modal
-let filterState = { filters: {} };// { [key]: Set<value> }  — ledger-shared 가 관리
+let settingsGroupId = null;       // settings 모달이 열려있는 그룹
+let filterState = { filters: {} };// { [key]: Set<value> }
 let selectedIds = new Set();
 let typeCommissionRows = [];      // working copy in settings modal
 
@@ -71,7 +71,7 @@ async function api(resource, opts = {}) {
     });
 }
 
-/* ============== Group bar ============== */
+/* ============== Group accordion ============== */
 async function loadGroups() {
     try {
         const data = await api('ledger-groups', { query: 'page_type=' + PAGE_TYPE });
@@ -82,7 +82,6 @@ async function loadGroups() {
     }
 
     if (groups.length === 0) {
-        renderGroupBar();
         document.getElementById('content').innerHTML = `
             <div class="empty">
                 <b>아직 조직도 그룹이 없습니다.</b><br>
@@ -91,65 +90,16 @@ async function loadGroups() {
         return;
     }
 
-    // 기본 그룹이 있으면 활성화. 없으면 첫 그룹.
-    const def = groups.find(g => g.isDefault) || groups[0];
-    activeGroupIds = [def.id];
-    multiMode = false;
-    renderGroupBar();
+    // 기본 그룹이 있으면 자동 펼침. 없으면 첫 그룹.
+    if (expandedGroupIds.size === 0) {
+        const def = groups.find(g => g.isDefault) || groups[0];
+        expandedGroupIds.add(def.id);
+    }
     await loadRecords();
 }
 
-function renderGroupBar() {
-    const pillsEl = document.getElementById('groupPills');
-    pillsEl.innerHTML = groups.map(g => {
-        const active = activeGroupIds.includes(g.id);
-        if (multiMode) {
-            return `<label class="group-pill multi-mode ${active ? 'active' : ''}">
-                <input type="checkbox" data-gid="${g.id}" ${active ? 'checked' : ''}>${escapeHtml(g.name)}${g.isDefault ? ' ★' : ''}
-            </label>`;
-        }
-        return `<button type="button" class="group-pill ${active ? 'active' : ''}" data-gid="${g.id}">
-            ${escapeHtml(g.name)}${g.isDefault ? ' ★' : ''}
-        </button>`;
-    }).join('');
-
-    pillsEl.querySelectorAll('button.group-pill').forEach(b => {
-        b.addEventListener('click', async () => {
-            activeGroupIds = [parseInt(b.dataset.gid, 10)];
-            renderGroupBar();
-            await loadRecords();
-        });
-    });
-    pillsEl.querySelectorAll('input[type=checkbox][data-gid]').forEach(cb => {
-        cb.addEventListener('change', async () => {
-            const gid = parseInt(cb.dataset.gid, 10);
-            if (cb.checked) activeGroupIds = Array.from(new Set([...activeGroupIds, gid]));
-            else activeGroupIds = activeGroupIds.filter(id => id !== gid);
-            if (activeGroupIds.length === 0 && groups.length > 0) activeGroupIds = [groups[0].id];
-            await loadRecords();
-            renderGroupBar();
-        });
-    });
-
-    const multiBtn = document.getElementById('multiToggleBtn');
-    multiBtn.textContent = multiMode ? '✓ 멀티 선택' : '멀티 선택';
-    multiBtn.classList.toggle('primary', multiMode);
-}
-
 function bindUI() {
-    document.getElementById('multiToggleBtn').addEventListener('click', async () => {
-        multiMode = !multiMode;
-        if (!multiMode && activeGroupIds.length > 1) activeGroupIds = activeGroupIds.slice(0, 1);
-        renderGroupBar();
-        await loadRecords();
-    });
     document.getElementById('newGroupBtn').addEventListener('click', () => openGroupModal(null));
-    document.getElementById('editGroupBtn').addEventListener('click', () => {
-        if (activeGroupIds.length === 1) openGroupModal(activeGroupIds[0]);
-        else alert('편집할 그룹 하나만 선택해주세요.');
-    });
-    document.getElementById('settingsBtn').addEventListener('click', () => openSettingsModal());
-
     document.getElementById('groupCancelBtn').addEventListener('click', () => closeModal('groupModal'));
     document.getElementById('groupSaveBtn').addEventListener('click', saveGroup);
     document.getElementById('groupDeleteBtn').addEventListener('click', deleteGroup);
@@ -222,12 +172,9 @@ async function deleteGroup() {
 }
 
 /* ============== Settings modal ============== */
-function openSettingsModal() {
-    if (activeGroupIds.length !== 1) {
-        alert('설정은 그룹 하나에 적용됩니다. 그룹 한 개만 선택한 상태에서 열어주세요.');
-        return;
-    }
-    const g = groups.find(x => x.id === activeGroupIds[0]);
+function openSettingsModal(groupId) {
+    settingsGroupId = groupId;
+    const g = groups.find(x => x.id === groupId);
     if (!g) return;
     const s = { ...DEFAULT_SETTINGS, ...(g.settings || {}) };
     document.getElementById('settingsGroupName').textContent = g.name;
@@ -275,7 +222,7 @@ function renderTypeCommList() {
 }
 
 async function saveSettings() {
-    const g = groups.find(x => x.id === activeGroupIds[0]);
+    const g = groups.find(x => x.id === settingsGroupId);
     if (!g) return;
     const active_teams = Array.from(document.querySelectorAll('#activeTeamsBox input[data-team]:checked'))
         .map(cb => parseInt(cb.value, 10));
@@ -299,13 +246,14 @@ async function saveSettings() {
 
 /* ============== Records ============== */
 async function loadRecords() {
-    if (activeGroupIds.length === 0) {
+    if (groups.length === 0) {
         records = [];
         renderRecords();
         return;
     }
     try {
-        const data = await api('ledger-records', { query: 'group_ids=' + activeGroupIds.join(',') });
+        const allIds = groups.map(g => g.id).join(',');
+        const data = await api('ledger-records', { query: 'group_ids=' + allIds });
         records = data.items || [];
     } catch (e) {
         showError('레코드 로드 실패: ' + e.message);
@@ -317,43 +265,75 @@ async function loadRecords() {
 
 function renderRecords() {
     const content = document.getElementById('content');
-    if (activeGroupIds.length === 0) {
-        content.innerHTML = `<div class="empty">그룹을 선택해주세요.</div>`;
-        return;
-    }
+    if (groups.length === 0) return;
 
-    // 활성 팀 = 선택된 그룹들의 settings.active_teams 합집합
-    const activeTeams = new Set();
-    activeGroupIds.forEach(gid => {
-        const g = groups.find(x => x.id === gid);
-        const s = { ...DEFAULT_SETTINGS, ...(g?.settings || {}) };
-        (s.active_teams || []).forEach(t => activeTeams.add(t));
-    });
-    if (activeTeams.size === 0) [1, 2, 3].forEach(t => activeTeams.add(t));
-
-    // 필터 적용 — ledger-shared 의 컬럼별 unique 값 multi-select
-    const filtered = applyColumnFilters(filterState.filters, records, (r, k) => r.data?.[k]);
-
-    // 팀별 그룹핑
-    const byTeam = {};
-    [...activeTeams].sort((a, b) => a - b).forEach(t => byTeam[t] = []);
-    byTeam.unassigned = [];
-    filtered.forEach(r => {
-        const t = parseInt(r.data?.team, 10);
-        if (activeTeams.has(t)) byTeam[t].push(r);
-        else byTeam.unassigned.push(r);
-    });
-
-    let html = '';
-    [...activeTeams].sort((a, b) => a - b).forEach(t => {
-        html += renderTeamSection(t + '팀', t, byTeam[t]);
-    });
-    if (byTeam.unassigned.length > 0) {
-        html += renderTeamSection('미지정', null, byTeam.unassigned);
-    }
-    content.innerHTML = html;
+    content.innerHTML = groups.map(g => renderGroupCard(g)).join('');
+    bindAccordionEvents();
     bindTableEvents();
     updateBulkBar();
+}
+
+function renderGroupCard(group) {
+    const isOpen = expandedGroupIds.has(group.id);
+    const groupRecs = records.filter(r => r.groupId === group.id);
+
+    let bodyHtml = '';
+    if (isOpen) {
+        // 활성 팀 (이 그룹의 settings)
+        const s = { ...DEFAULT_SETTINGS, ...(group.settings || {}) };
+        const activeTeams = new Set(s.active_teams && s.active_teams.length > 0 ? s.active_teams : [1, 2, 3]);
+
+        // 필터는 모든 그룹에 동일 적용
+        const filtered = applyColumnFilters(filterState.filters, groupRecs, (r, k) => r.data?.[k]);
+
+        const byTeam = {};
+        [...activeTeams].sort((a, b) => a - b).forEach(t => byTeam[t] = []);
+        byTeam.unassigned = [];
+        filtered.forEach(r => {
+            const t = parseInt(r.data?.team, 10);
+            if (activeTeams.has(t)) byTeam[t].push(r);
+            else byTeam.unassigned.push(r);
+        });
+
+        bodyHtml = [...activeTeams].sort((a, b) => a - b).map(t => renderTeamSection(t + '팀', t, byTeam[t])).join('');
+        if (byTeam.unassigned.length > 0) bodyHtml += renderTeamSection('미지정', null, byTeam.unassigned);
+    }
+
+    return `
+        <div class="accordion-card ${isOpen ? 'open' : ''}" data-gid="${group.id}">
+            <div class="accordion-head" data-toggle-gid="${group.id}">
+                <span class="arrow">▶</span>
+                <h3>${escapeHtml(group.name)}</h3>
+                ${group.isDefault ? '<span class="star">기본</span>' : ''}
+                <span class="count-pill">${groupRecs.length}명</span>
+                <div class="head-actions">
+                    <button type="button" data-edit-gid="${group.id}">편집</button>
+                    <button type="button" data-settings-gid="${group.id}">⚙ 설정</button>
+                </div>
+            </div>
+            <div class="accordion-body">
+                ${bodyHtml || '<div style="padding:30px 24px;text-align:center;color:#8a847e;font-size:13px;">등록된 인원이 없습니다.</div>'}
+            </div>
+        </div>`;
+}
+
+function bindAccordionEvents() {
+    document.querySelectorAll('[data-toggle-gid]').forEach(head => {
+        head.addEventListener('click', (e) => {
+            // 액션 버튼 클릭은 토글 안 함
+            if (e.target.closest('.head-actions')) return;
+            const gid = parseInt(head.dataset.toggleGid, 10);
+            if (expandedGroupIds.has(gid)) expandedGroupIds.delete(gid);
+            else expandedGroupIds.add(gid);
+            renderRecords();
+        });
+    });
+    document.querySelectorAll('[data-edit-gid]').forEach(b => {
+        b.addEventListener('click', (e) => { e.stopPropagation(); openGroupModal(parseInt(b.dataset.editGid, 10)); });
+    });
+    document.querySelectorAll('[data-settings-gid]').forEach(b => {
+        b.addEventListener('click', (e) => { e.stopPropagation(); openSettingsModal(parseInt(b.dataset.settingsGid, 10)); });
+    });
 }
 
 function renderTeamSection(title, teamNo, rows) {
@@ -366,7 +346,7 @@ function renderTeamSection(title, teamNo, rows) {
                     <span class="count">${rows.length}명</span>
                 </div>
                 <div class="actions">
-                    <button class="tiny-btn primary" type="button" data-add-row="${teamNo ?? ''}">+ 행 추가</button>
+                    <button class="tiny-btn primary" type="button" data-add-row data-team="${teamNo ?? ''}">+ 행 추가</button>
                 </div>
             </div>
             <div class="tbl-wrap">
@@ -421,7 +401,12 @@ function bindTableEvents() {
     });
     // 행 추가
     document.querySelectorAll('[data-add-row]').forEach(b => {
-        b.addEventListener('click', () => addRow(b.dataset.addRow ? parseInt(b.dataset.addRow, 10) : null));
+        b.addEventListener('click', () => {
+            // 가장 가까운 accordion-card 의 data-gid 로 그룹 식별
+            const gid = parseInt(b.closest('.accordion-card')?.dataset.gid, 10);
+            const teamNo = b.dataset.team ? parseInt(b.dataset.team, 10) : null;
+            addRow(gid, teamNo);
+        });
     });
     // 셀 인라인 편집 (blur 시 저장)
     document.querySelectorAll('[data-field][data-id]').forEach(el => {
@@ -444,7 +429,9 @@ function bindTableEvents() {
         cb.addEventListener('change', () => {
             const teamRaw = cb.dataset.selectAll;
             const teamNo = teamRaw === '' ? null : parseInt(teamRaw, 10);
+            const gid = parseInt(cb.closest('.accordion-card')?.dataset.gid, 10);
             const targets = records.filter(r => {
+                if (gid && r.groupId !== gid) return false;
                 const t = parseInt(r.data?.team, 10);
                 return teamNo === null ? !(t >= 1 && t <= 5) : t === teamNo;
             });
@@ -454,18 +441,15 @@ function bindTableEvents() {
     });
 }
 
-function addRow(teamNo) {
-    if (activeGroupIds.length !== 1) {
-        alert('행은 그룹 하나에만 추가할 수 있습니다. 멀티 모드를 끄거나 그룹 하나만 선택해주세요.');
-        return;
-    }
+function addRow(gid, teamNo) {
+    if (!gid) return;
     openRowAddModal({
         title: `${teamNo || '?'}팀 새 인원 추가`,
         fields: DEFAULT_FIELD_SCHEMA.fields,
         defaults: { title: '팀원' },
         onSubmit: async (data) => {
             data.team = teamNo || 1;
-            await api('ledger-records', { method: 'POST', body: { groupId: activeGroupIds[0], data, source: 'web' } });
+            await api('ledger-records', { method: 'POST', body: { groupId: gid, data, source: 'web' } });
             await loadRecords();
         },
     });

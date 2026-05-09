@@ -38,17 +38,16 @@ const DEFAULT_FIELDS = [
 /* ============== State ============== */
 let supabaseClient = null;
 let groups = [];
-let activeGroupIds = [];
-let multiMode = false;
+let expandedGroupIds = new Set();
 let records = [];
 let editingGroupId = null;
+let settingsGroupId = null;
 let filterState = { filters: {} };
 let selectedIds = new Set();
 
-let orgGroups = [];          // page_type=org 의 그룹들 (설정에서 연동 선택용)
-let linkedOrgGroupId = null; // 활성 그룹의 settings.linkedOrgGroupId (단일 그룹 선택 시)
-let orgEmployees = [];       // 연동 조직도의 직원 레코드들
-let orgSettings = null;      // 연동 조직도의 settings (수수료)
+let orgGroups = [];                  // page_type=org 의 그룹들 (설정에서 연동 선택용)
+const orgEmployeesByGroup = new Map(); // gid → employees[]
+const orgSettingsByGroup = new Map();  // gid → settings
 
 /* ============== Boot ============== */
 (async function boot() {
@@ -83,15 +82,28 @@ async function loadOrgIndex() {
     } catch (e) { orgGroups = []; }
 }
 
-async function loadOrgEmployees(orgGroupId) {
-    if (!orgGroupId) { orgEmployees = []; orgSettings = null; return; }
+async function loadOrgEmployeesForGroup(orgGroupId) {
+    if (!orgGroupId) return;
+    if (orgEmployeesByGroup.has(orgGroupId)) return; // cached
     try {
         const data = await api('ledger-records', { query: 'group_id=' + orgGroupId });
-        orgEmployees = data.items || [];
-    } catch (e) { orgEmployees = []; }
+        orgEmployeesByGroup.set(orgGroupId, data.items || []);
+    } catch (e) { orgEmployeesByGroup.set(orgGroupId, []); }
     const og = orgGroups.find(g => g.id === orgGroupId);
-    orgSettings = og?.settings || null;
+    orgSettingsByGroup.set(orgGroupId, og?.settings || null);
 }
+
+/** 계약 그룹의 연동 org group id 결정 (없으면 사용자 default org). */
+function linkedOrgIdFor(group) {
+    let id = group?.settings?.linkedOrgGroupId || null;
+    if (!id && orgGroups.length > 0) {
+        id = (orgGroups.find(o => o.isDefault) || orgGroups[0]).id;
+    }
+    return id;
+}
+
+function orgEmployeesFor(group) { return orgEmployeesByGroup.get(linkedOrgIdFor(group)) || []; }
+function orgSettingsFor(group)  { return orgSettingsByGroup.get(linkedOrgIdFor(group))  || null; }
 
 /* ============== Groups (계약 현장) ============== */
 async function loadGroups() {
@@ -103,7 +115,6 @@ async function loadGroups() {
         return;
     }
     if (groups.length === 0) {
-        renderGroupBar();
         document.getElementById('content').innerHTML = `
             <div class="empty">
                 <b>아직 등록된 현장이 없습니다.</b><br>
@@ -111,82 +122,17 @@ async function loadGroups() {
             </div>`;
         return;
     }
-    const def = groups.find(g => g.isDefault) || groups[0];
-    activeGroupIds = [def.id];
-    multiMode = false;
-    await syncLinkedOrgFromActive();
-    renderGroupBar();
+    if (expandedGroupIds.size === 0) {
+        const def = groups.find(g => g.isDefault) || groups[0];
+        expandedGroupIds.add(def.id);
+    }
+    // 모든 그룹의 연동 org employees 미리 로드 (담당자 dropdown · 정산 계산용)
+    await Promise.all(groups.map(g => loadOrgEmployeesForGroup(linkedOrgIdFor(g))));
     await loadRecords();
 }
 
-async function syncLinkedOrgFromActive() {
-    if (activeGroupIds.length !== 1) {
-        linkedOrgGroupId = null;
-        orgEmployees = [];
-        orgSettings = null;
-        return;
-    }
-    const g = groups.find(x => x.id === activeGroupIds[0]);
-    linkedOrgGroupId = g?.settings?.linkedOrgGroupId || null;
-    if (!linkedOrgGroupId && orgGroups.length > 0) {
-        linkedOrgGroupId = (orgGroups.find(o => o.isDefault) || orgGroups[0]).id;
-    }
-    await loadOrgEmployees(linkedOrgGroupId);
-}
-
-function renderGroupBar() {
-    const pillsEl = document.getElementById('groupPills');
-    pillsEl.innerHTML = groups.map(g => {
-        const active = activeGroupIds.includes(g.id);
-        if (multiMode) {
-            return `<label class="group-pill multi-mode ${active ? 'active' : ''}">
-                <input type="checkbox" data-gid="${g.id}" ${active ? 'checked' : ''}>${escapeHtml(g.name)}${g.isDefault ? ' ★' : ''}
-            </label>`;
-        }
-        return `<button type="button" class="group-pill ${active ? 'active' : ''}" data-gid="${g.id}">
-            ${escapeHtml(g.name)}${g.isDefault ? ' ★' : ''}
-        </button>`;
-    }).join('');
-
-    pillsEl.querySelectorAll('button.group-pill').forEach(b => {
-        b.addEventListener('click', async () => {
-            activeGroupIds = [parseInt(b.dataset.gid, 10)];
-            await syncLinkedOrgFromActive();
-            renderGroupBar();
-            await loadRecords();
-        });
-    });
-    pillsEl.querySelectorAll('input[type=checkbox][data-gid]').forEach(cb => {
-        cb.addEventListener('change', async () => {
-            const gid = parseInt(cb.dataset.gid, 10);
-            if (cb.checked) activeGroupIds = Array.from(new Set([...activeGroupIds, gid]));
-            else activeGroupIds = activeGroupIds.filter(id => id !== gid);
-            if (activeGroupIds.length === 0 && groups.length > 0) activeGroupIds = [groups[0].id];
-            await syncLinkedOrgFromActive();
-            await loadRecords();
-            renderGroupBar();
-        });
-    });
-
-    const multiBtn = document.getElementById('multiToggleBtn');
-    multiBtn.textContent = multiMode ? '✓ 멀티 선택' : '멀티 선택';
-    multiBtn.classList.toggle('primary', multiMode);
-}
-
 function bindUI() {
-    document.getElementById('multiToggleBtn').addEventListener('click', async () => {
-        multiMode = !multiMode;
-        if (!multiMode && activeGroupIds.length > 1) activeGroupIds = activeGroupIds.slice(0, 1);
-        await syncLinkedOrgFromActive();
-        renderGroupBar();
-        await loadRecords();
-    });
     document.getElementById('newGroupBtn').addEventListener('click', () => openGroupModal(null));
-    document.getElementById('editGroupBtn').addEventListener('click', () => {
-        if (activeGroupIds.length === 1) openGroupModal(activeGroupIds[0]);
-        else alert('편집할 현장 하나만 선택해주세요.');
-    });
-    document.getElementById('settingsBtn').addEventListener('click', openSettingsModal);
     document.getElementById('settleBtn').addEventListener('click', openSettleModal);
 
     document.getElementById('groupCancelBtn').addEventListener('click', () => closeModal('groupModal'));
@@ -254,31 +200,28 @@ async function deleteGroup() {
 }
 
 /* ============== Settings modal ============== */
-function openSettingsModal() {
-    if (activeGroupIds.length !== 1) { alert('설정은 현장 하나에만 적용됩니다. 현장 한 개만 선택한 상태에서 열어주세요.'); return; }
-    const g = groups.find(x => x.id === activeGroupIds[0]);
+function openSettingsModal(groupId) {
+    settingsGroupId = groupId;
+    const g = groups.find(x => x.id === groupId);
     if (!g) return;
     document.getElementById('settingsGroupName').textContent = g.name;
     const sel = document.getElementById('linkedOrgSelect');
     sel.innerHTML = '<option value="">— 조직도 그룹 선택 —</option>' +
         orgGroups.map(o => `<option value="${o.id}" ${(g.settings?.linkedOrgGroupId === o.id) ? 'selected' : ''}>${escapeHtml(o.name)}${o.isDefault ? ' ★' : ''}</option>`).join('');
-    if (orgGroups.length === 0) {
-        sel.insertAdjacentHTML('afterend', '<p class="desc" style="color:#b91c1c;margin-top:6px;">아직 조직도 그룹이 없습니다. <a href="org.html" style="color:var(--ledger-accent);">조직도 페이지</a>에서 먼저 만들어 주세요.</p>');
-    }
-    document.getElementById('settingsErrorMsg').textContent = '';
+    document.getElementById('settingsErrorMsg').textContent = orgGroups.length === 0
+        ? '아직 조직도 그룹이 없습니다. 조직도 페이지에서 먼저 만들어 주세요.' : '';
     document.getElementById('settingsModal').classList.remove('hidden');
 }
 
 async function saveSettings() {
-    const g = groups.find(x => x.id === activeGroupIds[0]);
+    const g = groups.find(x => x.id === settingsGroupId);
     if (!g) return;
     const linkedId = parseInt(document.getElementById('linkedOrgSelect').value, 10) || null;
     const newSettings = { ...(g.settings || {}), linkedOrgGroupId: linkedId };
     try {
         await api('ledger-groups', { method: 'PATCH', body: { id: g.id, settings: newSettings } });
         g.settings = newSettings;
-        linkedOrgGroupId = linkedId;
-        await loadOrgEmployees(linkedId);
+        await loadOrgEmployeesForGroup(linkedId);
         closeModal('settingsModal');
         renderRecords();
     } catch (e) {
@@ -288,9 +231,10 @@ async function saveSettings() {
 
 /* ============== Records ============== */
 async function loadRecords() {
-    if (activeGroupIds.length === 0) { records = []; renderRecords(); return; }
+    if (groups.length === 0) { records = []; renderRecords(); return; }
     try {
-        const data = await api('ledger-records', { query: 'group_ids=' + activeGroupIds.join(',') });
+        const allIds = groups.map(g => g.id).join(',');
+        const data = await api('ledger-records', { query: 'group_ids=' + allIds });
         records = data.items || [];
     } catch (e) {
         showError('레코드 로드 실패: ' + e.message);
@@ -302,16 +246,9 @@ async function loadRecords() {
 
 function renderRecords() {
     const content = document.getElementById('content');
-    if (activeGroupIds.length === 0) { content.innerHTML = `<div class="empty">현장을 선택해주세요.</div>`; return; }
-
-    // 멀티 모드면 그룹별 섹션, 단일 모드면 한 섹션.
-    const sections = activeGroupIds.map(gid => {
-        const g = groups.find(x => x.id === gid);
-        const grpRecs = records.filter(r => r.groupId === gid);
-        const filtered = applyFilters(grpRecs);
-        return renderSection(g, filtered);
-    }).join('');
-    content.innerHTML = sections;
+    if (groups.length === 0) return;
+    content.innerHTML = groups.map(g => renderGroupCard(g)).join('');
+    bindAccordionEvents();
     bindTableEvents();
     updateBulkBar();
 }
@@ -320,53 +257,83 @@ function applyFilters(rows) {
     return applyColumnFilters(filterState.filters, rows, (r, k) => r.data?.[k]);
 }
 
-function renderSection(group, rows) {
-    if (!group) return '';
+function renderGroupCard(group) {
+    const isOpen = expandedGroupIds.has(group.id);
+    const grpRecs = records.filter(r => r.groupId === group.id);
+    const bodyHtml = isOpen ? renderTable(group, applyFilters(grpRecs)) : '';
     return `
-        <section class="contract-section" data-gid="${group.id}">
-            <div class="contract-head">
-                <div>
-                    <h3>${escapeHtml(group.name)}</h3>
-                    <span class="count">${rows.length}건</span>
-                </div>
-                <div class="actions">
-                    <button class="tiny-btn primary" type="button" data-add-row="${group.id}">+ 계약 추가</button>
+        <div class="accordion-card ${isOpen ? 'open' : ''}" data-gid="${group.id}">
+            <div class="accordion-head" data-toggle-gid="${group.id}">
+                <span class="arrow">▶</span>
+                <h3>${escapeHtml(group.name)}</h3>
+                ${group.isDefault ? '<span class="star">기본</span>' : ''}
+                <span class="count-pill">${grpRecs.length}건</span>
+                <div class="head-actions">
+                    <button type="button" data-edit-gid="${group.id}">편집</button>
+                    <button type="button" data-settings-gid="${group.id}">⚙ 설정</button>
                 </div>
             </div>
-            <div class="tbl-wrap">
-                <table class="ledger-tbl">
-                    <thead>
-                        <tr>
-                            <th class="col-check"><input type="checkbox" data-select-all="${group.id}"></th>
-                            ${DEFAULT_FIELDS.map(f => `<th style="min-width:${f.width || 90}px;" data-col-key="${f.key}">${escapeHtml(f.label)}</th>`).join('')}
-                            <th class="col-action"></th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${rows.length === 0
-                            ? `<tr><td colspan="${DEFAULT_FIELDS.length + 2}" style="text-align:center;color:#8a847e;padding:24px;font-size:13px;">필터 결과가 없습니다.</td></tr>`
-                            : rows.map((r, i) => renderRow(r, i + 1, group.id)).join('')}
-                    </tbody>
-                </table>
-            </div>
-        </section>`;
+            <div class="accordion-body">${bodyHtml}</div>
+        </div>`;
 }
 
-function renderRow(r, displayNo, gid) {
+function renderTable(group, rows) {
+    return `
+        <div style="display:flex;justify-content:flex-end;padding:10px 18px;border-bottom:1px solid var(--ledger-line);background:#fbfaf5;">
+            <button class="tiny-btn primary" type="button" data-add-row data-gid="${group.id}">+ 계약 추가</button>
+        </div>
+        <div class="tbl-wrap">
+            <table class="ledger-tbl">
+                <thead>
+                    <tr>
+                        <th class="col-check"><input type="checkbox" data-select-all="${group.id}"></th>
+                        ${DEFAULT_FIELDS.map(f => `<th style="min-width:${f.width || 90}px;" data-col-key="${f.key}">${escapeHtml(f.label)}</th>`).join('')}
+                        <th class="col-action"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${rows.length === 0
+                        ? `<tr><td colspan="${DEFAULT_FIELDS.length + 2}" style="text-align:center;color:#8a847e;padding:24px;font-size:13px;">표시할 계약이 없습니다. 우상단 "+ 계약 추가" 로 등록하세요.</td></tr>`
+                        : rows.map((r, i) => renderRow(r, i + 1, group)).join('')}
+                </tbody>
+            </table>
+        </div>`;
+}
+
+
+function bindAccordionEvents() {
+    document.querySelectorAll('[data-toggle-gid]').forEach(head => {
+        head.addEventListener('click', (e) => {
+            if (e.target.closest('.head-actions')) return;
+            const gid = parseInt(head.dataset.toggleGid, 10);
+            if (expandedGroupIds.has(gid)) expandedGroupIds.delete(gid);
+            else expandedGroupIds.add(gid);
+            renderRecords();
+        });
+    });
+    document.querySelectorAll('[data-edit-gid]').forEach(b => {
+        b.addEventListener('click', (e) => { e.stopPropagation(); openGroupModal(parseInt(b.dataset.editGid, 10)); });
+    });
+    document.querySelectorAll('[data-settings-gid]').forEach(b => {
+        b.addEventListener('click', (e) => { e.stopPropagation(); openSettingsModal(parseInt(b.dataset.settingsGid, 10)); });
+    });
+}
+
+function renderRow(r, displayNo, group) {
     const d = r.data || {};
     return `
-        <tr data-id="${r.id}" data-gid="${gid}" class="${selectedIds.has(r.id) ? 'selected' : ''}">
+        <tr data-id="${r.id}" data-gid="${group.id}" class="${selectedIds.has(r.id) ? 'selected' : ''}">
             <td class="col-check"><input type="checkbox" data-select="${r.id}" ${selectedIds.has(r.id) ? 'checked' : ''}></td>
-            ${DEFAULT_FIELDS.map(f => `<td>${renderCell(f, r, d, displayNo)}</td>`).join('')}
+            ${DEFAULT_FIELDS.map(f => `<td>${renderCell(f, r, d, displayNo, group)}</td>`).join('')}
             <td class="col-action"><button class="row-action-btn" data-delete-row="${r.id}" title="삭제">×</button></td>
         </tr>`;
 }
 
-function renderCell(f, r, d, displayNo) {
+function renderCell(f, r, d, displayNo, group) {
     const id = r.id;
     if (f.type === 'auto_number') return `<span class="col-no">${displayNo}</span>`;
     if (f.type === 'pay_switch') {
-        const unpaid = !!d.paid_unpaid;   // true = 미지급(on), false = 지급(off)
+        const unpaid = !!d.paid_unpaid;
         return `<button class="pay-switch ${unpaid ? 'unpaid' : 'paid'}" data-pay-switch data-id="${id}">${unpaid ? '미지급' : '지급'}</button>`;
     }
     if (f.type === 'status_switch') {
@@ -376,8 +343,9 @@ function renderCell(f, r, d, displayNo) {
         return `<button class="status-pill ${cls}" data-status-switch data-id="${id}">${lbl}</button>`;
     }
     if (f.type === 'manager_select') {
+        const employees = orgEmployeesFor(group);
         const opts = ['<option value="">-</option>']
-            .concat(orgEmployees.map(e => {
+            .concat(employees.map(e => {
                 const name = e.data?.name || '';
                 const team = e.data?.team || '';
                 const title = e.data?.title || '';
@@ -387,7 +355,7 @@ function renderCell(f, r, d, displayNo) {
         return `<select data-field="manager" data-id="${id}">${opts}</select>`;
     }
     if (f.type === 'commission_view') {
-        const calc = computeCommissionForRow(d);
+        const calc = computeCommissionForRow(d, group);
         if (!calc.amount) return `<span style="color:#a3a39a;font-size:11px;">-</span>`;
         return `<span class="commission-cell">₩${formatNum(calc.amount)}<span class="net">→ ₩${formatNum(calc.net)}</span></span>`;
     }
@@ -406,7 +374,7 @@ function bindTableEvents() {
         onChange: () => renderRecords(),
     });
     document.querySelectorAll('[data-add-row]').forEach(b => {
-        b.addEventListener('click', () => addRow(parseInt(b.dataset.addRow, 10)));
+        b.addEventListener('click', () => addRow(parseInt(b.dataset.gid, 10)));
     });
     document.querySelectorAll('[data-field][data-id]').forEach(el => {
         el.addEventListener('change', () => updateRowField(parseInt(el.dataset.id, 10), el.dataset.field, el.value));
@@ -439,6 +407,8 @@ function bindTableEvents() {
 }
 
 function addRow(gid) {
+    const group = groups.find(x => x.id === gid);
+    const employees = orgEmployeesFor(group);
     openRowAddModal({
         title: '새 계약 추가',
         fields: DEFAULT_FIELDS,
@@ -447,7 +417,7 @@ function addRow(gid) {
             const lbl = `<label class="row-label">${escapeHtml(f.label)}</label>`;
             if (f.type === 'manager_select') {
                 const opts = ['<option value="">-</option>']
-                    .concat(orgEmployees.map(e => {
+                    .concat(employees.map(e => {
                         const name = e.data?.name || '';
                         const team = e.data?.team || '?';
                         const title = e.data?.title || '';
@@ -531,28 +501,29 @@ function updateBulkBar() {
     bar.classList.toggle('active', selectedIds.size > 0);
 }
 
-/* ============== Commission lookup ============== */
-function findEmployeeByName(name) {
+/* ============== Commission lookup (계약 그룹별 org 연동) ============== */
+function findEmployeeByName(name, contractGroup) {
     if (!name) return null;
-    return orgEmployees.find(e => (e.data?.name || '').trim() === String(name).trim()) || null;
+    const employees = orgEmployeesFor(contractGroup);
+    return employees.find(e => (e.data?.name || '').trim() === String(name).trim()) || null;
 }
 
-function commissionTable(unitType) {
-    if (!orgSettings) return null;
+function commissionTable(unitType, contractGroup) {
+    const settings = orgSettingsFor(contractGroup);
+    if (!settings) return null;
     const t = (unitType || '').trim();
-    if (t && Array.isArray(orgSettings.type_commissions)) {
-        const hit = orgSettings.type_commissions.find(x => x.type === t);
+    if (t && Array.isArray(settings.type_commissions)) {
+        const hit = settings.type_commissions.find(x => x.type === t);
         if (hit) return { '본부장': +hit['본부장']||0, '팀장': +hit['팀장']||0, '팀원': +hit['팀원']||0 };
     }
-    const def = orgSettings.default_commissions || {};
+    const def = settings.default_commissions || {};
     return { '본부장': +def['본부장']||0, '팀장': +def['팀장']||0, '팀원': +def['팀원']||0 };
 }
 
-/** 한 행의 (담당자가 받는) 수수료를 계산. 행 셀에 표시. */
-function computeCommissionForRow(d) {
-    const emp = findEmployeeByName(d?.manager);
+function computeCommissionForRow(d, contractGroup) {
+    const emp = findEmployeeByName(d?.manager, contractGroup);
     if (!emp) return { amount: 0, net: 0 };
-    const tbl = commissionTable(d?.unitType);
+    const tbl = commissionTable(d?.unitType, contractGroup);
     if (!tbl) return { amount: 0, net: 0 };
     const role = emp.data?.title || '';
     let amount = 0;
@@ -564,39 +535,37 @@ function computeCommissionForRow(d) {
 
 /* ============== Settle modal ============== */
 function openSettleModal() {
-    // 정산 대상: 현재 보이는(필터링된) 계약 중 paid_unpaid=true (미지급) AND status='active' 또는 빈값
-    const visibleByGroup = activeGroupIds.map(gid => ({
-        gid,
-        rows: applyFilters(records.filter(r => r.groupId === gid && r.data?.paid_unpaid && r.data?.status !== 'cancel')),
-    }));
-    const all = visibleByGroup.flatMap(x => x.rows);
+    // 정산 대상: 펼쳐진 그룹들에서 미지급 + 해지 아닌 + 필터 통과 계약.
+    const targetGroupIds = expandedGroupIds.size > 0 ? [...expandedGroupIds] : groups.map(g => g.id);
+    const all = [];
+    targetGroupIds.forEach(gid => {
+        const group = groups.find(g => g.id === gid);
+        if (!group) return;
+        const grpRecs = records.filter(r => r.groupId === gid && r.data?.paid_unpaid && r.data?.status !== 'cancel');
+        applyFilters(grpRecs).forEach(r => all.push({ row: r, group }));
+    });
 
     if (all.length === 0) {
-        document.getElementById('settleSummary').textContent = '정산 대상 계약이 없습니다 (필터링된 행 중 미지급 + 해지 아닌 계약만 정산).';
-        document.getElementById('settleBody').innerHTML = '';
-        document.getElementById('settleModal').classList.remove('hidden');
-        return;
-    }
-    if (!orgSettings) {
-        document.getElementById('settleSummary').textContent = '연동 조직도 그룹이 없거나 설정이 없어 정산할 수 없습니다. 설정에서 먼저 연동해 주세요.';
+        document.getElementById('settleSummary').textContent = '정산 대상 계약이 없습니다 (펼쳐진 현장의 미지급 + 해지 아닌 계약만).';
         document.getElementById('settleBody').innerHTML = '';
         document.getElementById('settleModal').classList.remove('hidden');
         return;
     }
 
-    // 위계 규칙으로 payout 빌드: { recipientEmpId, contractId, role, amount, contractLabel }
+    // 위계 규칙으로 payout 빌드. 각 계약은 자기 그룹의 org 연동 사용.
     const payouts = [];
-    all.forEach(r => {
+    all.forEach(({ row: r, group }) => {
         const d = r.data || {};
-        const emp = findEmployeeByName(d.manager);
+        const emp = findEmployeeByName(d.manager, group);
         if (!emp) return;
-        const tbl = commissionTable(d.unitType);
+        const tbl = commissionTable(d.unitType, group);
         if (!tbl) return;
+        const employees = orgEmployeesFor(group);
         const role = emp.data?.title || '';
         const team = parseInt(emp.data?.team, 10);
-        const teamLead = orgEmployees.find(e => e.data?.title === '팀장' && parseInt(e.data?.team, 10) === team);
-        const head = orgEmployees.find(e => e.data?.title === '본부장');
-        const label = `${d.dong || '?'}동 ${d.ho || '?'}호 (${d.customer || '?'})`;
+        const teamLead = employees.find(e => e.data?.title === '팀장' && parseInt(e.data?.team, 10) === team);
+        const head = employees.find(e => e.data?.title === '본부장');
+        const label = `[${group.name}] ${d.dong || '?'}동 ${d.ho || '?'}호 (${d.customer || '?'})`;
 
         if (role === '팀원') {
             payouts.push({ emp, role: '팀원', amount: tbl['팀원'], cid: r.id, label });

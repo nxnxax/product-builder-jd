@@ -28,8 +28,7 @@ const DEFAULT_FIELDS = [
 /* ============== State ============== */
 let supabaseClient = null;
 let groups = [];
-let activeGroupIds = [];
-let multiMode = false;
+let expandedGroupIds = new Set();
 let records = [];
 let editingGroupId = null;
 let filterState = { filters: {} };
@@ -69,7 +68,6 @@ async function loadGroups() {
         return;
     }
     if (groups.length === 0) {
-        renderGroupBar();
         document.getElementById('content').innerHTML = `
             <div class="empty">
                 <b>아직 등록된 그룹이 없습니다.</b><br>
@@ -77,62 +75,15 @@ async function loadGroups() {
             </div>`;
         return;
     }
-    const def = groups.find(g => g.isDefault) || groups[0];
-    activeGroupIds = [def.id];
-    multiMode = false;
-    renderGroupBar();
+    if (expandedGroupIds.size === 0) {
+        const def = groups.find(g => g.isDefault) || groups[0];
+        expandedGroupIds.add(def.id);
+    }
     await loadRecords();
 }
 
-function renderGroupBar() {
-    const pillsEl = document.getElementById('groupPills');
-    pillsEl.innerHTML = groups.map(g => {
-        const active = activeGroupIds.includes(g.id);
-        if (multiMode) {
-            return `<label class="group-pill multi-mode ${active ? 'active' : ''}">
-                <input type="checkbox" data-gid="${g.id}" ${active ? 'checked' : ''}>${escapeHtml(g.name)}${g.isDefault ? ' ★' : ''}
-            </label>`;
-        }
-        return `<button type="button" class="group-pill ${active ? 'active' : ''}" data-gid="${g.id}">
-            ${escapeHtml(g.name)}${g.isDefault ? ' ★' : ''}
-        </button>`;
-    }).join('');
-
-    pillsEl.querySelectorAll('button.group-pill').forEach(b => {
-        b.addEventListener('click', async () => {
-            activeGroupIds = [parseInt(b.dataset.gid, 10)];
-            renderGroupBar();
-            await loadRecords();
-        });
-    });
-    pillsEl.querySelectorAll('input[type=checkbox][data-gid]').forEach(cb => {
-        cb.addEventListener('change', async () => {
-            const gid = parseInt(cb.dataset.gid, 10);
-            if (cb.checked) activeGroupIds = Array.from(new Set([...activeGroupIds, gid]));
-            else activeGroupIds = activeGroupIds.filter(id => id !== gid);
-            if (activeGroupIds.length === 0 && groups.length > 0) activeGroupIds = [groups[0].id];
-            await loadRecords();
-            renderGroupBar();
-        });
-    });
-
-    const multiBtn = document.getElementById('multiToggleBtn');
-    multiBtn.textContent = multiMode ? '✓ 멀티 선택' : '멀티 선택';
-    multiBtn.classList.toggle('primary', multiMode);
-}
-
 function bindUI() {
-    document.getElementById('multiToggleBtn').addEventListener('click', async () => {
-        multiMode = !multiMode;
-        if (!multiMode && activeGroupIds.length > 1) activeGroupIds = activeGroupIds.slice(0, 1);
-        renderGroupBar();
-        await loadRecords();
-    });
     document.getElementById('newGroupBtn').addEventListener('click', () => openGroupModal(null));
-    document.getElementById('editGroupBtn').addEventListener('click', () => {
-        if (activeGroupIds.length === 1) openGroupModal(activeGroupIds[0]);
-        else alert('편집할 그룹 하나만 선택해주세요.');
-    });
     document.getElementById('groupCancelBtn').addEventListener('click', () => closeModal('groupModal'));
     document.getElementById('groupSaveBtn').addEventListener('click', saveGroup);
     document.getElementById('groupDeleteBtn').addEventListener('click', deleteGroup);
@@ -189,9 +140,10 @@ async function deleteGroup() {
 
 /* ============== Records ============== */
 async function loadRecords() {
-    if (activeGroupIds.length === 0) { records = []; renderRecords(); return; }
+    if (groups.length === 0) { records = []; renderRecords(); return; }
     try {
-        const data = await api('ledger-records', { query: 'group_ids=' + activeGroupIds.join(',') });
+        const allIds = groups.map(g => g.id).join(',');
+        const data = await api('ledger-records', { query: 'group_ids=' + allIds });
         records = data.items || [];
     } catch (e) {
         showError('레코드 로드 실패: ' + e.message);
@@ -207,49 +159,68 @@ function applyFilters(rows) {
 
 function renderRecords() {
     const content = document.getElementById('content');
-    if (activeGroupIds.length === 0) { content.innerHTML = `<div class="empty">그룹을 선택해주세요.</div>`; return; }
-
-    const sections = activeGroupIds.map(gid => {
-        const g = groups.find(x => x.id === gid);
-        const grpRecs = records.filter(r => r.groupId === gid);
-        const filtered = applyFilters(grpRecs);
-        return renderSection(g, filtered);
-    }).join('');
-    content.innerHTML = sections;
+    if (groups.length === 0) return;
+    content.innerHTML = groups.map(g => renderGroupCard(g)).join('');
+    bindAccordionEvents();
     bindTableEvents();
     updateBulkBar();
 }
 
-function renderSection(group, rows) {
-    if (!group) return '';
+function renderGroupCard(group) {
+    const isOpen = expandedGroupIds.has(group.id);
+    const grpRecs = records.filter(r => r.groupId === group.id);
+    const bodyHtml = isOpen ? renderTable(group, applyFilters(grpRecs)) : '';
     return `
-        <section class="cust-section" data-gid="${group.id}">
-            <div class="cust-head">
-                <div>
-                    <h3>${escapeHtml(group.name)}</h3>
-                    <span class="count">${rows.length}건</span>
-                </div>
-                <div>
-                    <button class="tiny-btn primary" type="button" data-add-row="${group.id}">+ 행 추가</button>
+        <div class="accordion-card ${isOpen ? 'open' : ''}" data-gid="${group.id}">
+            <div class="accordion-head" data-toggle-gid="${group.id}">
+                <span class="arrow">▶</span>
+                <h3>${escapeHtml(group.name)}</h3>
+                ${group.isDefault ? '<span class="star">기본</span>' : ''}
+                <span class="count-pill">${grpRecs.length}건</span>
+                <div class="head-actions">
+                    <button type="button" data-edit-gid="${group.id}">편집</button>
                 </div>
             </div>
-            <div class="tbl-wrap">
-                <table class="ledger-tbl">
-                    <thead>
-                        <tr>
-                            <th class="col-check"><input type="checkbox" data-select-all="${group.id}"></th>
-                            ${DEFAULT_FIELDS.map(f => `<th style="min-width:${f.width || 90}px;" data-col-key="${f.key}">${escapeHtml(f.label)}</th>`).join('')}
-                            <th class="col-action"></th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${rows.length === 0
-                            ? `<tr><td colspan="${DEFAULT_FIELDS.length + 2}" style="text-align:center;color:#8a847e;padding:24px;font-size:13px;">등록된 행이 없습니다.</td></tr>`
-                            : rows.map((r, i) => renderRow(r, i + 1, group.id)).join('')}
-                    </tbody>
-                </table>
-            </div>
-        </section>`;
+            <div class="accordion-body">${bodyHtml}</div>
+        </div>`;
+}
+
+function renderTable(group, rows) {
+    return `
+        <div style="display:flex;justify-content:flex-end;padding:10px 18px;border-bottom:1px solid var(--ledger-line);background:#fbfaf5;">
+            <button class="tiny-btn primary" type="button" data-add-row data-gid="${group.id}">+ 행 추가</button>
+        </div>
+        <div class="tbl-wrap">
+            <table class="ledger-tbl">
+                <thead>
+                    <tr>
+                        <th class="col-check"><input type="checkbox" data-select-all="${group.id}"></th>
+                        ${DEFAULT_FIELDS.map(f => `<th style="min-width:${f.width || 90}px;" data-col-key="${f.key}">${escapeHtml(f.label)}</th>`).join('')}
+                        <th class="col-action"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${rows.length === 0
+                        ? `<tr><td colspan="${DEFAULT_FIELDS.length + 2}" style="text-align:center;color:#8a847e;padding:24px;font-size:13px;">표시할 항목이 없습니다.</td></tr>`
+                        : rows.map((r, i) => renderRow(r, i + 1, group.id)).join('')}
+                </tbody>
+            </table>
+        </div>`;
+}
+
+function bindAccordionEvents() {
+    document.querySelectorAll('[data-toggle-gid]').forEach(head => {
+        head.addEventListener('click', (e) => {
+            if (e.target.closest('.head-actions')) return;
+            const gid = parseInt(head.dataset.toggleGid, 10);
+            if (expandedGroupIds.has(gid)) expandedGroupIds.delete(gid);
+            else expandedGroupIds.add(gid);
+            renderRecords();
+        });
+    });
+    document.querySelectorAll('[data-edit-gid]').forEach(b => {
+        b.addEventListener('click', (e) => { e.stopPropagation(); openGroupModal(parseInt(b.dataset.editGid, 10)); });
+    });
 }
 
 function renderRow(r, displayNo, gid) {
@@ -285,7 +256,7 @@ function bindTableEvents() {
         onChange: () => renderRecords(),
     });
     document.querySelectorAll('[data-add-row]').forEach(b => {
-        b.addEventListener('click', () => addRow(parseInt(b.dataset.addRow, 10)));
+        b.addEventListener('click', () => addRow(parseInt(b.dataset.gid, 10)));
     });
     document.querySelectorAll('[data-field][data-id]').forEach(el => {
         el.addEventListener('change', () => updateRowField(parseInt(el.dataset.id, 10), el.dataset.field, el.value));

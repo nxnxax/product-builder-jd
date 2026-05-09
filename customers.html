@@ -129,6 +129,34 @@ table.ledger-tbl{width:100%;border-collapse:collapse;font-size:13.5px;min-width:
     .modal .modal-row > .row-control.three{grid-template-columns:1fr 1fr 1fr}
 }
 
+
+/* ===== 그룹 accordion 카드 ===== */
+.group-toolbar{display:flex;align-items:center;gap:8px;padding:14px 18px;background:#fff;border:1px solid var(--ledger-line);border-radius:12px;margin-bottom:16px}
+.group-toolbar .label{font-size:12.5px;color:#8a847e;font-weight:600}
+.group-toolbar .spacer{flex:1}
+
+.accordion-card{background:#fff;border:1px solid var(--ledger-line-strong);border-radius:14px;margin-bottom:14px;overflow:hidden;box-shadow:0 2px 6px rgba(20,14,8,.04);transition:box-shadow 200ms,border-color 200ms}
+.accordion-card.open{box-shadow:0 10px 28px rgba(20,14,8,.09);border-color:var(--ledger-accent-deep)}
+.accordion-card.open .accordion-head{background:linear-gradient(180deg,var(--ledger-bg) 0%,#fff 100%);border-bottom:1px solid var(--ledger-line)}
+.accordion-head{display:flex;align-items:center;gap:12px;padding:16px 20px;cursor:pointer;user-select:none;position:relative;transition:background 160ms}
+.accordion-head::before{content:'';width:4px;height:34px;border-radius:99px;background:var(--ledger-accent);flex-shrink:0;opacity:.85}
+.accordion-card.open .accordion-head::before{opacity:1}
+.accordion-head:hover{background:#fbfaf5}
+.accordion-head .arrow{font-size:11px;color:#8a847e;transition:transform 220ms;width:14px;text-align:center;flex-shrink:0}
+.accordion-card.open .accordion-head .arrow{transform:rotate(90deg);color:var(--ledger-accent)}
+.accordion-head h3{margin:0;font-size:18px;font-weight:700;letter-spacing:-.015em;color:#0e0d0c}
+.accordion-head .star{font-size:11px;color:var(--ledger-accent);font-weight:700;letter-spacing:.05em;background:rgba(200,54,44,.08);padding:3px 8px;border-radius:99px}
+.accordion-head .count-pill{margin-left:auto;padding:4px 11px;background:#fbf7ef;border:1px solid var(--ledger-line);border-radius:99px;font-size:11.5px;color:#4f4943;font-weight:600;font-variant-numeric:tabular-nums}
+.accordion-head .head-actions{display:flex;gap:4px;opacity:0;transition:opacity 160ms}
+.accordion-card:hover .accordion-head .head-actions,
+.accordion-card.open .accordion-head .head-actions{opacity:1}
+.accordion-head .head-actions button{border:1px solid transparent;background:transparent;padding:5px 10px;border-radius:6px;cursor:pointer;font-size:12px;color:#4f4943;font-family:inherit;font-weight:500}
+.accordion-head .head-actions button:hover{background:#fbf7ef;color:#0e0d0c;border-color:var(--ledger-line)}
+.accordion-head .head-actions button.danger{color:var(--ledger-accent)}
+.accordion-head .head-actions button.danger:hover{background:#fff8f7;border-color:rgba(200,54,44,.3)}
+.accordion-body{display:none}
+.accordion-card.open .accordion-body{display:block}
+
 </style>
 </head>
 <body>
@@ -161,13 +189,10 @@ table.ledger-tbl{width:100%;border-collapse:collapse;font-size:13.5px;min-width:
         </div>
     </div>
 
-    <div class="group-bar">
+    <div class="group-toolbar">
         <span class="label">그룹</span>
-        <div id="groupPills" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
-        <span style="flex:1"></span>
-        <button class="tiny-btn" id="multiToggleBtn" type="button">멀티 선택</button>
-        <button class="tiny-btn" id="newGroupBtn" type="button">+ 새 그룹</button>
-        <button class="tiny-btn" id="editGroupBtn" type="button">그룹 편집</button>
+        <span class="spacer"></span>
+        <button class="tiny-btn primary" id="newGroupBtn" type="button">+ 새 그룹</button>
     </div>
 
     <div id="content"></div>
