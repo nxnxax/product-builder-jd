@@ -1437,11 +1437,19 @@ select:focus {
 /* ------------------------------------------------------------------ Ledger: 다른 그룹 picker
    기본 그룹은 항상 표시. 나머지 그룹은 이 picker 안에 모음 → 클릭으로 펼침 → chip 토글로 표시 그룹 선택. */
 .extra-groups {
+    position: sticky;
+    top: var(--header-h);
+    z-index: 30;
     background: #fff;
     border: 1px solid rgba(20, 14, 8, 0.09);
     border-radius: 12px;
     margin-bottom: 14px;
     overflow: hidden;
+    box-shadow: 0 2px 8px rgba(20, 14, 8, 0.04);
+}
+
+.extra-groups.open {
+    box-shadow: 0 6px 18px rgba(20, 14, 8, 0.08);
 }
 
 .extra-groups .extra-head {

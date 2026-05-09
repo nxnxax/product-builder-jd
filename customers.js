@@ -169,13 +169,12 @@ function renderRecords() {
     const mainGroup = groups.find(g => g.isDefault) || groups[0];
     const others = groups.filter(g => g.id !== mainGroup.id);
 
-    let html = renderGroupCard(mainGroup);
-    if (others.length > 0) {
-        html += renderExtraPicker(others);
-        others.filter(g => selectedExtraIds.has(g.id)).forEach(g => {
-            html += renderGroupCard(g);
-        });
-    }
+    let html = '';
+    if (others.length > 0) html += renderExtraPicker(others);
+    html += renderGroupCard(mainGroup);
+    others.filter(g => selectedExtraIds.has(g.id)).forEach(g => {
+        html += renderGroupCard(g);
+    });
     content.innerHTML = html;
 
     bindAccordionEvents();
