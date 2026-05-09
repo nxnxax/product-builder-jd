@@ -6,7 +6,7 @@
 <title>고객 관리대장 · YOUNGMAN</title>
 <link rel="icon" type="image/png" href="logo_main.png">
 <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
-<link rel="stylesheet" href="style.css?v=20260509-thousand">
+<link rel="stylesheet" href="style.css?v=20260509-pay-toggle">
 <style>
 :root{
     --ledger-line:rgba(20,14,8,.09); --ledger-line-strong:rgba(20,14,8,.16);
@@ -58,13 +58,7 @@ table.ledger-tbl{width:100%;border-collapse:collapse;font-size:13.5px;min-width:
 .row-action-btn{border:0;background:transparent;color:#8a847e;font-size:13px;cursor:pointer;padding:4px 6px;border-radius:5px;font-family:inherit}
 .row-action-btn:hover{color:var(--ledger-accent);background:#fff8f7}
 
-/* 관리 토글 — 동그란 thumb 좌우 슬라이드 */
-.toggle-switch{display:inline-flex;align-items:center;cursor:pointer;user-select:none;line-height:0}
-.toggle-switch .toggle-track{display:inline-block;width:36px;height:20px;background:#cfcabf;border-radius:99px;position:relative;transition:background 200ms}
-.toggle-switch .toggle-thumb{position:absolute;top:2px;left:2px;width:16px;height:16px;background:#fff;border-radius:50%;box-shadow:0 1px 3px rgba(0,0,0,.18);transition:transform 200ms}
-.toggle-switch.on .toggle-track{background:var(--status-on)}
-.toggle-switch.on .toggle-thumb{transform:translateX(16px)}
-.toggle-switch:hover .toggle-track{filter:brightness(.95)}
+/* 토글 스위치는 global style.css 에 통합. */
 
 /* 관리 안되는 행 — 죽어있는 느낌 */
 .ledger-tbl tbody tr.row-dead{background:#ebe7df;opacity:.62}
@@ -223,9 +217,9 @@ table.ledger-tbl{width:100%;border-collapse:collapse;font-size:13.5px;min-width:
     </div>
 </div>
 
-<script type="module" src="customers.js?v=20260509-thousand"></script>
+<script type="module" src="customers.js?v=20260509-pay-toggle"></script>
 <script type="module">
-    import { initSupabase, setupHeaderUser } from './auth-shared.js?v=20260509-thousand';
+    import { initSupabase, setupHeaderUser } from './auth-shared.js?v=20260509-pay-toggle';
     try {
         await initSupabase();
         setupHeaderUser({

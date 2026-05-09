@@ -6,7 +6,7 @@
 <title>계약자 관리대장 · YOUNGMAN</title>
 <link rel="icon" type="image/png" href="logo_main.png">
 <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
-<link rel="stylesheet" href="style.css?v=20260509-thousand">
+<link rel="stylesheet" href="style.css?v=20260509-pay-toggle">
 <style>
 :root{
     --ledger-line:rgba(20,14,8,.09); --ledger-line-strong:rgba(20,14,8,.16);
@@ -50,6 +50,14 @@ table.ledger-tbl{width:100%;border-collapse:collapse;font-size:13px;min-width:13
 .ledger-tbl tbody td{padding:8px 10px;border-bottom:1px solid var(--ledger-line);vertical-align:middle}
 .ledger-tbl tbody tr:hover{background:#fbfaf5}
 .ledger-tbl tbody tr.selected{background:#fff8f7}
+/* 지급 완료 행 — 연회색 (배경만 조금 어둡게, 글씨는 차분하게) */
+.ledger-tbl tbody tr.row-paid{background:#ebe7df}
+.ledger-tbl tbody tr.row-paid td{color:#7a756e}
+.ledger-tbl tbody tr.row-paid td input,.ledger-tbl tbody tr.row-paid td select{color:#7a756e}
+.ledger-tbl tbody tr.row-paid.selected{background:#e3decf}
+/* 해지된 행 — 연분홍 */
+.ledger-tbl tbody tr.row-cancel{background:#fde4e4}
+.ledger-tbl tbody tr.row-cancel.selected{background:#f8d3d3}
 .ledger-tbl tbody td input,.ledger-tbl tbody td select{width:100%;height:28px;padding:0 6px;border:1px solid transparent;background:transparent;border-radius:5px;font-size:12.5px;color:#0e0d0c;font-family:inherit;outline:none;transition:all 120ms}
 .ledger-tbl tbody td input:focus,.ledger-tbl tbody td select:focus{border-color:#0e0d0c;background:#fff}
 .ledger-tbl tbody td input:hover,.ledger-tbl tbody td select:hover{background:#fff;border-color:var(--ledger-line)}
@@ -60,10 +68,7 @@ table.ledger-tbl{width:100%;border-collapse:collapse;font-size:13px;min-width:13
 .row-action-btn{border:0;background:transparent;color:#8a847e;font-size:13px;cursor:pointer;padding:4px 6px;border-radius:5px;font-family:inherit}
 .row-action-btn:hover{color:var(--ledger-accent);background:#fff8f7}
 
-/* 수수료 지급 스위치 */
-.pay-switch{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:99px;cursor:pointer;font-size:11px;font-weight:700;letter-spacing:.02em;border:1px solid;transition:all 160ms;font-family:inherit;background:#fff}
-.pay-switch.unpaid{background:rgba(200,54,44,.1);color:var(--ledger-accent);border-color:rgba(200,54,44,.4)}
-.pay-switch.paid{background:#f4efe7;color:#a3a39a;border-color:#d7d2c8;text-decoration:line-through}
+/* 수수료 토글은 global style.css 의 .toggle-switch.pay-toggle 을 사용. */
 /* 정계약/해지 스위치 */
 .status-pill{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:99px;cursor:pointer;font-size:11px;font-weight:700;letter-spacing:.02em;border:1px solid;transition:all 160ms;font-family:inherit;background:#fff;color:#8a847e;border-color:var(--ledger-line-strong)}
 .status-pill.active{background:var(--status-yellow);color:#3b2f08;border-color:#e0ad00}
@@ -290,9 +295,9 @@ table.ledger-tbl{width:100%;border-collapse:collapse;font-size:13px;min-width:13
     </div>
 </div>
 
-<script type="module" src="contracts.js?v=20260509-thousand"></script>
+<script type="module" src="contracts.js?v=20260509-pay-toggle"></script>
 <script type="module">
-    import { initSupabase, setupHeaderUser } from './auth-shared.js?v=20260509-thousand';
+    import { initSupabase, setupHeaderUser } from './auth-shared.js?v=20260509-pay-toggle';
     try {
         await initSupabase();
         setupHeaderUser({

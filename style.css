@@ -1615,6 +1615,55 @@ select:focus {
 }
 .comm-cell input:focus { border-color: #0e0d0c; }
 
+/* ------------------------------------------------------------------ Ledger 토글 스위치
+   동그란 thumb 좌우 슬라이드. on/off 색상 variant 가능 (.pay-toggle 등). */
+.toggle-switch {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    user-select: none;
+    line-height: 0;
+}
+.toggle-switch .toggle-track {
+    display: inline-block;
+    width: 36px;
+    height: 20px;
+    background: #cfcabf;
+    border-radius: 99px;
+    position: relative;
+    transition: background 200ms;
+    flex-shrink: 0;
+}
+.toggle-switch .toggle-thumb {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 16px;
+    height: 16px;
+    background: #fff;
+    border-radius: 50%;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
+    transition: transform 200ms;
+}
+.toggle-switch.on .toggle-thumb { transform: translateX(16px); }
+.toggle-switch .toggle-label {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    line-height: 1;
+}
+.toggle-switch:hover .toggle-track { filter: brightness(0.95); }
+
+/* 관리 토글 (customers) — 켜짐: 파랑 */
+.toggle-switch.on .toggle-track { background: #2563eb; }
+
+/* 수수료 토글 (contracts) — 켜짐(미지급)=연노랑, 꺼짐(지급)=회색 */
+.toggle-switch.pay-toggle.on .toggle-track { background: #fbc400; }
+.toggle-switch.pay-toggle.on .toggle-label { color: #8a6500; }
+.toggle-switch.pay-toggle.off .toggle-track { background: #d7d2c8; }
+.toggle-switch.pay-toggle.off .toggle-label { color: #8a847e; }
+
 .extra-groups .extra-picker {
     display: none;
     padding: 4px 14px 14px;

@@ -503,8 +503,13 @@ async function setMainGroup(gid) {
 
 function renderRow(r, displayNo, group) {
     const d = r.data || {};
+    const cls = [
+        selectedIds.has(r.id) ? 'selected' : '',
+        d.paid_unpaid ? '' : 'row-paid',     // 지급 완료된 행 = 회색
+        d.status === 'cancel' ? 'row-cancel' : '',  // 해지된 행 = 분홍
+    ].filter(Boolean).join(' ');
     return `
-        <tr data-id="${r.id}" data-gid="${group.id}" class="${selectedIds.has(r.id) ? 'selected' : ''}">
+        <tr data-id="${r.id}" data-gid="${group.id}" class="${cls}">
             <td class="col-check"><input type="checkbox" data-select="${r.id}" ${selectedIds.has(r.id) ? 'checked' : ''}></td>
             ${DEFAULT_FIELDS.map(f => `<td>${renderCell(f, r, d, displayNo, group)}</td>`).join('')}
             <td class="col-action"><button class="row-action-btn" data-delete-row="${r.id}" title="삭제">×</button></td>
@@ -516,7 +521,11 @@ function renderCell(f, r, d, displayNo, group) {
     if (f.type === 'auto_number') return `<span class="col-no">${displayNo}</span>`;
     if (f.type === 'pay_switch') {
         const unpaid = !!d.paid_unpaid;
-        return `<button class="pay-switch ${unpaid ? 'unpaid' : 'paid'}" data-pay-switch data-id="${id}">${unpaid ? '미지급' : '지급'}</button>`;
+        return `
+            <label class="toggle-switch pay-toggle ${unpaid ? 'on' : 'off'}" data-pay-switch data-id="${id}" title="${unpaid ? '미지급' : '지급'}">
+                <span class="toggle-track"><span class="toggle-thumb"></span></span>
+                <span class="toggle-label">${unpaid ? '미지급' : '지급'}</span>
+            </label>`;
     }
     if (f.type === 'status_switch') {
         const v = d.status || '';
@@ -562,7 +571,7 @@ function bindTableEvents() {
         el.addEventListener('change', () => updateRowField(parseInt(el.dataset.id, 10), el.dataset.field, el.value));
     });
     document.querySelectorAll('[data-pay-switch]').forEach(b => {
-        b.addEventListener('click', () => togglePay(parseInt(b.dataset.id, 10)));
+        b.addEventListener('click', (e) => { e.preventDefault(); togglePay(parseInt(b.dataset.id, 10)); });
     });
     document.querySelectorAll('[data-status-switch]').forEach(b => {
         b.addEventListener('click', () => cycleStatus(parseInt(b.dataset.id, 10)));
