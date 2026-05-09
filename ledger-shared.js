@@ -214,17 +214,23 @@ export function openRowAddModal(opts) {
     const defaults = opts.defaults || {};
     const md = document.createElement('div');
     md.className = 'modal-backdrop row-add-modal';
-    md.style.cssText = 'position:fixed;inset:0;background:rgba(20,14,8,.45);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;z-index:300;padding:20px;';
+    md.style.zIndex = '300';
     md.innerHTML = `
-        <div class="modal" style="background:#fff;border-radius:14px;max-width:560px;width:100%;max-height:88vh;overflow-y:auto;padding:24px 26px;box-shadow:0 24px 60px rgba(20,14,8,.22);">
-            <h2 style="margin:0 0 6px;font-size:18px;letter-spacing:-.01em;">${escapeHtml(opts.title || '새 행 추가')}</h2>
-            <p class="desc" style="color:#8a847e;font-size:12.5px;margin:0 0 14px;line-height:1.55;">필요한 항목만 입력하셔도 됩니다. 빈 칸은 나중에 표에서 채울 수 있습니다.</p>
-            <form data-form>${fields.map(f => renderEntryField(f, defaults, opts.customRender)).join('')}</form>
-            <div class="actions" style="display:flex;justify-content:flex-end;gap:8px;margin-top:18px;padding-top:14px;border-top:1px solid rgba(20,14,8,.09);">
+        <div class="modal-panel">
+            <header class="modal-header">
+                <div>
+                    <h2>${escapeHtml(opts.title || '새 행 추가')}</h2>
+                    <p class="modal-subtitle">필요한 항목만 입력하셔도 됩니다. 빈 칸은 나중에 표에서 채울 수 있습니다.</p>
+                </div>
+            </header>
+            <div class="modal-body">
+                <form data-form>${fields.map(f => renderEntryField(f, defaults, opts.customRender)).join('')}</form>
+                <p class="form-help error" data-error style="margin-top:10px;display:none;"></p>
+            </div>
+            <footer class="modal-footer">
                 <button class="tiny-btn" type="button" data-cancel>취소</button>
                 <button class="tiny-btn primary" type="button" data-confirm>확인</button>
-            </div>
-            <p class="desc" data-error style="color:#b91c1c;margin-top:10px;display:none;font-size:12.5px;"></p>
+            </footer>
         </div>
     `;
     document.body.appendChild(md);
@@ -271,11 +277,11 @@ function renderEntryField(f, defaults, customRender) {
     const lbl = `<label class="row-label">${escapeHtml(f.label)}</label>`;
     const wrap = (control, extra = '') => `<div class="modal-row" ${extra}>${lbl}<div class="row-control">${control}</div></div>`;
 
-    if (f.type === 'date')     return wrap(`<input type="date" data-field="${f.key}" value="${escapeAttr(v)}" style="width:100%">`);
-    if (f.type === 'tel')      return wrap(`<input type="tel"  data-field="${f.key}" value="${escapeAttr(v)}" placeholder="010-..." style="width:100%">`);
-    if (f.type === 'textarea') return wrap(`<textarea data-field="${f.key}" rows="3" placeholder="${escapeAttr(f.label)}" style="width:100%;font-family:inherit;border:1px solid rgba(20,14,8,.16);border-radius:7px;padding:8px;font-size:13.5px;line-height:1.5;outline:none;">${escapeHtml(v)}</textarea>`, 'style="grid-template-columns:120px 1fr;align-items:start;"');
-    if (f.type === 'title_select') return wrap(`<select data-field="${f.key}" style="width:100%"><option value="">-</option>${['본부장','팀장','팀원'].map(t => `<option value="${t}" ${v === t ? 'selected' : ''}>${t}</option>`).join('')}</select>`);
-    return wrap(`<input type="text" data-field="${f.key}" value="${escapeAttr(v)}" placeholder="${escapeAttr(f.label)}" style="width:100%">`);
+    if (f.type === 'date')     return wrap(`<input type="date" data-field="${f.key}" value="${escapeAttr(v)}">`);
+    if (f.type === 'tel')      return wrap(`<input type="tel"  data-field="${f.key}" value="${escapeAttr(v)}" placeholder="010-...">`);
+    if (f.type === 'textarea') return wrap(`<textarea data-field="${f.key}" rows="3" placeholder="${escapeAttr(f.label)}">${escapeHtml(v)}</textarea>`, 'style="align-items:start;"');
+    if (f.type === 'title_select') return wrap(`<select data-field="${f.key}"><option value="">-</option>${['본부장','팀장','팀원'].map(t => `<option value="${t}" ${v === t ? 'selected' : ''}>${t}</option>`).join('')}</select>`);
+    return wrap(`<input type="text" data-field="${f.key}" value="${escapeAttr(v)}" placeholder="${escapeAttr(f.label)}">`);
 }
 
 function collectEntry(fields, defaults, md) {

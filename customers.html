@@ -6,7 +6,7 @@
 <title>고객 관리대장 · YOUNGMAN</title>
 <link rel="icon" type="image/png" href="logo_main.png">
 <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
-<link rel="stylesheet" href="style.css?v=20260509-brand5">
+<link rel="stylesheet" href="style.css?v=20260509-modal-cleanup">
 <style>
 :root{
     --ledger-line:rgba(20,14,8,.09); --ledger-line-strong:rgba(20,14,8,.16);
@@ -71,22 +71,13 @@ table.ledger-tbl{width:100%;border-collapse:collapse;font-size:13.5px;min-width:
 .empty{text-align:center;padding:60px 24px;color:#8a847e;font-size:14px;line-height:1.7;background:#fff;border:1px dashed var(--ledger-line-strong);border-radius:12px}
 .empty b{color:#0e0d0c}
 
-.modal-backdrop{position:fixed;inset:0;background:rgba(20,14,8,.45);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;z-index:100;padding:20px}
-.modal-backdrop.hidden{display:none}
-.modal{background:#fff;border-radius:14px;max-width:480px;width:100%;max-height:85vh;overflow-y:auto;padding:26px 28px;box-shadow:0 24px 60px rgba(20,14,8,.22)}
-.modal h2{margin:0 0 6px;font-size:18px;letter-spacing:-.01em}
-.modal .desc{color:#8a847e;font-size:13px;margin:0 0 18px;line-height:1.55}
-.modal label{display:block;margin-top:14px;margin-bottom:6px;font-size:13px;color:#4f4943;font-weight:500}
-.modal input[type=text]{width:100%;height:38px;padding:0 12px;border:1px solid var(--ledger-line-strong);border-radius:7px;font-size:14px;color:#0e0d0c;font-family:inherit;outline:none}
-.modal input:focus{border-color:#0e0d0c}
-.modal .actions{display:flex;justify-content:flex-end;gap:8px;margin-top:22px;padding-top:16px;border-top:1px solid var(--ledger-line)}
+/* 모달 — 통일 시스템(.modal-backdrop / .modal-panel)은 style.css 에서. */
 
 .app-note{margin-top:24px;padding:14px 18px;background:rgba(37,99,235,.05);border:1px solid rgba(37,99,235,.15);border-radius:10px;color:#1e3a8a;font-size:12.5px;line-height:1.6}
 .app-note b{color:#1e40af}
 
 @media (max-width:768px){
     .ledger-shell{padding:20px 14px 60px}
-    .modal{padding:20px}
 }
 
 /* ===== 컬럼 헤더 클릭형 필터 dropdown ===== */
@@ -112,23 +103,6 @@ table.ledger-tbl{width:100%;border-collapse:collapse;font-size:13.5px;min-width:
 .filter-pop-list .count{margin-left:auto;color:#8a847e;font-size:11px;font-variant-numeric:tabular-nums}
 .filter-pop-actions{display:flex;gap:6px;padding-top:8px;border-top:1px solid var(--ledger-line);margin-top:4px}
 .filter-pop-actions button{flex:1}
-
-/* ===== 모달 가로 배치 ===== */
-.modal .modal-row{display:grid;grid-template-columns:120px 1fr;gap:14px;align-items:center;padding:10px 0;border-bottom:1px solid var(--ledger-line)}
-.modal .modal-row:last-of-type{border-bottom:0}
-.modal .modal-row > label.row-label{margin:0;font-size:13px;color:#4f4943;font-weight:600}
-.modal .modal-row > .row-control{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-.modal .modal-row > .row-control input[type=text],
-.modal .modal-row > .row-control input[type=number],
-.modal .modal-row > .row-control input[type=date],
-.modal .modal-row > .row-control select{width:100%;height:36px;margin:0}
-.modal .modal-row > .row-control.three{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;align-items:center}
-.modal .modal-row > .row-control.three .mini-label{font-size:11.5px;color:#8a847e;text-align:right;padding-right:4px}
-@media (max-width:560px){
-    .modal .modal-row{grid-template-columns:1fr;gap:6px}
-    .modal .modal-row > .row-control.three{grid-template-columns:1fr 1fr 1fr}
-}
-
 
 /* ===== 그룹 accordion 카드 ===== */
 .group-toolbar{display:flex;align-items:center;gap:8px;padding:14px 18px;background:#fff;border:1px solid var(--ledger-line);border-radius:12px;margin-bottom:16px}
@@ -212,25 +186,38 @@ table.ledger-tbl{width:100%;border-collapse:collapse;font-size:13.5px;min-width:
 
 <!-- 그룹 모달 -->
 <div class="modal-backdrop hidden" id="groupModal">
-    <div class="modal">
-        <h2 id="groupModalTitle">새 그룹 만들기</h2>
-        <p class="desc">고객을 모아 관리할 단위 (예: 브래인시티비스타동원, 수원롯데캐슬, 오산서희스타힐스).</p>
-        <label>그룹 이름</label>
-        <input type="text" id="groupNameInput" placeholder="예: 브래인시티비스타동원">
-        <div style="margin-top:14px;display:flex;align-items:center;gap:10px;">
-            <input type="checkbox" id="groupIsDefaultInput" style="width:auto;">
-            <label for="groupIsDefaultInput" style="margin:0;cursor:pointer;">기본 그룹 (접속 시 자동 노출)</label>
+    <div class="modal-panel narrow">
+        <header class="modal-header">
+            <div>
+                <h2 id="groupModalTitle">새 그룹 만들기</h2>
+                <p class="modal-subtitle">고객을 모아 관리할 단위 (예: 브래인시티비스타동원, 수원롯데캐슬).</p>
+            </div>
+        </header>
+        <div class="modal-body">
+            <div class="modal-row">
+                <label class="row-label" for="groupNameInput">그룹 이름</label>
+                <div class="row-control">
+                    <input type="text" id="groupNameInput" placeholder="예: 브래인시티비스타동원">
+                </div>
+            </div>
+            <div class="modal-row">
+                <label class="row-label" for="groupIsDefaultInput">기본 그룹</label>
+                <div class="row-control inline">
+                    <input type="checkbox" id="groupIsDefaultInput" style="width:16px;height:16px;margin:0;">
+                    <label for="groupIsDefaultInput" style="margin:0;cursor:pointer;font-size:13px;color:var(--fg-secondary);">접속 시 이 그룹이 자동으로 열립니다</label>
+                </div>
+            </div>
+            <p class="form-help error" id="groupErrorMsg" style="margin-top:8px;"></p>
         </div>
-        <div class="actions">
-            <button class="tiny-btn danger" id="groupDeleteBtn" type="button" style="margin-right:auto;display:none;">그룹 삭제</button>
+        <footer class="modal-footer">
+            <button class="tiny-btn danger modal-footer-spacer" id="groupDeleteBtn" type="button" style="display:none;">그룹 삭제</button>
             <button class="tiny-btn" id="groupCancelBtn" type="button">취소</button>
             <button class="tiny-btn primary" id="groupSaveBtn" type="button">저장</button>
-        </div>
-        <p class="desc" id="groupErrorMsg" style="color:#b91c1c;margin-top:10px;"></p>
+        </footer>
     </div>
 </div>
 
-<script type="module" src="customers.js?v=20260509-customers1"></script>
+<script type="module" src="customers.js?v=20260509-modal-cleanup"></script>
 <script type="module">
     import { initSupabase, setupHeaderUser } from './auth-shared.js?v=20260508-tight';
     try {

@@ -626,11 +626,21 @@ select:focus {
 .pill.suspended::before { background: var(--danger); }
 .pill.admin::before { background: var(--accent); }
 
-/* ------------------------------------------------------------------ Modal */
+/* ------------------------------------------------------------------ Modal
+   통일 시스템 — 사용 패턴:
+     <div class="modal-backdrop hidden">
+       <div class="modal-panel">
+         <header class="modal-header"><h2>제목</h2><button class="close-btn">×</button></header>
+         <div class="modal-body"> ... .modal-row 들 ... </div>
+         <footer class="modal-footer"> 버튼들 </footer>
+       </div>
+     </div>
+   .modal / .modal-content 는 레거시 alias (admin/index 호환).                  */
+.modal-backdrop,
 .modal {
     position: fixed;
     inset: 0;
-    background: rgba(10, 10, 10, 0.32);
+    background: rgba(10, 10, 10, 0.42);
     backdrop-filter: blur(8px);
     -webkit-backdrop-filter: blur(8px);
     display: flex;
@@ -638,41 +648,190 @@ select:focus {
     justify-content: center;
     z-index: 1000;
     padding: 24px;
+    overflow-y: auto;
 }
 
+.modal-backdrop.hidden,
+.modal.hidden { display: none; }
+
+.modal-panel,
 .modal-content {
+    box-sizing: border-box;
     width: 100%;
-    max-width: 480px;
+    max-width: 520px;
+    max-height: calc(100vh - 48px);
     background: var(--bg);
     border-radius: var(--radius-lg);
-    padding: 28px;
     box-shadow: var(--shadow-overlay);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
 }
 
+.modal-panel.wide,
+.modal-content.wide { max-width: 880px; }
+
+.modal-panel.narrow,
+.modal-content.narrow { max-width: 420px; }
+
 .modal-header {
+    flex: 0 0 auto;
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin-bottom: 22px;
+    gap: 12px;
+    padding: 22px 28px 16px;
+    border-bottom: 1px solid var(--border);
 }
 
 .modal-header h2 {
-    font-size: 18px;
+    margin: 0;
+    font-size: 17px;
     font-weight: 600;
+    letter-spacing: -0.01em;
     color: var(--fg);
+    line-height: 1.3;
+}
+
+.modal-header .modal-subtitle {
+    margin: 4px 0 0;
+    font-size: 13px;
+    color: var(--fg-tertiary);
+    line-height: 1.5;
+    font-weight: 400;
+}
+
+.modal-body {
+    flex: 1 1 auto;
+    overflow-y: auto;
+    padding: 20px 28px;
+}
+
+.modal-body > .modal-desc {
+    margin: 0 0 16px;
+    font-size: 13px;
+    color: var(--fg-tertiary);
+    line-height: 1.55;
+}
+
+.modal-footer {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    padding: 14px 28px 18px;
+    border-top: 1px solid var(--border);
+    background: var(--bg);
+}
+
+.modal-footer .modal-footer-spacer { margin-right: auto; }
+
+/* .modal-row — 라벨 좌·컨트롤 우 가로 배치 (한국어 라벨이 절대 세로로 짜부라지지 않도록) */
+.modal-row {
+    display: grid;
+    grid-template-columns: 132px minmax(0, 1fr);
+    gap: 14px;
+    align-items: center;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--border);
+}
+.modal-row:last-child { border-bottom: 0; }
+.modal-row.align-start { align-items: start; }
+
+.modal-row > .row-label,
+.modal-row > label.row-label {
+    margin: 0;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--fg-secondary);
+    line-height: 1.4;
+    word-break: keep-all;
+}
+
+.modal-row > .row-control {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+}
+
+.modal-row > .row-control.inline {
+    flex-direction: row;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.modal-row > .row-control input[type=text],
+.modal-row > .row-control input[type=tel],
+.modal-row > .row-control input[type=number],
+.modal-row > .row-control input[type=date],
+.modal-row > .row-control input[type=email],
+.modal-row > .row-control input[type=password],
+.modal-row > .row-control select,
+.modal-row > .row-control textarea {
+    width: 100%;
+    box-sizing: border-box;
+    height: 38px;
+    padding: 0 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 14px;
+    font-family: inherit;
+    color: var(--fg);
+    background: var(--bg);
+    outline: none;
+    transition: border-color 120ms;
+}
+
+.modal-row > .row-control textarea {
+    height: auto;
+    min-height: 84px;
+    padding: 10px 12px;
+    line-height: 1.55;
+    resize: vertical;
+}
+
+.modal-row > .row-control input:focus,
+.modal-row > .row-control select:focus,
+.modal-row > .row-control textarea:focus {
+    border-color: var(--fg);
+}
+
+.modal-row > .row-control .row-help {
+    font-size: 12px;
+    color: var(--fg-tertiary);
+    line-height: 1.5;
+}
+
+@media (max-width: 640px) {
+    .modal-backdrop, .modal { padding: 12px; }
+    .modal-panel, .modal-content { max-height: calc(100vh - 24px); }
+    .modal-header { padding: 18px 20px 12px; }
+    .modal-body { padding: 16px 20px; }
+    .modal-footer { padding: 12px 20px 14px; }
+    .modal-row {
+        grid-template-columns: 1fr;
+        gap: 6px;
+        padding: 10px 0;
+    }
+    .modal-row > .row-label { font-size: 12px; color: var(--fg-tertiary); }
 }
 
 .close-btn {
+    flex: 0 0 auto;
     background: transparent;
     border: 0;
     color: var(--fg-tertiary);
-    width: 30px;
-    height: 30px;
+    width: 32px;
+    height: 32px;
     border-radius: var(--radius-sm);
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    font-size: 18px;
+    font-size: 20px;
+    line-height: 1;
     cursor: pointer;
     transition: var(--transition);
 }

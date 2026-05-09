@@ -8,7 +8,7 @@
     <link rel="apple-touch-icon" href="logo_main.png">
     <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
     <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
-    <link rel="stylesheet" href="style.css?v=20260509-brand5">
+    <link rel="stylesheet" href="style.css?v=20260509-modal-cleanup">
 </head>
 <body>
     <section id="auth-screen" class="auth-screen hidden" aria-modal="true" role="dialog">
@@ -186,22 +186,22 @@
         </section>
     </main>
 
-    <div id="app-modal" class="modal hidden">
-        <div class="modal-content">
+    <div id="app-modal" class="modal-backdrop hidden">
+        <form id="app-form" class="modal-panel">
             <header class="modal-header">
                 <h2 id="modal-title">데이터 관리</h2>
-                <button id="close-modal" class="close-btn" aria-label="닫기">&times;</button>
+                <button id="close-modal" type="button" class="close-btn" aria-label="닫기">&times;</button>
             </header>
-            <form id="app-form">
+            <div class="modal-body">
                 <input type="hidden" id="item-id">
                 <input type="hidden" id="item-type">
                 <div id="form-fields"></div>
-                <div class="form-actions">
-                    <button type="button" id="cancel-btn" class="secondary-btn">취소</button>
-                    <button type="submit" id="save-btn" class="primary-btn">저장</button>
-                </div>
-            </form>
-        </div>
+            </div>
+            <footer class="modal-footer">
+                <button type="button" id="cancel-btn" class="secondary-btn">취소</button>
+                <button type="submit" id="save-btn" class="primary-btn">저장</button>
+            </footer>
+        </form>
     </div>
 
     <script>
@@ -228,6 +228,6 @@
             if (frame) frame.addEventListener('load', resizeMarketingFrame);
         });
     </script>
-    <script src="main.js?v=20260509-google-autosignup" type="module"></script>
+    <script src="main.js?v=20260509-modal-cleanup" type="module"></script>
 </body>
 </html>

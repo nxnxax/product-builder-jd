@@ -6,7 +6,7 @@
 <title>조직도 · YOUNGMAN</title>
 <link rel="icon" type="image/png" href="logo_main.png">
 <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
-<link rel="stylesheet" href="style.css?v=20260509-brand5">
+<link rel="stylesheet" href="style.css?v=20260509-modal-cleanup">
 <style>
 :root{
     --ledger-line:rgba(20,14,8,.09); --ledger-line-strong:rgba(20,14,8,.16);
@@ -69,22 +69,11 @@ table.ledger-tbl{width:100%;border-collapse:collapse;font-size:13.5px}
 .empty{text-align:center;padding:60px 24px;color:#8a847e;font-size:14px;line-height:1.7;background:#fff;border:1px dashed var(--ledger-line-strong);border-radius:12px}
 .empty b{color:#0e0d0c}
 
-.modal-backdrop{position:fixed;inset:0;background:rgba(20,14,8,.45);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;z-index:100;padding:20px}
-.modal-backdrop.hidden{display:none}
-.modal{background:#fff;border-radius:14px;max-width:560px;width:100%;max-height:85vh;overflow-y:auto;padding:26px 28px;box-shadow:0 24px 60px rgba(20,14,8,.22)}
-.modal h2{margin:0 0 6px;font-size:18px;letter-spacing:-.01em}
-.modal .desc{color:#8a847e;font-size:13px;margin:0 0 18px;line-height:1.55}
-.modal label{display:block;margin-top:14px;margin-bottom:6px;font-size:13px;color:#4f4943;font-weight:500}
-.modal input[type=text],.modal input[type=number],.modal input[type=date]{width:100%;height:38px;padding:0 12px;border:1px solid var(--ledger-line-strong);border-radius:7px;font-size:14px;color:#0e0d0c;font-family:inherit;outline:none}
-.modal input:focus{border-color:#0e0d0c}
-.modal .checkboxes{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
-.modal .checkboxes label{display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border:1px solid var(--ledger-line-strong);border-radius:999px;font-weight:500;cursor:pointer;margin:0;font-size:13px;background:#fff;transition:all 160ms}
-.modal .checkboxes label:has(input:checked){background:#0e0d0c;color:#fff;border-color:#0e0d0c}
-.modal .checkboxes input[type=checkbox]{width:14px;height:14px;margin:0;accent-color:var(--ledger-accent)}
-.modal .row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
-.modal .row3 label{margin-top:0}
-.modal .actions{display:flex;justify-content:flex-end;gap:8px;margin-top:22px;padding-top:16px;border-top:1px solid var(--ledger-line)}
-.modal .actions button{padding:9px 18px;font-size:13.5px}
+/* 모달 — 통일 시스템(.modal-backdrop / .modal-panel)은 style.css 에서. 여기는 페이지 고유 보강만. */
+.modal-panel .checkboxes{display:flex;gap:8px;flex-wrap:wrap;margin-top:4px}
+.modal-panel .checkboxes label{display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border:1px solid var(--ledger-line-strong);border-radius:999px;font-weight:500;cursor:pointer;margin:0;font-size:13px;background:#fff;transition:all 160ms}
+.modal-panel .checkboxes label:has(input:checked){background:#0e0d0c;color:#fff;border-color:#0e0d0c}
+.modal-panel .checkboxes input[type=checkbox]{width:14px;height:14px;margin:0;accent-color:var(--ledger-accent)}
 
 .type-comm-list{margin-top:8px;border:1px solid var(--ledger-line);border-radius:8px;padding:8px;background:#fbf7ef}
 .type-comm-row{display:grid;grid-template-columns:140px 1fr 1fr 1fr 32px;gap:6px;align-items:center;margin-bottom:6px}
@@ -104,8 +93,6 @@ table.ledger-tbl{width:100%;border-collapse:collapse;font-size:13.5px}
     .ledger-shell{padding:20px 14px 60px}
     .ledger-tbl{font-size:12.5px}
     .ledger-tbl thead th,.ledger-tbl tbody td{padding:8px 8px}
-    .modal{padding:20px}
-    .modal .row3{grid-template-columns:1fr}
 }
 
 /* ===== 컬럼 헤더 클릭형 필터 dropdown ===== */
@@ -132,22 +119,9 @@ table.ledger-tbl{width:100%;border-collapse:collapse;font-size:13.5px}
 .filter-pop-actions{display:flex;gap:6px;padding-top:8px;border-top:1px solid var(--ledger-line);margin-top:4px}
 .filter-pop-actions button{flex:1}
 
-/* ===== 모달 가로 배치 ===== */
-.modal .modal-row{display:grid;grid-template-columns:120px 1fr;gap:14px;align-items:center;padding:10px 0;border-bottom:1px solid var(--ledger-line)}
-.modal .modal-row:last-of-type{border-bottom:0}
-.modal .modal-row > label.row-label{margin:0;font-size:13px;color:#4f4943;font-weight:600}
-.modal .modal-row > .row-control{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-.modal .modal-row > .row-control input[type=text],
-.modal .modal-row > .row-control input[type=number],
-.modal .modal-row > .row-control input[type=date],
-.modal .modal-row > .row-control select{width:100%;height:36px;margin:0}
-.modal .modal-row > .row-control.three{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;align-items:center}
-.modal .modal-row > .row-control.three .mini-label{font-size:11.5px;color:#8a847e;text-align:right;padding-right:4px}
-@media (max-width:560px){
-    .modal .modal-row{grid-template-columns:1fr;gap:6px}
-    .modal .modal-row > .row-control.three{grid-template-columns:1fr 1fr 1fr}
-}
-
+/* 모달 row 변형 — 3분할 (단가/수수료 입력) */
+.modal-row > .row-control.three{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;align-items:center}
+.modal-row > .row-control.three .mini-label{font-size:11.5px;color:#8a847e;text-align:right;padding-right:4px}
 
 /* ===== 그룹 accordion 카드 ===== */
 .group-toolbar{display:flex;align-items:center;gap:8px;padding:14px 18px;background:#fff;border:1px solid var(--ledger-line);border-radius:12px;margin-bottom:16px}
@@ -231,68 +205,86 @@ table.ledger-tbl{width:100%;border-collapse:collapse;font-size:13.5px}
 
 <!-- 그룹 생성/편집 모달 -->
 <div class="modal-backdrop hidden" id="groupModal">
-    <div class="modal">
-        <h2 id="groupModalTitle">새 그룹 만들기</h2>
-        <p class="desc">조직도를 분리해서 관리할 단위입니다 (예: 본사, 지점명, 사업부).</p>
-        <label>그룹 이름</label>
-        <input type="text" id="groupNameInput" placeholder="예: 본사, 강남점, 1팀그룹...">
-        <div style="margin-top:14px;display:flex;align-items:center;gap:10px;">
-            <input type="checkbox" id="groupIsDefaultInput" style="width:auto;">
-            <label for="groupIsDefaultInput" style="margin:0;cursor:pointer;">기본 그룹으로 설정 (접속 시 자동 노출)</label>
+    <div class="modal-panel narrow">
+        <header class="modal-header">
+            <div>
+                <h2 id="groupModalTitle">새 그룹 만들기</h2>
+                <p class="modal-subtitle">조직도를 분리해서 관리할 단위입니다 (예: 본사, 지점명, 사업부).</p>
+            </div>
+        </header>
+        <div class="modal-body">
+            <div class="modal-row">
+                <label class="row-label" for="groupNameInput">그룹 이름</label>
+                <div class="row-control">
+                    <input type="text" id="groupNameInput" placeholder="예: 본사, 강남점, 1팀그룹...">
+                </div>
+            </div>
+            <div class="modal-row">
+                <label class="row-label" for="groupIsDefaultInput">기본 그룹</label>
+                <div class="row-control inline">
+                    <input type="checkbox" id="groupIsDefaultInput" style="width:16px;height:16px;margin:0;">
+                    <label for="groupIsDefaultInput" style="margin:0;cursor:pointer;font-size:13px;color:var(--fg-secondary);">접속 시 이 그룹이 자동으로 열립니다</label>
+                </div>
+            </div>
+            <p class="form-help error" id="groupErrorMsg" style="margin-top:8px;"></p>
         </div>
-        <div class="actions">
-            <button class="tiny-btn danger" id="groupDeleteBtn" type="button" style="margin-right:auto;display:none;">그룹 삭제</button>
+        <footer class="modal-footer">
+            <button class="tiny-btn danger modal-footer-spacer" id="groupDeleteBtn" type="button" style="display:none;">그룹 삭제</button>
             <button class="tiny-btn" id="groupCancelBtn" type="button">취소</button>
             <button class="tiny-btn primary" id="groupSaveBtn" type="button">저장</button>
-        </div>
-        <p class="desc" id="groupErrorMsg" style="color:#b91c1c;margin-top:10px;"></p>
+        </footer>
     </div>
 </div>
 
 <!-- 설정 모달 -->
 <div class="modal-backdrop hidden" id="settingsModal">
-    <div class="modal" style="max-width:760px;">
-        <h2>조직도 설정</h2>
-        <p class="desc">현재 그룹 (<b id="settingsGroupName">-</b>) 의 팀 구성과 수수료 기준을 설정합니다.</p>
-
-        <div class="modal-row">
-            <label class="row-label">활성 팀</label>
-            <div class="row-control" id="activeTeamsBox">
-                <label><input type="checkbox" value="1" data-team>1팀</label>
-                <label><input type="checkbox" value="2" data-team>2팀</label>
-                <label><input type="checkbox" value="3" data-team>3팀</label>
-                <label><input type="checkbox" value="4" data-team>4팀</label>
-                <label><input type="checkbox" value="5" data-team>5팀</label>
+    <div class="modal-panel wide">
+        <header class="modal-header">
+            <div>
+                <h2>조직도 설정</h2>
+                <p class="modal-subtitle">현재 그룹 (<b id="settingsGroupName">-</b>) 의 팀 구성과 수수료 기준을 설정합니다.</p>
             </div>
-        </div>
-
-        <div class="modal-row">
-            <label class="row-label">기본 수수료</label>
-            <div class="row-control three">
-                <span class="mini-label">본부장</span><input type="number" id="commHQ" min="0" step="10000" placeholder="0">
-                <span class="mini-label">팀장</span><input type="number" id="commTL" min="0" step="10000" placeholder="0">
-                <span class="mini-label">팀원</span><input type="number" id="commTM" min="0" step="10000" placeholder="0">
+        </header>
+        <div class="modal-body">
+            <div class="modal-row">
+                <label class="row-label">활성 팀</label>
+                <div class="row-control inline checkboxes" id="activeTeamsBox">
+                    <label><input type="checkbox" value="1" data-team>1팀</label>
+                    <label><input type="checkbox" value="2" data-team>2팀</label>
+                    <label><input type="checkbox" value="3" data-team>3팀</label>
+                    <label><input type="checkbox" value="4" data-team>4팀</label>
+                    <label><input type="checkbox" value="5" data-team>5팀</label>
+                </div>
             </div>
-        </div>
 
-        <div class="modal-row" style="grid-template-columns:120px 1fr auto;align-items:start;">
-            <label class="row-label" style="padding-top:6px;">타입별 수수료</label>
-            <div class="row-control" style="flex-direction:column;align-items:stretch;">
-                <p class="desc" style="margin:0 0 6px;font-size:12px;">특정 평형/타입에 별도 수수료를 적용할 때만 추가. 미설정 타입은 기본 수수료 사용.</p>
-                <div class="type-comm-list" id="typeCommList"></div>
+            <div class="modal-row">
+                <label class="row-label">기본 수수료</label>
+                <div class="row-control three">
+                    <span class="mini-label">본부장</span><input type="number" id="commHQ" min="0" step="10000" placeholder="0">
+                    <span class="mini-label">팀장</span><input type="number" id="commTL" min="0" step="10000" placeholder="0">
+                    <span class="mini-label">팀원</span><input type="number" id="commTM" min="0" step="10000" placeholder="0">
+                </div>
             </div>
-            <button class="tiny-btn" id="addTypeCommBtn" type="button" style="font-size:11.5px;padding:6px 10px;margin-top:4px;">+ 추가</button>
-        </div>
 
-        <div class="actions">
+            <div class="modal-row align-start">
+                <label class="row-label">타입별 수수료</label>
+                <div class="row-control">
+                    <span class="row-help">특정 평형/타입에 별도 수수료를 적용할 때만 추가. 미설정 타입은 기본 수수료를 사용합니다.</span>
+                    <div class="type-comm-list" id="typeCommList"></div>
+                    <button class="tiny-btn" id="addTypeCommBtn" type="button" style="font-size:12px;padding:6px 12px;align-self:flex-start;">+ 타입 추가</button>
+                </div>
+            </div>
+
+            <p class="form-help error" id="settingsErrorMsg" style="margin-top:8px;"></p>
+        </div>
+        <footer class="modal-footer">
             <button class="tiny-btn" id="settingsCancelBtn" type="button">취소</button>
             <button class="tiny-btn primary" id="settingsSaveBtn" type="button">저장</button>
-        </div>
-        <p class="desc" id="settingsErrorMsg" style="color:#b91c1c;margin-top:10px;"></p>
+        </footer>
     </div>
 </div>
 
-<script type="module" src="org.js?v=20260509-org1"></script>
+<script type="module" src="org.js?v=20260509-modal-cleanup"></script>
 <script type="module">
     import { initSupabase, setupHeaderUser } from './auth-shared.js?v=20260508-tight';
     try {
