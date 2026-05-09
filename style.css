@@ -1560,6 +1560,58 @@ select:focus {
 }
 .org-pick-item .org-pick-badge.dim { background: #f4efe7; color: #8a847e; }
 
+/* 그룹 owner_role select — 카드 헤더에 inline */
+.accordion-head .owner-role-select {
+    height: 28px;
+    padding: 0 28px 0 10px;
+    border: 1px solid rgba(20, 14, 8, 0.16);
+    border-radius: 99px;
+    background: #fff;
+    color: #4f4943;
+    font-size: 11.5px;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    appearance: none;
+    -webkit-appearance: none;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path fill='%238a847e' d='M5 6L0 0h10z'/></svg>");
+    background-repeat: no-repeat;
+    background-position: right 10px center;
+    transition: all 160ms;
+}
+.accordion-head .owner-role-select:hover { background-color: #fbf7ef; color: #0e0d0c; }
+.accordion-head .owner-role-select:focus { outline: 0; border-color: #c8362c; }
+
+/* 수수료 입력 그리드 — 본부장/팀장/팀원 라벨+input 세로 정렬 */
+.comm-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+    width: 100%;
+}
+.comm-grid.role-lead { grid-template-columns: repeat(2, 1fr); }
+.comm-grid.role-lead [data-role-cell="head"] { display: none; }
+.comm-cell { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.comm-cell .comm-label {
+    font-size: 11.5px;
+    font-weight: 600;
+    color: #4f4943;
+    margin: 0;
+}
+.comm-cell input {
+    width: 100%;
+    box-sizing: border-box;
+    height: 36px;
+    padding: 0 10px;
+    border: 1px solid rgba(20, 14, 8, 0.16);
+    border-radius: 7px;
+    font-size: 13.5px;
+    font-family: inherit;
+    color: #0e0d0c;
+    outline: none;
+}
+.comm-cell input:focus { border-color: #0e0d0c; }
+
 .extra-groups .extra-picker {
     display: none;
     padding: 4px 14px 14px;

@@ -31,7 +31,16 @@ const DEFAULT_SETTINGS = {
     active_teams: [1, 2, 3],
     default_commissions: { '본부장': 0, '팀장': 0, '팀원': 0 },
     type_commissions: [],
+    owner_role: 'head',  // 'head' = 본부장 (전체 위계 사용) | 'lead' = 팀장 (본부장 정보 안 씀)
 };
+
+// 그룹 owner_role 에 따른 사용 가능 직급
+function rolesAllowedFor(ownerRole) {
+    return ownerRole === 'lead' ? ['팀장', '팀원'] : ['본부장', '팀장', '팀원'];
+}
+function ownerRoleOf(group) {
+    return (group?.settings?.owner_role === 'lead') ? 'lead' : 'head';
+}
 
 /* ============== State ============== */
 let supabaseClient = null;
@@ -111,7 +120,8 @@ function bindUI() {
     document.getElementById('settingsSaveBtn').addEventListener('click', saveSettings);
     document.getElementById('addTypeCommBtn').addEventListener('click', () => {
         typeCommissionRows.push({ type: '', '본부장': 0, '팀장': 0, '팀원': 0 });
-        renderTypeCommList();
+        const g = groups.find(x => x.id === settingsGroupId);
+        renderTypeCommList(ownerRoleOf(g));
     });
 
     document.getElementById('bulkClearBtn').addEventListener('click', () => {
@@ -208,22 +218,26 @@ function openSettingsModal(groupId) {
     document.getElementById('commHQ').value = dc['본부장'] ?? 0;
     document.getElementById('commTL').value = dc['팀장']   ?? 0;
     document.getElementById('commTM').value = dc['팀원']   ?? 0;
+    // owner_role 에 따라 본부장 칸 숨김.
+    const role = s.owner_role === 'lead' ? 'lead' : 'head';
+    document.getElementById('defaultCommGrid').classList.toggle('role-lead', role === 'lead');
     typeCommissionRows = JSON.parse(JSON.stringify(s.type_commissions || []));
-    renderTypeCommList();
+    renderTypeCommList(role);
     document.getElementById('settingsErrorMsg').textContent = '';
     document.getElementById('settingsModal').classList.remove('hidden');
 }
 
-function renderTypeCommList() {
+function renderTypeCommList(role) {
     const el = document.getElementById('typeCommList');
+    el.classList.toggle('role-lead', role === 'lead');
     if (typeCommissionRows.length === 0) {
         el.innerHTML = '<div style="text-align:center;padding:16px;color:#8a847e;font-size:12.5px;">등록된 타입별 수수료가 없습니다.</div>';
         return;
     }
     el.innerHTML = typeCommissionRows.map((r, i) => `
-        <div class="type-comm-row" data-i="${i}">
+        <div class="type-comm-row ${role === 'lead' ? 'role-lead' : ''}" data-i="${i}">
             <input type="text" placeholder="타입(예: 59A)" data-f="type" value="${escapeAttr(r.type || '')}">
-            <input type="number" placeholder="본부장" data-f="본부장" value="${r['본부장'] ?? 0}" min="0" step="10000">
+            <input type="number" placeholder="본부장" data-f="본부장" data-role-cell="head" value="${r['본부장'] ?? 0}" min="0" step="10000">
             <input type="number" placeholder="팀장" data-f="팀장" value="${r['팀장'] ?? 0}" min="0" step="10000">
             <input type="number" placeholder="팀원" data-f="팀원" value="${r['팀원'] ?? 0}" min="0" step="10000">
             <button class="x" type="button" data-del>×</button>
@@ -363,13 +377,18 @@ function renderGroupCard(group) {
         else byTeam.unassigned.push(r);
     });
 
-    let bodyHtml = [...activeTeams].sort((a, b) => a - b).map(t => renderTeamSection(t + '팀', t, byTeam[t])).join('');
-    if (byTeam.unassigned.length > 0) bodyHtml += renderTeamSection('미지정', null, byTeam.unassigned);
+    let bodyHtml = [...activeTeams].sort((a, b) => a - b).map(t => renderTeamSection(t + '팀', t, byTeam[t], group)).join('');
+    if (byTeam.unassigned.length > 0) bodyHtml += renderTeamSection('미지정', null, byTeam.unassigned, group);
 
+    const role = ownerRoleOf(group);
     return `
         <div class="accordion-card open" data-gid="${group.id}">
             <div class="accordion-head">
                 <h3>${escapeHtml(group.name)}</h3>
+                <select class="owner-role-select" data-set-role="${group.id}" title="내 직책">
+                    <option value="head" ${role === 'head' ? 'selected' : ''}>본부장</option>
+                    <option value="lead" ${role === 'lead' ? 'selected' : ''}>팀장</option>
+                </select>
                 <label class="main-checkbox" title="이 그룹을 메인으로 설정">
                     <input type="checkbox" data-set-main="${group.id}" ${group.isDefault ? 'checked' : ''}>
                     <span>메인그룹</span>
@@ -400,6 +419,22 @@ function bindAccordionEvents() {
             else cb.checked = true;
         });
     });
+    document.querySelectorAll('[data-set-role]').forEach(sel => {
+        sel.addEventListener('change', () => setOwnerRole(parseInt(sel.dataset.setRole, 10), sel.value));
+    });
+}
+
+async function setOwnerRole(gid, newRole) {
+    const g = groups.find(x => x.id === gid);
+    if (!g) return;
+    const newSettings = { ...(g.settings || {}), owner_role: newRole === 'lead' ? 'lead' : 'head' };
+    try {
+        await api('ledger-groups', { method: 'PATCH', body: { id: gid, settings: newSettings } });
+        g.settings = newSettings;
+        renderRecords();
+    } catch (e) {
+        showError('직책 변경 실패: ' + (e.message || ''));
+    }
 }
 
 async function setMainGroup(gid) {
@@ -419,8 +454,9 @@ async function setMainGroup(gid) {
     }
 }
 
-function renderTeamSection(title, teamNo, rows) {
+function renderTeamSection(title, teamNo, rows, group) {
     const fields = DEFAULT_FIELD_SCHEMA.fields;
+    const allowedTitles = rolesAllowedFor(ownerRoleOf(group));
     return `
         <section class="team-section" data-team="${teamNo ?? ''}">
             <div class="team-head">
@@ -429,7 +465,7 @@ function renderTeamSection(title, teamNo, rows) {
                     <span class="count">${rows.length}명</span>
                 </div>
                 <div class="actions">
-                    <button class="tiny-btn primary" type="button" data-add-row data-team="${teamNo ?? ''}">+ 행 추가</button>
+                    <button class="tiny-btn primary" type="button" data-add-row data-team="${teamNo ?? ''}">+ 직원 추가</button>
                 </div>
             </div>
             <div class="tbl-wrap">
@@ -445,16 +481,17 @@ function renderTeamSection(title, teamNo, rows) {
                     <tbody>
                         ${rows.length === 0
                             ? `<tr><td colspan="${fields.length + 2}" style="text-align:center;color:#8a847e;padding:24px;font-size:13px;">${title}에 등록된 인원이 없습니다.</td></tr>`
-                            : rows.map((r, idx) => renderRow(r, idx + 1)).join('')}
+                            : rows.map((r, idx) => renderRow(r, idx + 1, allowedTitles)).join('')}
                     </tbody>
                 </table>
             </div>
         </section>`;
 }
 
-function renderRow(r, displayNo) {
+function renderRow(r, displayNo, allowedTitles) {
     const d = r.data || {};
     const checked = selectedIds.has(r.id) ? 'checked' : '';
+    const titles = allowedTitles || TITLE_OPTIONS;
     return `
         <tr data-id="${r.id}" class="${selectedIds.has(r.id) ? 'selected' : ''}">
             <td class="col-check"><input type="checkbox" data-select="${r.id}" ${checked}></td>
@@ -462,7 +499,7 @@ function renderRow(r, displayNo) {
             <td><input type="date" data-field="joined" data-id="${r.id}" value="${escapeAttr(d.joined || '')}"></td>
             <td><select data-field="title" data-id="${r.id}">
                 <option value="">-</option>
-                ${TITLE_OPTIONS.map(t => `<option value="${t}" ${d.title === t ? 'selected' : ''}>${t}</option>`).join('')}
+                ${titles.map(t => `<option value="${t}" ${d.title === t ? 'selected' : ''}>${t}</option>`).join('')}
             </select></td>
             <td><input type="text" data-field="name" data-id="${r.id}" value="${escapeAttr(d.name || '')}" placeholder="이름"></td>
             <td><input type="tel"  data-field="phone" data-id="${r.id}" value="${escapeAttr(d.phone || '')}" placeholder="010-0000-0000"></td>
@@ -527,10 +564,21 @@ function bindTableEvents() {
 
 function addRow(gid, teamNo) {
     if (!gid) return;
+    const group = groups.find(g => g.id === gid);
+    const allowedTitles = rolesAllowedFor(ownerRoleOf(group));
     openRowAddModal({
-        title: `${teamNo || '?'}팀 새 인원 추가`,
+        title: `${teamNo || '?'}팀 새 직원 추가`,
         fields: DEFAULT_FIELD_SCHEMA.fields,
         defaults: { title: '팀원' },
+        customRender: (f, defaults) => {
+            if (f.type !== 'title_select') return null;
+            const v = defaults[f.key] ?? '';
+            const lbl = `<label class="row-label">${escapeHtml(f.label)}</label>`;
+            const opts = ['<option value="">-</option>']
+                .concat(allowedTitles.map(t => `<option value="${t}" ${v === t ? 'selected' : ''}>${t}</option>`))
+                .join('');
+            return `<div class="modal-row">${lbl}<div class="row-control"><select data-field="${f.key}">${opts}</select></div></div>`;
+        },
         onSubmit: async (data) => {
             data.team = teamNo || 1;
             await api('ledger-records', { method: 'POST', body: { groupId: gid, data, source: 'web' } });

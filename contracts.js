@@ -521,7 +521,7 @@ function renderCell(f, r, d, displayNo, group) {
     if (f.type === 'status_switch') {
         const v = d.status || '';
         const cls = v === 'active' ? 'active' : v === 'cancel' ? 'cancel' : '';
-        const lbl = v === 'active' ? '정계약' : v === 'cancel' ? '해지' : '미정';
+        const lbl = v === 'active' ? '정계약' : v === 'cancel' ? '해지' : '가계약';
         return `<button class="status-pill ${cls}" data-status-switch data-id="${id}">${lbl}</button>`;
     }
     if (f.type === 'manager_select') {
@@ -616,7 +616,7 @@ async function addRow(gid) {
             }
             if (f.type === 'status_switch') {
                 return `<div class="modal-row">${lbl}<div class="row-control"><select data-field="status" style="width:100%">
-                    <option value="">미정</option>
+                    <option value="">가계약</option>
                     <option value="active" selected>정계약</option>
                     <option value="cancel">해지</option>
                 </select></div></div>`;
@@ -724,18 +724,21 @@ function computeCommissionForRow(d, contractGroup) {
 
 /* ============== Settle modal ============== */
 function openSettleModal() {
-    // 정산 대상: 펼쳐진 그룹들에서 미지급 + 해지 아닌 + 필터 통과 계약.
-    const targetGroupIds = expandedGroupIds.size > 0 ? [...expandedGroupIds] : groups.map(g => g.id);
+    // 정산 대상: 메인 + 표시 중인 현장의 미지급 + '정계약' 상태 + 필터 통과 계약만.
+    const mainGroup = groups.find(g => g.isDefault) || groups[0];
+    const targetGroupIds = mainGroup
+        ? [mainGroup.id, ...[...selectedExtraIds].filter(id => id !== mainGroup.id)]
+        : groups.map(g => g.id);
     const all = [];
     targetGroupIds.forEach(gid => {
         const group = groups.find(g => g.id === gid);
         if (!group) return;
-        const grpRecs = records.filter(r => r.groupId === gid && r.data?.paid_unpaid && r.data?.status !== 'cancel');
+        const grpRecs = records.filter(r => r.groupId === gid && r.data?.paid_unpaid && r.data?.status === 'active');
         applyFilters(grpRecs).forEach(r => all.push({ row: r, group }));
     });
 
     if (all.length === 0) {
-        document.getElementById('settleSummary').textContent = '정산 대상 계약이 없습니다 (펼쳐진 현장의 미지급 + 해지 아닌 계약만).';
+        document.getElementById('settleSummary').textContent = '정산 대상 계약이 없습니다 (정계약 + 미지급 계약만 정산됩니다).';
         document.getElementById('settleBody').innerHTML = '';
         document.getElementById('settleModal').classList.remove('hidden');
         return;
@@ -750,10 +753,12 @@ function openSettleModal() {
         const tbl = commissionTable(d.unitType, group);
         if (!tbl) return;
         const employees = orgEmployeesFor(group);
+        const orgSettings = orgSettingsFor(group);
+        const isLeadMode = orgSettings?.owner_role === 'lead';   // 팀장 모드: 본부장 무시
         const role = emp.data?.title || '';
         const team = parseInt(emp.data?.team, 10);
         const teamLead = employees.find(e => e.data?.title === '팀장' && parseInt(e.data?.team, 10) === team);
-        const head = employees.find(e => e.data?.title === '본부장');
+        const head = isLeadMode ? null : employees.find(e => e.data?.title === '본부장');
         const label = `[${group.name}] ${d.dong || '?'}동 ${d.ho || '?'}호 (${d.customer || '?'})`;
 
         if (role === '팀원') {
@@ -764,7 +769,7 @@ function openSettleModal() {
             payouts.push({ emp, role: '팀원', amount: tbl['팀원'], cid: r.id, label });
             payouts.push({ emp, role: '팀장', amount: tbl['팀장'], cid: r.id, label });
             if (head)     payouts.push({ emp: head, role: '본부장', amount: tbl['본부장'], cid: r.id, label });
-        } else if (role === '본부장') {
+        } else if (role === '본부장' && !isLeadMode) {
             payouts.push({ emp, role: '팀원', amount: tbl['팀원'], cid: r.id, label });
             payouts.push({ emp, role: '팀장', amount: tbl['팀장'], cid: r.id, label });
             payouts.push({ emp, role: '본부장', amount: tbl['본부장'], cid: r.id, label });

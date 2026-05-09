@@ -6,7 +6,7 @@
 <title>조직도 · YOUNGMAN</title>
 <link rel="icon" type="image/png" href="logo_main.png">
 <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
-<link rel="stylesheet" href="style.css?v=20260509-pick-toolbar">
+<link rel="stylesheet" href="style.css?v=20260509-owner-role">
 <style>
 :root{
     --ledger-line:rgba(20,14,8,.09); --ledger-line-strong:rgba(20,14,8,.16);
@@ -77,6 +77,8 @@ table.ledger-tbl{width:100%;border-collapse:collapse;font-size:13.5px}
 
 .type-comm-list{margin-top:8px;border:1px solid var(--ledger-line);border-radius:8px;padding:8px;background:#fbf7ef}
 .type-comm-row{display:grid;grid-template-columns:140px 1fr 1fr 1fr 32px;gap:6px;align-items:center;margin-bottom:6px}
+.type-comm-row.role-lead{grid-template-columns:140px 1fr 1fr 32px}
+.type-comm-row.role-lead [data-role-cell="head"]{display:none}
 .type-comm-row:last-child{margin-bottom:0}
 .type-comm-row input{height:32px !important;font-size:12.5px !important}
 .type-comm-row .x{border:0;background:transparent;color:#b91c1c;cursor:pointer;font-size:16px;line-height:1}
@@ -255,10 +257,21 @@ table.ledger-tbl{width:100%;border-collapse:collapse;font-size:13.5px}
 
             <div class="modal-row">
                 <label class="row-label">기본 수수료</label>
-                <div class="row-control three">
-                    <span class="mini-label">본부장</span><input type="number" id="commHQ" min="0" step="10000" placeholder="0">
-                    <span class="mini-label">팀장</span><input type="number" id="commTL" min="0" step="10000" placeholder="0">
-                    <span class="mini-label">팀원</span><input type="number" id="commTM" min="0" step="10000" placeholder="0">
+                <div class="row-control">
+                    <div class="comm-grid" id="defaultCommGrid">
+                        <div class="comm-cell" data-role-cell="head">
+                            <label class="comm-label" for="commHQ">본부장</label>
+                            <input type="number" id="commHQ" min="0" step="10000" placeholder="0">
+                        </div>
+                        <div class="comm-cell">
+                            <label class="comm-label" for="commTL">팀장</label>
+                            <input type="number" id="commTL" min="0" step="10000" placeholder="0">
+                        </div>
+                        <div class="comm-cell">
+                            <label class="comm-label" for="commTM">팀원</label>
+                            <input type="number" id="commTM" min="0" step="10000" placeholder="0">
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -281,9 +294,9 @@ table.ledger-tbl{width:100%;border-collapse:collapse;font-size:13.5px}
     </div>
 </div>
 
-<script type="module" src="org.js?v=20260509-pick-toolbar"></script>
+<script type="module" src="org.js?v=20260509-owner-role"></script>
 <script type="module">
-    import { initSupabase, setupHeaderUser } from './auth-shared.js?v=20260509-pick-toolbar';
+    import { initSupabase, setupHeaderUser } from './auth-shared.js?v=20260509-owner-role';
     try {
         await initSupabase();
         setupHeaderUser({
