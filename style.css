@@ -218,11 +218,11 @@ small { color: var(--fg-tertiary); font-size: 13px; }
     opacity: 0.94;
 }
 
-/* 보조 기능 (마케팅 / Lotto / 명함 / 업로드 / 커뮤니티) — 우측에 점 separator 로 압축 */
+/* 보조 기능 (마케팅 / Lotto / 명함 / 업로드 / 커뮤니티) — 우측에 작은 간격으로 */
 .nav-secondary {
     display: flex;
     align-items: center;
-    gap: 0;
+    gap: 2px;
     flex: 1 1 auto;
     justify-content: flex-end;
     margin-left: 14px;
@@ -230,7 +230,10 @@ small { color: var(--fg-tertiary); font-size: 13px; }
     border-left: 1px solid var(--border);
     flex-wrap: nowrap;
     white-space: nowrap;
-    /* overflow:hidden 안 됨 — 커뮤니티 dropdown 이 잘림 */
+}
+.nav-secondary > .nav-link,
+.nav-secondary > .nav-dropdown > .nav-static {
+    line-height: 1;
 }
 
 .nav-link {
@@ -258,14 +261,7 @@ small { color: var(--fg-tertiary); font-size: 13px; }
     font-weight: 600;
 }
 
-/* 점 separator — 보조 메뉴 사이 */
-.nav-secondary .nav-link + .nav-link::before {
-    content: "·";
-    margin: 0 4px;
-    color: var(--fg-tertiary);
-    opacity: 0.5;
-    pointer-events: none;
-}
+/* 점 separator 제거 — 작은 gap 으로 대체 (커뮤니티 dropdown 과 정렬 일관성) */
 
 /* 재미로 보는 사주+로또추천 — 두 줄 라벨, 헤더 높이는 그대로 유지 */
 .nav-secondary .nav-link-multi {
@@ -277,7 +273,7 @@ small { color: var(--fg-tertiary); font-size: 13px; }
     max-width: 110px;
 }
 
-/* 커뮤니티 dropdown — hover 시 하위 메뉴 노출 */
+/* 커뮤니티 dropdown — hover 시 하위 메뉴 노출. 갭 없이 붙여서 마우스 이동 중 닫힘 방지 */
 .nav-secondary .nav-dropdown {
     position: relative;
     display: inline-flex;
@@ -289,21 +285,41 @@ small { color: var(--fg-tertiary); font-size: 13px; }
 }
 .nav-secondary .nav-static:hover { background: var(--bg-muted); color: var(--fg); }
 .nav-secondary .nav-dropdown.is-active .nav-static { color: var(--fg); font-weight: 600; }
-.nav-secondary .nav-caret { font-size: 9px; margin-left: 2px; opacity: 0.6; }
+.nav-secondary .nav-caret {
+    font-size: 9px;
+    margin-left: 3px;
+    opacity: 0.6;
+    transition: transform 160ms;
+    display: inline-block;
+}
+.nav-secondary .nav-dropdown:hover .nav-caret { transform: rotate(180deg); opacity: 1; }
 
 .nav-dropdown-menu {
     position: absolute;
-    top: calc(100% + 6px);
+    top: 100%;
     right: 0;
-    min-width: 140px;
+    min-width: 150px;
     background: #fff;
     border: 1px solid var(--border);
     border-radius: 10px;
     box-shadow: 0 8px 24px rgba(20, 14, 8, 0.12);
     padding: 6px;
+    margin-top: 8px;   /* 시각적 갭 — 마진은 hover 영역 안에 들어감 */
     display: none;
     z-index: 200;
 }
+
+/* 갭 메우기 — 트리거와 메뉴 사이 마우스 이동 시 hover 유지되도록 invisible bridge */
+.nav-secondary .nav-dropdown::after {
+    content: "";
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    height: 12px;
+    pointer-events: auto;   /* 호버 가능하지만 시각적으론 보이지 않음 */
+}
+
 .nav-dropdown:hover > .nav-dropdown-menu,
 .nav-dropdown:focus-within > .nav-dropdown-menu { display: block; }
 
