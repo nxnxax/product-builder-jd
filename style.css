@@ -1776,12 +1776,151 @@ select:focus {
 .spark span:not(:last-child) { opacity: 0.18; }
 
 /* ------------------------------------------------------------------ Mobile */
+/* 데스크톱: 햄버거 숨김, drawer 는 투명 (자식이 부모 flex 직접 참여) */
+.mobile-menu-toggle { display: none; }
+.mobile-drawer { display: contents; }
+
 @media (max-width: 860px) {
-    .header-container { padding: 0 16px; gap: 12px; flex-wrap: wrap; height: auto; padding-top: 10px; padding-bottom: 10px; }
-    .nav-primary { order: 3; flex-basis: 100%; overflow-x: auto; padding-bottom: 2px; }
-    .nav-secondary { order: 4; flex-basis: 100%; justify-content: flex-start; margin-left: 0; padding-left: 0; border-left: 0; padding-bottom: 2px; overflow-x: auto; }
-    .nav-link, .nav-pill { white-space: nowrap; }
-    .nav-pill { padding: 7px 14px; font-size: 13px; }
+    .header-container {
+        padding: 8px 14px;
+        gap: 8px;
+        flex-wrap: nowrap;
+        height: auto;
+        min-height: 56px;
+        align-items: center;
+    }
+    /* 모바일 헤더 순서: 로그인(좌) → 로고(중앙) → 햄버거(우) */
+    .header-container > h1 { order: 2; flex: 1 1 auto; display: flex; justify-content: center; }
+    .brand-logo img { height: 32px; }
+    #open-login-btn,
+    #user-menu { order: 1; flex-shrink: 0; }
+    .mobile-menu-toggle { order: 3; flex-shrink: 0; }
+
+    /* 사용자 메뉴는 닉네임만 보이게 (내정보/관리자/로그아웃은 drawer 안에) */
+    #user-menu .user-menu-link,
+    #user-menu .user-menu-btn { display: none; }
+    #user-menu { padding-left: 0; margin-left: 0; border-left: 0; }
+    #user-menu .user-display { font-size: 12.5px; max-width: 80px; padding: 4px 8px; }
+
+    .header-auth-btn { padding: 7px 14px; font-size: 12.5px; }
+
+    /* 햄버거 버튼 (3 가로선) */
+    .mobile-menu-toggle {
+        display: inline-flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 4px;
+        width: 38px;
+        height: 38px;
+        padding: 0;
+        background: #fff;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        cursor: pointer;
+    }
+    .mobile-menu-toggle span {
+        display: block;
+        width: 18px;
+        height: 2px;
+        background: var(--fg);
+        border-radius: 2px;
+        transition: transform 200ms, opacity 200ms;
+    }
+    .mobile-menu-toggle.open span:nth-child(1) { transform: translateY(6px) rotate(45deg); }
+    .mobile-menu-toggle.open span:nth-child(2) { opacity: 0; }
+    .mobile-menu-toggle.open span:nth-child(3) { transform: translateY(-6px) rotate(-45deg); }
+
+    /* drawer — 평소 숨김. 햄버거 클릭 시 슬라이드 다운 */
+    .mobile-drawer {
+        display: none !important;
+        position: fixed;
+        top: 56px;
+        left: 0;
+        right: 0;
+        background: #fff;
+        border-bottom: 1px solid var(--border);
+        box-shadow: 0 12px 32px rgba(20, 14, 8, 0.12);
+        padding: 16px;
+        z-index: 90;
+        max-height: calc(100vh - 56px);
+        overflow-y: auto;
+    }
+    .mobile-drawer.open {
+        display: flex !important;
+        flex-direction: column;
+        gap: 16px;
+    }
+    body.mobile-drawer-open { overflow: hidden; }
+
+    /* drawer 안 — 주 기능 (관리대장 3종) 가로 1열 풀 너비 pill */
+    .mobile-drawer .nav-primary {
+        display: flex !important;
+        flex-direction: column;
+        gap: 6px;
+        width: 100%;
+    }
+    .mobile-drawer .nav-pill {
+        width: 100%;
+        min-width: 0;
+        height: auto;
+        padding: 14px 18px;
+        border-radius: 10px;
+        justify-content: flex-start;
+        font-size: 14px;
+    }
+
+    /* drawer 안 — 보조 메뉴 2 컬럼 그리드 */
+    .mobile-drawer .nav-secondary {
+        display: grid !important;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 8px;
+        margin: 0;
+        padding: 12px 0 0;
+        border-left: 0;
+        border-top: 1px solid var(--border);
+        flex: none;
+        width: 100%;
+        white-space: normal;
+    }
+    .mobile-drawer .nav-secondary > .nav-link,
+    .mobile-drawer .nav-secondary > .nav-dropdown {
+        width: 100%;
+        margin: 0;
+    }
+    .mobile-drawer .nav-secondary > .nav-link {
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 14px 8px;
+        min-height: 70px;
+    }
+    .mobile-drawer .nav-secondary > .nav-dropdown > .nav-static {
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 14px 8px;
+        min-height: 70px;
+        cursor: default;
+    }
+
+    /* 커뮤니티 dropdown — 모바일에서는 항상 펼쳐서 inline 표시 */
+    .mobile-drawer .nav-dropdown { display: flex; flex-direction: column; gap: 6px; }
+    .mobile-drawer .nav-dropdown-menu {
+        display: block !important;
+        position: static;
+        transform: none;
+        margin: 0;
+        padding: 0;
+        background: transparent;
+        border: 0;
+        box-shadow: none;
+    }
+    .mobile-drawer .nav-dropdown-item {
+        background: var(--bg-muted);
+        padding: 11px 14px;
+        margin-top: 4px;
+    }
+
+    /* 사용자 메뉴 항목을 drawer 안에 노출 — 추후 확장 (현재는 #user-menu 그대로 유지) */
 
     .dashboard, .page-shell { padding: 32px 16px 64px; }
 

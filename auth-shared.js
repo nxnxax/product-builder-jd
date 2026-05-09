@@ -208,8 +208,13 @@ export function mountAppHeader(opts) {
     root.innerHTML = `
         <div class="header-container">
             <h1><a href="index.html" class="brand-logo" aria-label="YOUNGMAN 홈"><img src="logo_main.png" alt="YOUNGMAN"></a></h1>
-            <nav class="nav-primary">${primaryHtml}</nav>
-            <nav class="nav-secondary">${secondaryHtml}</nav>
+            <button type="button" class="mobile-menu-toggle" aria-label="메뉴 열기" aria-expanded="false">
+                <span></span><span></span><span></span>
+            </button>
+            <div class="mobile-drawer">
+                <nav class="nav-primary">${primaryHtml}</nav>
+                <nav class="nav-secondary">${secondaryHtml}</nav>
+            </div>
             <a href="index.html#login" class="header-auth-btn" id="open-login-btn">로그인</a>
             <div id="user-menu" class="user-menu">
                 <span id="user-display" class="user-display">${escapeHtmlSafe(cachedName)}</span>
@@ -220,7 +225,7 @@ export function mountAppHeader(opts) {
         </div>
     `;
 
-    // logout 핸들러는 매 마운트마다 새로 바인딩 (innerHTML 재생성됐으니).
+    // logout 핸들러
     const logoutBtn = root.querySelector('#logout-btn');
     if (logoutBtn) {
         logoutBtn.addEventListener('click', async () => {
@@ -228,6 +233,27 @@ export function mountAppHeader(opts) {
             cacheAdminFlag(false);
             try { if (supabaseClient) await supabaseClient.auth.signOut(); } catch {}
             window.location.href = 'index.html';
+        });
+    }
+
+    // 햄버거 메뉴 토글
+    const hamburger = root.querySelector('.mobile-menu-toggle');
+    const drawer = root.querySelector('.mobile-drawer');
+    if (hamburger && drawer) {
+        hamburger.addEventListener('click', () => {
+            const isOpen = drawer.classList.toggle('open');
+            hamburger.classList.toggle('open', isOpen);
+            hamburger.setAttribute('aria-expanded', String(isOpen));
+            document.body.classList.toggle('mobile-drawer-open', isOpen);
+        });
+        // drawer 안 링크 클릭 시 자동 닫힘
+        drawer.addEventListener('click', (e) => {
+            if (e.target.closest('a[href]')) {
+                drawer.classList.remove('open');
+                hamburger.classList.remove('open');
+                hamburger.setAttribute('aria-expanded', 'false');
+                document.body.classList.remove('mobile-drawer-open');
+            }
         });
     }
 }
