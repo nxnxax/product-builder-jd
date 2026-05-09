@@ -55,6 +55,29 @@ input:focus,select:focus{border-color:rgba(0,0,0,0.85);box-shadow:0 0 0 3px rgba
 .box.dosa h3{color:var(--accent-deep);margin-bottom:12px}
 .box.dosa .dosa-body{font-size:14.5px;line-height:1.95;color:#2a2520;letter-spacing:-.003em;white-space:pre-line}
 
+.dosa-loading{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:18px 0 8px;text-align:center}
+.dosa-loading-seal{font-size:46px;color:var(--accent);font-family:serif;line-height:1;animation:seal-breathe 1.8s ease-in-out infinite;text-shadow:0 0 12px rgba(200,54,44,.18)}
+@keyframes seal-breathe{
+  0%,100%{transform:scale(0.95) rotate(-2deg);opacity:.55}
+  50%{transform:scale(1.08) rotate(2deg);opacity:1}
+}
+.dosa-loading-text{font-size:15.5px;color:var(--accent-deep);font-weight:600;letter-spacing:-.005em;display:inline-flex;align-items:baseline;gap:2px}
+.dosa-loading-text .dots{display:inline-flex;gap:3px;margin-left:6px;align-self:center}
+.dosa-loading-text .dots i{display:inline-block;width:5px;height:5px;border-radius:50%;background:var(--accent);animation:dot-wave 1.2s ease-in-out infinite}
+.dosa-loading-text .dots i:nth-child(2){animation-delay:.18s}
+.dosa-loading-text .dots i:nth-child(3){animation-delay:.36s}
+@keyframes dot-wave{
+  0%,80%,100%{transform:translateY(0) scale(.8);opacity:.35}
+  40%{transform:translateY(-4px) scale(1);opacity:1}
+}
+.dosa-loading-sub{font-size:13px;color:#9b8d80;letter-spacing:-.003em}
+.dosa-loading-bar{width:140px;height:2px;background:rgba(200,54,44,.12);border-radius:99px;overflow:hidden;margin-top:4px}
+.dosa-loading-bar::before{content:'';display:block;width:35%;height:100%;background:var(--accent);border-radius:99px;animation:bar-slide 1.4s ease-in-out infinite}
+@keyframes bar-slide{
+  0%{transform:translateX(-180%)}
+  100%{transform:translateX(380%)}
+}
+
 .based-on{display:flex;flex-wrap:wrap;gap:14px;font-size:12.5px;color:var(--muted);margin-top:6px}
 .based-on b{color:var(--secondary);font-weight:600}
 
@@ -483,7 +506,7 @@ async function runSaju(){
                 <span>대운 <b>${ctx.dw}</b> · 세운 <b>${ctx.sw}</b> · 월운 <b>${ctx.ww}</b></span>
             </div>
             <div id="${readingId}" class="dosa-body" style="margin-top:14px;">
-                <em style="color:#9b8d80;">도사가 사주를 들여다보고 있습니다…</em>
+                ${dosaLoadingHTML()}
             </div>
         </div>
         ${sajuMethodsBox()}`;
@@ -597,7 +620,7 @@ async function runCombined(){
             <div class="box dosa">
                 <h3>도사가 풀어주는 운세</h3>
                 <div id="${readingId}" class="dosa-body">
-                    <em style="color:#9b8d80;">도사가 사주를 들여다보고 있습니다…</em>
+                    ${dosaLoadingHTML()}
                 </div>
             </div>
             ${sajuMethodsBox()}`;
@@ -674,6 +697,16 @@ function formatBands(bands){
 
 function elementKorJS(el){
     return ({wood:'목(木)',fire:'화(火)',earth:'토(土)',metal:'금(金)',water:'수(水)'})[el] || el;
+}
+
+function dosaLoadingHTML(){
+    return `
+        <div class="dosa-loading" role="status" aria-live="polite">
+            <div class="dosa-loading-seal" aria-hidden="true">印</div>
+            <div class="dosa-loading-text">도사가 사주를 들여다보는 중<span class="dots" aria-hidden="true"><i></i><i></i><i></i></span></div>
+            <div class="dosa-loading-sub">기운의 결을 풀어 글로 옮겨드립니다 (보통 8~15초)</div>
+            <div class="dosa-loading-bar" aria-hidden="true"></div>
+        </div>`;
 }
 
 function sajuMethodsBox(){
