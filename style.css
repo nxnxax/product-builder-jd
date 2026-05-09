@@ -218,7 +218,7 @@ small { color: var(--fg-tertiary); font-size: 13px; }
     opacity: 0.94;
 }
 
-/* 보조 기능 (마케팅 / Lotto / 명함 / 업로드) — 우측에 점 separator 로 압축 */
+/* 보조 기능 (마케팅 / Lotto / 명함 / 업로드 / 커뮤니티) — 우측에 점 separator 로 압축 */
 .nav-secondary {
     display: flex;
     align-items: center;
@@ -230,7 +230,7 @@ small { color: var(--fg-tertiary); font-size: 13px; }
     border-left: 1px solid var(--border);
     flex-wrap: nowrap;
     white-space: nowrap;
-    overflow: hidden;
+    /* overflow:hidden 안 됨 — 커뮤니티 dropdown 이 잘림 */
 }
 
 .nav-link {
