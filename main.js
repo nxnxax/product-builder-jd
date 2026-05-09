@@ -762,16 +762,17 @@ function switchView(view) {
         navCustomers.classList.add('active');
         customerSection.classList.remove('hidden');
     } else if (view === 'employees') {
-        navEmployees.classList.add('active');
-        employeeSection.classList.remove('hidden');
+        // 조직도 페이지로 통합됨. 옛 #employees 해시는 자동 리디렉션.
+        window.location.href = 'org.html';
+        return;
     } else if (view === 'marketing') {
-        navMarketing.classList.add('active');
-        marketingSection.classList.remove('hidden');
+        if (navMarketing) navMarketing.classList.add('active');
+        if (marketingSection) marketingSection.classList.remove('hidden');
     }
 }
 
-navCustomers.addEventListener('click', () => switchView('customers'));
-navEmployees.addEventListener('click', () => switchView('employees'));
+if (navCustomers) navCustomers.addEventListener('click', () => switchView('customers'));
+if (navEmployees) navEmployees.addEventListener('click', () => switchView('employees'));
 if (navMarketing) {
     navMarketing.addEventListener('click', () => switchView('marketing'));
 }
