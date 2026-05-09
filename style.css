@@ -261,49 +261,55 @@ small { color: var(--fg-tertiary); font-size: 13px; }
     font-weight: 600;
 }
 
-/* nav-secondary — 아이콘 위 / 텍스트 아래 stack 레이아웃 */
+/* nav-secondary — 아이콘 위 / 텍스트 아래 stack 레이아웃 (모든 항목 동일 크기) */
 .nav-secondary > .nav-link,
 .nav-secondary > .nav-dropdown > .nav-static {
     display: inline-flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 3px;
+    gap: 4px;
     padding: 6px 12px;
     line-height: 1;
+    min-height: 50px;
 }
 .nav-secondary .nav-icon {
-    font-size: 18px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
     line-height: 1;
-    filter: grayscale(0.15);
-    transition: filter 160ms, transform 200ms;
+    color: var(--fg-secondary);
+    transition: color 160ms, transform 200ms;
+}
+.nav-secondary .nav-icon svg {
+    width: 22px;
+    height: 22px;
+    display: block;
 }
 .nav-secondary > .nav-link:hover .nav-icon,
-.nav-secondary > .nav-dropdown:hover .nav-icon { filter: none; transform: translateY(-1px); }
+.nav-secondary > .nav-dropdown:hover .nav-icon { color: var(--fg); transform: translateY(-1px); }
 
 .nav-secondary .nav-label {
-    font-size: 11px;
+    font-size: 11.5px;
     font-weight: 500;
     text-align: center;
-    line-height: 1.2;
+    line-height: 1.25;
     color: inherit;
 }
 .nav-secondary .nav-link.active .nav-label,
-.nav-secondary .nav-dropdown.is-active .nav-label {
-    font-weight: 700;
+.nav-secondary .nav-dropdown.is-active .nav-label,
+.nav-secondary .nav-link.active .nav-icon,
+.nav-secondary .nav-dropdown.is-active .nav-icon {
     color: var(--fg);
 }
-
-/* 두 줄 라벨 (재미로 보는 사주+로또추천) — stack 안에서 더 작게 */
-.nav-secondary .nav-link-multi .nav-label {
-    font-size: 10px;
-    line-height: 1.25;
-}
+.nav-secondary .nav-link.active .nav-label,
+.nav-secondary .nav-dropdown.is-active .nav-label { font-weight: 700; }
 
 /* 점 separator 제거 — 작은 gap 으로 대체 (커뮤니티 dropdown 과 정렬 일관성) */
 
-/* 두 줄 라벨 — nav-label 안에서 처리 (위 .nav-link-multi .nav-label 규칙 참고) */
-.nav-secondary .nav-link-multi .nav-label br + * { display: inline; }
+/* multi-line 라벨도 다른 항목과 동일 사이즈 — 두 줄로 wrap 만 */
 
 /* 커뮤니티 dropdown — hover 시 하위 메뉴 노출. 갭 없이 붙여서 마우스 이동 중 닫힘 방지 */
 .nav-secondary .nav-dropdown {
@@ -369,7 +375,18 @@ small { color: var(--fg-tertiary); font-size: 13px; }
     transition: var(--transition);
     white-space: nowrap;
 }
-.nav-dropdown-item .nav-dropdown-icon { font-size: 15px; line-height: 1; flex-shrink: 0; }
+.nav-dropdown-item .nav-dropdown-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    line-height: 1;
+    flex-shrink: 0;
+    color: var(--fg-tertiary);
+}
+.nav-dropdown-item .nav-dropdown-icon svg { width: 18px; height: 18px; display: block; }
+.nav-dropdown-item:hover .nav-dropdown-icon { color: var(--fg); }
 .nav-dropdown-item:hover { background: var(--bg-muted); color: var(--fg); }
 .nav-dropdown-item.active { color: var(--fg); font-weight: 600; background: var(--bg-muted); }
 

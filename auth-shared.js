@@ -144,18 +144,31 @@ export function mountAppHeader(opts) {
         { key: 'org.html',       label: '조직도',           href: 'org.html' },
         { key: 'contracts.html', label: '계약자 관리대장', href: 'contracts.html' },
     ];
+    // 단색 라인 아이콘 (Lucide 스타일) — currentColor 따라감.
+    const SVG = (path) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${path}</svg>`;
+    const ICON = {
+        chart:     SVG('<polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/>'),
+        sparkles:  SVG('<path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/><path d="M5 3v4"/><path d="M19 17v4"/><path d="M3 5h4"/><path d="M17 19h4"/>'),
+        card:      SVG('<rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/>'),
+        upload:    SVG('<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>'),
+        users:     SVG('<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>'),
+        megaphone: SVG('<path d="M3 11l18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/>'),
+        chat:      SVG('<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>'),
+        help:      SVG('<circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/>'),
+    };
+
     const secondaryItems = [
-        { key: 'index.html',        label: 'N키워드 분석', href: 'index.html#marketing', icon: '🔍' },
-        { key: 'lotto2233.html',    label: '재미로 보는<br>사주+로또추천', href: 'lotto2233.html', extraCls: 'nav-link-multi', rawLabel: true, icon: '🔮' },
-        { key: 'card-builder.html', label: '명함',         href: 'card-builder.html', adminOnly: true, icon: '💳' },
-        { key: 'upload.html',       label: '업로드',       href: 'upload.html', adminOnly: true, icon: '📤' },
+        { key: 'index.html',        label: 'N키워드 분석', href: 'index.html#marketing', icon: ICON.chart },
+        { key: 'lotto2233.html',    label: '재미로 보는<br>사주+로또추천', href: 'lotto2233.html', extraCls: 'nav-link-multi', rawLabel: true, icon: ICON.sparkles },
+        { key: 'card-builder.html', label: '명함',         href: 'card-builder.html', adminOnly: true, icon: ICON.card },
+        { key: 'upload.html',       label: '업로드',       href: 'upload.html', adminOnly: true, icon: ICON.upload },
     ];
 
     // 커뮤니티 — 클릭 불가, hover 시 하위 메뉴.
     const communityItems = [
-        { key: 'board.html?cat=notice', label: '공지사항',     href: 'board.html?cat=notice', icon: '📢' },
-        { key: 'board.html?cat=free',   label: '자유게시판',   href: 'board.html?cat=free',   icon: '💬' },
-        { key: 'board.html?cat=qna',    label: '문의게시판',   href: 'board.html?cat=qna',    icon: '❓' },
+        { key: 'board.html?cat=notice', label: '공지사항',     href: 'board.html?cat=notice', icon: ICON.megaphone },
+        { key: 'board.html?cat=free',   label: '자유게시판',   href: 'board.html?cat=free',   icon: ICON.chat },
+        { key: 'board.html?cat=qna',    label: '문의게시판',   href: 'board.html?cat=qna',    icon: ICON.help },
     ];
 
     const renderItem = (item, baseCls) => {
@@ -174,7 +187,7 @@ export function mountAppHeader(opts) {
     const communityHtml = `
         <div class="nav-dropdown ${isCommunityActive ? 'is-active' : ''}">
             <span class="nav-link nav-link-secondary nav-static" tabindex="0">
-                <span class="nav-icon">👥</span>
+                <span class="nav-icon">${ICON.users}</span>
                 <span class="nav-label">커뮤니티 <span class="nav-caret">▾</span></span>
             </span>
             <div class="nav-dropdown-menu">
