@@ -239,15 +239,18 @@ small { color: var(--fg-tertiary); font-size: 13px; }
     font-weight: 500;
 }
 
-.user-menu span {
+.user-menu .user-display {
     max-width: 200px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    color: var(--fg);
+    font-weight: 600;
+    padding: 6px 0;
 }
 
-.user-menu a,
-.user-menu button {
+.user-menu .user-menu-link,
+.user-menu .user-menu-btn {
     background: transparent;
     color: var(--fg-secondary);
     border: 0;
@@ -256,14 +259,24 @@ small { color: var(--fg-tertiary); font-size: 13px; }
     font-size: 13px;
     font-weight: 500;
     cursor: pointer;
+    text-decoration: none;
     transition: var(--transition);
 }
 
-.user-menu a:hover,
-.user-menu button:hover {
+.user-menu .user-menu-link:hover,
+.user-menu .user-menu-btn:hover {
     background: var(--bg-muted);
     color: var(--fg);
 }
+
+/* 인증 상태별 헤더 가시성 — body 의 is-anon / is-admin 으로 일괄 제어 (FOUC 방지) */
+body.is-anon #user-menu { display: none; }
+body:not(.is-anon) #open-login-btn { display: none; }
+body.is-anon #open-login-btn { display: inline-flex; }
+[data-admin-only] { display: none; }
+body.is-admin [data-admin-only] { display: inline-flex; }
+#admin-link { display: none; }
+body.is-admin #admin-link { display: inline-flex; }
 
 /* ------------------------------------------------------------------ Layout */
 .dashboard {

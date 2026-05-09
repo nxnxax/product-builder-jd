@@ -8,7 +8,7 @@
     <link rel="apple-touch-icon" href="logo_main.png">
     <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
     <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
-    <link rel="stylesheet" href="style.css?v=20260509-pay-toggle">
+    <link rel="stylesheet" href="style.css?v=20260509-header-unified">
 </head>
 <body>
     <section id="auth-screen" class="auth-screen hidden" aria-modal="true" role="dialog">
@@ -82,27 +82,12 @@
         </div>
     </section>
 
-    <header id="app-header" class="app-header">
-        <div class="header-container">
-            <h1><a href="index.html" class="brand-logo" aria-label="YOUNGMAN 홈"><img src="logo_main.png" alt="YOUNGMAN"></a></h1>
-            <nav class="main-nav">
-                <a class="nav-link" href="customers.html">고객 관리대장</a>
-                <a class="nav-link" href="org.html">조직도</a>
-                <a class="nav-link" href="contracts.html">계약자 관리대장</a>
-                <button id="nav-marketing" class="nav-link">마케팅</button>
-                <a class="nav-link" href="lotto2233.html">Lotto</a>
-                <a class="nav-link" href="card-builder.html" data-admin-only>온라인 명함 제작</a>
-                <a class="nav-link" href="upload.html" data-admin-only>업로드</a>
-            </nav>
-            <button type="button" id="open-login-btn" class="header-auth-btn">로그인</button>
-            <div id="user-menu" class="user-menu hidden">
-                <a href="profile.html" id="profile-link" title="내 정보">내 정보</a>
-                <a href="admin.html" id="admin-link" class="hidden" title="관리자">관리자</a>
-                <span id="user-email"></span>
-                <button type="button" id="logout-btn">로그아웃</button>
-            </div>
-        </div>
-    </header>
+    <header id="app-header" class="app-header"></header>
+    <script type="module">
+        // 헤더 즉시 마운트 — main.js 가 DOM 요소 ID 로 접근하기 전에 헤더 DOM 이 존재하도록.
+        import { mountAppHeader } from './auth-shared.js?v=20260509-header-unified';
+        mountAppHeader();
+    </script>
 
     <main id="app-dashboard" class="dashboard">
         <section id="customer-section" class="content-section">
@@ -228,6 +213,6 @@
             if (frame) frame.addEventListener('load', resizeMarketingFrame);
         });
     </script>
-    <script src="main.js?v=20260509-pay-toggle" type="module"></script>
+    <script src="main.js?v=20260509-header-unified" type="module"></script>
 </body>
 </html>

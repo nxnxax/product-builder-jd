@@ -3,19 +3,17 @@ import {
     getSession,
     getClient,
     apiRequest,
-    setupHeaderUser,
+    mountAppHeader,
+    refreshAppHeader,
     getInitial,
-} from './auth-shared.js';
+} from './auth-shared.js?v=20260509-header-unified';
 
 const tabButtons = document.querySelectorAll('.side-nav button[data-tab]');
 const tabSections = document.querySelectorAll('.profile-tab');
 const loadingState = document.getElementById('loading-state');
 const signedOutState = document.getElementById('signed-out-state');
 
-const userMenu = document.getElementById('user-menu');
-const userEmail = document.getElementById('user-email');
-const adminLink = document.getElementById('admin-link');
-const logoutBtn = document.getElementById('logout-btn');
+/* 헤더 user-menu / user-display / admin-link / logout-btn 은 mountAppHeader 가 생성. */
 
 const profileInitial = document.getElementById('profile-initial');
 const profileName = document.getElementById('profile-display-name');
@@ -309,12 +307,13 @@ tokenFreshCopy?.addEventListener('click', async () => {
 });
 
 (async function start() {
+    mountAppHeader();
     const { session } = await initSupabase();
     if (!session) {
         loadingState.classList.add('hidden');
         signedOutState.classList.remove('hidden');
         return;
     }
-    setupHeaderUser({ userMenu, userEmail, adminLink, logoutBtn });
+    await refreshAppHeader();
     await loadProfile();
 })();

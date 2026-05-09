@@ -99,27 +99,7 @@ input:focus,select:focus{border-color:rgba(0,0,0,0.85);box-shadow:0 0 0 3px rgba
 </style>
 </head>
 <body>
-<header id="app-header" class="app-header">
-<div class="header-container">
-    <h1><a href="index.html" class="brand-logo" aria-label="YOUNGMAN 홈"><img src="logo_main.png" alt="YOUNGMAN"></a></h1>
-    <nav class="main-nav">
-        <a class="nav-link" href="customers.html">고객 관리대장</a>
-        <a class="nav-link" href="org.html">조직도</a>
-        <a class="nav-link" href="contracts.html">계약자 관리대장</a>
-        <a class="nav-link" href="index.html#marketing">마케팅</a>
-        <a class="nav-link active" href="lotto2233.html">Lotto</a>
-        <a class="nav-link" href="card-builder.html" data-admin-only>온라인 명함 제작</a>
-        <a class="nav-link" href="upload.html" data-admin-only>업로드</a>
-    </nav>
-    <a href="index.html#login" class="header-auth-btn" id="open-login-btn">로그인</a>
-    <div id="user-menu" class="user-menu hidden">
-        <a href="profile.html" id="profile-link" title="내 정보">내 정보</a>
-        <a href="admin.html" id="admin-link" class="hidden" title="관리자">관리자</a>
-        <span id="user-email"></span>
-        <button type="button" id="logout-btn">로그아웃</button>
-    </div>
-</div>
-</header>
+<header id="app-header" class="app-header"></header>
 
 <div class="container">
 <h2 id="pageTitle">도사의 사주 풀이</h2>
@@ -728,16 +708,8 @@ function sajuMethodsBox(){
 }
 </script>
 <script type="module">
-    import { initSupabase, setupHeaderUser } from './auth-shared.js?v=20260509-pay-toggle';
-    try {
-        await initSupabase();
-        setupHeaderUser({
-            userMenu: document.getElementById('user-menu'),
-            userEmail: document.getElementById('user-email'),
-            adminLink: document.getElementById('admin-link'),
-            logoutBtn: document.getElementById('logout-btn'),
-        });
-    } catch (e) { /* anonymous browse OK */ }
+    import { bootApp } from './auth-shared.js?v=20260509-header-unified';
+    bootApp();
 </script>
 </body>
 </html>

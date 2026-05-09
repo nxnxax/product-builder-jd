@@ -91,34 +91,138 @@ export function getInitial(name, email) {
     return candidate.charAt(0).toUpperCase();
 }
 
-export function setupHeaderUser({ userMenu, userEmail, adminLink, logoutBtn }) {
-    const loggedIn = !!currentSession?.user;
-    const admin = loggedIn && isAdmin(currentSession);
+/* =========================================================================
+   통일된 헤더 — 모든 페이지 공통 구조 + 사용자 표시 일관화
+   ========================================================================= */
 
-    // 로그인 버튼 — 비로그인 시만 노출.
-    document.querySelectorAll('#open-login-btn').forEach(btn => {
-        btn.classList.toggle('hidden', loggedIn);
-    });
+const DISPLAY_NAME_KEY = 'yman_display_name';
+const ADMIN_FLAG_KEY   = 'yman_is_admin';
 
-    // admin 전용 메뉴 (업로드 / 명함 제작 등) — admin 만 노출.
-    document.querySelectorAll('[data-admin-only]').forEach(el => {
-        el.classList.toggle('hidden', !admin);
-    });
-
-    if (!loggedIn) {
-        if (userMenu) userMenu.classList.add('hidden');
-        return;
+/** 보여줄 이름을 안전하게 결정 — members.name → user_metadata.full_name → 이메일 prefix → 이메일 */
+export function getDisplayName(profile, user) {
+    const candidates = [
+        profile?.name,
+        profile?.full_name,
+        user?.user_metadata?.full_name,
+        user?.user_metadata?.name,
+        user?.user_metadata?.nickname,
+    ];
+    for (const c of candidates) {
+        const t = String(c ?? '').trim();
+        if (t) return t;
     }
-    if (userEmail) userEmail.textContent = currentSession.user.email || '';
-    if (userMenu) userMenu.classList.remove('hidden');
-    if (adminLink) adminLink.classList.toggle('hidden', !admin);
-    if (logoutBtn && !logoutBtn.dataset.bound) {
-        logoutBtn.dataset.bound = '1';
+    const email = String(user?.email ?? '').trim();
+    if (email) {
+        const at = email.indexOf('@');
+        return at > 0 ? email.slice(0, at) : email;
+    }
+    return '';
+}
+
+function cacheDisplayName(name) { try { sessionStorage.setItem(DISPLAY_NAME_KEY, name || ''); } catch {} }
+function readCachedDisplayName() { try { return sessionStorage.getItem(DISPLAY_NAME_KEY) || ''; } catch { return ''; } }
+function cacheAdminFlag(b) { try { sessionStorage.setItem(ADMIN_FLAG_KEY, b ? '1' : '0'); } catch {} }
+function readCachedAdminFlag() { try { return sessionStorage.getItem(ADMIN_FLAG_KEY) === '1'; } catch { return false; } }
+
+/** 헤더를 #app-header 자리에 즉시 렌더 — session 없이도 캐시로 동작 (FOUC 방지). */
+export function mountAppHeader(opts) {
+    const root = document.getElementById('app-header');
+    if (!root) return;
+
+    const path = ((opts && opts.activeKey) || (location.pathname.split('/').pop() || 'index.html')).toLowerCase();
+    const cachedName = readCachedDisplayName();
+    const cachedAdmin = readCachedAdminFlag();
+
+    // body 클래스로 가시성 제어 — CSS 가 admin-only / user-menu / login-btn 조정.
+    document.body.classList.toggle('is-admin', cachedAdmin);
+    document.body.classList.toggle('is-anon', !cachedName);
+
+    const navItems = [
+        { key: 'customers.html',  label: '고객 관리대장',     href: 'customers.html' },
+        { key: 'org.html',        label: '조직도',           href: 'org.html' },
+        { key: 'contracts.html',  label: '계약자 관리대장',  href: 'contracts.html' },
+        { key: 'index.html',      label: '마케팅',           href: 'index.html#marketing', match: 'marketing' },
+        { key: 'lotto2233.html',  label: 'Lotto',            href: 'lotto2233.html' },
+        { key: 'card-builder.html', label: '온라인 명함 제작', href: 'card-builder.html', adminOnly: true },
+        { key: 'upload.html',     label: '업로드',           href: 'upload.html', adminOnly: true },
+    ];
+
+    const navHtml = navItems.map(item => {
+        const isActive = path === item.key.toLowerCase();
+        const cls = `nav-link${isActive ? ' active' : ''}`;
+        const dataAttr = item.adminOnly ? ' data-admin-only' : '';
+        return `<a class="${cls}" href="${item.href}"${dataAttr}>${escapeHtmlSafe(item.label)}</a>`;
+    }).join('');
+
+    if (!root.classList.contains('app-header')) root.classList.add('app-header');
+    root.innerHTML = `
+        <div class="header-container">
+            <h1><a href="index.html" class="brand-logo" aria-label="YOUNGMAN 홈"><img src="logo_main.png" alt="YOUNGMAN"></a></h1>
+            <nav class="main-nav">${navHtml}</nav>
+            <a href="index.html#login" class="header-auth-btn" id="open-login-btn">로그인</a>
+            <div id="user-menu" class="user-menu">
+                <span id="user-display" class="user-display">${escapeHtmlSafe(cachedName)}</span>
+                <a href="profile.html" id="profile-link" class="user-menu-link">내 정보</a>
+                <a href="admin.html" id="admin-link" class="user-menu-link">관리자</a>
+                <button type="button" id="logout-btn" class="user-menu-btn">로그아웃</button>
+            </div>
+        </div>
+    `;
+
+    // logout 핸들러는 매 마운트마다 새로 바인딩 (innerHTML 재생성됐으니).
+    const logoutBtn = root.querySelector('#logout-btn');
+    if (logoutBtn) {
         logoutBtn.addEventListener('click', async () => {
-            if (supabaseClient) await supabaseClient.auth.signOut();
+            cacheDisplayName('');
+            cacheAdminFlag(false);
+            try { if (supabaseClient) await supabaseClient.auth.signOut(); } catch {}
             window.location.href = 'index.html';
         });
     }
+}
+
+/** session 로드 후 헤더의 사용자 정보 갱신 + 캐시. profile fetch 비용 한 번. */
+export async function refreshAppHeader() {
+    const loggedIn = !!currentSession?.user;
+    const admin = loggedIn && isAdmin(currentSession);
+
+    document.body.classList.toggle('is-admin', admin);
+    document.body.classList.toggle('is-anon', !loggedIn);
+    cacheAdminFlag(admin);
+
+    if (!loggedIn) { cacheDisplayName(''); return; }
+
+    let displayName = getDisplayName(null, currentSession.user);
+    // members.name 가져와서 가장 정확한 이름으로 갱신.
+    try {
+        const payload = await apiRequest('auth-profile');
+        if (payload?.profile) displayName = getDisplayName(payload.profile, currentSession.user);
+    } catch {}
+
+    cacheDisplayName(displayName);
+    const display = document.getElementById('user-display');
+    if (display) display.textContent = displayName;
+}
+
+/** 페이지 부트스트랩 한 줄 호출 — mountAppHeader → initSupabase → refreshAppHeader. */
+export async function bootApp(opts) {
+    mountAppHeader(opts);
+    try { await initSupabase(); } catch {}
+    if (opts?.requireAdmin && !requireAdmin()) return false;
+    await refreshAppHeader();
+    return true;
+}
+
+function escapeHtmlSafe(s) {
+    return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+/* =========================================================================
+   레거시 호환 — 기존 페이지들이 setupHeaderUser({...}) 로 호출하던 거 그대로 동작.
+   내부에선 refreshAppHeader 가 처리. 인자는 무시.
+   ========================================================================= */
+export function setupHeaderUser(/* opts */) {
+    refreshAppHeader();   // fire-and-forget
 }
 
 /**

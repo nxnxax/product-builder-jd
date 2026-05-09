@@ -6,7 +6,7 @@
   <title>업로드 · YOUNGMAN</title>
   <link rel="icon" type="image/png" href="logo_main.png">
   <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
-  <link rel="stylesheet" href="style.css?v=20260509-pay-toggle">
+  <link rel="stylesheet" href="style.css?v=20260509-header-unified">
   <style>
     .upload-wrap { max-width: 760px; margin: 3rem auto 5rem; padding: 0 1.5rem; }
     .upload-wrap h2 { margin: 0 0 .35rem; font-size: 1.6rem; letter-spacing: -.01em; }
@@ -75,27 +75,7 @@
   </style>
 </head>
 <body>
-  <header id="app-header" class="app-header">
-    <div class="header-container">
-      <h1><a href="index.html" class="brand-logo" aria-label="YOUNGMAN 홈"><img src="logo_main.png" alt="YOUNGMAN"></a></h1>
-      <nav class="main-nav">
-        <a class="nav-link" href="customers.html">고객 관리대장</a>
-        <a class="nav-link" href="org.html">조직도</a>
-        <a class="nav-link" href="contracts.html">계약자 관리대장</a>
-        <a class="nav-link" href="index.html#marketing">마케팅</a>
-        <a class="nav-link" href="lotto2233.html">Lotto</a>
-        <a class="nav-link" href="card-builder.html" data-admin-only>온라인 명함 제작</a>
-        <a class="nav-link active" href="upload.html" data-admin-only>업로드</a>
-      </nav>
-      <a href="index.html#login" class="header-auth-btn" id="open-login-btn">로그인</a>
-      <div id="user-menu" class="user-menu hidden">
-        <a href="profile.html" id="profile-link" title="내 정보">내 정보</a>
-        <a href="admin.html" id="admin-link" class="hidden" title="관리자">관리자</a>
-        <span id="user-email"></span>
-        <button type="button" id="logout-btn">로그아웃</button>
-      </div>
-    </div>
-  </header>
+  <header id="app-header" class="app-header"></header>
 
   <main class="upload-wrap">
     <h2>업로드</h2>
@@ -282,15 +262,8 @@
     loadRecent();
   </script>
   <script type="module">
-    import { initSupabase, setupHeaderUser, requireAdmin } from './auth-shared.js?v=20260509-pay-toggle';
-    await initSupabase();
-    if (!requireAdmin()) { /* redirected away */ }
-    setupHeaderUser({
-        userMenu: document.getElementById('user-menu'),
-        userEmail: document.getElementById('user-email'),
-        adminLink: document.getElementById('admin-link'),
-        logoutBtn: document.getElementById('logout-btn'),
-    });
+    import { bootApp } from './auth-shared.js?v=20260509-header-unified';
+    bootApp({ requireAdmin: true });
   </script>
 </body>
 </html>

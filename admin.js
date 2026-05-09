@@ -1,10 +1,11 @@
 import {
     initSupabase,
     apiRequest,
-    setupHeaderUser,
+    mountAppHeader,
+    refreshAppHeader,
     isAdmin,
     getInitial,
-} from './auth-shared.js';
+} from './auth-shared.js?v=20260509-header-unified';
 
 const STATUS_LABEL = { active: '활성', suspended: '정지', banned: '차단' };
 const ROLE_LABEL = { admin: '관리자', owner: '운영자', member: '일반회원' };
@@ -13,9 +14,7 @@ const loadingState = document.getElementById('loading-state');
 const forbiddenState = document.getElementById('forbidden-state');
 const adminApp = document.getElementById('admin-app');
 
-const userMenu = document.getElementById('user-menu');
-const userEmail = document.getElementById('user-email');
-const logoutBtn = document.getElementById('logout-btn');
+/* 헤더 user-menu / user-display / admin-link / logout-btn 은 mountAppHeader 가 생성. */
 
 const tabs = document.querySelectorAll('.tabs .tab');
 const tabSections = document.querySelectorAll('.admin-tab');
@@ -339,13 +338,14 @@ async function loadLogs() {
 }
 
 (async function start() {
+    mountAppHeader();
     const { session } = await initSupabase();
     if (!session) {
         loadingState.classList.add('hidden');
         forbiddenState.classList.remove('hidden');
         return;
     }
-    setupHeaderUser({ userMenu, userEmail, adminLink: null, logoutBtn });
+    await refreshAppHeader();
 
     if (!isAdmin(session)) {
         // Verify with server, since role may be set in DB rather than user_metadata.

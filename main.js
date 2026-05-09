@@ -29,7 +29,9 @@ let oauthSignupPending = false;
 // --- DOM Elements ---
 const navCustomers = document.getElementById('nav-customers');
 const navEmployees = document.getElementById('nav-employees');
-const navMarketing = document.getElementById('nav-marketing');
+// nav-marketing 은 더 이상 button 이 아니라 unified header 의 <a href="index.html#marketing">.
+// switchView 처리는 querySelector 로 찾아서 click 핸들러 바인딩 (아래 마케팅 라우터 참고).
+const navMarketing = document.querySelector('a.nav-link[href*="#marketing"]');
 
 const authScreen = document.getElementById('auth-screen');
 const appHeader = document.getElementById('app-header');
@@ -61,10 +63,17 @@ const loginTab = document.getElementById('login-tab');
 const signupTab = document.getElementById('signup-tab');
 const authSwitchText = document.getElementById('auth-switch-text');
 const openLoginBtn = document.getElementById('open-login-btn');
+// 헤더 user-menu / user-display / admin-link / logout-btn 은 mountAppHeader (inline script) 가 생성.
 const userMenu = document.getElementById('user-menu');
-const userEmail = document.getElementById('user-email');
+const userDisplay = document.getElementById('user-display');
 const logoutBtn = document.getElementById('logout-btn');
 const adminLink = document.getElementById('admin-link');
+
+// auth-shared.js 의 sessionStorage 캐시와 동일 키 사용 — 다른 페이지에서 즉시 노출.
+const _DISPLAY_KEY = 'yman_display_name';
+const _ADMIN_KEY = 'yman_is_admin';
+function _cacheDisplay(n) { try { sessionStorage.setItem(_DISPLAY_KEY, n || ''); } catch {} }
+function _cacheAdminFlag(b) { try { sessionStorage.setItem(_ADMIN_KEY, b ? '1' : '0'); } catch {} }
 
 const customerSection = document.getElementById('customer-section');
 const employeeSection = document.getElementById('employee-section');
@@ -489,8 +498,10 @@ function renderSignedOut() {
     authScreen.classList.add('hidden');
     appHeader.classList.remove('hidden');
     appDashboard.classList.remove('hidden');
-    openLoginBtn.classList.remove('hidden');
-    userMenu.classList.add('hidden');
+    document.body.classList.add('is-anon');
+    document.body.classList.remove('is-admin');
+    _cacheDisplay('');
+    _cacheAdminFlag(false);
     if (googleLoginBtn) googleLoginBtn.disabled = false;
     setAuthMessage('', '');
 }
@@ -642,26 +653,33 @@ function renderSignedIn() {
     appDashboard.classList.remove('hidden');
 
     if (authEnabled && currentSession?.user?.email) {
-        userEmail.textContent = currentSession.user.email;
-        userEmail.title = currentSession.user.email;
-        resolveDisplayName().then((label) => {
-            if (currentSession?.user?.email) userEmail.textContent = label || currentSession.user.email;
-        });
-        userMenu.classList.remove('hidden');
-        openLoginBtn.classList.add('hidden');
-
-        if (adminLink) {
-            const meta = currentSession.user.app_metadata || {};
-            const userMeta = currentSession.user.user_metadata || {};
-            const role = String(meta.role || userMeta.role || '').toLowerCase();
-            const isAdmin = role === 'admin' || role === 'owner' || meta.is_admin === true || userMeta.is_admin === true;
-            adminLink.classList.toggle('hidden', !isAdmin);
-            if (!isAdmin) ensureAdminBootstrap();
+        // 일단 이메일 prefix 로 즉시 표시 (resolveDisplayName 결과 기다리지 않고)
+        const email = currentSession.user.email;
+        const fallback = email.includes('@') ? email.split('@')[0] : email;
+        if (userDisplay) {
+            userDisplay.textContent = fallback;
+            userDisplay.title = email;
         }
+        _cacheDisplay(fallback);
+        resolveDisplayName().then((label) => {
+            const finalName = label || fallback;
+            if (currentSession?.user?.email && userDisplay) userDisplay.textContent = finalName;
+            _cacheDisplay(finalName);
+        });
+        document.body.classList.remove('is-anon');
+
+        const meta = currentSession.user.app_metadata || {};
+        const userMeta = currentSession.user.user_metadata || {};
+        const role = String(meta.role || userMeta.role || '').toLowerCase();
+        const isAdmin = role === 'admin' || role === 'owner' || meta.is_admin === true || userMeta.is_admin === true;
+        document.body.classList.toggle('is-admin', isAdmin);
+        _cacheAdminFlag(isAdmin);
+        if (!isAdmin) ensureAdminBootstrap();
     } else {
-        userMenu.classList.add('hidden');
-        openLoginBtn.classList.remove('hidden');
-        if (adminLink) adminLink.classList.add('hidden');
+        document.body.classList.add('is-anon');
+        document.body.classList.remove('is-admin');
+        _cacheDisplay('');
+        _cacheAdminFlag(false);
     }
 }
 
@@ -775,7 +793,16 @@ function switchView(view) {
 if (navCustomers) navCustomers.addEventListener('click', () => switchView('customers'));
 if (navEmployees) navEmployees.addEventListener('click', () => switchView('employees'));
 if (navMarketing) {
-    navMarketing.addEventListener('click', () => switchView('marketing'));
+    navMarketing.addEventListener('click', (e) => {
+        // index.html 자체에선 hash 만 바꿔서 switchView. 다른 페이지에선 기본 동작 (index.html 로 이동).
+        e.preventDefault();
+        if (location.pathname.endsWith('index.html') || location.pathname === '/' || location.pathname === '') {
+            history.replaceState(null, '', '#marketing');
+            switchView('marketing');
+        } else {
+            location.href = 'index.html#marketing';
+        }
+    });
 }
 window.addEventListener('hashchange', applyInitialHash);
 
