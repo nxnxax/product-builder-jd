@@ -10,7 +10,7 @@
  */
 
 import { initSupabase, apiRequest, getSession } from './auth-shared.js?v=20260508-tight';
-import { attachColumnFilters, applyColumnFilters } from './ledger-shared.js?v=20260509-filter1';
+import { attachColumnFilters, applyColumnFilters, openRowAddModal } from './ledger-shared.js?v=20260509-filter2';
 
 const PAGE_TYPE = 'customer';
 
@@ -314,15 +314,26 @@ function bindTableEvents() {
     });
 }
 
-async function addRow(gid) {
-    try {
-        const today = new Date().toISOString().slice(0, 10);
-        await api('ledger-records', {
-            method: 'POST',
-            body: { groupId: gid, data: { date: today, managed: true }, source: 'web' },
-        });
-        await loadRecords();
-    } catch (e) { showError('행 추가 실패: ' + e.message); }
+function addRow(gid) {
+    const today = new Date().toISOString().slice(0, 10);
+    openRowAddModal({
+        title: '새 고객 추가',
+        fields: DEFAULT_FIELDS,
+        defaults: { date: today, managed: true },
+        customRender: (f) => {
+            const lbl = `<label class="row-label">${escapeHtml(f.label)}</label>`;
+            if (f.type === 'manage_switch') {
+                return `<div class="modal-row">${lbl}<div class="row-control"><label style="display:flex;align-items:center;gap:8px;font-size:13px;color:#4f4943;font-weight:400;cursor:pointer;margin:0;">
+                    <input type="checkbox" data-field="managed" checked style="width:auto;accent-color:#c8362c;"> 관리 대상
+                </label></div></div>`;
+            }
+            return null;
+        },
+        onSubmit: async (data) => {
+            await api('ledger-records', { method: 'POST', body: { groupId: gid, data, source: 'web' } });
+            await loadRecords();
+        },
+    });
 }
 
 async function updateRowField(id, field, value) {

@@ -11,7 +11,7 @@
  */
 
 import { initSupabase, apiRequest, getSession } from './auth-shared.js?v=20260508-tight';
-import { attachColumnFilters, applyColumnFilters } from './ledger-shared.js?v=20260509-filter1';
+import { attachColumnFilters, applyColumnFilters, openRowAddModal } from './ledger-shared.js?v=20260509-filter2';
 
 const PAGE_TYPE = 'contract';
 const TAX_RATE = 0.033;   // 실수령액 = commission * (1 - TAX_RATE)
@@ -438,14 +438,42 @@ function bindTableEvents() {
     });
 }
 
-async function addRow(gid) {
-    try {
-        await api('ledger-records', {
-            method: 'POST',
-            body: { groupId: gid, data: { paid_unpaid: true, status: 'active' }, source: 'web' },
-        });
-        await loadRecords();
-    } catch (e) { showError('계약 추가 실패: ' + e.message); }
+function addRow(gid) {
+    openRowAddModal({
+        title: '새 계약 추가',
+        fields: DEFAULT_FIELDS,
+        defaults: { paid_unpaid: true, status: 'active' },
+        customRender: (f) => {
+            const lbl = `<label class="row-label">${escapeHtml(f.label)}</label>`;
+            if (f.type === 'manager_select') {
+                const opts = ['<option value="">-</option>']
+                    .concat(orgEmployees.map(e => {
+                        const name = e.data?.name || '';
+                        const team = e.data?.team || '?';
+                        const title = e.data?.title || '';
+                        return `<option value="${escapeAttr(name)}">${escapeHtml(name)} (${team}팀·${title})</option>`;
+                    })).join('');
+                return `<div class="modal-row">${lbl}<div class="row-control"><select data-field="manager" style="width:100%">${opts}</select></div></div>`;
+            }
+            if (f.type === 'status_switch') {
+                return `<div class="modal-row">${lbl}<div class="row-control"><select data-field="status" style="width:100%">
+                    <option value="">미정</option>
+                    <option value="active" selected>정계약</option>
+                    <option value="cancel">해지</option>
+                </select></div></div>`;
+            }
+            if (f.type === 'pay_switch') {
+                return `<div class="modal-row">${lbl}<div class="row-control"><label style="display:flex;align-items:center;gap:8px;font-size:13px;color:#4f4943;font-weight:400;cursor:pointer;margin:0;">
+                    <input type="checkbox" data-field="paid_unpaid" checked style="width:auto;accent-color:#c8362c;"> 미지급 (체크 해제 시 지급완료로 시작)
+                </label></div></div>`;
+            }
+            return null;
+        },
+        onSubmit: async (data) => {
+            await api('ledger-records', { method: 'POST', body: { groupId: gid, data, source: 'web' } });
+            await loadRecords();
+        },
+    });
 }
 
 async function updateRowField(id, field, value) {

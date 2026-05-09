@@ -7,7 +7,7 @@
  */
 
 import { initSupabase, apiRequest, getSession } from './auth-shared.js?v=20260508-tight';
-import { attachColumnFilters, applyColumnFilters } from './ledger-shared.js?v=20260509-filter1';
+import { attachColumnFilters, applyColumnFilters, openRowAddModal } from './ledger-shared.js?v=20260509-filter2';
 
 const PAGE_TYPE = 'org';
 
@@ -454,20 +454,21 @@ function bindTableEvents() {
     });
 }
 
-async function addRow(teamNo) {
+function addRow(teamNo) {
     if (activeGroupIds.length !== 1) {
         alert('행은 그룹 하나에만 추가할 수 있습니다. 멀티 모드를 끄거나 그룹 하나만 선택해주세요.');
         return;
     }
-    try {
-        await api('ledger-records', {
-            method: 'POST',
-            body: { groupId: activeGroupIds[0], data: { team: teamNo || 1, title: '팀원' }, source: 'web' },
-        });
-        await loadRecords();
-    } catch (e) {
-        showError('행 추가 실패: ' + e.message);
-    }
+    openRowAddModal({
+        title: `${teamNo || '?'}팀 새 인원 추가`,
+        fields: DEFAULT_FIELD_SCHEMA.fields,
+        defaults: { title: '팀원' },
+        onSubmit: async (data) => {
+            data.team = teamNo || 1;
+            await api('ledger-records', { method: 'POST', body: { groupId: activeGroupIds[0], data, source: 'web' } });
+            await loadRecords();
+        },
+    });
 }
 
 async function updateRowField(id, field, value) {
