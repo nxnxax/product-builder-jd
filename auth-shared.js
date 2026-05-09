@@ -211,21 +211,8 @@ export function mountAppHeader(opts) {
             <button type="button" class="mobile-menu-toggle" aria-label="메뉴 열기" aria-expanded="false">
                 <span></span><span></span><span></span>
             </button>
-            <div class="mobile-drawer">
-                <div class="mobile-drawer-head">
-                    <span class="mobile-drawer-title">메뉴</span>
-                    <button type="button" class="mobile-drawer-close" data-mobile-drawer-close aria-label="닫기">×</button>
-                </div>
-                <nav class="nav-primary">${primaryHtml}</nav>
-                <nav class="nav-secondary">${secondaryHtml}</nav>
-                <div class="mobile-drawer-account">
-                    <div class="mobile-drawer-account-name" data-anon-hide>${escapeHtmlSafe(cachedName) || '게스트'}</div>
-                    <a href="profile.html" class="mobile-drawer-account-link" data-anon-hide>${ICON.users}<span>내 정보</span></a>
-                    <a href="admin.html" class="mobile-drawer-account-link" data-admin-only data-anon-hide><span class="mobile-drawer-icon">⚙</span><span>관리자</span></a>
-                    <button type="button" class="mobile-drawer-account-link" id="drawer-logout-btn" data-anon-hide><span class="mobile-drawer-icon">↩</span><span>로그아웃</span></button>
-                    <a href="index.html#login" class="mobile-drawer-account-link" data-anon-show><span class="mobile-drawer-icon">→</span><span>로그인</span></a>
-                </div>
-            </div>
+            <nav class="nav-primary">${primaryHtml}</nav>
+            <nav class="nav-secondary">${secondaryHtml}</nav>
             <a href="index.html#login" class="header-auth-btn" id="open-login-btn">로그인</a>
             <div id="user-menu" class="user-menu">
                 <span id="user-display" class="user-display">${escapeHtmlSafe(cachedName)}</span>
@@ -236,21 +223,31 @@ export function mountAppHeader(opts) {
         </div>
     `;
 
-    // 드로어와 백드롭은 body 직속으로 이동시켜 .app-header 의 stacking context 에서 빼냄.
-    // (그래야 z-index 가 페이지 다른 요소 위로 안정적으로 올라감)
-    const drawerEl = root.querySelector('.mobile-drawer');
-    if (drawerEl) {
-        // 기존 백드롭 제거 후 새로 만듦.
-        document.querySelectorAll('.mobile-drawer-backdrop[data-yman-drawer]').forEach(el => el.remove());
-        document.querySelectorAll('.mobile-drawer[data-yman-drawer]').forEach(el => el.remove());
-        const backdrop = document.createElement('div');
-        backdrop.className = 'mobile-drawer-backdrop';
-        backdrop.setAttribute('data-mobile-drawer-close', '');
-        backdrop.setAttribute('data-yman-drawer', '1');
-        document.body.appendChild(backdrop);
-        drawerEl.setAttribute('data-yman-drawer', '1');
-        document.body.appendChild(drawerEl);
-    }
+    // 모바일 드로어 — body 직속으로 별도 렌더 (헤더의 backdrop-filter 가 fixed
+    // descendant 의 containing block 을 만들어버려서 헤더 안에 두면 위치 안 잡힘).
+    // 헤더 nav 와 같은 내용을 복사해 mobile 미디어쿼리로 가시성 swap.
+    document.querySelectorAll('[data-yman-drawer]').forEach(el => el.remove());
+    const drawerWrap = document.createElement('div');
+    drawerWrap.innerHTML = `
+        <div class="mobile-drawer-backdrop" data-mobile-drawer-close data-yman-drawer></div>
+        <aside class="mobile-drawer" data-yman-drawer>
+            <div class="mobile-drawer-head">
+                <span class="mobile-drawer-title">메뉴</span>
+                <button type="button" class="mobile-drawer-close" data-mobile-drawer-close aria-label="닫기">×</button>
+            </div>
+            <nav class="nav-primary">${primaryHtml}</nav>
+            <nav class="nav-secondary">${secondaryHtml}</nav>
+            <div class="mobile-drawer-account">
+                <div class="mobile-drawer-account-name" data-anon-hide>${escapeHtmlSafe(cachedName) || '게스트'}</div>
+                <a href="profile.html" class="mobile-drawer-account-link" data-anon-hide><span class="mobile-drawer-icon">${ICON.users}</span><span>내 정보</span></a>
+                <a href="admin.html" class="mobile-drawer-account-link" data-admin-only data-anon-hide><span class="mobile-drawer-icon">⚙</span><span>관리자</span></a>
+                <button type="button" class="mobile-drawer-account-link" id="drawer-logout-btn" data-anon-hide><span class="mobile-drawer-icon">↩</span><span>로그아웃</span></button>
+                <a href="index.html#login" class="mobile-drawer-account-link" data-anon-show><span class="mobile-drawer-icon">→</span><span>로그인</span></a>
+            </div>
+        </aside>
+    `;
+    [...drawerWrap.children].forEach(c => document.body.appendChild(c));
+    const drawerEl = document.querySelector('.mobile-drawer[data-yman-drawer]');
 
     // logout 핸들러 — 헤더 + 드로어 모두
     const handleLogout = async () => {

@@ -1776,10 +1776,10 @@ select:focus {
 .spark span:not(:last-child) { opacity: 0.18; }
 
 /* ------------------------------------------------------------------ Mobile */
-/* 데스크톱: 햄버거 숨김, drawer 는 투명 (자식이 부모 flex 직접 참여) */
+/* 데스크톱: 햄버거 / 드로어 / 백드롭 모두 숨김. body 안에 별도 렌더된 드로어는 안 보이게. */
 .mobile-menu-toggle { display: none; }
 .mobile-drawer-backdrop { display: none; }
-.mobile-drawer { display: contents; }
+.mobile-drawer { display: none !important; }
 .mobile-drawer-head { display: none; }
 
 @media (max-width: 860px) {
@@ -1836,8 +1836,12 @@ select:focus {
     .mobile-menu-toggle.open span:nth-child(2) { opacity: 0; }
     .mobile-menu-toggle.open span:nth-child(3) { transform: translateY(-6px) rotate(-45deg); }
 
+    /* 모바일에서 헤더의 nav-primary / nav-secondary 는 숨김 — 드로어 안에 복제본 사용 */
+    .app-header .nav-primary,
+    .app-header .nav-secondary { display: none !important; }
+
     /* === 우측 사이드 드로어 (homedepothours.com 스타일) === */
-    /* 평소 숨김. open 시 우측에서 슬라이드 in */
+    /* body 직속에 렌더됨. 평소 transform 으로 우측 밖에 숨김. open 시 슬라이드 in */
     .mobile-drawer {
         display: flex !important;
         flex-direction: column;
@@ -1845,10 +1849,11 @@ select:focus {
         top: 0;
         right: 0;
         bottom: 0;
+        height: 100vh;
         width: 320px;
         max-width: 86vw;
         background: #fff;
-        z-index: 100;
+        z-index: 1100;
         padding: 0;
         overflow-y: auto;
         transform: translateX(100%);
@@ -1857,13 +1862,13 @@ select:focus {
     }
     .mobile-drawer.open { transform: translateX(0); }
 
-    /* backdrop — 드로어 뒤 어두운 오버레이 */
+    /* backdrop — 드로어 뒤 어두운 오버레이 (헤더 위까지 덮음, z-index 1090) */
     .mobile-drawer-backdrop {
         display: block;
         position: fixed;
         inset: 0;
         background: rgba(20, 14, 8, 0.45);
-        z-index: 99;
+        z-index: 1090;
         opacity: 0;
         pointer-events: none;
         transition: opacity 240ms ease;
