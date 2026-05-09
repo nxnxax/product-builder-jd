@@ -218,6 +218,13 @@ export function mountAppHeader(opts) {
                 </div>
                 <nav class="nav-primary">${primaryHtml}</nav>
                 <nav class="nav-secondary">${secondaryHtml}</nav>
+                <div class="mobile-drawer-account">
+                    <div class="mobile-drawer-account-name" data-anon-hide>${escapeHtmlSafe(cachedName) || '게스트'}</div>
+                    <a href="profile.html" class="mobile-drawer-account-link" data-anon-hide>${ICON.users}<span>내 정보</span></a>
+                    <a href="admin.html" class="mobile-drawer-account-link" data-admin-only data-anon-hide><span class="mobile-drawer-icon">⚙</span><span>관리자</span></a>
+                    <button type="button" class="mobile-drawer-account-link" id="drawer-logout-btn" data-anon-hide><span class="mobile-drawer-icon">↩</span><span>로그아웃</span></button>
+                    <a href="index.html#login" class="mobile-drawer-account-link" data-anon-show><span class="mobile-drawer-icon">→</span><span>로그인</span></a>
+                </div>
             </div>
             <a href="index.html#login" class="header-auth-btn" id="open-login-btn">로그인</a>
             <div id="user-menu" class="user-menu">
@@ -245,16 +252,17 @@ export function mountAppHeader(opts) {
         document.body.appendChild(drawerEl);
     }
 
-    // logout 핸들러
+    // logout 핸들러 — 헤더 + 드로어 모두
+    const handleLogout = async () => {
+        cacheDisplayName('');
+        cacheAdminFlag(false);
+        try { if (supabaseClient) await supabaseClient.auth.signOut(); } catch {}
+        window.location.href = 'index.html';
+    };
     const logoutBtn = root.querySelector('#logout-btn');
-    if (logoutBtn) {
-        logoutBtn.addEventListener('click', async () => {
-            cacheDisplayName('');
-            cacheAdminFlag(false);
-            try { if (supabaseClient) await supabaseClient.auth.signOut(); } catch {}
-            window.location.href = 'index.html';
-        });
-    }
+    if (logoutBtn) logoutBtn.addEventListener('click', handleLogout);
+    const drawerLogoutBtn = drawerEl?.querySelector('#drawer-logout-btn');
+    if (drawerLogoutBtn) drawerLogoutBtn.addEventListener('click', handleLogout);
 
     // 모바일 사이드 드로어 — 햄버거 토글 / 아코디언 서브메뉴
     const hamburger = root.querySelector('.mobile-menu-toggle');
