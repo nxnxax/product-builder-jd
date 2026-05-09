@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>계약자 관리대장 · YOUNGMAN</title>
+<link rel="icon" type="image/png" href="logo_main.png">
+<link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
+<link rel="stylesheet" href="style.css?v=20260509-brand5">
+<style>
+:root{
+    --ledger-line:rgba(20,14,8,.09); --ledger-line-strong:rgba(20,14,8,.16);
+    --ledger-bg:#fbf7ef; --ledger-accent:#c8362c; --ledger-accent-deep:#8a2620;
+    --status-yellow:#fbc400; --status-red:#c8362c; --status-paid:#a3a39a;
+}
+.ledger-shell{max-width:1480px;margin:0 auto;padding:32px 24px 80px}
+.ledger-head{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:18px}
+.ledger-title{margin:0;font-size:24px;letter-spacing:-.02em}
+.ledger-sub{margin:6px 0 0;color:#8a847e;font-size:13.5px;line-height:1.55}
+
+.group-bar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:14px 16px;background:#fff;border:1px solid var(--ledger-line);border-radius:12px;margin-bottom:14px}
+.group-bar .label{font-size:12.5px;color:#8a847e;font-weight:600;letter-spacing:.02em;margin-right:4px}
+.group-pill{display:inline-flex;align-items:center;gap:6px;padding:7px 12px;background:#fbf7ef;border:1px solid var(--ledger-line-strong);border-radius:999px;font-size:13px;cursor:pointer;font-family:inherit;color:#0e0d0c;transition:all 160ms}
+.group-pill:hover{background:#f4efe7}
+.group-pill.active{background:#0e0d0c;color:#fff;border-color:#0e0d0c}
+.group-pill.multi-mode{background:#fff8f7;border-color:rgba(200,54,44,.4);color:var(--ledger-accent-deep)}
+.group-pill.multi-mode.active{background:var(--ledger-accent);color:#fff;border-color:var(--ledger-accent)}
+.group-pill input[type=checkbox]{width:14px;height:14px;accent-color:var(--ledger-accent);margin:0}
+.tiny-btn{border:1px solid var(--ledger-line-strong);background:#fff;color:#4f4943;font-size:12.5px;padding:6px 11px;border-radius:7px;cursor:pointer;font-family:inherit;font-weight:500;transition:all 160ms}
+.tiny-btn:hover{background:#fbf7ef;color:#0e0d0c}
+.tiny-btn.danger{color:var(--ledger-accent);border-color:rgba(200,54,44,.3)}
+.tiny-btn.danger:hover{background:#fff8f7}
+.tiny-btn.primary{background:#0e0d0c;color:#fff;border-color:#0e0d0c}
+.tiny-btn.primary:hover{background:#2a2520}
+.tiny-btn.gold{background:var(--status-yellow);color:#3b2f08;border-color:#e0ad00;font-weight:700}
+.tiny-btn.gold:hover{background:#e8b405}
+
+.contract-section{background:#fff;border:1px solid var(--ledger-line);border-radius:12px;padding:0;margin-bottom:18px;overflow:hidden}
+.contract-head{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--ledger-line);background:#fbf7ef}
+.contract-head h3{margin:0;font-size:15px;font-weight:700;letter-spacing:-.005em}
+.contract-head .count{color:#8a847e;font-size:12.5px;margin-left:8px;font-weight:500}
+.contract-head .actions{display:flex;gap:6px}
+
+.tbl-wrap{overflow-x:auto}
+table.ledger-tbl{width:100%;border-collapse:collapse;font-size:13px;min-width:1320px}
+.ledger-tbl thead th{position:sticky;top:0;background:#fbf7ef;border-bottom:1px solid var(--ledger-line-strong);text-align:left;padding:10px 10px;font-weight:600;font-size:12px;color:#4f4943;letter-spacing:.01em;white-space:nowrap;z-index:1}
+.ledger-tbl thead .filter-row th{background:#fff;border-bottom:1px solid var(--ledger-line);padding:6px 6px;z-index:0}
+.ledger-tbl thead .filter-row input{width:100%;height:26px;padding:0 6px;border:1px solid var(--ledger-line);border-radius:5px;font-size:11.5px;background:#fbf7ef;color:#0e0d0c;font-family:inherit;outline:none}
+.ledger-tbl thead .filter-row input:focus{border-color:#0e0d0c;background:#fff}
+.ledger-tbl tbody td{padding:8px 10px;border-bottom:1px solid var(--ledger-line);vertical-align:middle}
+.ledger-tbl tbody tr:hover{background:#fbfaf5}
+.ledger-tbl tbody tr.selected{background:#fff8f7}
+.ledger-tbl tbody td input,.ledger-tbl tbody td select{width:100%;height:28px;padding:0 6px;border:1px solid transparent;background:transparent;border-radius:5px;font-size:12.5px;color:#0e0d0c;font-family:inherit;outline:none;transition:all 120ms}
+.ledger-tbl tbody td input:focus,.ledger-tbl tbody td select:focus{border-color:#0e0d0c;background:#fff}
+.ledger-tbl tbody td input:hover,.ledger-tbl tbody td select:hover{background:#fff;border-color:var(--ledger-line)}
+.ledger-tbl .col-no{width:42px;text-align:center;color:#8a847e;font-variant-numeric:tabular-nums}
+.ledger-tbl .col-check{width:32px;text-align:center}
+.ledger-tbl .col-check input[type=checkbox]{width:14px;height:14px;cursor:pointer;accent-color:var(--ledger-accent)}
+.ledger-tbl .col-action{width:48px;text-align:right;white-space:nowrap}
+.row-action-btn{border:0;background:transparent;color:#8a847e;font-size:13px;cursor:pointer;padding:4px 6px;border-radius:5px;font-family:inherit}
+.row-action-btn:hover{color:var(--ledger-accent);background:#fff8f7}
+
+/* 수수료 지급 스위치 */
+.pay-switch{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:99px;cursor:pointer;font-size:11px;font-weight:700;letter-spacing:.02em;border:1px solid;transition:all 160ms;font-family:inherit;background:#fff}
+.pay-switch.unpaid{background:rgba(200,54,44,.1);color:var(--ledger-accent);border-color:rgba(200,54,44,.4)}
+.pay-switch.paid{background:#f4efe7;color:#a3a39a;border-color:#d7d2c8;text-decoration:line-through}
+/* 정계약/해지 스위치 */
+.status-pill{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:99px;cursor:pointer;font-size:11px;font-weight:700;letter-spacing:.02em;border:1px solid;transition:all 160ms;font-family:inherit;background:#fff;color:#8a847e;border-color:var(--ledger-line-strong)}
+.status-pill.active{background:var(--status-yellow);color:#3b2f08;border-color:#e0ad00}
+.status-pill.cancel{background:var(--status-red);color:#fff;border-color:var(--ledger-accent-deep)}
+
+.commission-cell{font-size:11.5px;color:#4f4943;font-variant-numeric:tabular-nums}
+.commission-cell .net{display:block;color:#8a847e;font-size:10.5px;margin-top:1px}
+
+.bulk-bar{position:sticky;bottom:0;background:#fff;border-top:1px solid var(--ledger-line-strong);padding:12px 16px;display:none;align-items:center;justify-content:space-between;gap:10px;border-radius:0 0 12px 12px;box-shadow:0 -8px 24px rgba(20,14,8,.08);z-index:5}
+.bulk-bar.active{display:flex}
+.bulk-bar .info{font-size:13px;color:#4f4943}
+.bulk-bar .info b{color:var(--ledger-accent);font-weight:700}
+
+.empty{text-align:center;padding:60px 24px;color:#8a847e;font-size:14px;line-height:1.7;background:#fff;border:1px dashed var(--ledger-line-strong);border-radius:12px}
+.empty b{color:#0e0d0c}
+
+.modal-backdrop{position:fixed;inset:0;background:rgba(20,14,8,.45);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;z-index:100;padding:20px}
+.modal-backdrop.hidden{display:none}
+.modal{background:#fff;border-radius:14px;max-width:560px;width:100%;max-height:88vh;overflow-y:auto;padding:26px 28px;box-shadow:0 24px 60px rgba(20,14,8,.22)}
+.modal.wide{max-width:880px}
+.modal h2{margin:0 0 6px;font-size:18px;letter-spacing:-.01em}
+.modal .desc{color:#8a847e;font-size:13px;margin:0 0 18px;line-height:1.55}
+.modal label{display:block;margin-top:14px;margin-bottom:6px;font-size:13px;color:#4f4943;font-weight:500}
+.modal input[type=text],.modal input[type=number],.modal input[type=date],.modal select{width:100%;height:38px;padding:0 12px;border:1px solid var(--ledger-line-strong);border-radius:7px;font-size:14px;color:#0e0d0c;font-family:inherit;outline:none}
+.modal input:focus,.modal select:focus{border-color:#0e0d0c}
+.modal .actions{display:flex;justify-content:flex-end;gap:8px;margin-top:22px;padding-top:16px;border-top:1px solid var(--ledger-line)}
+
+/* 정산 모달 */
+.settle-section{margin-top:18px;border:1px solid var(--ledger-line);border-radius:10px;overflow:hidden}
+.settle-section-head{padding:11px 14px;background:#fbf7ef;border-bottom:1px solid var(--ledger-line);font-weight:700;font-size:13.5px;color:var(--ledger-accent-deep);display:flex;align-items:center;justify-content:space-between}
+.settle-emp{padding:12px 14px;border-bottom:1px solid var(--ledger-line)}
+.settle-emp:last-child{border-bottom:0}
+.settle-emp-head{display:flex;align-items:baseline;justify-content:space-between;gap:10px;font-size:13.5px}
+.settle-emp-head b{font-weight:700}
+.settle-emp-head .badge{font-size:11px;color:#8a847e;background:#fbf7ef;padding:2px 7px;border-radius:99px}
+.settle-emp-detail{margin-top:8px;font-size:12px;color:#8a847e}
+.settle-row-list{margin:8px 0 0;padding:0;list-style:none;font-size:12px;color:#4f4943;background:#fbfaf5;border-radius:6px;padding:6px 10px}
+.settle-row-list li{padding:3px 0;display:flex;justify-content:space-between;gap:8px;border-bottom:1px dashed rgba(20,14,8,.05)}
+.settle-row-list li:last-child{border-bottom:0}
+.settle-row-list li input{width:100px;height:24px;font-size:11.5px;text-align:right;border:1px solid var(--ledger-line);border-radius:4px;padding:0 6px;font-family:inherit;font-variant-numeric:tabular-nums;background:#fff}
+.settle-totals{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:10px;padding:10px;background:#fff;border:1px solid var(--ledger-line);border-radius:6px}
+.settle-totals .stat{font-size:11.5px;color:#8a847e}
+.settle-totals .stat b{display:block;color:#0e0d0c;font-size:14px;font-weight:700;font-variant-numeric:tabular-nums;margin-top:2px}
+.settle-totals .stat .net{color:var(--ledger-accent)}
+.settle-account{margin-top:6px;font-size:11.5px;color:#4f4943;background:#fbf7ef;padding:5px 8px;border-radius:5px;font-family:ui-monospace,Menlo,monospace}
+
+@media (max-width:768px){
+    .ledger-shell{padding:20px 14px 60px}
+    .modal{padding:20px}
+    .settle-totals{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+
+<header id="app-header" class="app-header">
+<div class="header-container">
+    <h1><a href="index.html" class="brand-logo" aria-label="YOUNGMAN 홈"><img src="logo_main.png" alt="YOUNGMAN"></a></h1>
+    <nav class="main-nav">
+        <a class="nav-link" href="index.html#customers">고객 관리대장</a>
+        <a class="nav-link" href="org.html">조직도</a>
+        <a class="nav-link active" href="contracts.html">계약자 관리대장</a>
+        <a class="nav-link" href="lotto2233.html">Lotto</a>
+        <a class="nav-link" href="card-builder.html">온라인 명함 제작</a>
+    </nav>
+    <div id="user-menu" class="user-menu hidden" style="display:flex;align-items:center;gap:12px;">
+        <a href="profile.html" id="profile-link" title="내 정보">내 정보</a>
+        <a href="admin.html" id="admin-link" class="hidden" title="관리자">관리자</a>
+        <span id="user-email" style="color:var(--fg-tertiary);font-size:13px;"></span>
+        <button type="button" id="logout-btn" class="secondary-btn" style="padding:5px 10px;font-size:12px;">로그아웃</button>
+    </div>
+</div>
+</header>
+<style>#user-menu.hidden{display:none !important}</style>
+
+<main class="ledger-shell">
+    <div class="ledger-head">
+        <div>
+            <h1 class="ledger-title">계약자 관리대장</h1>
+            <p class="ledger-sub">현장(아파트)별 계약을 그룹으로 관리합니다. 담당자 직급과 타입에 따라 수수료가 자동 계산되며, 정산 버튼으로 직급별 지급 내역을 확인할 수 있습니다.</p>
+        </div>
+    </div>
+
+    <div class="group-bar">
+        <span class="label">현장</span>
+        <div id="groupPills" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
+        <span style="flex:1"></span>
+        <button class="tiny-btn" id="multiToggleBtn" type="button">멀티 선택</button>
+        <button class="tiny-btn" id="newGroupBtn" type="button">+ 새 현장</button>
+        <button class="tiny-btn" id="editGroupBtn" type="button">현장 편집</button>
+        <button class="tiny-btn primary" id="settingsBtn" type="button">⚙ 설정</button>
+        <button class="tiny-btn gold" id="settleBtn" type="button">💰 수수료 정산</button>
+    </div>
+
+    <div id="content"></div>
+
+    <div class="bulk-bar" id="bulkBar">
+        <div class="info"><b id="bulkCount">0</b>건 선택됨</div>
+        <div style="display:flex;gap:8px;">
+            <button class="tiny-btn" id="bulkClearBtn" type="button">선택 해제</button>
+            <button class="tiny-btn danger" id="bulkDeleteBtn" type="button">선택 삭제</button>
+        </div>
+    </div>
+</main>
+
+<!-- 그룹 모달 -->
+<div class="modal-backdrop hidden" id="groupModal">
+    <div class="modal">
+        <h2 id="groupModalTitle">새 현장 만들기</h2>
+        <p class="desc">계약을 모아 관리할 단위 (예: 브래인시티비스타동원, 수원롯데캐슬, 오산서희스타힐스).</p>
+        <label>현장 이름</label>
+        <input type="text" id="groupNameInput" placeholder="예: 브래인시티비스타동원">
+        <div style="margin-top:14px;display:flex;align-items:center;gap:10px;">
+            <input type="checkbox" id="groupIsDefaultInput" style="width:auto;">
+            <label for="groupIsDefaultInput" style="margin:0;cursor:pointer;">기본 현장 (접속 시 자동 노출)</label>
+        </div>
+        <div class="actions">
+            <button class="tiny-btn danger" id="groupDeleteBtn" type="button" style="margin-right:auto;display:none;">현장 삭제</button>
+            <button class="tiny-btn" id="groupCancelBtn" type="button">취소</button>
+            <button class="tiny-btn primary" id="groupSaveBtn" type="button">저장</button>
+        </div>
+        <p class="desc" id="groupErrorMsg" style="color:#b91c1c;margin-top:10px;"></p>
+    </div>
+</div>
+
+<!-- 설정 모달 -->
+<div class="modal-backdrop hidden" id="settingsModal">
+    <div class="modal">
+        <h2>현장 설정</h2>
+        <p class="desc">현재 현장 (<b id="settingsGroupName">-</b>) 의 설정. 담당자/수수료는 조직도 그룹과 연동됩니다.</p>
+
+        <label>연동 조직도 그룹</label>
+        <select id="linkedOrgSelect">
+            <option value="">— 조직도 그룹 선택 —</option>
+        </select>
+        <p class="desc" style="margin-top:6px;font-size:12px;">담당자 목록과 수수료(직급별·타입별) 를 이 그룹에서 가져옵니다.</p>
+
+        <div class="actions">
+            <button class="tiny-btn" id="settingsCancelBtn" type="button">취소</button>
+            <button class="tiny-btn primary" id="settingsSaveBtn" type="button">저장</button>
+        </div>
+        <p class="desc" id="settingsErrorMsg" style="color:#b91c1c;margin-top:10px;"></p>
+    </div>
+</div>
+
+<!-- 정산 모달 -->
+<div class="modal-backdrop hidden" id="settleModal">
+    <div class="modal wide">
+        <h2>수수료 정산</h2>
+        <p class="desc" id="settleSummary">-</p>
+        <div id="settleBody"></div>
+        <div class="actions">
+            <button class="tiny-btn" id="settleCloseBtn" type="button">닫기</button>
+            <button class="tiny-btn primary" id="settleMarkPaidBtn" type="button">지급 완료 처리</button>
+        </div>
+    </div>
+</div>
+
+<script type="module" src="contracts.js?v=20260509-contracts1"></script>
+<script type="module">
+    import { initSupabase, setupHeaderUser } from './auth-shared.js?v=20260508-tight';
+    try {
+        await initSupabase();
+        setupHeaderUser({
+            userMenu: document.getElementById('user-menu'),
+            userEmail: document.getElementById('user-email'),
+            adminLink: document.getElementById('admin-link'),
+            logoutBtn: document.getElementById('logout-btn'),
+        });
+    } catch (e) { /* */ }
+</script>
+</body>
+</html>
