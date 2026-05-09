@@ -485,7 +485,8 @@ async function runSaju(){
             <div id="${readingId}" class="dosa-body" style="margin-top:14px;">
                 <em style="color:#9b8d80;">도사가 사주를 들여다보고 있습니다…</em>
             </div>
-        </div>`;
+        </div>
+        ${sajuMethodsBox()}`;
 
     fetchDosaReading(readingId, {
         name: ctx.name,
@@ -598,7 +599,8 @@ async function runCombined(){
                 <div id="${readingId}" class="dosa-body">
                     <em style="color:#9b8d80;">도사가 사주를 들여다보고 있습니다…</em>
                 </div>
-            </div>`;
+            </div>
+            ${sajuMethodsBox()}`;
 
         result.innerHTML = html;
 
@@ -672,6 +674,28 @@ function formatBands(bands){
 
 function elementKorJS(el){
     return ({wood:'목(木)',fire:'화(火)',earth:'토(土)',metal:'금(金)',water:'수(水)'})[el] || el;
+}
+
+function sajuMethodsBox(){
+    return `
+        <div class="box">
+            <h3 style="margin-top:0;">📘 적용된 사주풀이 방식</h3>
+            <div style="font-size:13.5px;line-height:1.85;color:var(--secondary);">
+                ▪ 절기 기준 월주 계산<br>
+                ▪ 사주팔자 년주·월주·일주·시주 계산<br>
+                ▪ 지장간 반영<br>
+                ▪ 십성 세분화<br>
+                ▪ 신강 / 신약 판단<br>
+                ▪ 격국 판단<br>
+                ▪ 격국 파격 / 변격 판단<br>
+                ▪ 조후 판단<br>
+                ▪ 용신 판단<br>
+                ▪ 대운 / 세운 / 월운 계산<br>
+                ▪ 합·충·형·파·해 관계 반영<br>
+                ▪ 출생 사주와 추첨일 사주의 오행 비교
+            </div>
+            <div class="muted-line" style="margin-top:14px;">※ 이 결과는 실제 당첨을 보장하지 않는 참고용 풀이입니다.</div>
+        </div>`;
 }
 </script>
 <script type="module">
