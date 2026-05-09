@@ -1789,7 +1789,7 @@ select:focus {
 
 @media (max-width: 860px) {
     .header-container {
-        padding: 6px 10px;
+        padding: 6px 6px 6px 10px;
         gap: 4px;
         flex-wrap: nowrap;
         height: auto;
@@ -2135,7 +2135,7 @@ select:focus {
 
 /* 아주 작은 화면 (<420px) — 닉네임 숨겨서 로고+내정보+햄버거가 한 줄에 들어가도록 */
 @media (max-width: 420px) {
-    .header-container { padding: 5px 8px; gap: 5px; }
+    .header-container { padding: 5px 4px 5px 8px; gap: 5px; }
     .brand-logo img { height: 32px; }
     #user-menu .user-display { display: none; }
     #user-menu #profile-link { padding: 5px 8px; font-size: 11.5px; }
