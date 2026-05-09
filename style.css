@@ -171,24 +171,72 @@ small { color: var(--fg-tertiary); font-size: 13px; }
     letter-spacing: 0.02em;
 }
 
-.main-nav {
+/* 주 기능 (관리대장 3종) — pill 버튼으로 항상 강조 */
+.nav-primary {
     display: flex;
-    gap: 4px;
-    flex: 1;
-    justify-content: center;
+    align-items: center;
+    gap: 6px;
+    flex: 0 0 auto;
+}
+
+.nav-pill {
+    display: inline-flex;
+    align-items: center;
+    background: var(--bg-muted);
+    border: 1px solid transparent;
+    color: var(--fg);
+    font-size: 13.5px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    padding: 9px 18px;
+    border-radius: 999px;
+    cursor: pointer;
+    text-decoration: none;
+    transition: all 160ms cubic-bezier(0.16, 1, 0.3, 1);
+    white-space: nowrap;
+}
+
+.nav-pill:hover {
+    background: rgba(200, 54, 44, 0.08);
+    color: var(--accent-deep, #8a2620);
+}
+
+.nav-pill.active {
+    background: var(--fg);
+    color: var(--bg);
+    box-shadow: 0 1px 3px rgba(20, 14, 8, 0.18);
+}
+
+.nav-pill.active:hover {
+    background: var(--fg);
+    color: var(--bg);
+    opacity: 0.92;
+}
+
+/* 보조 기능 (마케팅 / Lotto / 명함 / 업로드) — 우측에 작게 */
+.nav-secondary {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    flex: 1 1 auto;
+    justify-content: flex-end;
+    margin-left: 18px;
+    padding-left: 18px;
+    border-left: 1px solid var(--border);
 }
 
 .nav-link {
     background: none;
     border: 0;
-    color: var(--fg-secondary);
-    font-size: 13.5px;
+    color: var(--fg-tertiary);
+    font-size: 13px;
     font-weight: 500;
-    padding: 7px 12px;
+    padding: 6px 10px;
     border-radius: var(--radius-sm);
     cursor: pointer;
     transition: var(--transition);
     letter-spacing: -0.005em;
+    text-decoration: none;
 }
 
 .nav-link:hover {
@@ -197,21 +245,8 @@ small { color: var(--fg-tertiary); font-size: 13px; }
 }
 
 .nav-link.active {
-    background: var(--bg-muted);
     color: var(--fg);
     font-weight: 600;
-    position: relative;
-}
-
-.nav-link.active::after {
-    content: '';
-    position: absolute;
-    left: 12px;
-    right: 12px;
-    bottom: -1px;
-    height: 2px;
-    background: var(--accent);
-    border-radius: 1px;
 }
 
 .header-auth-btn {
@@ -1397,8 +1432,10 @@ select:focus {
 /* ------------------------------------------------------------------ Mobile */
 @media (max-width: 860px) {
     .header-container { padding: 0 16px; gap: 12px; flex-wrap: wrap; height: auto; padding-top: 10px; padding-bottom: 10px; }
-    .main-nav { order: 3; flex-basis: 100%; justify-content: flex-start; overflow-x: auto; padding-bottom: 2px; }
-    .nav-link { white-space: nowrap; }
+    .nav-primary { order: 3; flex-basis: 100%; overflow-x: auto; padding-bottom: 2px; }
+    .nav-secondary { order: 4; flex-basis: 100%; justify-content: flex-start; margin-left: 0; padding-left: 0; border-left: 0; padding-bottom: 2px; overflow-x: auto; }
+    .nav-link, .nav-pill { white-space: nowrap; }
+    .nav-pill { padding: 7px 14px; font-size: 13px; }
 
     .dashboard, .page-shell { padding: 32px 16px 64px; }
 

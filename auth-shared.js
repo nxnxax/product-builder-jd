@@ -137,28 +137,36 @@ export function mountAppHeader(opts) {
     document.body.classList.toggle('is-admin', cachedAdmin);
     document.body.classList.toggle('is-anon', !cachedName);
 
-    const navItems = [
-        { key: 'customers.html',  label: '고객 관리대장',     href: 'customers.html' },
-        { key: 'org.html',        label: '조직도',           href: 'org.html' },
-        { key: 'contracts.html',  label: '계약자 관리대장',  href: 'contracts.html' },
-        { key: 'index.html',      label: '마케팅',           href: 'index.html#marketing', match: 'marketing' },
-        { key: 'lotto2233.html',  label: 'Lotto',            href: 'lotto2233.html' },
-        { key: 'card-builder.html', label: '온라인 명함 제작', href: 'card-builder.html', adminOnly: true },
-        { key: 'upload.html',     label: '업로드',           href: 'upload.html', adminOnly: true },
+    // 주 기능 (관리대장 3종) — 큰 pill 버튼으로 항상 강조.
+    // 보조 기능 (마케팅·Lotto·명함·업로드) — 우측에 작게 깔림.
+    const primaryItems = [
+        { key: 'customers.html', label: '고객 관리대장',    href: 'customers.html' },
+        { key: 'org.html',       label: '조직도',           href: 'org.html' },
+        { key: 'contracts.html', label: '계약자 관리대장', href: 'contracts.html' },
+    ];
+    const secondaryItems = [
+        { key: 'index.html',        label: '마케팅', href: 'index.html#marketing' },
+        { key: 'lotto2233.html',    label: 'Lotto',  href: 'lotto2233.html' },
+        { key: 'card-builder.html', label: '명함',   href: 'card-builder.html', adminOnly: true },
+        { key: 'upload.html',       label: '업로드', href: 'upload.html', adminOnly: true },
     ];
 
-    const navHtml = navItems.map(item => {
+    const renderItem = (item, baseCls) => {
         const isActive = path === item.key.toLowerCase();
-        const cls = `nav-link${isActive ? ' active' : ''}`;
+        const cls = `${baseCls}${isActive ? ' active' : ''}`;
         const dataAttr = item.adminOnly ? ' data-admin-only' : '';
         return `<a class="${cls}" href="${item.href}"${dataAttr}>${escapeHtmlSafe(item.label)}</a>`;
-    }).join('');
+    };
+
+    const primaryHtml = primaryItems.map(i => renderItem(i, 'nav-pill')).join('');
+    const secondaryHtml = secondaryItems.map(i => renderItem(i, 'nav-link nav-link-secondary')).join('');
 
     if (!root.classList.contains('app-header')) root.classList.add('app-header');
     root.innerHTML = `
         <div class="header-container">
             <h1><a href="index.html" class="brand-logo" aria-label="YOUNGMAN 홈"><img src="logo_main.png" alt="YOUNGMAN"></a></h1>
-            <nav class="main-nav">${navHtml}</nav>
+            <nav class="nav-primary">${primaryHtml}</nav>
+            <nav class="nav-secondary">${secondaryHtml}</nav>
             <a href="index.html#login" class="header-auth-btn" id="open-login-btn">로그인</a>
             <div id="user-menu" class="user-menu">
                 <span id="user-display" class="user-display">${escapeHtmlSafe(cachedName)}</span>
