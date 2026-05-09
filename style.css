@@ -1900,11 +1900,14 @@ select:focus {
     }
     .mobile-drawer-close:hover { color: var(--fg); }
 
-    /* drawer 안 nav 컨테이너 — 세로 1열 */
+    /* drawer 안 nav 컨테이너 — 세로 1열, 빈 공간 늘어나지 않게 */
     .mobile-drawer .nav-primary,
     .mobile-drawer .nav-secondary {
         display: flex !important;
         flex-direction: column;
+        flex: 0 0 auto !important;
+        justify-content: flex-start !important;
+        align-items: stretch !important;
         gap: 0;
         width: 100%;
         margin: 0;
