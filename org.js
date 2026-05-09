@@ -149,7 +149,7 @@ async function saveGroup() {
                     settings: DEFAULT_SETTINGS,
                 },
             });
-            activeGroupIds = [created.id];
+            expandedGroupIds.add(created.id);
         }
         closeModal('groupModal');
         await loadGroups();
@@ -164,7 +164,7 @@ async function deleteGroup() {
     try {
         await api('ledger-groups', { method: 'DELETE', body: { id: editingGroupId } });
         closeModal('groupModal');
-        activeGroupIds = [];
+        expandedGroupIds.delete(editingGroupId);
         await loadGroups();
     } catch (e) {
         document.getElementById('groupErrorMsg').textContent = e.message;
