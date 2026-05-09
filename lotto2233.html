@@ -503,7 +503,7 @@ async function fetchDosaReading(targetId, payload){
     const target = document.getElementById(targetId);
     if (!target) return;
     try {
-        const res = await fetch('api/saju-reading.php', {
+        const res = await fetch('saju-reading.php', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify(payload),
@@ -526,7 +526,7 @@ async function runPattern(){
     btn.disabled = true; btn.textContent = '분석 중…';
 
     try {
-        const res = await fetch('api/lotto-recommend.php', {
+        const res = await fetch('lotto-recommend.php', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({mode: 'pattern', games: 5, saju: {seed: 'pattern-' + Date.now()}}),
@@ -557,7 +557,7 @@ async function runCombined(){
     btn.disabled = true; btn.textContent = '도사가 패턴을 함께 보고 있습니다…';
 
     try {
-        const res = await fetch('api/lotto-recommend.php', {
+        const res = await fetch('lotto-recommend.php', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({

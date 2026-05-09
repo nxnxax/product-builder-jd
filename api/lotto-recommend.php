@@ -38,7 +38,17 @@ declare(strict_types=1);
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
 
-require_once __DIR__ . '/../lotto_db_config.php';
+// 로컬 (api/ 하위) 와 카페24 배포 (루트 평면화) 양쪽에서 동작하도록 두 경로 모두 시도.
+$cfgCandidates = [__DIR__ . '/lotto_db_config.php', __DIR__ . '/../lotto_db_config.php'];
+$cfgLoaded = false;
+foreach ($cfgCandidates as $c) {
+    if (is_file($c)) { require_once $c; $cfgLoaded = true; break; }
+}
+if (!$cfgLoaded) {
+    http_response_code(500);
+    echo json_encode(['ok' => false, 'error' => 'lotto_db_config.php 를 찾지 못함'], JSON_UNESCAPED_UNICODE);
+    exit;
+}
 
 function jout(array $payload, int $code = 200): void {
     http_response_code($code);

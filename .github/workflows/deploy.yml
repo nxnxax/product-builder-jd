@@ -39,6 +39,9 @@ jobs:
           php -l api/upload.php
           php -l api/card-design.php
           php -l api/saju-reading.php
+          php -l api/lotto-recommend.php
+          php -l lotto_db_import.php
+          php -l lotto_db_config.php
           php -l kapp_premium.php
 
       - name: Prepare deploy folder
@@ -56,6 +59,11 @@ jobs:
           cp api/upload.php deploy/upload.php
           cp api/card-design.php deploy/card-design.php
           cp api/saju-reading.php deploy/saju-reading.php
+          cp api/lotto-recommend.php deploy/lotto-recommend.php
+          cp lotto_db_import.php deploy/lotto_db_import.php
+          # NOTE: lotto_db_config.php는 의도적으로 자동 배포에서 제외.
+          # 서버에 실제 DB 자격증명이 채워진 사본이 있을 수 있어, 자리표시자로
+          # 덮어쓰지 않도록 함. 최초 1회만 사용자가 FTP로 직접 업로드한다.
           mkdir -p deploy/templates/cards
           cp templates/cards/*.html deploy/templates/cards/
           if [ -f .htaccess ]; then cp .htaccess deploy/.htaccess; fi

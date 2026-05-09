@@ -9,3 +9,4 @@ api/db_config.php
 supabase_config.js
 supabase_config.php
 api/supabase_config.php
+.claude/
