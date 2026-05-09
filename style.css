@@ -640,7 +640,12 @@ small { color: var(--fg-tertiary); font-size: 13px; }
     text-decoration: none;
     transition: var(--transition);
     white-space: nowrap;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
 }
+.user-menu #profile-link .profile-link-icon { display: none; }
+.user-menu #profile-link .profile-link-icon svg { width: 16px; height: 16px; display: block; }
 
 .user-menu .user-menu-link:hover,
 .user-menu .user-menu-btn:hover {
@@ -1801,14 +1806,20 @@ select:focus {
     /* 모바일: 닉네임 + 내정보 만 노출. 관리자/로그아웃은 드로어에 */
     .app-header #user-menu #admin-link,
     .app-header #user-menu #logout-btn { display: none !important; }
-    #user-menu { padding-left: 0; margin-left: 0; border-left: 0; gap: 2px; }
+    #user-menu { padding-left: 0; margin-left: 0; border-left: 0; gap: 6px; }
     #user-menu .user-display { font-size: 12.5px; max-width: 80px; padding: 4px 6px; }
     #user-menu #profile-link {
-        font-size: 12px;
-        padding: 5px 8px;
-        background: var(--bg-muted);
-        border-radius: 6px;
+        font-size: 13px;
+        font-weight: 600;
+        padding: 8px 12px;
+        background: rgba(200, 54, 44, 0.10);
+        color: var(--accent-deep, #a8281f);
+        border: 1px solid rgba(200, 54, 44, 0.25);
+        border-radius: 8px;
+        gap: 5px;
     }
+    #user-menu #profile-link .profile-link-icon { display: inline-flex; }
+    #user-menu #profile-link .profile-link-icon svg { width: 16px; height: 16px; }
 
     .header-auth-btn { padding: 7px 14px; font-size: 12.5px; }
 
@@ -1818,26 +1829,26 @@ select:focus {
         flex-direction: column;
         align-items: center;
         justify-content: center;
-        gap: 4px;
-        width: 38px;
-        height: 38px;
+        gap: 5px;
+        width: 46px;
+        height: 46px;
         padding: 0;
         background: #fff;
         border: 1px solid var(--border);
-        border-radius: 8px;
+        border-radius: 10px;
         cursor: pointer;
     }
     .mobile-menu-toggle span {
         display: block;
-        width: 18px;
-        height: 2px;
+        width: 24px;
+        height: 2.5px;
         background: var(--fg);
         border-radius: 2px;
         transition: transform 200ms, opacity 200ms;
     }
-    .mobile-menu-toggle.open span:nth-child(1) { transform: translateY(6px) rotate(45deg); }
+    .mobile-menu-toggle.open span:nth-child(1) { transform: translateY(7.5px) rotate(45deg); }
     .mobile-menu-toggle.open span:nth-child(2) { opacity: 0; }
-    .mobile-menu-toggle.open span:nth-child(3) { transform: translateY(-6px) rotate(-45deg); }
+    .mobile-menu-toggle.open span:nth-child(3) { transform: translateY(-7.5px) rotate(-45deg); }
 
     /* 모바일에서 헤더의 nav-primary / nav-secondary 는 숨김 — 드로어 안에 복제본 사용 */
     .app-header .nav-primary,
