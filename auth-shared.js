@@ -151,6 +151,13 @@ export function mountAppHeader(opts) {
         { key: 'upload.html',       label: '업로드',       href: 'upload.html', adminOnly: true },
     ];
 
+    // 커뮤니티 — 클릭 불가, hover 시 하위 메뉴.
+    const communityItems = [
+        { key: 'board.html?cat=notice', label: '공지사항',     href: 'board.html?cat=notice' },
+        { key: 'board.html?cat=free',   label: '자유게시판',   href: 'board.html?cat=free' },
+        { key: 'board.html?cat=qna',    label: '문의게시판',   href: 'board.html?cat=qna' },
+    ];
+
     const renderItem = (item, baseCls) => {
         const isActive = path === item.key.toLowerCase();
         const cls = `${baseCls}${isActive ? ' active' : ''}${item.extraCls ? ' ' + item.extraCls : ''}`;
@@ -159,8 +166,21 @@ export function mountAppHeader(opts) {
         return `<a class="${cls}" href="${item.href}"${dataAttr}>${labelHtml}</a>`;
     };
 
+    // 현재 페이지가 커뮤니티 게시판이면 active 표시.
+    const fullPath = path + (location.search || '');
+    const isCommunityActive = communityItems.some(i => fullPath === i.key.toLowerCase());
+
+    const communityHtml = `
+        <div class="nav-dropdown ${isCommunityActive ? 'is-active' : ''}">
+            <span class="nav-link nav-link-secondary nav-static" tabindex="0">커뮤니티 <span class="nav-caret">▾</span></span>
+            <div class="nav-dropdown-menu">
+                ${communityItems.map(i => `<a class="nav-dropdown-item${fullPath === i.key.toLowerCase() ? ' active' : ''}" href="${i.href}">${escapeHtmlSafe(i.label)}</a>`).join('')}
+            </div>
+        </div>
+    `;
+
     const primaryHtml = primaryItems.map(i => renderItem(i, 'nav-pill')).join('');
-    const secondaryHtml = secondaryItems.map(i => renderItem(i, 'nav-link nav-link-secondary')).join('');
+    const secondaryHtml = secondaryItems.map(i => renderItem(i, 'nav-link nav-link-secondary')).join('') + communityHtml;
 
     if (!root.classList.contains('app-header')) root.classList.add('app-header');
     root.innerHTML = `

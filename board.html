@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>커뮤니티 · YOUNGMAN</title>
+    <link rel="icon" type="image/png" href="logo_main.png">
+    <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
+    <link rel="stylesheet" href="style.css?v=20260509-board">
+</head>
+<body>
+    <header id="app-header" class="app-header"></header>
+
+    <main class="board-shell">
+        <div class="board-head">
+            <h1 id="board-title">공지사항</h1>
+            <p id="board-sub" class="board-sub">중요한 공지를 확인하세요.</p>
+        </div>
+
+        <!-- 목록 뷰 -->
+        <section id="board-list-view" class="board-view">
+            <div class="board-toolbar">
+                <span class="board-count" id="board-count">0건</span>
+                <span class="board-toolbar-spacer"></span>
+                <button type="button" id="board-write-btn" class="primary-btn">글쓰기</button>
+            </div>
+            <div class="board-table-wrap">
+                <table class="board-table">
+                    <thead>
+                        <tr>
+                            <th class="col-id">번호</th>
+                            <th class="col-title">제목</th>
+                            <th class="col-author">작성자</th>
+                            <th class="col-date">작성일</th>
+                            <th class="col-views">조회</th>
+                        </tr>
+                    </thead>
+                    <tbody id="board-rows"></tbody>
+                </table>
+                <div id="board-empty" class="board-empty hidden">
+                    <p>등록된 글이 없습니다.</p>
+                </div>
+            </div>
+            <div class="board-pagination" id="board-pagination"></div>
+        </section>
+
+        <!-- 상세 뷰 -->
+        <section id="board-detail-view" class="board-view hidden">
+            <article class="board-detail">
+                <header class="board-detail-head">
+                    <h2 id="detail-title">—</h2>
+                    <div class="board-detail-meta">
+                        <span id="detail-author">—</span>
+                        <span class="dot">·</span>
+                        <span id="detail-date">—</span>
+                        <span class="dot">·</span>
+                        <span>조회 <b id="detail-views">0</b></span>
+                    </div>
+                </header>
+                <div id="detail-body" class="board-detail-body"></div>
+                <footer class="board-detail-foot">
+                    <button type="button" id="detail-list-btn" class="secondary-btn">← 목록</button>
+                    <span class="board-toolbar-spacer"></span>
+                    <button type="button" id="detail-edit-btn" class="secondary-btn hidden">수정</button>
+                    <button type="button" id="detail-delete-btn" class="danger-btn hidden">삭제</button>
+                </footer>
+            </article>
+        </section>
+
+        <!-- 글쓰기/수정 뷰 -->
+        <section id="board-write-view" class="board-view hidden">
+            <form id="board-write-form" class="board-write-form">
+                <div class="form-group">
+                    <label for="write-title">제목</label>
+                    <input type="text" id="write-title" maxlength="200" placeholder="제목을 입력해주세요" required>
+                </div>
+                <div class="form-group">
+                    <label for="write-body">내용</label>
+                    <textarea id="write-body" rows="14" placeholder="내용을 입력해주세요"></textarea>
+                </div>
+                <div class="form-actions">
+                    <span id="write-error" class="form-help error"></span>
+                    <button type="button" id="write-cancel-btn" class="secondary-btn">취소</button>
+                    <button type="submit" id="write-save-btn" class="primary-btn">등록</button>
+                </div>
+            </form>
+        </section>
+
+        <section id="board-forbidden" class="board-view hidden">
+            <div class="board-forbidden">
+                <h3>접근 권한이 없습니다</h3>
+                <p>로그인이 필요하거나, 공지사항은 관리자만 작성할 수 있습니다.</p>
+                <a href="index.html" class="primary-btn">홈으로</a>
+            </div>
+        </section>
+    </main>
+
+    <script type="module" src="board.js?v=20260509-board"></script>
+</body>
+</html>

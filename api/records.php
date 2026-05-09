@@ -100,6 +100,7 @@ function normalize_resource($value) {
         'admin-bootstrap', 'admin-cleanup-orphans',
         'ledger-groups', 'ledger-records', 'ledger-records-bulk',
         'mobile-tokens',
+        'community-posts',
     ];
     if (!in_array($resource, $allowed, true)) {
         respond(['ok' => false, 'error' => '지원하지 않는 리소스입니다.'], 400);
@@ -615,6 +616,52 @@ function ensure_mobile_tokens_table(PDO $pdo): bool {
         error_log('[records] ensure_mobile_tokens_table failed: ' . $e->getMessage());
         return $done = false;
     }
+}
+
+function ensure_community_posts_table(PDO $pdo): bool {
+    static $done = null;
+    if ($done !== null) return $done;
+    try {
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS community_posts (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                category VARCHAR(20) NOT NULL,
+                title VARCHAR(200) NOT NULL,
+                body MEDIUMTEXT,
+                author_email VARCHAR(255) NOT NULL,
+                author_name VARCHAR(120) NOT NULL DEFAULT '',
+                view_count INT NOT NULL DEFAULT 0,
+                pinned TINYINT(1) NOT NULL DEFAULT 0,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                INDEX idx_cp_cat (category, id),
+                INDEX idx_cp_author (author_email)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        ");
+        return $done = true;
+    } catch (Throwable $e) {
+        error_log('[records] ensure_community_posts_table failed: ' . $e->getMessage());
+        return $done = false;
+    }
+}
+
+function valid_community_category(string $v): bool {
+    return in_array($v, ['notice', 'free', 'qna'], true);
+}
+
+function community_post_row(array $row): array {
+    return [
+        'id'         => (int)$row['id'],
+        'category'   => $row['category'],
+        'title'      => $row['title'],
+        'body'       => $row['body'],
+        'authorName' => $row['author_name'] ?: '',
+        'authorEmail'=> $row['author_email'],
+        'viewCount'  => (int)$row['view_count'],
+        'pinned'     => (bool)$row['pinned'],
+        'createdAt'  => $row['created_at'],
+        'updatedAt'  => $row['updated_at'],
+    ];
 }
 
 /** 사용자가 해당 그룹의 소유자임을 확인. 아니면 즉시 403. */
@@ -1440,6 +1487,126 @@ try {
             }
 
             record_activity($pdo, (string)($authUser['email'] ?? ''), 'admin.settings.update');
+            respond(['ok' => true]);
+        }
+
+        respond(['ok' => false, 'error' => '지원하지 않는 요청 방식입니다.'], 405);
+    }
+
+    /* ============================================================
+       커뮤니티 게시판 — 공지사항 / 자유게시판 / 문의게시판
+       ============================================================ */
+    if ($resource === 'community-posts') {
+        enforce_registered_member($pdo, $authUser);
+        if (!ensure_community_posts_table($pdo)) {
+            respond(['ok' => false, 'error' => '게시판 테이블 마이그레이션 실패'], 503);
+        }
+        $owner = current_owner_email($authUser);
+        if ($owner === '') respond(['ok' => false, 'error' => '인증된 사용자 정보가 없습니다.'], 401);
+        $isAdmin = current_user_is_admin($pdo, $authUser);
+
+        if ($method === 'GET') {
+            $idQ = $_GET['id'] ?? '';
+            if ($idQ !== '') {
+                $id = (int)$idQ;
+                if ($id <= 0) respond(['ok' => false, 'error' => 'id 가 올바르지 않습니다.'], 400);
+                $stmt = $pdo->prepare('SELECT * FROM community_posts WHERE id = :id LIMIT 1');
+                $stmt->execute([':id' => $id]);
+                $row = $stmt->fetch();
+                if (!$row) respond(['ok' => false, 'error' => '게시글을 찾을 수 없습니다.'], 404);
+                // 조회수 +1 (작성자 본인 조회는 제외)
+                if (strtolower($row['author_email']) !== $owner) {
+                    $pdo->prepare('UPDATE community_posts SET view_count = view_count + 1 WHERE id = :id')->execute([':id' => $id]);
+                    $row['view_count'] = ((int)$row['view_count']) + 1;
+                }
+                respond(['ok' => true, 'post' => community_post_row($row)]);
+            }
+
+            $cat = (string)($_GET['category'] ?? '');
+            if ($cat === '' || !valid_community_category($cat)) {
+                respond(['ok' => false, 'error' => 'category 가 올바르지 않습니다 (notice|free|qna).'], 400);
+            }
+            $page = max(1, (int)($_GET['page'] ?? 1));
+            $size = min(100, max(5, (int)($_GET['size'] ?? 20)));
+            $offset = ($page - 1) * $size;
+            $countStmt = $pdo->prepare('SELECT COUNT(*) FROM community_posts WHERE category = :c');
+            $countStmt->execute([':c' => $cat]);
+            $total = (int)$countStmt->fetchColumn();
+            $stmt = $pdo->prepare('SELECT * FROM community_posts WHERE category = :c
+                                   ORDER BY pinned DESC, id DESC
+                                   LIMIT :lim OFFSET :off');
+            $stmt->bindValue(':c', $cat, PDO::PARAM_STR);
+            $stmt->bindValue(':lim', $size, PDO::PARAM_INT);
+            $stmt->bindValue(':off', $offset, PDO::PARAM_INT);
+            $stmt->execute();
+            $items = array_map('community_post_row', $stmt->fetchAll());
+            respond(['ok' => true, 'items' => $items, 'total' => $total, 'page' => $page, 'size' => $size]);
+        }
+
+        if ($method === 'POST') {
+            $cat = trim((string)($body['category'] ?? ''));
+            $title = trim((string)($body['title'] ?? ''));
+            $bodyText = (string)($body['body'] ?? '');
+            $authorName = trim((string)($body['authorName'] ?? ''));
+            if (!valid_community_category($cat)) respond(['ok' => false, 'error' => 'category 가 올바르지 않습니다.'], 400);
+            if ($title === '') respond(['ok' => false, 'error' => '제목을 입력해주세요.'], 400);
+            if (mb_strlen($title) > 200) respond(['ok' => false, 'error' => '제목이 너무 깁니다 (200자 이내).'], 400);
+            // 공지사항은 admin 만 작성 가능
+            if ($cat === 'notice' && !$isAdmin) {
+                respond(['ok' => false, 'error' => '공지사항은 관리자만 작성할 수 있습니다.'], 403);
+            }
+            $ins = $pdo->prepare('INSERT INTO community_posts (category, title, body, author_email, author_name)
+                                  VALUES (:c, :t, :b, :e, :n)');
+            $ins->execute([':c' => $cat, ':t' => $title, ':b' => $bodyText, ':e' => $owner, ':n' => $authorName]);
+            respond(['ok' => true, 'id' => (int)$pdo->lastInsertId()]);
+        }
+
+        if ($method === 'PATCH' || $method === 'PUT') {
+            $id = (int)($body['id'] ?? 0);
+            if ($id <= 0) respond(['ok' => false, 'error' => 'id 가 필요합니다.'], 400);
+            $stmt = $pdo->prepare('SELECT * FROM community_posts WHERE id = :id');
+            $stmt->execute([':id' => $id]);
+            $row = $stmt->fetch();
+            if (!$row) respond(['ok' => false, 'error' => '게시글을 찾을 수 없습니다.'], 404);
+            // 작성자 본인 또는 admin 만 수정
+            if (strtolower($row['author_email']) !== $owner && !$isAdmin) {
+                respond(['ok' => false, 'error' => '수정 권한이 없습니다.'], 403);
+            }
+            $assignments = [];
+            $params = [':id' => $id];
+            if (array_key_exists('title', $body)) {
+                $title = trim((string)$body['title']);
+                if ($title === '') respond(['ok' => false, 'error' => '제목은 비울 수 없습니다.'], 400);
+                if (mb_strlen($title) > 200) respond(['ok' => false, 'error' => '제목이 너무 깁니다.'], 400);
+                $assignments[] = 'title = :title';
+                $params[':title'] = $title;
+            }
+            if (array_key_exists('body', $body)) {
+                $assignments[] = 'body = :body';
+                $params[':body'] = (string)$body['body'];
+            }
+            if (array_key_exists('pinned', $body) && $isAdmin) {
+                $assignments[] = 'pinned = :p';
+                $params[':p'] = !empty($body['pinned']) ? 1 : 0;
+            }
+            if (!$assignments) respond(['ok' => false, 'error' => '수정할 필드가 없습니다.'], 400);
+            $upd = $pdo->prepare('UPDATE community_posts SET ' . implode(', ', $assignments) . ' WHERE id = :id');
+            $upd->execute($params);
+            respond(['ok' => true]);
+        }
+
+        if ($method === 'DELETE') {
+            $id = (int)($body['id'] ?? $_GET['id'] ?? 0);
+            if ($id <= 0) respond(['ok' => false, 'error' => 'id 가 필요합니다.'], 400);
+            $stmt = $pdo->prepare('SELECT author_email FROM community_posts WHERE id = :id');
+            $stmt->execute([':id' => $id]);
+            $row = $stmt->fetch();
+            if (!$row) respond(['ok' => false, 'error' => '게시글을 찾을 수 없습니다.'], 404);
+            if (strtolower($row['author_email']) !== $owner && !$isAdmin) {
+                respond(['ok' => false, 'error' => '삭제 권한이 없습니다.'], 403);
+            }
+            $del = $pdo->prepare('DELETE FROM community_posts WHERE id = :id');
+            $del->execute([':id' => $id]);
             respond(['ok' => true]);
         }
 
