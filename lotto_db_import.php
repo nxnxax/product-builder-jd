@@ -53,26 +53,59 @@ function create_table(PDO $pdo): void {
 function fetch_lotto(int $draw_no): ?array {
     $url = "https://www.dhlottery.co.kr/common.do?method=getLottoNumber&drwNo=" . $draw_no;
 
-    // 카페24 호스팅은 allow_url_fopen 이 꺼져 있는 경우가 많아 cURL 사용.
     if (!function_exists('curl_init')) return null;
 
-    $ch = curl_init($url);
-    curl_setopt_array($ch, [
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_TIMEOUT        => 8,
-        CURLOPT_CONNECTTIMEOUT => 5,
-        CURLOPT_SSL_VERIFYPEER => false,   // 카페24 일부 환경에서 CA 번들 미설치
-        CURLOPT_SSL_VERIFYHOST => 0,
-        CURLOPT_FOLLOWLOCATION => true,
-        CURLOPT_USERAGENT      => 'Mozilla/5.0 (compatible; YOUNGMAN/1.0)',
-        CURLOPT_HTTPHEADER     => ['Accept: application/json'],
-    ]);
-    $body   = curl_exec($ch);
-    $status = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    curl_close($ch);
+    // 동행복권은 봇 의심 시 메인 HTML 페이지를 돌려보냄. 실 브라우저처럼 보이도록
+    // Accept / Referer / Accept-Language / Sec-Fetch-* 헤더를 채운다.
+    $cookieJar = sys_get_temp_dir() . '/dhlottery_jar_' . md5(__FILE__);
+    $headers = [
+        'Accept: application/json, text/javascript, */*; q=0.01',
+        'Accept-Language: ko-KR,ko;q=0.9,en;q=0.8',
+        'Referer: https://dhlottery.co.kr/gameResult.do?method=byWin',
+        'Origin: https://dhlottery.co.kr',
+        'X-Requested-With: XMLHttpRequest',
+        'Sec-Fetch-Dest: empty',
+        'Sec-Fetch-Mode: cors',
+        'Sec-Fetch-Site: same-site',
+    ];
+    $ua = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36';
 
-    if ($body === false || $status < 200 || $status >= 300) return null;
-    if (!is_string($body) || trim($body) === '')           return null;
+    $do_call = function (string $u) use ($cookieJar, $headers, $ua) {
+        $ch = curl_init($u);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT        => 10,
+            CURLOPT_CONNECTTIMEOUT => 5,
+            CURLOPT_SSL_VERIFYPEER => false,
+            CURLOPT_SSL_VERIFYHOST => 0,
+            CURLOPT_FOLLOWLOCATION => true,
+            CURLOPT_USERAGENT      => $ua,
+            CURLOPT_HTTPHEADER     => $headers,
+            CURLOPT_COOKIEJAR      => $cookieJar,
+            CURLOPT_COOKIEFILE     => $cookieJar,
+            CURLOPT_ENCODING       => '',  // gzip/deflate 자동 처리
+        ]);
+        $body   = curl_exec($ch);
+        $status = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+        return [$body, $status];
+    };
+
+    // 첫 호출이 HTML 이면 메인 페이지에 한번 들러 세션 쿠키를 받고 재시도.
+    [$body, $status] = $do_call($url);
+
+    if ($status >= 200 && $status < 300 && is_string($body) && $body !== ''
+        && stripos(ltrim($body), '<') !== 0) {
+        $data = json_decode($body, true);
+        if (is_array($data) && ($data['returnValue'] ?? '') === 'success') return $data;
+    }
+
+    // HTML 응답이면 한번 메인 페이지를 다녀와서 쿠키 워밍업
+    $do_call('https://dhlottery.co.kr/');
+    [$body, $status] = $do_call($url);
+
+    if ($status < 200 || $status >= 300 || !is_string($body) || $body === '') return null;
+    if (stripos(ltrim($body), '<') === 0) return null;
 
     $data = json_decode($body, true);
     if (!is_array($data)) return null;
@@ -94,26 +127,17 @@ function diagnose_fetch(): array {
     ];
     if (!$out['curl_available']) return $out;
 
-    $url = "https://www.dhlottery.co.kr/common.do?method=getLottoNumber&drwNo=1";
-    $ch = curl_init($url);
-    curl_setopt_array($ch, [
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_TIMEOUT        => 8,
-        CURLOPT_CONNECTTIMEOUT => 5,
-        CURLOPT_SSL_VERIFYPEER => false,
-        CURLOPT_SSL_VERIFYHOST => 0,
-        CURLOPT_FOLLOWLOCATION => true,
-        CURLOPT_USERAGENT      => 'Mozilla/5.0 (compatible; YOUNGMAN/1.0)',
-    ]);
-    $body   = curl_exec($ch);
-    $status = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    $err    = curl_error($ch);
-    curl_close($ch);
-
+    $sample = fetch_lotto(1);
     $out['sample_call'] = [
-        'http_status' => $status,
-        'curl_error'  => $err,
-        'body_head'   => is_string($body) ? substr($body, 0, 200) : '(no body)',
+        'success'   => $sample !== null,
+        'parsed'    => $sample !== null ? [
+            'drwNo'      => $sample['drwNo'] ?? null,
+            'drwNoDate'  => $sample['drwNoDate'] ?? null,
+            'numbers'    => [
+                $sample['drwtNo1'] ?? null, $sample['drwtNo2'] ?? null, $sample['drwtNo3'] ?? null,
+                $sample['drwtNo4'] ?? null, $sample['drwtNo5'] ?? null, $sample['drwtNo6'] ?? null,
+            ],
+        ] : null,
     ];
     return $out;
 }
@@ -329,9 +353,11 @@ allow_url_fopen <?= h($diag['allow_url_fopen']) ?>
 openssl        <?= $diag['openssl_loaded'] ? '로드됨' : '없음' ?>
 
 <?php if ($diag['sample_call']): ?>샘플 호출 (1회차):
-  HTTP   <?= (int)$diag['sample_call']['http_status'] ?>
-  cURL   <?= $diag['sample_call']['curl_error'] ? h($diag['sample_call']['curl_error']) : '(에러 없음)' ?>
-  body   <?= h($diag['sample_call']['body_head']) ?>
+  성공 여부 : <?= $diag['sample_call']['success'] ? '✓ JSON 정상 수신' : '✗ JSON 미수신 (HTML 또는 에러)' ?>
+<?php if ($diag['sample_call']['parsed']): ?>  drwNo    : <?= h($diag['sample_call']['parsed']['drwNo']) ?>
+  drwNoDate: <?= h($diag['sample_call']['parsed']['drwNoDate']) ?>
+  numbers  : <?= h(implode(', ', array_filter($diag['sample_call']['parsed']['numbers']))) ?>
+<?php endif; ?>
 <?php endif; ?></div>
         <?php endif; ?>
 
