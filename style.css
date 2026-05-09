@@ -1791,12 +1791,12 @@ select:focus {
         min-height: 56px;
         align-items: center;
     }
-    /* 모바일 헤더 순서: 로그인(좌) → 로고(중앙) → 햄버거(우) */
-    .header-container > h1 { order: 2; flex: 1 1 auto; display: flex; justify-content: center; }
-    .brand-logo img { height: 32px; }
+    /* 모바일 헤더 순서: 로고(좌) → 로그인/사용자(중) → 햄버거(우 끝) */
+    .header-container > h1 { order: 1; flex: 0 0 auto; display: flex; align-items: center; }
+    .brand-logo img { height: 44px; }
     #open-login-btn,
-    #user-menu { order: 1; flex-shrink: 0; }
-    .mobile-menu-toggle { order: 3; flex-shrink: 0; }
+    #user-menu { order: 2; flex-shrink: 0; }
+    .mobile-menu-toggle { order: 3; flex-shrink: 0; margin-left: auto; }
 
     /* 사용자 메뉴는 닉네임만 보이게 (내정보/관리자/로그아웃은 drawer 안에) */
     #user-menu .user-menu-link,
