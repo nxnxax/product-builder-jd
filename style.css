@@ -261,17 +261,49 @@ small { color: var(--fg-tertiary); font-size: 13px; }
     font-weight: 600;
 }
 
+/* nav-secondary — 아이콘 위 / 텍스트 아래 stack 레이아웃 */
+.nav-secondary > .nav-link,
+.nav-secondary > .nav-dropdown > .nav-static {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    padding: 6px 12px;
+    line-height: 1;
+}
+.nav-secondary .nav-icon {
+    font-size: 18px;
+    line-height: 1;
+    filter: grayscale(0.15);
+    transition: filter 160ms, transform 200ms;
+}
+.nav-secondary > .nav-link:hover .nav-icon,
+.nav-secondary > .nav-dropdown:hover .nav-icon { filter: none; transform: translateY(-1px); }
+
+.nav-secondary .nav-label {
+    font-size: 11px;
+    font-weight: 500;
+    text-align: center;
+    line-height: 1.2;
+    color: inherit;
+}
+.nav-secondary .nav-link.active .nav-label,
+.nav-secondary .nav-dropdown.is-active .nav-label {
+    font-weight: 700;
+    color: var(--fg);
+}
+
+/* 두 줄 라벨 (재미로 보는 사주+로또추천) — stack 안에서 더 작게 */
+.nav-secondary .nav-link-multi .nav-label {
+    font-size: 10px;
+    line-height: 1.25;
+}
+
 /* 점 separator 제거 — 작은 gap 으로 대체 (커뮤니티 dropdown 과 정렬 일관성) */
 
-/* 재미로 보는 사주+로또추천 — 두 줄 라벨, 헤더 높이는 그대로 유지 */
-.nav-secondary .nav-link-multi {
-    white-space: normal;
-    text-align: center;
-    line-height: 1.15;
-    font-size: 11px;
-    padding: 4px 8px;
-    max-width: 110px;
-}
+/* 두 줄 라벨 — nav-label 안에서 처리 (위 .nav-link-multi .nav-label 규칙 참고) */
+.nav-secondary .nav-link-multi .nav-label br + * { display: inline; }
 
 /* 커뮤니티 dropdown — hover 시 하위 메뉴 노출. 갭 없이 붙여서 마우스 이동 중 닫힘 방지 */
 .nav-secondary .nav-dropdown {
@@ -325,16 +357,19 @@ small { color: var(--fg-tertiary); font-size: 13px; }
 .nav-dropdown:focus-within > .nav-dropdown-menu { display: block; }
 
 .nav-dropdown-item {
-    display: block;
-    padding: 8px 12px;
-    border-radius: 6px;
-    font-size: 12.5px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 14px;
+    border-radius: 7px;
+    font-size: 13px;
     font-weight: 500;
     color: var(--fg-secondary);
     text-decoration: none;
     transition: var(--transition);
     white-space: nowrap;
 }
+.nav-dropdown-item .nav-dropdown-icon { font-size: 15px; line-height: 1; flex-shrink: 0; }
 .nav-dropdown-item:hover { background: var(--bg-muted); color: var(--fg); }
 .nav-dropdown-item.active { color: var(--fg); font-weight: 600; background: var(--bg-muted); }
 

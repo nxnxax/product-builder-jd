@@ -145,17 +145,17 @@ export function mountAppHeader(opts) {
         { key: 'contracts.html', label: '계약자 관리대장', href: 'contracts.html' },
     ];
     const secondaryItems = [
-        { key: 'index.html',        label: 'N키워드 분석', href: 'index.html#marketing' },
-        { key: 'lotto2233.html',    label: '재미로 보는<br>사주+로또추천', href: 'lotto2233.html', extraCls: 'nav-link-multi', rawLabel: true },
-        { key: 'card-builder.html', label: '명함',         href: 'card-builder.html', adminOnly: true },
-        { key: 'upload.html',       label: '업로드',       href: 'upload.html', adminOnly: true },
+        { key: 'index.html',        label: 'N키워드 분석', href: 'index.html#marketing', icon: '🔍' },
+        { key: 'lotto2233.html',    label: '재미로 보는<br>사주+로또추천', href: 'lotto2233.html', extraCls: 'nav-link-multi', rawLabel: true, icon: '🔮' },
+        { key: 'card-builder.html', label: '명함',         href: 'card-builder.html', adminOnly: true, icon: '💳' },
+        { key: 'upload.html',       label: '업로드',       href: 'upload.html', adminOnly: true, icon: '📤' },
     ];
 
     // 커뮤니티 — 클릭 불가, hover 시 하위 메뉴.
     const communityItems = [
-        { key: 'board.html?cat=notice', label: '공지사항',     href: 'board.html?cat=notice' },
-        { key: 'board.html?cat=free',   label: '자유게시판',   href: 'board.html?cat=free' },
-        { key: 'board.html?cat=qna',    label: '문의게시판',   href: 'board.html?cat=qna' },
+        { key: 'board.html?cat=notice', label: '공지사항',     href: 'board.html?cat=notice', icon: '📢' },
+        { key: 'board.html?cat=free',   label: '자유게시판',   href: 'board.html?cat=free',   icon: '💬' },
+        { key: 'board.html?cat=qna',    label: '문의게시판',   href: 'board.html?cat=qna',    icon: '❓' },
     ];
 
     const renderItem = (item, baseCls) => {
@@ -163,7 +163,8 @@ export function mountAppHeader(opts) {
         const cls = `${baseCls}${isActive ? ' active' : ''}${item.extraCls ? ' ' + item.extraCls : ''}`;
         const dataAttr = item.adminOnly ? ' data-admin-only' : '';
         const labelHtml = item.rawLabel ? item.label : escapeHtmlSafe(item.label);
-        return `<a class="${cls}" href="${item.href}"${dataAttr}>${labelHtml}</a>`;
+        const iconHtml = item.icon ? `<span class="nav-icon">${item.icon}</span>` : '';
+        return `<a class="${cls}" href="${item.href}"${dataAttr}>${iconHtml}<span class="nav-label">${labelHtml}</span></a>`;
     };
 
     // 현재 페이지가 커뮤니티 게시판이면 active 표시.
@@ -172,9 +173,17 @@ export function mountAppHeader(opts) {
 
     const communityHtml = `
         <div class="nav-dropdown ${isCommunityActive ? 'is-active' : ''}">
-            <span class="nav-link nav-link-secondary nav-static" tabindex="0">커뮤니티 <span class="nav-caret">▾</span></span>
+            <span class="nav-link nav-link-secondary nav-static" tabindex="0">
+                <span class="nav-icon">👥</span>
+                <span class="nav-label">커뮤니티 <span class="nav-caret">▾</span></span>
+            </span>
             <div class="nav-dropdown-menu">
-                ${communityItems.map(i => `<a class="nav-dropdown-item${fullPath === i.key.toLowerCase() ? ' active' : ''}" href="${i.href}">${escapeHtmlSafe(i.label)}</a>`).join('')}
+                ${communityItems.map(i => `
+                    <a class="nav-dropdown-item${fullPath === i.key.toLowerCase() ? ' active' : ''}" href="${i.href}">
+                        <span class="nav-dropdown-icon">${i.icon}</span>
+                        <span>${escapeHtmlSafe(i.label)}</span>
+                    </a>
+                `).join('')}
             </div>
         </div>
     `;
