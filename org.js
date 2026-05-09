@@ -7,15 +7,17 @@
  */
 
 import { initSupabase, apiRequest, getSession } from './auth-shared.js?v=20260508-tight';
+import { attachColumnFilters, applyColumnFilters } from './ledger-shared.js?v=20260509-filter1';
 
 const PAGE_TYPE = 'org';
 
 const TITLE_OPTIONS = ['본부장', '팀장', '팀원'];
 
 const DEFAULT_FIELD_SCHEMA = {
+    // team 컬럼은 섹션 헤더 (1팀/2팀/...) 가 이미 표시하므로 row 에서는 빼고
+    // data.team 에만 저장. 행 추가 시 자동 채움.
     fields: [
         { key: 'no',      label: 'NO',     type: 'auto_number', filterable: false },
-        { key: 'team',    label: '팀',     type: 'team_select', filterable: true  },
         { key: 'joined',  label: '투입일', type: 'date',        filterable: true  },
         { key: 'title',   label: '직함',   type: 'title_select',filterable: true  },
         { key: 'name',    label: '이름',   type: 'text',        filterable: true  },
@@ -38,7 +40,7 @@ let activeGroupIds = [];          // selected group(s) — single by default
 let multiMode = false;
 let records = [];                 // records for activeGroupIds
 let editingGroupId = null;        // group being edited in modal
-let filters = {};                 // { fieldKey: filterText }
+let filterState = { filters: {} };// { [key]: Set<value> }  — ledger-shared 가 관리
 let selectedIds = new Set();
 let typeCommissionRows = [];      // working copy in settings modal
 
@@ -329,16 +331,8 @@ function renderRecords() {
     });
     if (activeTeams.size === 0) [1, 2, 3].forEach(t => activeTeams.add(t));
 
-    // 필터 적용
-    const filtered = records.filter(r => {
-        for (const k in filters) {
-            const v = filters[k]?.toLowerCase().trim();
-            if (!v) continue;
-            const fv = String(r.data?.[k] ?? '').toLowerCase();
-            if (!fv.includes(v)) return false;
-        }
-        return true;
-    });
+    // 필터 적용 — ledger-shared 의 컬럼별 unique 값 multi-select
+    const filtered = applyColumnFilters(filterState.filters, records, (r, k) => r.data?.[k]);
 
     // 팀별 그룹핑
     const byTeam = {};
@@ -381,16 +375,8 @@ function renderTeamSection(title, teamNo, rows) {
                         <tr>
                             <th class="col-check"><input type="checkbox" data-select-all="${teamNo ?? ''}"></th>
                             <th class="col-no">NO</th>
-                            ${fields.filter(f => f.key !== 'no').map(f => `<th>${escapeHtml(f.label)}</th>`).join('')}
+                            ${fields.filter(f => f.key !== 'no').map(f => `<th data-col-key="${f.key}">${escapeHtml(f.label)}</th>`).join('')}
                             <th class="col-action"></th>
-                        </tr>
-                        <tr class="filter-row">
-                            <th></th>
-                            <th></th>
-                            ${fields.filter(f => f.key !== 'no').map(f => f.filterable
-                                ? `<th><input type="text" data-filter="${f.key}" value="${escapeAttr(filters[f.key] || '')}" placeholder="필터"></th>`
-                                : `<th></th>`).join('')}
-                            <th></th>
                         </tr>
                     </thead>
                     <tbody>
@@ -410,9 +396,6 @@ function renderRow(r, displayNo) {
         <tr data-id="${r.id}" class="${selectedIds.has(r.id) ? 'selected' : ''}">
             <td class="col-check"><input type="checkbox" data-select="${r.id}" ${checked}></td>
             <td class="col-no">${displayNo}</td>
-            <td><select data-field="team" data-id="${r.id}">
-                ${[1,2,3,4,5].map(n => `<option value="${n}" ${parseInt(d.team, 10) === n ? 'selected' : ''}>${n}팀</option>`).join('')}
-            </select></td>
             <td><input type="date" data-field="joined" data-id="${r.id}" value="${escapeAttr(d.joined || '')}"></td>
             <td><select data-field="title" data-id="${r.id}">
                 <option value="">-</option>
@@ -427,15 +410,14 @@ function renderRow(r, displayNo) {
 }
 
 function bindTableEvents() {
-    // 필터
-    document.querySelectorAll('[data-filter]').forEach(inp => {
-        inp.addEventListener('input', debounce(() => {
-            filters[inp.dataset.filter] = inp.value;
-            renderRecords();
-            // refocus the same filter so typing stays smooth
-            const next = document.querySelector(`[data-filter="${inp.dataset.filter}"]`);
-            if (next) { next.focus(); next.setSelectionRange(next.value.length, next.value.length); }
-        }, 220));
+    // 컬럼 헤더 클릭 → unique 값 multi-select dropdown 필터
+    attachColumnFilters({
+        state: filterState,
+        headers: document.querySelectorAll('.ledger-tbl thead th[data-col-key]'),
+        fields: DEFAULT_FIELD_SCHEMA.fields,
+        getRows: () => records,
+        getValue: (r, k) => r.data?.[k],
+        onChange: () => renderRecords(),
     });
     // 행 추가
     document.querySelectorAll('[data-add-row]').forEach(b => {
@@ -536,7 +518,6 @@ function updateBulkBar() {
 function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
 function escapeHtml(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function escapeAttr(s) { return String(s ?? '').replace(/"/g, '&quot;'); }
-function debounce(fn, ms) { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; }
 function showError(msg) {
     console.error(msg);
     const c = document.getElementById('content');

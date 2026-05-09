@@ -107,6 +107,47 @@ table.ledger-tbl{width:100%;border-collapse:collapse;font-size:13.5px}
     .modal{padding:20px}
     .modal .row3{grid-template-columns:1fr}
 }
+
+/* ===== 컬럼 헤더 클릭형 필터 dropdown ===== */
+.ledger-tbl thead th[data-col-key]{cursor:pointer;user-select:none;position:relative;transition:background 120ms}
+.ledger-tbl thead th[data-col-key]:hover{background:#f4efe7 !important}
+.ledger-tbl thead th[data-col-key].col-filtered{color:var(--ledger-accent) !important;background:rgba(200,54,44,.08) !important}
+.ledger-tbl thead th[data-col-key] .col-arrow{display:inline-block;margin-left:4px;opacity:.45;font-size:9px;transform:translateY(-1px)}
+.ledger-tbl thead th[data-col-key]:hover .col-arrow{opacity:1}
+.ledger-tbl thead th[data-col-key].col-filtered .col-arrow{opacity:1;color:var(--ledger-accent)}
+
+.filter-pop{position:fixed;z-index:200;background:#fff;border:1px solid var(--ledger-line-strong);border-radius:8px;box-shadow:0 12px 32px rgba(20,14,8,.18);width:240px;max-width:92vw;padding:10px 10px 8px;font-family:inherit}
+.filter-pop-head{display:flex;align-items:center;justify-content:space-between;font-size:12.5px;font-weight:700;color:#0e0d0c;margin-bottom:8px;padding:0 2px}
+.filter-pop-close{border:0;background:transparent;font-size:18px;cursor:pointer;color:#8a847e;padding:0 4px;line-height:1;font-family:inherit}
+.filter-pop-close:hover{color:var(--ledger-accent)}
+.filter-pop-search{width:100%;height:28px;padding:0 8px;border:1px solid var(--ledger-line);border-radius:5px;font-size:12px;font-family:inherit;outline:none;background:#fbf7ef;margin-bottom:4px}
+.filter-pop-search:focus{border-color:#0e0d0c;background:#fff}
+.filter-pop-toggle{display:flex;align-items:center;gap:6px;padding:5px 4px;font-size:12px;color:#4f4943;cursor:pointer;border-bottom:1px dashed var(--ledger-line);margin-bottom:4px}
+.filter-pop-toggle input{width:14px;height:14px;accent-color:var(--ledger-accent);margin:0}
+.filter-pop-list{max-height:220px;overflow-y:auto;margin:0 -4px}
+.filter-pop-list label{display:flex;align-items:center;gap:6px;padding:4px 6px;font-size:12px;cursor:pointer;border-radius:4px;color:#2a2520;margin:0}
+.filter-pop-list label:hover{background:#fbf7ef}
+.filter-pop-list input[type=checkbox]{width:14px;height:14px;margin:0;accent-color:var(--ledger-accent)}
+.filter-pop-list .count{margin-left:auto;color:#8a847e;font-size:11px;font-variant-numeric:tabular-nums}
+.filter-pop-actions{display:flex;gap:6px;padding-top:8px;border-top:1px solid var(--ledger-line);margin-top:4px}
+.filter-pop-actions button{flex:1}
+
+/* ===== 모달 가로 배치 ===== */
+.modal .modal-row{display:grid;grid-template-columns:120px 1fr;gap:14px;align-items:center;padding:10px 0;border-bottom:1px solid var(--ledger-line)}
+.modal .modal-row:last-of-type{border-bottom:0}
+.modal .modal-row > label.row-label{margin:0;font-size:13px;color:#4f4943;font-weight:600}
+.modal .modal-row > .row-control{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.modal .modal-row > .row-control input[type=text],
+.modal .modal-row > .row-control input[type=number],
+.modal .modal-row > .row-control input[type=date],
+.modal .modal-row > .row-control select{width:100%;height:36px;margin:0}
+.modal .modal-row > .row-control.three{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;align-items:center}
+.modal .modal-row > .row-control.three .mini-label{font-size:11.5px;color:#8a847e;text-align:right;padding-right:4px}
+@media (max-width:560px){
+    .modal .modal-row{grid-template-columns:1fr;gap:6px}
+    .modal .modal-row > .row-control.three{grid-template-columns:1fr 1fr 1fr}
+}
+
 </style>
 </head>
 <body>
@@ -186,41 +227,38 @@ table.ledger-tbl{width:100%;border-collapse:collapse;font-size:13.5px}
 
 <!-- 설정 모달 -->
 <div class="modal-backdrop hidden" id="settingsModal">
-    <div class="modal" style="max-width:680px;">
+    <div class="modal" style="max-width:760px;">
         <h2>조직도 설정</h2>
         <p class="desc">현재 그룹 (<b id="settingsGroupName">-</b>) 의 팀 구성과 수수료 기준을 설정합니다.</p>
 
-        <label>활성 팀 (사용할 팀만 체크)</label>
-        <div class="checkboxes" id="activeTeamsBox">
-            <label><input type="checkbox" value="1" data-team>1팀</label>
-            <label><input type="checkbox" value="2" data-team>2팀</label>
-            <label><input type="checkbox" value="3" data-team>3팀</label>
-            <label><input type="checkbox" value="4" data-team>4팀</label>
-            <label><input type="checkbox" value="5" data-team>5팀</label>
-        </div>
-
-        <label style="margin-top:18px;">기본 수수료 (직급별)</label>
-        <div class="row3">
-            <div>
-                <label style="font-size:12px;color:#8a847e;margin-bottom:4px;">본부장</label>
-                <input type="number" id="commHQ" min="0" step="10000" placeholder="0">
-            </div>
-            <div>
-                <label style="font-size:12px;color:#8a847e;margin-bottom:4px;">팀장</label>
-                <input type="number" id="commTL" min="0" step="10000" placeholder="0">
-            </div>
-            <div>
-                <label style="font-size:12px;color:#8a847e;margin-bottom:4px;">팀원</label>
-                <input type="number" id="commTM" min="0" step="10000" placeholder="0">
+        <div class="modal-row">
+            <label class="row-label">활성 팀</label>
+            <div class="row-control" id="activeTeamsBox">
+                <label><input type="checkbox" value="1" data-team>1팀</label>
+                <label><input type="checkbox" value="2" data-team>2팀</label>
+                <label><input type="checkbox" value="3" data-team>3팀</label>
+                <label><input type="checkbox" value="4" data-team>4팀</label>
+                <label><input type="checkbox" value="5" data-team>5팀</label>
             </div>
         </div>
 
-        <label style="margin-top:18px;display:flex;align-items:center;justify-content:space-between;">
-            <span>타입별 수수료 (선택)</span>
-            <button class="tiny-btn" id="addTypeCommBtn" type="button" style="font-size:11.5px;padding:4px 9px;">+ 타입 추가</button>
-        </label>
-        <p class="desc" style="margin:0 0 8px;font-size:12px;">특정 평형/타입은 수수료가 다를 때만 추가하세요. 미설정 타입은 위 기본 수수료를 사용합니다.</p>
-        <div class="type-comm-list" id="typeCommList"></div>
+        <div class="modal-row">
+            <label class="row-label">기본 수수료</label>
+            <div class="row-control three">
+                <span class="mini-label">본부장</span><input type="number" id="commHQ" min="0" step="10000" placeholder="0">
+                <span class="mini-label">팀장</span><input type="number" id="commTL" min="0" step="10000" placeholder="0">
+                <span class="mini-label">팀원</span><input type="number" id="commTM" min="0" step="10000" placeholder="0">
+            </div>
+        </div>
+
+        <div class="modal-row" style="grid-template-columns:120px 1fr auto;align-items:start;">
+            <label class="row-label" style="padding-top:6px;">타입별 수수료</label>
+            <div class="row-control" style="flex-direction:column;align-items:stretch;">
+                <p class="desc" style="margin:0 0 6px;font-size:12px;">특정 평형/타입에 별도 수수료를 적용할 때만 추가. 미설정 타입은 기본 수수료 사용.</p>
+                <div class="type-comm-list" id="typeCommList"></div>
+            </div>
+            <button class="tiny-btn" id="addTypeCommBtn" type="button" style="font-size:11.5px;padding:6px 10px;margin-top:4px;">+ 추가</button>
+        </div>
 
         <div class="actions">
             <button class="tiny-btn" id="settingsCancelBtn" type="button">취소</button>

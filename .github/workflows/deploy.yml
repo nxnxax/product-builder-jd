@@ -36,6 +36,7 @@ jobs:
           test -f contracts.js
           test -f customers.html
           test -f customers.js
+          test -f ledger-shared.js
           test -f logo_main.png
           grep -q 'main.js?v=' index.html
           grep -q 'profile.js?v=' profile.html
@@ -71,6 +72,7 @@ jobs:
           cp contracts.js deploy/contracts.js
           cp customers.html deploy/customers.html
           cp customers.js deploy/customers.js
+          cp ledger-shared.js deploy/ledger-shared.js
           cp api/analyze.php deploy/analyze.php
           cp api/records.php deploy/records.php
           cp api/upload.php deploy/upload.php

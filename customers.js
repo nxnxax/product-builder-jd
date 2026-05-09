@@ -10,6 +10,7 @@
  */
 
 import { initSupabase, apiRequest, getSession } from './auth-shared.js?v=20260508-tight';
+import { attachColumnFilters, applyColumnFilters } from './ledger-shared.js?v=20260509-filter1';
 
 const PAGE_TYPE = 'customer';
 
@@ -31,7 +32,7 @@ let activeGroupIds = [];
 let multiMode = false;
 let records = [];
 let editingGroupId = null;
-let filters = {};
+let filterState = { filters: {} };
 let selectedIds = new Set();
 
 /* ============== Boot ============== */
@@ -201,15 +202,7 @@ async function loadRecords() {
 }
 
 function applyFilters(rows) {
-    return rows.filter(r => {
-        for (const k in filters) {
-            const v = filters[k]?.toLowerCase().trim();
-            if (!v) continue;
-            const fv = String(r.data?.[k] ?? '').toLowerCase();
-            if (!fv.includes(v)) return false;
-        }
-        return true;
-    });
+    return applyColumnFilters(filterState.filters, rows, (r, k) => r.data?.[k]);
 }
 
 function renderRecords() {
@@ -245,15 +238,8 @@ function renderSection(group, rows) {
                     <thead>
                         <tr>
                             <th class="col-check"><input type="checkbox" data-select-all="${group.id}"></th>
-                            ${DEFAULT_FIELDS.map(f => `<th style="min-width:${f.width || 90}px;">${escapeHtml(f.label)}</th>`).join('')}
+                            ${DEFAULT_FIELDS.map(f => `<th style="min-width:${f.width || 90}px;" data-col-key="${f.key}">${escapeHtml(f.label)}</th>`).join('')}
                             <th class="col-action"></th>
-                        </tr>
-                        <tr class="filter-row">
-                            <th></th>
-                            ${DEFAULT_FIELDS.map(f => f.filterable
-                                ? `<th><input type="text" data-filter="${f.key}" value="${escapeAttr(filters[f.key] || '')}" placeholder="필터"></th>`
-                                : `<th></th>`).join('')}
-                            <th></th>
                         </tr>
                     </thead>
                     <tbody>
@@ -290,13 +276,13 @@ function renderCell(f, r, d, displayNo) {
 }
 
 function bindTableEvents() {
-    document.querySelectorAll('[data-filter]').forEach(inp => {
-        inp.addEventListener('input', debounce(() => {
-            filters[inp.dataset.filter] = inp.value;
-            renderRecords();
-            const next = document.querySelector(`[data-filter="${inp.dataset.filter}"]`);
-            if (next) { next.focus(); next.setSelectionRange(next.value.length, next.value.length); }
-        }, 220));
+    attachColumnFilters({
+        state: filterState,
+        headers: document.querySelectorAll('.ledger-tbl thead th[data-col-key]'),
+        fields: DEFAULT_FIELDS,
+        getRows: () => records,
+        getValue: (r, k) => r.data?.[k],
+        onChange: () => renderRecords(),
     });
     document.querySelectorAll('[data-add-row]').forEach(b => {
         b.addEventListener('click', () => addRow(parseInt(b.dataset.addRow, 10)));
@@ -387,7 +373,6 @@ function updateBulkBar() {
 function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
 function escapeHtml(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function escapeAttr(s) { return String(s ?? '').replace(/"/g, '&quot;'); }
-function debounce(fn, ms) { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; }
 function showError(msg) {
     console.error(msg);
     const c = document.getElementById('content');
