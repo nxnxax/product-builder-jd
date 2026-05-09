@@ -1433,3 +1433,88 @@ select:focus {
     .marketing-frame-container { min-height: 1500px; margin: 0 -16px; border-left: 0; border-right: 0; border-radius: 0; }
     .marketing-frame { min-height: 1500px; }
 }
+
+/* ------------------------------------------------------------------ Ledger: 다른 그룹 picker
+   기본 그룹은 항상 표시. 나머지 그룹은 이 picker 안에 모음 → 클릭으로 펼침 → chip 토글로 표시 그룹 선택. */
+.extra-groups {
+    background: #fff;
+    border: 1px solid rgba(20, 14, 8, 0.09);
+    border-radius: 12px;
+    margin-bottom: 14px;
+    overflow: hidden;
+}
+
+.extra-groups .extra-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 13px 18px;
+    border: 0;
+    background: transparent;
+    cursor: pointer;
+    user-select: none;
+    font-family: inherit;
+    text-align: left;
+    transition: background 160ms;
+}
+
+.extra-groups .extra-head:hover { background: #fbfaf5; }
+
+.extra-groups .extra-head h4 {
+    margin: 0;
+    font-size: 13.5px;
+    font-weight: 600;
+    color: #4f4943;
+}
+
+.extra-groups .extra-arrow {
+    font-size: 10px;
+    color: #8a847e;
+    width: 12px;
+    text-align: center;
+    transition: transform 200ms;
+    flex-shrink: 0;
+}
+
+.extra-groups.open .extra-arrow { transform: rotate(90deg); color: #c8362c; }
+
+.extra-groups .extra-head .count-pill {
+    margin-left: auto;
+    padding: 3px 10px;
+    background: #fbf7ef;
+    border: 1px solid rgba(20, 14, 8, 0.09);
+    border-radius: 99px;
+    font-size: 11px;
+    color: #4f4943;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+}
+
+.extra-groups .extra-picker {
+    display: none;
+    padding: 4px 14px 14px;
+    flex-wrap: wrap;
+    gap: 8px;
+    border-top: 1px solid rgba(20, 14, 8, 0.06);
+}
+
+.extra-groups.open .extra-picker { display: flex; padding-top: 12px; }
+
+.group-chip {
+    padding: 7px 14px;
+    border: 1px solid rgba(20, 14, 8, 0.16);
+    background: #fff;
+    color: #4f4943;
+    border-radius: 99px;
+    cursor: pointer;
+    font-size: 12.5px;
+    font-family: inherit;
+    font-weight: 500;
+    transition: all 160ms;
+}
+
+.group-chip:hover { background: #fbf7ef; color: #0e0d0c; }
+.group-chip.active { background: #c8362c; color: #fff; border-color: #c8362c; }
+.group-chip.active:hover { background: #8a2620; border-color: #8a2620; }
+

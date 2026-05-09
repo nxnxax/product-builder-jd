@@ -28,7 +28,9 @@ const DEFAULT_FIELDS = [
 /* ============== State ============== */
 let supabaseClient = null;
 let groups = [];
-let expandedGroupIds = new Set();
+let expandedGroupIds = new Set();   // 그룹 생성/삭제 추적용 (UI 토글 X)
+let selectedExtraIds = new Set();   // 기본 그룹 외에 추가로 표시 중인 그룹들
+let extraPanelOpen = false;         // "다른 그룹" picker 열림 여부
 let records = [];
 let editingGroupId = null;
 let filterState = { filters: {} };
@@ -117,6 +119,8 @@ async function saveGroup() {
                 body: { pageType: PAGE_TYPE, name, isDefault, fieldSchema: { fields: DEFAULT_FIELDS }, settings: {} },
             });
             expandedGroupIds.add(created.id);
+            if (!isDefault) selectedExtraIds.add(created.id);
+            extraPanelOpen = true;
         }
         closeModal('groupModal');
         await loadGroups();
@@ -132,6 +136,7 @@ async function deleteGroup() {
         await api('ledger-groups', { method: 'DELETE', body: { id: editingGroupId } });
         closeModal('groupModal');
         expandedGroupIds.delete(editingGroupId);
+        selectedExtraIds.delete(editingGroupId);
         await loadGroups();
     } catch (e) {
         document.getElementById('groupErrorMsg').textContent = e.message;
@@ -160,10 +165,58 @@ function applyFilters(rows) {
 function renderRecords() {
     const content = document.getElementById('content');
     if (groups.length === 0) return;
-    content.innerHTML = groups.map(g => renderGroupCard(g)).join('');
+
+    const mainGroup = groups.find(g => g.isDefault) || groups[0];
+    const others = groups.filter(g => g.id !== mainGroup.id);
+
+    let html = renderGroupCard(mainGroup);
+    if (others.length > 0) {
+        html += renderExtraPicker(others);
+        others.filter(g => selectedExtraIds.has(g.id)).forEach(g => {
+            html += renderGroupCard(g);
+        });
+    }
+    content.innerHTML = html;
+
     bindAccordionEvents();
+    bindExtraPickerEvents();
     bindTableEvents();
     updateBulkBar();
+}
+
+function renderExtraPicker(others) {
+    const showing = others.filter(g => selectedExtraIds.has(g.id)).length;
+    return `
+        <div class="extra-groups ${extraPanelOpen ? 'open' : ''}">
+            <button class="extra-head" data-toggle-extra type="button">
+                <span class="extra-arrow">▶</span>
+                <h4>다른 그룹</h4>
+                <span class="count-pill">${others.length}개${showing > 0 ? ` · ${showing}개 표시 중` : ''}</span>
+            </button>
+            <div class="extra-picker">
+                ${others.map(g => `
+                    <button type="button"
+                            class="group-chip ${selectedExtraIds.has(g.id) ? 'active' : ''}"
+                            data-toggle-extra-id="${g.id}">
+                        ${escapeHtml(g.name)}
+                    </button>
+                `).join('')}
+            </div>
+        </div>`;
+}
+
+function bindExtraPickerEvents() {
+    document.querySelectorAll('[data-toggle-extra]').forEach(b => {
+        b.addEventListener('click', () => { extraPanelOpen = !extraPanelOpen; renderRecords(); });
+    });
+    document.querySelectorAll('[data-toggle-extra-id]').forEach(b => {
+        b.addEventListener('click', () => {
+            const id = parseInt(b.dataset.toggleExtraId, 10);
+            if (selectedExtraIds.has(id)) selectedExtraIds.delete(id);
+            else selectedExtraIds.add(id);
+            renderRecords();
+        });
+    });
 }
 
 function renderGroupCard(group) {
