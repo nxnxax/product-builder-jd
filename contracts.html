@@ -6,7 +6,7 @@
 <title>계약자 관리대장 · YOUNGMAN</title>
 <link rel="icon" type="image/png" href="logo_main.png">
 <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
-<link rel="stylesheet" href="style.css?v=20260510-skip-blank-v2">
+<link rel="stylesheet" href="style.css?v=20260510-paymenthistory">
 <style>
 :root{
     --ledger-line:rgba(20,14,8,.09); --ledger-line-strong:rgba(20,14,8,.16);
@@ -279,7 +279,25 @@ table.ledger-tbl{width:100%;border-collapse:collapse;font-size:13px;min-width:13
     </div>
 </div>
 
-<script type="module" src="contracts.js?v=20260510-skip-blank-v2"></script>
+<!-- 지급 내역 모달 (그룹별) -->
+<div class="modal-backdrop hidden" id="historyModal">
+    <div class="modal-panel wide">
+        <header class="modal-header">
+            <div>
+                <h2 id="historyModalTitle">지급 내역</h2>
+                <p class="modal-subtitle" id="historyModalSub">-</p>
+            </div>
+        </header>
+        <div class="modal-body">
+            <div id="historyBody"></div>
+        </div>
+        <footer class="modal-footer">
+            <button class="tiny-btn primary" id="historyCloseBtn" type="button">닫기</button>
+        </footer>
+    </div>
+</div>
+
+<script type="module" src="contracts.js?v=20260510-paymenthistory"></script>
 <script type="module">
     import { bootApp } from './auth-shared.js?v=20260510-claude-only';
     bootApp();

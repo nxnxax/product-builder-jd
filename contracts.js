@@ -13,7 +13,7 @@
 import { initSupabase, apiRequest, getSession } from './auth-shared.js?v=20260509-phone-toggle';
 import { attachColumnFilters, applyColumnFilters, openRowAddModal, attachPhoneAutoFormat, attachThousandFormat, formatThousand, unformatThousand, getEffectiveFields, mountFieldManager,
          exportRecordsToExcel, pickExcelFile, parseExcelFile, suggestFieldMapping, openImportPreviewModal,
-         saveImportSession, loadImportSession, clearImportSession } from './ledger-shared.js?v=20260510-skip-blank-v2';
+         saveImportSession, loadImportSession, clearImportSession } from './ledger-shared.js?v=20260510-paymenthistory';
 
 const PAGE_TYPE = 'contract';
 const TAX_RATE = 0.033;   // 실수령액 = commission * (1 - TAX_RATE)
@@ -79,6 +79,10 @@ let selectedIds = new Set();
 let orgGroups = [];                  // page_type=org 의 그룹들 (설정에서 연동 선택용)
 const orgEmployeesByGroup = new Map(); // gid → employees[]
 const orgSettingsByGroup = new Map();  // gid → settings
+
+// 마지막으로 빌드된 정산 결과 (markPaid 시 그룹 settings 로 freeze 저장하기 위해 보관).
+// shape: { [gid]: { groupName, perEmployee: [{ empId, name, title, team, account, lines:[{cid,role,label,amount}] }] } }
+let lastSettlementByGroup = null;
 
 /* ============== Boot ============== */
 (async function boot() {
@@ -177,6 +181,7 @@ function bindUI() {
 
     document.getElementById('settleCloseBtn').addEventListener('click', () => closeModal('settleModal'));
     document.getElementById('settleMarkPaidBtn').addEventListener('click', markPaidFromSettle);
+    document.getElementById('historyCloseBtn').addEventListener('click', () => closeModal('historyModal'));
 
     document.getElementById('bulkClearBtn').addEventListener('click', () => { selectedIds.clear(); renderRecords(); });
     document.getElementById('bulkDeleteBtn').addEventListener('click', bulkDelete);
@@ -495,6 +500,7 @@ function renderGroupCard(group) {
                     <button type="button" data-export-gid="${group.id}" title="이 현장을 엑셀로 다운로드">📥 엑셀 다운로드</button>
                     <button type="button" data-import-gid="${group.id}" title="엑셀 파일을 이 현장에 업로드">📤 엑셀 가져오기</button>
                     ${loadImportSession(PAGE_TYPE, group.id) ? `<button type="button" data-reimport-gid="${group.id}" title="마지막 가져오기 매핑 다시 열어 수정">🔄 매핑 수정</button>` : ''}
+                    ${(group.settings?.payment_batches?.length > 0) ? `<button type="button" data-history-gid="${group.id}" title="이 현장의 지급 내역 보기">📜 지급내역 (${group.settings.payment_batches.length})</button>` : ''}
                     <button type="button" data-edit-gid="${group.id}">편집</button>
                     <button type="button" data-settings-gid="${group.id}">⚙ 설정</button>
                 </div>
@@ -552,6 +558,9 @@ function bindAccordionEvents() {
             else expandedGroupIds.add(gid);
             renderRecords();
         });
+    });
+    document.querySelectorAll('[data-history-gid]').forEach(b => {
+        b.addEventListener('click', (e) => { e.stopPropagation(); openPaymentHistoryModal(parseInt(b.dataset.historyGid, 10)); });
     });
     document.querySelectorAll('[data-set-main]').forEach(cb => {
         cb.addEventListener('change', () => {
@@ -1066,6 +1075,75 @@ function computeCommissionForRow(d, contractGroup) {
     return { amount, net: Math.round(amount * (1 - TAX_RATE)) };
 }
 
+/* ============== 지급 내역 모달 (그룹별) ============== */
+function openPaymentHistoryModal(gid) {
+    const group = groups.find(g => g.id === gid);
+    if (!group) return;
+    const batches = (group.settings?.payment_batches || []).slice().reverse();   // 시간 역순 (최신 먼저)
+
+    document.getElementById('historyModalTitle').textContent = `${group.name} — 지급 내역`;
+    document.getElementById('historyModalSub').textContent = batches.length === 0
+        ? '저장된 지급 내역이 없습니다.'
+        : `총 ${batches.length}회 지급 · 최신순으로 표시`;
+
+    const body = document.getElementById('historyBody');
+    if (batches.length === 0) {
+        body.innerHTML = '<div class="empty" style="background:transparent;border:0;padding:30px;">아직 지급 완료 처리된 정산이 없습니다.</div>';
+    } else {
+        body.innerHTML = batches.map((b, idx) => renderHistoryBatch(b, idx)).join('');
+        body.querySelectorAll('[data-history-toggle]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const card = btn.closest('.history-batch');
+                card?.classList.toggle('open');
+            });
+        });
+    }
+    document.getElementById('historyModal').dataset.gid = String(gid);
+    document.getElementById('historyModal').classList.remove('hidden');
+}
+
+function renderHistoryBatch(batch, idx) {
+    const open = idx === 0;   // 최신 1건은 펼쳐서.
+    const perEmp = (batch.perEmployee || []).slice().sort((a, b) => {
+        const order = { '본부장': 0, '팀장': 1, '팀원': 2 };
+        return (order[a.title] ?? 9) - (order[b.title] ?? 9);
+    });
+    return `
+        <div class="history-batch ${open ? 'open' : ''}">
+            <button class="history-batch-head" type="button" data-history-toggle>
+                <span class="history-arrow">▶</span>
+                <span class="history-date">${escapeHtml(batch.paidAt || '-')}</span>
+                <span class="history-meta">${batch.contractCount || 0}건 계약 · ${perEmp.length}명 분배</span>
+                <span class="history-totals">
+                    <b style="color:var(--ledger-accent);">₩${formatNum(batch.totalGross || 0)}</b>
+                    <span style="color:#8a847e;">실수령 ₩${formatNum(batch.totalNet || 0)}</span>
+                </span>
+            </button>
+            <div class="history-batch-body">
+                ${perEmp.map(emp => `
+                    <div class="settle-emp">
+                        <div class="settle-emp-head">
+                            <span><b>${escapeHtml(emp.name || '-')}</b><span class="badge">${escapeHtml((emp.team || '?') + '팀 · ' + (emp.title || ''))}</span></span>
+                            <span style="color:#8a847e;font-size:11.5px;">${(emp.lines || []).length}건</span>
+                        </div>
+                        <ul class="settle-row-list">
+                            ${(emp.lines || []).map(l => `
+                                <li>
+                                    <span style="font-size:11.5px;color:#4f4943;">${escapeHtml(l.role)} · ${escapeHtml(l.label)}</span>
+                                    <span style="font-size:11.5px;font-variant-numeric:tabular-nums;">₩${formatNum(l.amount || 0)}</span>
+                                </li>`).join('')}
+                        </ul>
+                        <div class="settle-totals">
+                            <div class="stat">건별 수수료 합<b>₩${formatNum(emp.totalGross || 0)}</b></div>
+                            <div class="stat">실수령액 (3.3% 차감)<b class="net">₩${formatNum(emp.totalNet || 0)}</b></div>
+                            <div class="stat">계좌번호<b style="font-size:12px;font-family:ui-monospace,Menlo,monospace;">${escapeHtml(emp.account || '미입력')}</b></div>
+                        </div>
+                    </div>
+                `).join('')}
+            </div>
+        </div>`;
+}
+
 /* ============== Settle modal ============== */
 function openSettleModal() {
     // 정산 대상: 메인 + 표시 중인 현장의 미지급 + '정계약' 상태 + 필터 통과 계약만.
@@ -1126,6 +1204,33 @@ function openSettleModal() {
         const empMap = byRole[p.emp.data?.title] || byRole['팀원'];
         if (!empMap.has(p.emp.id)) empMap.set(p.emp.id, { emp: p.emp, lines: [] });
         empMap.get(p.emp.id).lines.push(p);
+    });
+
+    // 그룹별 freeze 데이터 빌드 (markPaid 시 그룹 settings 로 저장).
+    lastSettlementByGroup = {};
+    payouts.forEach(p => {
+        const r = records.find(x => x.id === p.cid);
+        const gid = r?.groupId;
+        if (!gid) return;
+        const group = groups.find(g => g.id === gid);
+        if (!lastSettlementByGroup[gid]) {
+            lastSettlementByGroup[gid] = {
+                groupName: group?.name || '-',
+                perEmployee: new Map(),  // empId → { empId, name, title, team, account, lines: [] }
+            };
+        }
+        const slot = lastSettlementByGroup[gid].perEmployee;
+        if (!slot.has(p.emp.id)) {
+            slot.set(p.emp.id, {
+                empId: p.emp.id,
+                name: p.emp.data?.name || '',
+                title: p.emp.data?.title || '',
+                team: p.emp.data?.team || '',
+                account: p.emp.data?.account || '',
+                lines: [],
+            });
+        }
+        slot.get(p.emp.id).lines.push({ cid: p.cid, role: p.role, label: p.label, amount: p.amount });
     });
 
     let html = '';
@@ -1196,11 +1301,63 @@ async function markPaidFromSettle() {
     const raw = document.getElementById('settleModal').dataset.contractIds || '[]';
     const ids = JSON.parse(raw);
     if (!Array.isArray(ids) || ids.length === 0) { closeModal('settleModal'); return; }
-    if (!confirm(`${ids.length}건 계약을 "지급 완료" 로 변경합니다. 진행할까요?`)) return;
+    if (!confirm(`${ids.length}건 계약을 "지급 완료" 로 변경하고 지급 내역으로 보관합니다. 진행할까요?`)) return;
+
+    // 인라인 편집된 amount 를 lastSettlementByGroup 에 반영.
+    // 정산 모달 안의 input[data-payout-edit][data-emp][data-cid][data-role] 을 읽어서 매칭.
+    const edits = new Map();   // key = `${empId}|${cid}|${role}` → amount
+    document.querySelectorAll('#settleModal [data-payout-edit]').forEach(inp => {
+        const key = `${inp.dataset.emp}|${inp.dataset.cid}|${inp.dataset.role}`;
+        edits.set(key, unformatThousand(inp.value));
+    });
+
+    const today = new Date().toISOString().slice(0, 10);
+    const batchId = 'b_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+
     try {
+        // 1. 각 계약 row 에 paidAt + paidBatchId 박기 (paid_unpaid: false 도 같이).
         for (const id of ids) {
-            await api('ledger-records', { method: 'PATCH', body: { id, data: { paid_unpaid: false } } });
+            await api('ledger-records', {
+                method: 'PATCH',
+                body: { id, data: { paid_unpaid: false, paidAt: today, paidBatchId: batchId } },
+            });
         }
+
+        // 2. 그룹별로 정산 내역 freeze 후 settings.payment_batches 에 push.
+        if (lastSettlementByGroup) {
+            for (const gid of Object.keys(lastSettlementByGroup)) {
+                const group = groups.find(g => g.id === parseInt(gid, 10));
+                if (!group) continue;
+                const block = lastSettlementByGroup[gid];
+                const perEmployee = [...block.perEmployee.values()].map(emp => {
+                    const lines = emp.lines.map(l => ({
+                        cid: l.cid, role: l.role, label: l.label,
+                        amount: edits.has(`${emp.empId}|${l.cid}|${l.role}`)
+                            ? edits.get(`${emp.empId}|${l.cid}|${l.role}`)
+                            : l.amount,
+                    }));
+                    const totalGross = lines.reduce((s, x) => s + (x.amount || 0), 0);
+                    return {
+                        empId: emp.empId, name: emp.name, title: emp.title,
+                        team: emp.team, account: emp.account, lines,
+                        totalGross, totalNet: Math.round(totalGross * (1 - TAX_RATE)),
+                    };
+                });
+                const totalGross = perEmployee.reduce((s, e) => s + e.totalGross, 0);
+                const totalNet   = perEmployee.reduce((s, e) => s + e.totalNet, 0);
+                const contractIds = [...new Set(perEmployee.flatMap(e => e.lines.map(l => l.cid)))];
+                const entry = { batchId, paidAt: today, totalGross, totalNet,
+                                contractCount: contractIds.length, perEmployee };
+                const newSettings = {
+                    ...(group.settings || {}),
+                    payment_batches: [...(group.settings?.payment_batches || []), entry],
+                };
+                await api('ledger-groups', { method: 'PATCH', body: { id: group.id, settings: newSettings } });
+                group.settings = newSettings;
+            }
+        }
+
+        lastSettlementByGroup = null;
         closeModal('settleModal');
         await loadRecords();
     } catch (e) { alert('일괄 업데이트 실패: ' + e.message); }
