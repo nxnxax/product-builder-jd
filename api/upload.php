@@ -48,7 +48,35 @@ function load_supabase_auth(): array {
 }
 
 function get_bearer_token(): string {
-    $h = $_SERVER['HTTP_AUTHORIZATION'] ?? $_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? '';
+    // 1. 표준 $_SERVER (가장 흔한 경로).
+    $h = (string)($_SERVER['HTTP_AUTHORIZATION'] ?? $_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? '');
+    // 2. Apache 직접 헤더 — cafe24 같은 일부 환경에서 PHP $_SERVER 에 누락될 때 fallback.
+    if ($h === '' && function_exists('apache_request_headers')) {
+        $req = @apache_request_headers();
+        if (is_array($req)) {
+            foreach ($req as $k => $v) {
+                if (strcasecmp((string)$k, 'authorization') === 0) { $h = (string)$v; break; }
+            }
+        }
+    }
+    if ($h === '' && function_exists('getallheaders')) {
+        $req = @getallheaders();
+        if (is_array($req)) {
+            foreach ($req as $k => $v) {
+                if (strcasecmp((string)$k, 'authorization') === 0) { $h = (string)$v; break; }
+            }
+        }
+    }
+    // 3. multipart 요청 시 X-Auth-Token 백업 헤더 (클라이언트가 보조로 보냄).
+    if ($h === '') {
+        $alt = (string)($_SERVER['HTTP_X_AUTH_TOKEN'] ?? '');
+        if ($alt !== '') return trim($alt);
+    }
+    // 4. 마지막 fallback: 토큰을 POST/GET 으로 보내는 경우 (multipart 우회).
+    if ($h === '') {
+        $alt = (string)($_POST['_token'] ?? $_GET['_token'] ?? '');
+        if ($alt !== '') return trim($alt);
+    }
     if (preg_match('/Bearer\s+(.+)/i', $h, $m)) return trim($m[1]);
     return '';
 }
@@ -77,10 +105,25 @@ function fetch_user_email_via_supabase(string $token, array $auth): string {
 
 function require_auth_email(): string {
     $token = get_bearer_token();
-    if (!$token) jout(['ok' => false, 'error' => '로그인이 필요합니다.'], 401);
+    if (!$token) {
+        jout([
+            'ok' => false,
+            'error' => '로그인이 필요합니다. (Authorization 헤더가 도달하지 않았어요. 페이지 새로고침 후 다시 시도해주세요.)',
+            'debug' => 'no_token',
+        ], 401);
+    }
     $auth = load_supabase_auth();
+    if (empty($auth['supabase_url']) || empty($auth['anon_key'])) {
+        jout(['ok' => false, 'error' => '서버 인증 설정이 누락됐습니다. 운영자에게 알려주세요.', 'debug' => 'missing_config'], 500);
+    }
     $email = fetch_user_email_via_supabase($token, $auth);
-    if (!$email) jout(['ok' => false, 'error' => '인증 검증 실패. 다시 로그인해주세요.'], 401);
+    if (!$email) {
+        jout([
+            'ok' => false,
+            'error' => '토큰 검증 실패. 잠시 후 다시 시도하거나 다시 로그인해주세요.',
+            'debug' => 'token_rejected',
+        ], 401);
+    }
     return $email;
 }
 

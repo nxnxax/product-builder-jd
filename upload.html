@@ -6,7 +6,7 @@
   <title>개인자료함 · YOUNGMAN</title>
   <link rel="icon" type="image/png" href="logo_main.png">
   <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
-  <link rel="stylesheet" href="style.css?v=20260510-personal-files">
+  <link rel="stylesheet" href="style.css?v=20260510-auth-fallback">
   <style>
     .upload-wrap { max-width: 760px; margin: 3rem auto 5rem; padding: 0 1.5rem; }
     .upload-wrap h2 { margin: 0 0 .35rem; font-size: 1.6rem; letter-spacing: -.01em; }
@@ -114,7 +114,7 @@
   </main>
 
   <script type="module">
-    import { initSupabase, getSession, getAccessToken, bootApp } from './auth-shared.js?v=20260510-personal-files';
+    import { initSupabase, getSession, getAccessToken, bootApp } from './auth-shared.js?v=20260510-auth-fallback';
 
     const fileInput = document.getElementById('file-input');
     const dropZone = document.getElementById('drop-zone');
@@ -140,8 +140,20 @@
     async function authedFetch(url, init = {}) {
         const token = await getAccessToken({ forceRefresh: true });
         const headers = { ...(init.headers || {}) };
-        if (token) headers.Authorization = 'Bearer ' + token;
-        return fetch(url, { ...init, headers });
+        if (token) {
+            headers.Authorization = 'Bearer ' + token;
+            headers['X-Auth-Token'] = token;   // 일부 호스팅이 Authorization 을 깎을 때 백업
+        }
+        // multipart FormData 인 경우 _token 필드도 함께 첨부 (서버 fallback).
+        if (token && init.body instanceof FormData && !init.body.has('_token')) {
+            init.body.append('_token', token);
+        }
+        // GET 등 body 가 없는 경우 query string 에 _token 추가.
+        let finalUrl = url;
+        if (token && (!init.method || init.method === 'GET')) {
+            finalUrl += (url.includes('?') ? '&' : '?') + '_token=' + encodeURIComponent(token);
+        }
+        return fetch(finalUrl, { ...init, headers });
     }
 
     function setStatus(html, type) {
