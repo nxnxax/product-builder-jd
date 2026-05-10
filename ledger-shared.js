@@ -636,6 +636,31 @@ function isMeaningful(v) {
 }
 
 /**
+ * 사용자 명시 정책: "숫자만 있고 텍스트가 없는 행" 은 빈 데이터로 취급.
+ * 한글 / 영문 알파벳 / 한자 같은 "글자" 가 1개라도 있어야 진짜 데이터로 판정.
+ * 숫자, 콤마, 점, 하이픈, 공백, 통화기호, 단위 같은 건 텍스트 없음으로 본다.
+ */
+function hasUserText(v) {
+    const s = cellToString(v);
+    if (!s) return false;
+    if (/^[-–—_~・·.\s]+$/.test(s)) return false;
+    if (/^(n\/?a|na|none|null|nil|undefined)$/i.test(s)) return false;
+    // 한글 / 영문 알파벳 / CJK 한자 1글자라도 있으면 텍스트 있음.
+    return /[가-힣ㄱ-ㅎㅏ-ㅣA-Za-z一-鿿]/.test(s);
+}
+
+/** mapped row (key→value 객체) 안에 텍스트 값이 1개라도 있는지. */
+function mappedHasUserText(data) {
+    if (!data || typeof data !== 'object') return false;
+    for (const k of Object.keys(data)) {
+        const v = data[k];
+        if (typeof v === 'boolean' || typeof v === 'number') continue;   // default 토글값은 무시
+        if (hasUserText(v)) return true;
+    }
+    return false;
+}
+
+/**
  * .xlsx / .csv 파싱.
  * @returns Promise<[{ name, headers: string[], rows: string[][] }]>
  */
@@ -662,12 +687,12 @@ export async function parseExcelFile(file) {
         for (let i = headerIdx + 1; i < aoa.length; i++) {
             const r = aoa[i];
             if (!r) continue;
-            // 의미있는 컬럼 (카운터 외) 중 하나라도 값이 있어야 채택.
-            // 모든 컬럼이 카운터로 식별된 예외에는 기존처럼 모든 셀이 비어있는 행만 스킵.
-            const hasMeaningful = (counterCols.size < headers.length)
-                ? headers.some((_, ci) => !counterCols.has(ci) && isMeaningful(r[ci]))
-                : headers.some((_, ci) => isMeaningful(r[ci]));
-            if (!hasMeaningful) { skipped++; continue; }
+            // 사용자 명시: "숫자만 있고 텍스트가 없는 행은 가져오지 마" — 한글/영문 텍스트가
+            // 카운터 외 컬럼에 1개라도 있어야 채택. 숫자만/placeholder만 있는 행은 스킵.
+            const hasText = (counterCols.size < headers.length)
+                ? headers.some((_, ci) => !counterCols.has(ci) && hasUserText(r[ci]))
+                : headers.some((_, ci) => hasUserText(r[ci]));
+            if (!hasText) { skipped++; continue; }
             rows.push(headers.map((_, ci) => cellToString(r[ci])));
         }
         out.push({ name: nm, headers, rows, skippedBlank: skipped });
@@ -975,7 +1000,8 @@ export function clearImportSession(pageType, groupId) {
 
 function buildRowsFromMapping(headers, rows, mapping, _optionFields, fieldByKey, fallbackKey) {
     const fallbackField = fieldByKey.get(fallbackKey) || null;
-    return (rows || []).map(r => {
+    const out = [];
+    (rows || []).forEach(r => {
         const data = {};
         const fallbackParts = [];
         (headers || []).forEach((h, i) => {
@@ -995,6 +1021,9 @@ function buildRowsFromMapping(headers, rows, mapping, _optionFields, fieldByKey,
             const existing = data[fallbackField.key] ? String(data[fallbackField.key]) + '\n' : '';
             data[fallbackField.key] = existing + fallbackParts.join('\n');
         }
-        return data;
+        // 매핑 적용 후에도 텍스트 값이 1개도 없으면 (숫자만 들어간 매핑 결과) 스킵.
+        if (!mappedHasUserText(data)) return;
+        out.push(data);
     });
+    return out;
 }

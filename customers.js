@@ -12,7 +12,7 @@
 import { initSupabase, apiRequest, getSession } from './auth-shared.js?v=20260509-phone-toggle';
 import { attachColumnFilters, applyColumnFilters, openRowAddModal, attachPhoneAutoFormat, getEffectiveFields, mountFieldManager,
          exportRecordsToExcel, pickExcelFile, parseExcelFile, suggestFieldMapping, openImportPreviewModal,
-         saveImportSession, loadImportSession, clearImportSession } from './ledger-shared.js?v=20260510-paymenthistory';
+         saveImportSession, loadImportSession, clearImportSession } from './ledger-shared.js?v=20260510-text-only';
 
 const PAGE_TYPE = 'customer';
 
