@@ -29,6 +29,7 @@ jobs:
           test -f admin.js
           test -f auth-shared.js
           test -f upload.html
+          test -f download.html
           test -f card-builder.html
           test -f org.html
           test -f org.js
@@ -67,6 +68,7 @@ jobs:
           cp logo_main.png deploy/logo_main.png
           cp profile.html admin.html profile.js admin.js auth-shared.js deploy/
           cp upload.html deploy/upload.html
+          cp download.html deploy/download.html
           cp card-builder.html deploy/card-builder.html
           cp org.html deploy/org.html
           cp org.js deploy/org.js
@@ -164,7 +166,7 @@ jobs:
           set -euo pipefail
           CB="$(date +%s)"
           MISSING=0
-          for f in index.html style.css main.js admin.html admin.js profile.html profile.js auth-shared.js upload.html org.html org.js contracts.html contracts.js customers.html customers.js; do
+          for f in index.html style.css main.js admin.html admin.js profile.html profile.js auth-shared.js upload.html download.html org.html org.js contracts.html contracts.js customers.html customers.js; do
             code=$(curl -sk -o /dev/null -w "%{http_code}" "https://youngman-biz.com/${f}?cb=${CB}")
             size=$(curl -sk -o /dev/null -w "%{size_download}" "https://youngman-biz.com/${f}?cb=${CB}")
             echo "  ${f}: HTTP ${code}  size=${size}"
