@@ -6,7 +6,7 @@
   <title>개인자료함 · YOUNGMAN</title>
   <link rel="icon" type="image/png" href="logo_main.png">
   <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
-  <link rel="stylesheet" href="style.css?v=20260510-auth-fallback">
+  <link rel="stylesheet" href="style.css?v=20260510-paste-hint">
   <style>
     .upload-wrap { max-width: 760px; margin: 3rem auto 5rem; padding: 0 1.5rem; }
     .upload-wrap h2 { margin: 0 0 .35rem; font-size: 1.6rem; letter-spacing: -.01em; }
@@ -100,6 +100,7 @@
 
     <label class="drop-zone" id="drop-zone" for="file-input">
       <p class="primary">클릭하거나 드래그해서 업로드</p>
+      <p>캡쳐화면을 Ctrl+V 하시면 바로 업로드됩니다</p>
       <p>이미지 ≤ 20MB · 동영상 ≤ 100MB · 일반 파일 ≤ 50MB</p>
       <input type="file" id="file-input">
     </label>
@@ -114,7 +115,7 @@
   </main>
 
   <script type="module">
-    import { initSupabase, getSession, getAccessToken, bootApp } from './auth-shared.js?v=20260510-auth-fallback';
+    import { initSupabase, getSession, getAccessToken, bootApp } from './auth-shared.js?v=20260510-paste-hint';
 
     const fileInput = document.getElementById('file-input');
     const dropZone = document.getElementById('drop-zone');
