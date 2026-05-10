@@ -2673,3 +2673,16 @@ select:focus {
 .history-batch-body .settle-emp { padding: 10px 0; border-bottom: 1px dashed rgba(20, 14, 8, 0.06); }
 .history-batch-body .settle-emp:last-child { border-bottom: 0; }
 
+/* ------------------------------------------------------------ Sweep toast */
+.sweep-toast {
+    position: fixed; top: 80px; right: 24px;
+    background: #0e0d0c; color: #fff;
+    padding: 11px 16px; border-radius: 10px;
+    font-size: 13px; font-weight: 500;
+    box-shadow: 0 8px 24px rgba(20, 14, 8, 0.18);
+    opacity: 0; transform: translateY(-6px);
+    transition: opacity 200ms ease, transform 200ms ease;
+    z-index: 200; pointer-events: none;
+}
+.sweep-toast.show { opacity: 1; transform: translateY(0); }
+

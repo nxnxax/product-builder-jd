@@ -9,7 +9,8 @@
 import { initSupabase, apiRequest, getSession } from './auth-shared.js?v=20260509-phone-toggle';
 import { attachColumnFilters, applyColumnFilters, openRowAddModal, attachPhoneAutoFormat, attachThousandFormat, formatThousand, unformatThousand, getEffectiveFields, mountFieldManager,
          exportRecordsToExcel, pickExcelFile, parseExcelFile, suggestFieldMapping, openImportPreviewModal,
-         saveImportSession, loadImportSession, clearImportSession } from './ledger-shared.js?v=20260510-text-only';
+         saveImportSession, loadImportSession, clearImportSession,
+         findBlankRecordIds, showSweepToast } from './ledger-shared.js?v=20260510-sweep';
 
 const PAGE_TYPE = 'org';
 
@@ -316,6 +317,7 @@ async function saveSettings() {
 }
 
 /* ============== Records ============== */
+let _sweptOnce = false;
 async function loadRecords() {
     if (groups.length === 0) {
         records = [];
@@ -326,6 +328,18 @@ async function loadRecords() {
         const allIds = groups.map(g => g.id).join(',');
         const data = await api('ledger-records', { query: 'group_ids=' + allIds });
         records = data.items || [];
+        if (!_sweptOnce) {
+            _sweptOnce = true;
+            const blanks = findBlankRecordIds(records);
+            if (blanks.length > 0) {
+                try {
+                    await api('ledger-records-bulk', { method: 'POST', body: { ids: blanks } });
+                    const re = await api('ledger-records', { query: 'group_ids=' + allIds });
+                    records = re.items || [];
+                    showSweepToast(blanks.length);
+                } catch (e) { console.warn('빈 행 자동 정리 실패:', e); }
+            }
+        }
     } catch (e) {
         showError('레코드 로드 실패: ' + e.message);
         records = [];

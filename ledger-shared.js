@@ -650,7 +650,7 @@ function hasUserText(v) {
 }
 
 /** mapped row (key→value 객체) 안에 텍스트 값이 1개라도 있는지. */
-function mappedHasUserText(data) {
+export function mappedHasUserText(data) {
     if (!data || typeof data !== 'object') return false;
     for (const k of Object.keys(data)) {
         const v = data[k];
@@ -658,6 +658,25 @@ function mappedHasUserText(data) {
         if (hasUserText(v)) return true;
     }
     return false;
+}
+
+/** 페이지 진입 시 자동 호출 권장: 그룹 records 중 텍스트 없는 것들 일괄 식별. */
+export function findBlankRecordIds(records) {
+    return (records || [])
+        .filter(r => !mappedHasUserText(r?.data || {}))
+        .map(r => r.id)
+        .filter(Boolean);
+}
+
+/** 자동 정리 토스트 (페이지 상단 우측, 2.5초 후 사라짐). */
+export function showSweepToast(count) {
+    if (!count) return;
+    const t = document.createElement('div');
+    t.className = 'sweep-toast';
+    t.textContent = `${count}건의 빈 행을 자동 정리했습니다`;
+    document.body.appendChild(t);
+    requestAnimationFrame(() => t.classList.add('show'));
+    setTimeout(() => { t.classList.remove('show'); setTimeout(() => t.remove(), 250); }, 2500);
 }
 
 /**
