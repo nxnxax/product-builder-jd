@@ -9,9 +9,11 @@
     <link rel="apple-touch-icon" href="logo_main.png">
     <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
     <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
-    <link rel="stylesheet" href="style.css?v=20260510-stage">
+    <link rel="stylesheet" href="style.css?v=20260510-superman">
     <style>
         /* ========== 사이트 메인 (랜딩) ========== */
+        /* main.dashboard 의 padding/max-width 를 메인에서만 풀어서 hero 풀폭 보장 */
+        #app-dashboard.dashboard { padding: 0 !important; margin: 0 !important; max-width: none !important; }
         .landing-shell { max-width: 1240px; margin: 0 auto; padding: 0 28px 100px; }
 
         /* ========== Hero Stage — 3:2 비율 풀폭 광고 영상 ========== */
@@ -20,7 +22,7 @@
             aspect-ratio: 3/2;
             overflow: hidden;
             background: linear-gradient(180deg, #fff5ed 0%, #ffe8d8 70%, #f4d8c8 100%);
-            margin-bottom: 60px;
+            margin: 0 0 60px;
         }
         /* 배경 city silhouette */
         .stage-bg-svg { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 0; }
@@ -139,47 +141,52 @@
             65%, 100% { transform: rotate(0deg) translateY(0); }
         }
 
-        /* 영맨 — 오른쪽 화면 밖 → 30% 지점으로 달려옴 */
+        /* 영맨 — 슈퍼맨처럼 화면 위에서 슉 내려와 착지 */
         .actor-youngman {
-            right: -25%;
-            animation: youngmanRunIn 8s ease-in-out infinite;
+            right: 26%;
+            transform: translateY(-130%) rotate(-8deg);
+            opacity: 0;
+            animation: youngmanDive 8s cubic-bezier(0.22, 0.61, 0.36, 1) infinite;
+            filter: drop-shadow(0 0 0 transparent);
         }
-        @keyframes youngmanRunIn {
-            0%, 22% { right: -25%; opacity: 0; }
-            27% { opacity: 1; }
-            58% { right: 28%; }
-            65%, 100% { right: 28%; }
+        @keyframes youngmanDive {
+            0%, 28% { transform: translateY(-130%) rotate(-8deg); opacity: 0; filter: drop-shadow(0 0 0 transparent); }
+            32% { opacity: 1; filter: drop-shadow(0 6px 22px rgba(255, 200, 130, 0.55)); }
+            46% { transform: translateY(0) rotate(0); opacity: 1;
+                  filter: drop-shadow(0 8px 28px rgba(200, 54, 44, 0.45)); }
+            52% { transform: translateY(-6px) rotate(0); }
+            58% { transform: translateY(0) rotate(0); }
+            100% { transform: translateY(0) rotate(0); opacity: 1; filter: drop-shadow(0 4px 14px rgba(20, 14, 8, 0.18)); }
         }
-        /* 영맨 달리는 모션 — 살짝 위아래 바운스 */
-        .actor-youngman .body-bounce {
-            animation: bodyBounce 0.32s ease-in-out infinite;
-            animation-play-state: paused;
+        /* 망토 휘날림 — 떨어질 때 길게 펴짐, 착지 후 평소 모양 */
+        .cape { transform-origin: 100px 88px; transform-box: fill-box; }
+        .actor-youngman .cape {
+            animation: capeFly 8s ease-in-out infinite;
         }
-        .actor-youngman.running .body-bounce { animation-play-state: running; }
-        @keyframes bodyBounce {
-            0%, 100% { transform: translateY(0); }
-            50% { transform: translateY(-3px); }
+        @keyframes capeFly {
+            0%, 28% { transform: scaleY(1.3) translateY(-10px) skewX(8deg); }
+            38% { transform: scaleY(1.5) translateY(-8px) skewX(-4deg); }
+            48% { transform: scaleY(1) translateY(0) skewX(0); }
+            100% { transform: scaleY(1) translateY(0) skewX(0); }
         }
-        /* 다리 흔들림 */
-        .leg-left { transform-origin: 88px 178px; }
-        .leg-right { transform-origin: 112px 178px; }
-        .actor-youngman.running .leg-left { animation: legL 0.32s ease-in-out infinite; }
-        .actor-youngman.running .leg-right { animation: legR 0.32s ease-in-out infinite; }
-        @keyframes legL {
-            0%, 100% { transform: rotate(-15deg); }
-            50% { transform: rotate(15deg); }
+        /* 착지 임팩트 — 흰 빛 동심원 한 번 폭발 */
+        .stage-impact {
+            position: absolute; bottom: 0; right: 26%;
+            width: 30%; aspect-ratio: 1;
+            border-radius: 50%;
+            background: radial-gradient(circle, rgba(255,255,255,0.85) 0%, rgba(255,200,150,0.5) 30%, transparent 65%);
+            opacity: 0; transform: translate(50%, 50%) scale(0.2);
+            pointer-events: none; z-index: 3;
+            animation: impactBurst 8s ease-out infinite;
         }
-        @keyframes legR {
-            0%, 100% { transform: rotate(15deg); }
-            50% { transform: rotate(-15deg); }
+        @keyframes impactBurst {
+            0%, 44% { opacity: 0; transform: translate(50%, 50%) scale(0.2); }
+            46% { opacity: 1; transform: translate(50%, 50%) scale(0.6); }
+            55% { opacity: 0; transform: translate(50%, 50%) scale(2); }
+            100% { opacity: 0; transform: translate(50%, 50%) scale(2); }
         }
-        /* 가방 흔들림 */
-        .briefcase { transform-origin: 173px 155px; }
-        .actor-youngman.running .briefcase { animation: caseSwing 0.32s ease-in-out infinite; }
-        @keyframes caseSwing {
-            0%, 100% { transform: rotate(-3deg); }
-            50% { transform: rotate(3deg); }
-        }
+        /* 다리 / 가방 / body bounce — 슈퍼맨 모드는 정적이라 비활성 */
+        .leg-left, .leg-right, .briefcase, .body-bounce { animation: none !important; }
 
         /* 말풍선 */
         .bubble {
@@ -202,7 +209,7 @@
         }
 
         .bubble-customer {
-            bottom: 70%; left: 30%;
+            bottom: 50%; left: 26%;
             animation: bubbleCustomer 8s ease-in-out infinite;
         }
         .bubble-customer::after { bottom: -8px; left: 18px; transform: rotate(45deg); }
@@ -212,14 +219,15 @@
             60%, 100% { opacity: 0; transform: scale(0.7); }
         }
 
+        /* 영맨 말풍선: 헤드라인 카피와 안 겹치도록 stage 우측 끝 가까이 (영맨 머리 옆) */
         .bubble-youngman {
-            bottom: 70%; right: 38%;
+            bottom: 50%; right: 8%;
             animation: bubbleYoungman 8s ease-in-out infinite;
         }
-        .bubble-youngman::after { bottom: -8px; right: 18px; transform: rotate(45deg); }
+        .bubble-youngman::after { bottom: -8px; left: 18px; transform: rotate(45deg); }
         @keyframes bubbleYoungman {
-            0%, 68% { opacity: 0; transform: scale(0.7); }
-            72%, 92% { opacity: 1; transform: scale(1); }
+            0%, 60% { opacity: 0; transform: scale(0.7); }
+            66%, 92% { opacity: 1; transform: scale(1); }
             96%, 100% { opacity: 0; transform: scale(0.7); }
         }
 
@@ -586,11 +594,29 @@
             </div>
 
             <!-- 고객 말풍선 -->
-            <div class="bubble bubble-customer" aria-hidden="true">도와줘!</div>
+            <div class="bubble bubble-customer" aria-hidden="true">도와줘 영맨!</div>
 
-            <!-- 영맨 (오른쪽 → 달려옴) -->
-            <div class="stage-actor actor-youngman running" aria-hidden="true">
-                <svg viewBox="0 0 240 300">
+            <!-- 영맨 착지 임팩트 (빛 폭발) -->
+            <div class="stage-impact" aria-hidden="true"></div>
+
+            <!-- 영맨 (위에서 슈퍼맨처럼 강하) -->
+            <div class="stage-actor actor-youngman" aria-hidden="true">
+                <svg viewBox="0 0 240 300" overflow="visible">
+                    <!-- 빨간 망토 (자켓 뒤에서 길게 늘어짐) -->
+                    <path class="cape" d="
+                        M 60,86
+                        Q 30,140 38,210
+                        L 50,272
+                        Q 60,278 78,272
+                        Q 100,260 100,200
+                        Q 100,260 122,272
+                        Q 140,278 150,272
+                        L 162,210
+                        Q 170,140 140,86
+                        Z" fill="#c8362c"/>
+                    <!-- 망토 안감 (좀 어두운 빨강) -->
+                    <path class="cape-inside" d="M 88,90 Q 95,160 100,200 Q 105,160 112,90 Z"
+                          fill="#8a2620" opacity="0.55"/>
                     <g class="body-bounce">
                         <!-- 다리 (검정 슬랙스) -->
                         <rect class="leg-left" x="78" y="178" width="20" height="94" rx="6" fill="#1a1a1a"/>
