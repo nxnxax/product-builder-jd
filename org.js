@@ -9,7 +9,7 @@
 import { initSupabase, apiRequest, getSession } from './auth-shared.js?v=20260509-phone-toggle';
 import { attachColumnFilters, applyColumnFilters, openRowAddModal, attachPhoneAutoFormat, attachThousandFormat, formatThousand, unformatThousand, getEffectiveFields, mountFieldManager,
          exportRecordsToExcel, pickExcelFile, parseExcelFile, suggestFieldMapping, openImportPreviewModal,
-         saveImportSession, loadImportSession, clearImportSession } from './ledger-shared.js?v=20260510-excel-reopen';
+         saveImportSession, loadImportSession, clearImportSession } from './ledger-shared.js?v=20260510-progress';
 
 const PAGE_TYPE = 'org';
 
@@ -794,17 +794,20 @@ async function importToGroup(gid) {
         fields,
         fallbackKey: FALLBACK_FIELD_KEY,
         suggested,
-        onConfirm: async (mappedRows, finalMapping) => {
-            const newIds = await applyImportRows(gid, mappedRows);
+        onConfirm: async (mappedRows, finalMapping, ctx) => {
+            const newIds = await applyImportRows(gid, mappedRows, ctx);
             saveImportSession(PAGE_TYPE, gid, { sheet, mapping: finalMapping, recordIds: newIds });
             await loadRecords();
         },
     });
 }
 
-async function applyImportRows(gid, mappedRows) {
+async function applyImportRows(gid, mappedRows, ctx) {
     const ids = [];
-    for (const data of mappedRows) {
+    const total = mappedRows.length;
+    ctx?.setProgress?.(0, total);
+    for (let i = 0; i < mappedRows.length; i++) {
+        const data = mappedRows[i];
         if ('team' in data) {
             const t = teamFromString(data.team);
             if (data.title === '본부장' || t === 0) delete data.team;
@@ -814,6 +817,7 @@ async function applyImportRows(gid, mappedRows) {
         if (!data.title && data.name) data.title = '팀원';
         const res = await api('ledger-records', { method: 'POST', body: { groupId: gid, data, source: 'excel' } });
         if (res?.id) ids.push(res.id);
+        ctx?.setProgress?.(i + 1, total);
     }
     return ids;
 }
@@ -843,13 +847,14 @@ async function reopenImportSession(gid) {
                 renderRecords();
             },
         },
-        onConfirm: async (mappedRows, finalMapping) => {
+        onConfirm: async (mappedRows, finalMapping, ctx) => {
             const oldIds = Array.isArray(sess.recordIds) ? sess.recordIds.filter(Boolean) : [];
             if (oldIds.length) {
+                ctx?.setProgress?.(0, mappedRows.length, `이전 ${oldIds.length}건 삭제 중...`);
                 try { await api('ledger-records-bulk', { method: 'POST', body: { ids: oldIds } }); }
                 catch (e) { /* 이미 일부 삭제됐을 수 있음 */ }
             }
-            const newIds = await applyImportRows(gid, mappedRows);
+            const newIds = await applyImportRows(gid, mappedRows, ctx);
             saveImportSession(PAGE_TYPE, gid, { sheet: sess.sheet, mapping: finalMapping, recordIds: newIds });
             await loadRecords();
         },

@@ -761,7 +761,8 @@ export function coerceCellForField(field, raw) {
  *  - fallbackKey   매핑 안 된 컬럼들의 fallback 필드 key (예: 'memo' / 'content')
  *  - confirmLabel  확인 버튼 라벨 (기본: 'N건 추가하기'). 재수정 모드는 '재적용' 등으로 호출자가 지정.
  *  - extraDanger   { label, onClick }  — 푸터 좌측에 위험 액션 버튼 (예: "기록 폐기").
- *  - onConfirm     async (mappedRows, mapping) => void   — 매핑 적용된 row + 최종 mapping 배열.
+ *  - onConfirm     async (mappedRows, mapping, ctx) => void
+ *                  ctx.setProgress(done, total, label?) 로 진행률 표시 가능.
  */
 export function openImportPreviewModal(opts) {
     const fieldByKey = new Map((opts.fields || []).map(f => [f.key, f]));
@@ -822,6 +823,11 @@ export function openImportPreviewModal(opts) {
                     </div>
                 </details>
                 <p class="form-help error" data-error style="margin-top:10px;display:none;"></p>
+                <div class="im-progress" data-progress hidden>
+                    <span class="im-spinner" aria-hidden="true"></span>
+                    <span class="im-progress-text" data-progress-text>준비 중...</span>
+                    <div class="im-progress-bar"><span data-progress-fill></span></div>
+                </div>
             </div>
             <footer class="modal-footer">
                 ${opts.extraDanger ? `<button class="tiny-btn danger modal-footer-spacer" type="button" data-extra>${escapeHtml(opts.extraDanger.label)}</button>` : ''}
@@ -845,16 +851,38 @@ export function openImportPreviewModal(opts) {
     md.querySelector('[data-confirm]').addEventListener('click', async () => {
         const errEl = md.querySelector('[data-error]');
         const btn = md.querySelector('[data-confirm]');
-        btn.disabled = true; errEl.style.display = 'none';
+        const cancelBtn = md.querySelector('[data-cancel]');
+        const extraBtn = md.querySelector('[data-extra]');
+        const progEl = md.querySelector('[data-progress]');
+        const progText = md.querySelector('[data-progress-text]');
+        const progFill = md.querySelector('[data-progress-fill]');
+        const selects = md.querySelectorAll('select[data-mi]');
+
+        const setBusy = (busy) => {
+            btn.disabled = busy;
+            cancelBtn.disabled = busy;
+            if (extraBtn) extraBtn.disabled = busy;
+            selects.forEach(s => s.disabled = busy);
+            progEl.hidden = !busy;
+        };
+        const setProgress = (done, total, label) => {
+            const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+            progFill.style.width = pct + '%';
+            progText.textContent = label || `데이터 추가 중... ${done} / ${total} (${pct}%)`;
+        };
+
+        errEl.style.display = 'none';
+        setBusy(true);
+        setProgress(0, (opts.rows || []).length, '데이터 추가 준비 중...');
 
         try {
             const rows = buildRowsFromMapping(opts.headers, opts.rows, mapping, optionFields, fieldByKey, opts.fallbackKey);
-            await opts.onConfirm(rows, mapping.slice());
+            await opts.onConfirm(rows, mapping.slice(), { setProgress });
             close();
         } catch (e) {
             errEl.textContent = (e && e.message) ? e.message : String(e);
             errEl.style.display = '';
-            btn.disabled = false;
+            setBusy(false);
         }
     });
 

@@ -2627,3 +2627,19 @@ select:focus {
     color: #2a2520; vertical-align: top; max-width: 220px; word-break: break-word; }
 .im-sample-tbl tr:last-child td { border-bottom: 0; }
 
+.im-progress { display: flex; align-items: center; gap: 10px;
+    padding: 10px 14px; margin-top: 14px;
+    background: #fbf7ef; border: 1px solid rgba(20, 14, 8, 0.09); border-radius: 8px;
+    font-size: 13px; color: #4f4943; font-weight: 500; }
+.im-progress-text { flex: 0 1 auto; min-width: 0; white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis; }
+.im-progress-bar { flex: 1; height: 6px; background: rgba(20, 14, 8, 0.08);
+    border-radius: 99px; overflow: hidden; }
+.im-progress-bar > span { display: block; height: 100%; width: 0%;
+    background: linear-gradient(90deg, #c8362c, #8a2620);
+    transition: width 200ms ease; }
+.im-spinner { flex-shrink: 0; width: 16px; height: 16px;
+    border: 2px solid rgba(20, 14, 8, 0.12); border-top-color: #c8362c;
+    border-radius: 50%; animation: imSpin 0.8s linear infinite; }
+@keyframes imSpin { to { transform: rotate(360deg); } }
+
