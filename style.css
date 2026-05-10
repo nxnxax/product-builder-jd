@@ -2554,6 +2554,9 @@ select:focus {
 .group-chip:hover { background: #fbf7ef; color: #0e0d0c; }
 .group-chip.active { background: #c8362c; color: #fff; border-color: #c8362c; }
 .group-chip.active:hover { background: #8a2620; border-color: #8a2620; }
+.group-chip.main { cursor: default; opacity: 1; }
+.group-chip.main:hover { background: #c8362c; border-color: #c8362c; }
+.group-chip[disabled] { cursor: default; }
 
 /* 메인그룹 체크박스 — 그룹 카드 헤더에 라디오처럼 단일 선택 */
 .accordion-head .main-checkbox {

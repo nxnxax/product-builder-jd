@@ -318,7 +318,7 @@ function renderRecords() {
     const others = groups.filter(g => g.id !== mainGroup.id);
 
     let html = '';
-    if (others.length > 0) html += renderExtraPicker(others);
+    html += renderGroupPicker(groups, mainGroup.id);
     html += renderGroupCard(mainGroup);
     others.filter(g => selectedExtraIds.has(g.id)).forEach(g => {
         html += renderGroupCard(g);
@@ -331,24 +331,27 @@ function renderRecords() {
     updateBulkBar();
 }
 
-function renderExtraPicker(others) {
-    const showing = others.filter(g => selectedExtraIds.has(g.id)).length;
+function renderGroupPicker(allGroups, mainId) {
+    const others = allGroups.filter(g => g.id !== mainId);
+    const showing = others.filter(g => selectedExtraIds.has(g.id)).length + 1;
     return `
         <div class="extra-groups ${extraPanelOpen ? 'open' : ''}">
             <div class="extra-head">
                 <button class="extra-toggle" data-toggle-extra type="button">
                     <span class="extra-arrow">▶</span>
-                    <h4>현장목록 <span class="extra-count">${others.length}개</span>${showing > 0 ? `<span class="extra-count-sub">· ${showing}개 표시 중</span>` : ''}</h4>
+                    <h4>현장목록 <span class="extra-count">${allGroups.length}개</span><span class="extra-count-sub">· ${showing}개 표시 중</span></h4>
                 </button>
             </div>
             <div class="extra-picker">
-                ${others.map(g => `
-                    <button type="button"
-                            class="group-chip ${selectedExtraIds.has(g.id) ? 'active' : ''}"
-                            data-toggle-extra-id="${g.id}">
-                        ${escapeHtml(g.name)}
-                    </button>
-                `).join('')}
+                ${allGroups.map(g => {
+                    const isMain = g.id === mainId;
+                    const active = isMain || selectedExtraIds.has(g.id);
+                    return `<button type="button"
+                            class="group-chip ${active ? 'active' : ''} ${isMain ? 'main' : ''}"
+                            ${isMain ? 'disabled title="메인그룹 — 항상 표시됩니다"' : `data-toggle-extra-id="${g.id}"`}>
+                        ${isMain ? '★ ' : ''}${escapeHtml(g.name)}
+                    </button>`;
+                }).join('')}
             </div>
         </div>`;
 }
