@@ -13,7 +13,7 @@
 import { initSupabase, apiRequest, getSession } from './auth-shared.js?v=20260509-phone-toggle';
 import { attachColumnFilters, applyColumnFilters, openRowAddModal, attachPhoneAutoFormat, attachThousandFormat, formatThousand, unformatThousand, getEffectiveFields, mountFieldManager,
          exportRecordsToExcel, pickExcelFile, parseExcelFile, suggestFieldMapping, openImportPreviewModal,
-         saveImportSession, loadImportSession, clearImportSession } from './ledger-shared.js?v=20260510-collapse';
+         saveImportSession, loadImportSession, clearImportSession } from './ledger-shared.js?v=20260510-skip-blank';
 
 const PAGE_TYPE = 'contract';
 const TAX_RATE = 0.033;   // 실수령액 = commission * (1 - TAX_RATE)

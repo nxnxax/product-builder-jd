@@ -642,16 +642,39 @@ export async function parseExcelFile(file) {
         let headerIdx = aoa.findIndex(r => r.some(c => String(c ?? '').trim() !== ''));
         if (headerIdx < 0) return;
         const headers = aoa[headerIdx].map(c => cellToString(c));
+
+        // 카운터 (NO/번호/#) 컬럼 인덱스 식별 — 이 컬럼만 채워진 행은 데이터 없음으로 간주.
+        const counterCols = identifyCounterColumns(headers, aoa.slice(headerIdx + 1, headerIdx + 6));
+
         const rows = [];
         for (let i = headerIdx + 1; i < aoa.length; i++) {
             const r = aoa[i];
             if (!r) continue;
-            // 모두 빈 행은 스킵.
-            const allEmpty = headers.every((_, ci) => cellToString(r[ci]) === '');
-            if (allEmpty) continue;
+            // 의미있는 컬럼 (카운터 외) 중 하나라도 값이 있어야 채택.
+            // 모든 컬럼이 카운터로 식별된 경우 (예외) 에는 기존처럼 모두 빈 행만 스킵.
+            const hasMeaningful = (counterCols.size < headers.length)
+                ? headers.some((_, ci) => !counterCols.has(ci) && cellToString(r[ci]) !== '')
+                : headers.some((_, ci) => cellToString(r[ci]) !== '');
+            if (!hasMeaningful) continue;
             rows.push(headers.map((_, ci) => cellToString(r[ci])));
         }
         out.push({ name: nm, headers, rows });
+    });
+    return out;
+}
+
+/** NO / 번호 / # / 순번 등 카운터 컬럼 식별. 빈 헤더라도 첫 데이터가 순수 1~4자리 정수면 카운터로 추정. */
+const COUNTER_HEADER_NORMS = new Set(['no', 'no.', '번호', '#', '순번', '순서', '순', 'num', 'idx', 'index']);
+function identifyCounterColumns(headers, sampleRows) {
+    const out = new Set();
+    headers.forEach((h, ci) => {
+        const norm = normalizeHeader(h);
+        if (COUNTER_HEADER_NORMS.has(norm)) { out.add(ci); return; }
+        // 헤더 비어있고 샘플 모두 1~4자리 정수만 들어있으면 카운터로 추정.
+        if (!norm) {
+            const samples = sampleRows.map(r => cellToString(r?.[ci] ?? '')).filter(Boolean);
+            if (samples.length >= 1 && samples.every(s => /^\d{1,4}$/.test(s))) out.add(ci);
+        }
     });
     return out;
 }
