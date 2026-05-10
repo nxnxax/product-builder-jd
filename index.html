@@ -233,18 +233,30 @@
 
         /* 모바일에서는 stage 비율 조정 + 카피/캐릭터 크기 */
         @media (max-width: 760px) {
-            .hero-stage { aspect-ratio: 16/9; }
-            .stage-actor { height: 38%; }
-            .stage-copy { top: 5%; }
-            .actor-customer { left: 8%; }
+            .hero-stage { aspect-ratio: 16/27; }
+            .stage-copy { top: 6%; width: min(88%, 420px); }
+            .stage-copy .eyebrow { margin-bottom: 10px; }
+            .stage-copy h1 { font-size: clamp(27px, 8.6vw, 38px); line-height: 1.18; }
+            .stage-copy .tagline { font-size: 15px; margin-bottom: 8px; }
+            .stage-copy .sub { font-size: 13px; line-height: 1.58; margin-bottom: 18px; }
+            .stage-copy .cta-primary { padding: 12px 22px; font-size: 14px; }
+            .stage-actor { bottom: 5%; height: 32%; }
+            .actor-customer { left: 6%; }
+            .actor-youngman { right: 7%; height: 29%; }
+            .stage-impact { right: 16%; width: 54%; }
             @keyframes youngmanRunIn {
                 0%, 22% { right: -40%; opacity: 0; }
                 27% { opacity: 1; }
                 58% { right: 12%; }
                 65%, 100% { right: 12%; }
             }
-            .bubble-customer { left: 24%; }
-            .bubble-youngman { right: 22%; }
+            .bubble {
+                padding: 8px 12px;
+                border-radius: 15px;
+                font-size: 13px;
+            }
+            .bubble-customer { bottom: 36%; left: 20%; }
+            .bubble-youngman { bottom: 28%; right: 7%; }
         }
         .cta-primary {
             display: inline-flex; align-items: center; gap: 8px;
