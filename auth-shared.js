@@ -162,7 +162,7 @@ export function mountAppHeader(opts) {
         { key: 'index.html',        label: 'N키워드 분석', href: 'index.html#marketing', icon: ICON.chart },
         { key: 'lotto2233.html',    label: '재미로 보는<br>사주+로또추천', href: 'lotto2233.html', extraCls: 'nav-link-multi', rawLabel: true, icon: ICON.sparkles },
         { key: 'card-builder.html', label: '명함',         href: 'card-builder.html', adminOnly: true, icon: ICON.card },
-        { key: 'upload.html',       label: '업로드',       href: 'upload.html', adminOnly: true, icon: ICON.upload },
+        { key: 'upload.html',       label: '개인자료함',   href: 'upload.html', icon: ICON.upload },
     ];
 
     // 커뮤니티 — 클릭 불가, hover 시 하위 메뉴.

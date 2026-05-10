@@ -3,14 +3,20 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>업로드 · YOUNGMAN</title>
+  <title>개인자료함 · YOUNGMAN</title>
   <link rel="icon" type="image/png" href="logo_main.png">
   <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
-  <link rel="stylesheet" href="style.css?v=20260510-claude-only">
+  <link rel="stylesheet" href="style.css?v=20260510-personal-files">
   <style>
     .upload-wrap { max-width: 760px; margin: 3rem auto 5rem; padding: 0 1.5rem; }
     .upload-wrap h2 { margin: 0 0 .35rem; font-size: 1.6rem; letter-spacing: -.01em; }
-    .upload-wrap .subtitle { color: var(--fg-secondary); margin: 0 0 1.75rem; font-size: .95rem; }
+    .upload-wrap .subtitle { color: var(--fg-secondary); margin: 0 0 1rem; font-size: .95rem; }
+    .upload-wrap .download-note {
+      margin: 0 0 1.75rem; padding: .65rem .9rem;
+      background: rgba(37, 99, 235, 0.06); border: 1px solid rgba(37, 99, 235, 0.18);
+      border-radius: var(--radius-md); color: #1e3a8a; font-size: .85rem; line-height: 1.5;
+    }
+    .upload-wrap .download-note b { color: #1e40af; }
     .drop-zone {
       display: block;
       border: 1.5px dashed var(--border-strong);
@@ -60,47 +66,83 @@
       overflow: hidden;
       background: var(--bg);
       transition: border-color .15s ease;
+      display: flex; flex-direction: column;
     }
     .recent-item:hover { border-color: var(--border-strong); }
     .recent-item a.thumb { display: block; aspect-ratio: 4/3; overflow: hidden; background: var(--bg-muted); }
     .recent-item img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .recent-item .doc-thumb {
+      width: 100%; height: 100%;
+      display: flex; align-items: center; justify-content: center;
+      background: var(--bg-subtle); color: var(--fg-secondary);
+      font-size: 2rem; font-weight: 700; letter-spacing: .03em;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
     .recent-item .meta {
       padding: .45rem .6rem; font-size: .72rem;
-      color: var(--fg-tertiary); display: flex; justify-content: space-between; gap: .5rem;
+      color: var(--fg-tertiary); display: flex; flex-direction: column; gap: .35rem;
     }
-    .recent-item .meta a { color: var(--accent); text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1 1 auto; }
+    .recent-item .meta .name {
+      color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500;
+    }
+    .recent-item .meta .actions { display: flex; gap: .25rem; flex-wrap: wrap; }
+    .recent-item .meta .actions button { margin: 0; }
     .recent-empty { color: var(--fg-tertiary); font-size: .9rem; padding: 1rem 0; }
-    .back-link { display: inline-block; margin-bottom: 1rem; color: var(--fg-secondary); text-decoration: none; font-size: .9rem; }
-    .back-link:hover { color: var(--fg); }
   </style>
 </head>
 <body>
   <header id="app-header" class="app-header"></header>
 
   <main class="upload-wrap">
-    <h2>업로드</h2>
-    <p class="subtitle">이미지/동영상을 드래그하거나 클릭해서 선택. 이미지는 클립보드에서 <kbd>Ctrl/Cmd</kbd>+<kbd>V</kbd>로 붙여넣기도 됩니다. 이미지 ≤ 10MB · 동영상 ≤ 30MB · MP4 / WebM / MOV.</p>
+    <h2>개인자료함</h2>
+    <p class="subtitle">이미지·동영상·문서 (PDF/Office/ZIP/CSV/TXT) 를 본인 자료함에 업로드합니다. 자료는 사용자별로 격리되어 다른 사람 자료는 보이지 않습니다.</p>
+    <p class="download-note">📎 <b>업로드된 파일은 해당 링크를 통해 다운로드 받으실 수 있습니다.</b> 각 파일의 <b>URL 복사</b> 버튼으로 링크를 가져가세요. 링크를 받은 사람은 별도 로그인 없이 다운로드할 수 있으니 외부 공유에 주의하세요.</p>
 
     <label class="drop-zone" id="drop-zone" for="file-input">
       <p class="primary">클릭하거나 드래그해서 업로드</p>
-      <p>이미지 또는 동영상 (이미지 ≤ 10MB · 동영상 ≤ 30MB)</p>
-      <input type="file" id="file-input" accept="image/png,image/jpeg,image/gif,image/webp,video/mp4,video/webm,video/quicktime">
+      <p>이미지 ≤ 20MB · 동영상 ≤ 100MB · 일반 파일 ≤ 50MB</p>
+      <input type="file" id="file-input">
     </label>
 
     <div id="status" class="upload-status"></div>
 
     <div class="recent-head">
-      <h3>최근 업로드</h3>
-      <span class="hint">최신 30개 · 자동 갱신</span>
+      <h3>내 자료</h3>
+      <span class="hint" id="recentHint">최신순 · 100개까지 표시</span>
     </div>
     <div id="recent" class="recent-grid"></div>
   </main>
 
-  <script>
+  <script type="module">
+    import { initSupabase, getSession, getAccessToken, bootApp } from './auth-shared.js?v=20260510-personal-files';
+
     const fileInput = document.getElementById('file-input');
     const dropZone = document.getElementById('drop-zone');
     const statusEl = document.getElementById('status');
     const recentEl = document.getElementById('recent');
+    const recentHint = document.getElementById('recentHint');
+
+    let booted = false;
+
+    bootApp();
+    (async () => {
+        try { await initSupabase(); } catch {}
+        const session = getSession();
+        if (!session) {
+            recentEl.innerHTML = '<div class="recent-empty">로그인이 필요합니다. <a href="index.html" style="color:var(--accent);">홈으로 이동</a></div>';
+            recentHint.textContent = '';
+            return;
+        }
+        booted = true;
+        loadRecent();
+    })();
+
+    async function authedFetch(url, init = {}) {
+        const token = await getAccessToken({ forceRefresh: true });
+        const headers = { ...(init.headers || {}) };
+        if (token) headers.Authorization = 'Bearer ' + token;
+        return fetch(url, { ...init, headers });
+    }
 
     function setStatus(html, type) {
       statusEl.className = 'upload-status ' + (type || '');
@@ -116,22 +158,12 @@
 
     async function upload(file) {
       if (!file) return;
-      const isImage = file.type.startsWith('image/');
-      const isVideo = file.type.startsWith('video/');
-      if (!isImage && !isVideo) {
-        setStatus('이미지 또는 동영상만 업로드 가능합니다 (' + file.type + ')', 'error');
-        return;
-      }
-      const maxBytes = isVideo ? 30 * 1024 * 1024 : 10 * 1024 * 1024;
-      if (file.size > maxBytes) {
-        setStatus(`파일이 너무 큽니다. ${isVideo ? '동영상은 최대 30MB' : '이미지는 최대 10MB'}.`, 'error');
-        return;
-      }
+      if (!booted) { setStatus('로그인이 필요합니다.', 'error'); return; }
       setStatus('업로드 중…', 'success');
       const fd = new FormData();
       fd.append('file', file);
       try {
-        const res = await fetch('upload.php', { method: 'POST', body: fd });
+        const res = await authedFetch('upload.php', { method: 'POST', body: fd });
         const data = await res.json();
         if (!data.ok) throw new Error(data.error || '업로드 실패');
         statusEl.className = 'upload-status success';
@@ -144,8 +176,15 @@
         btn.type = 'button';
         btn.textContent = 'URL 복사';
         btn.addEventListener('click', () => copyText(data.url, btn));
+        const dl = document.createElement('a');
+        dl.className = 'copy-btn';
+        dl.href = data.url;
+        dl.download = data.name;
+        dl.textContent = '다운로드';
+        dl.style.textDecoration = 'none';
         statusEl.appendChild(span);
         statusEl.appendChild(btn);
+        statusEl.appendChild(dl);
         loadRecent();
       } catch (e) {
         setStatus('실패: ' + (e.message || e), 'error');
@@ -154,66 +193,78 @@
 
     async function loadRecent() {
       try {
-        const res = await fetch('upload.php?cb=' + Date.now());
+        const res = await authedFetch('upload.php?cb=' + Date.now());
         const data = await res.json();
         if (!data.ok) throw new Error(data.error);
         const files = data.files || [];
         if (!files.length) {
-          recentEl.innerHTML = '<div class="recent-empty">아직 업로드된 파일이 없습니다.</div>';
+          recentEl.innerHTML = '<div class="recent-empty">아직 업로드된 자료가 없습니다.</div>';
           return;
         }
         recentEl.innerHTML = '';
         for (const f of files) {
           const item = document.createElement('div');
           item.className = 'recent-item';
-          const url = '/uploads/' + encodeURIComponent(f.name);
-          const isVideo = /\.(mp4|webm|mov)$/i.test(f.name);
+          const url = f.url || ('/uploads/' + encodeURIComponent(f.name));
+          const fullUrl = location.origin + url;
 
           const thumb = document.createElement('a');
           thumb.className = 'thumb';
           thumb.href = url;
           thumb.target = '_blank';
-          if (isVideo) {
+          if (f.kind === 'video') {
             const v = document.createElement('video');
             v.src = url; v.muted = true; v.playsInline = true; v.preload = 'metadata';
             v.style.cssText = 'width:100%;height:100%;object-fit:cover;display:block;background:#000;';
             thumb.appendChild(v);
-          } else {
+          } else if (f.kind === 'image') {
             const img = document.createElement('img');
             img.src = url; img.loading = 'lazy'; img.alt = f.name;
             thumb.appendChild(img);
+          } else {
+            const dt = document.createElement('div');
+            dt.className = 'doc-thumb';
+            dt.textContent = (f.ext || '').toUpperCase() || '파일';
+            thumb.appendChild(dt);
           }
 
           const meta = document.createElement('div');
           meta.className = 'meta';
-          const link = document.createElement('a');
-          link.href = url; link.target = '_blank';
-          link.textContent = f.name; link.title = f.name;
-
+          const name = document.createElement('div');
+          name.className = 'name';
+          name.textContent = f.name;
+          name.title = f.name;
           const actions = document.createElement('div');
-          actions.style.cssText = 'display:flex;gap:.25rem;flex-shrink:0;';
+          actions.className = 'actions';
+
+          const dl = document.createElement('a');
+          dl.className = 'copy-btn';
+          dl.href = url;
+          dl.download = f.name;
+          dl.textContent = '다운로드';
+          dl.style.textDecoration = 'none';
 
           const cp = document.createElement('button');
           cp.className = 'copy-btn';
           cp.type = 'button';
-          cp.textContent = '복사';
-          cp.style.cssText = 'padding:0 .4rem;font-size:.7rem;';
+          cp.textContent = 'URL 복사';
           cp.addEventListener('click', (ev) => {
             ev.preventDefault();
-            copyText(location.origin + '/uploads/' + f.name, cp);
+            copyText(fullUrl, cp);
           });
 
           const del = document.createElement('button');
           del.className = 'copy-btn';
           del.type = 'button';
           del.textContent = '삭제';
-          del.style.cssText = 'padding:0 .4rem;font-size:.7rem;color:var(--danger);border-color:var(--danger);';
+          del.style.color = 'var(--danger)';
+          del.style.borderColor = 'var(--danger)';
           del.addEventListener('click', async (ev) => {
             ev.preventDefault();
             if (!confirm(`"${f.name}" 을(를) 삭제할까요? 되돌릴 수 없습니다.`)) return;
             del.disabled = true; del.textContent = '삭제 중…';
             try {
-              const res = await fetch('upload.php?action=delete&name=' + encodeURIComponent(f.name), { method: 'DELETE' });
+              const res = await authedFetch('upload.php?action=delete&name=' + encodeURIComponent(f.name), { method: 'DELETE' });
               const data = await res.json().catch(() => null);
               if (!res.ok || !data?.ok) throw new Error(data?.error || ('실패 ' + res.status));
               loadRecent();
@@ -223,9 +274,10 @@
             }
           });
 
+          actions.appendChild(dl);
           actions.appendChild(cp);
           actions.appendChild(del);
-          meta.appendChild(link);
+          meta.appendChild(name);
           meta.appendChild(actions);
           item.appendChild(thumb);
           item.appendChild(meta);
@@ -258,12 +310,6 @@
         }
       }
     });
-
-    loadRecent();
-  </script>
-  <script type="module">
-    import { bootApp } from './auth-shared.js?v=20260510-claude-only';
-    bootApp({ requireAdmin: true });
   </script>
 </body>
 </html>

@@ -11,72 +11,193 @@ function jout(array $payload, int $code = 200): void {
     exit;
 }
 
+/* ========== Supabase 인증 (records.php 와 동일한 hydrate 로직) ========== */
+function load_supabase_auth(): array {
+    $cfgPath = __DIR__ . '/supabase_config.php';
+    if (!is_file($cfgPath)) $cfgPath = dirname(__DIR__) . '/supabase_config.php';
+    $auth = is_file($cfgPath) ? require $cfgPath : [];
+    if (!is_array($auth)) $auth = [];
+
+    foreach ([__DIR__, dirname(__DIR__)] as $dir) {
+        $envPath = $dir . '/.env';
+        if (is_file($envPath)) {
+            foreach (file($envPath, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as $line) {
+                if (preg_match('/^\s*(?:export\s+)?([A-Z0-9_]+)\s*=\s*(.*)$/i', $line, $m)) {
+                    $k = strtoupper($m[1]); $v = trim($m[2], "\"' ");
+                    if (empty($auth['supabase_url']) && ($k === 'SUPABASE_URL' || $k === 'VITE_SUPABASE_URL')) {
+                        $auth['supabase_url'] = preg_replace('#/(rest|auth)/v1/?.*$#', '', $v);
+                    }
+                    if (empty($auth['anon_key']) && ($k === 'SUPABASE_ANON_KEY' || $k === 'VITE_SUPABASE_ANON_KEY')) {
+                        $auth['anon_key'] = $v;
+                    }
+                }
+            }
+        }
+        $jsPath = $dir . '/supabase_config.js';
+        if (is_file($jsPath)) {
+            $contents = (string)file_get_contents($jsPath);
+            if (empty($auth['supabase_url']) && preg_match('/SUPABASE_URL\s*=\s*[\'\"]([^\'\"]+)[\'\"]/', $contents, $m)) {
+                $auth['supabase_url'] = preg_replace('#/(rest|auth)/v1/?.*$#', '', $m[1]);
+            }
+            if (empty($auth['anon_key']) && preg_match('/SUPABASE_ANON_KEY\s*=\s*[\'\"]([^\'\"]+)[\'\"]/', $contents, $m)) {
+                $auth['anon_key'] = $m[1];
+            }
+        }
+    }
+    return $auth;
+}
+
+function get_bearer_token(): string {
+    $h = $_SERVER['HTTP_AUTHORIZATION'] ?? $_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? '';
+    if (preg_match('/Bearer\s+(.+)/i', $h, $m)) return trim($m[1]);
+    return '';
+}
+
+function fetch_user_email_via_supabase(string $token, array $auth): string {
+    $url = rtrim((string)($auth['supabase_url'] ?? ''), '/');
+    $key = (string)($auth['anon_key'] ?? '');
+    if (!$url || !$key || !$token) return '';
+    $ch = curl_init($url . '/auth/v1/user');
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_HTTPHEADER => [
+            'Authorization: Bearer ' . $token,
+            'apikey: ' . $key,
+        ],
+        CURLOPT_TIMEOUT => 8,
+        CURLOPT_CONNECTTIMEOUT => 5,
+    ]);
+    $resp = curl_exec($ch);
+    $status = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    if ($status !== 200 || !$resp) return '';
+    $data = json_decode((string)$resp, true);
+    return strtolower(trim((string)($data['email'] ?? '')));
+}
+
+function require_auth_email(): string {
+    $token = get_bearer_token();
+    if (!$token) jout(['ok' => false, 'error' => '로그인이 필요합니다.'], 401);
+    $auth = load_supabase_auth();
+    $email = fetch_user_email_via_supabase($token, $auth);
+    if (!$email) jout(['ok' => false, 'error' => '인증 검증 실패. 다시 로그인해주세요.'], 401);
+    return $email;
+}
+
+/* ========== 사용자별 디렉토리 격리 ========== */
+function user_dir_segment(string $email): string {
+    return 'u_' . substr(hash('sha256', strtolower(trim($email))), 0, 16);
+}
+
+function ensure_user_dir(string $rootDir, string $segment): string {
+    $dir = $rootDir . '/' . $segment;
+    if (!is_dir($rootDir)) {
+        if (!@mkdir($rootDir, 0755, true) && !is_dir($rootDir)) {
+            jout(['ok' => false, 'error' => '업로드 폴더 생성 실패'], 500);
+        }
+    }
+    if (!is_dir($dir)) {
+        if (!@mkdir($dir, 0755, true) && !is_dir($dir)) {
+            jout(['ok' => false, 'error' => '사용자 폴더 생성 실패'], 500);
+        }
+    }
+    // 디렉토리 인덱싱 차단 + 실행 가능 파일 차단 (uploads root 의 .htaccess 가 상속되지만 방어).
+    $ht = $dir . '/.htaccess';
+    if (!is_file($ht)) {
+        @file_put_contents($ht,
+            "Options -Indexes\n"
+            . "<FilesMatch \"\\.(php|phtml|phar|cgi|pl|py|sh|inc|env)$\">\n"
+            . "  Require all denied\n"
+            . "</FilesMatch>\n"
+        );
+    }
+    return $dir;
+}
+
+/* ========== 메인 ========== */
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 $uploadsDir = __DIR__ . '/uploads';
 
 $allowedImage = ['image/png' => 'png', 'image/jpeg' => 'jpg', 'image/gif' => 'gif', 'image/webp' => 'webp'];
 $allowedVideo = ['video/mp4' => 'mp4', 'video/webm' => 'webm', 'video/quicktime' => 'mov'];
-$allowed = $allowedImage + $allowedVideo;
-$listExts = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'mp4', 'webm', 'mov'];
+$allowedDoc   = [
+    'application/pdf' => 'pdf',
+    'application/zip' => 'zip',
+    'application/x-zip-compressed' => 'zip',
+    'application/msword' => 'doc',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document' => 'docx',
+    'application/vnd.ms-excel' => 'xls',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' => 'xlsx',
+    'application/vnd.ms-powerpoint' => 'ppt',
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation' => 'pptx',
+    'text/plain' => 'txt',
+    'text/csv' => 'csv',
+    'application/octet-stream' => null,  // 일반 바이너리는 확장자로 따로 검사
+];
+$allowed = $allowedImage + $allowedVideo + $allowedDoc;
+$listExts = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'mp4', 'webm', 'mov',
+             'pdf', 'zip', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'txt', 'csv'];
 
 $action = strtolower(trim((string)($_GET['action'] ?? '')));
 
 if ($method === 'OPTIONS') jout(['ok' => true]);
 
-// === DELETE ===
+$email = require_auth_email();
+$userSeg = user_dir_segment($email);
+$userDir = ensure_user_dir($uploadsDir, $userSeg);
+
+/* === DELETE === */
 if ($method === 'DELETE' || $action === 'delete') {
     $name = (string)($_GET['name'] ?? $_POST['name'] ?? '');
-    $name = basename($name); // strip any path components
+    $name = basename($name);
     if ($name === '' || $name === '.' || $name === '..' || strpos($name, '/') !== false || strpos($name, '\\') !== false) {
         jout(['ok' => false, 'error' => '파일명이 올바르지 않습니다.'], 400);
     }
-    if ($name[0] === '.') {
-        jout(['ok' => false, 'error' => '숨김 파일은 삭제할 수 없습니다.'], 400);
-    }
+    if ($name[0] === '.') jout(['ok' => false, 'error' => '숨김 파일은 삭제할 수 없습니다.'], 400);
     $ext = strtolower(pathinfo($name, PATHINFO_EXTENSION));
-    if (!in_array($ext, $listExts, true)) {
-        jout(['ok' => false, 'error' => '허용되지 않는 파일 종류입니다.'], 400);
-    }
-    $path = $uploadsDir . '/' . $name;
+    if (!in_array($ext, $listExts, true)) jout(['ok' => false, 'error' => '허용되지 않는 파일 종류입니다.'], 400);
+
+    $path = $userDir . '/' . $name;
     $real = @realpath($path);
-    $rootReal = @realpath($uploadsDir);
+    $rootReal = @realpath($userDir);
     if (!$real || !$rootReal || strpos($real, $rootReal . DIRECTORY_SEPARATOR) !== 0) {
         jout(['ok' => false, 'error' => '파일을 찾을 수 없습니다.'], 404);
     }
-    if (!@unlink($real)) {
-        jout(['ok' => false, 'error' => '삭제 실패 (권한 또는 파일 잠김 가능).'], 500);
-    }
+    if (!@unlink($real)) jout(['ok' => false, 'error' => '삭제 실패'], 500);
     jout(['ok' => true, 'deleted' => $name]);
 }
 
-// === LIST ===
+/* === LIST (자기 디렉토리만) === */
 if ($method === 'GET') {
     $files = [];
-    if (is_dir($uploadsDir)) {
-        $entries = @scandir($uploadsDir) ?: [];
+    if (is_dir($userDir)) {
+        $entries = @scandir($userDir) ?: [];
         foreach ($entries as $f) {
             if ($f === '.' || $f === '..' || $f[0] === '.') continue;
             $ext = strtolower(pathinfo($f, PATHINFO_EXTENSION));
             if (!in_array($ext, $listExts, true)) continue;
-            $p = $uploadsDir . '/' . $f;
+            $p = $userDir . '/' . $f;
             if (!is_file($p)) continue;
             $isVideo = in_array($ext, ['mp4', 'webm', 'mov'], true);
+            $isImage = in_array($ext, ['png', 'jpg', 'jpeg', 'gif', 'webp'], true);
+            $kind = $isVideo ? 'video' : ($isImage ? 'image' : 'doc');
             $files[] = [
                 'name' => $f,
                 'mtime' => filemtime($p),
                 'size' => filesize($p),
-                'kind' => $isVideo ? 'video' : 'image',
+                'kind' => $kind,
+                'ext' => $ext,
+                'url' => '/uploads/' . rawurlencode($userSeg) . '/' . rawurlencode($f),
             ];
         }
         usort($files, function($a, $b) { return $b['mtime'] <=> $a['mtime']; });
     }
-    jout(['ok' => true, 'files' => array_slice($files, 0, 60)]);
+    jout(['ok' => true, 'files' => array_slice($files, 0, 100), 'userSeg' => $userSeg]);
 }
 
 if ($method !== 'POST') jout(['ok' => false, 'error' => 'method not allowed'], 405);
 
-// === UPLOAD ===
-// Accept either "file" (new) or "image" (legacy) field for backward compat.
+/* === UPLOAD === */
 $file = null;
 if (!empty($_FILES['file']) && is_array($_FILES['file'])) $file = $_FILES['file'];
 elseif (!empty($_FILES['image']) && is_array($_FILES['image'])) $file = $_FILES['image'];
@@ -99,34 +220,42 @@ if ($mime === '' && function_exists('finfo_open')) {
         @finfo_close($fi);
     }
 }
-if (!isset($allowed[$mime])) {
-    jout(['ok' => false, 'error' => '지원하지 않는 형식입니다 (' . ($mime ?: 'unknown') . '). PNG/JPG/GIF/WebP/MP4/WebM/MOV만 가능.'], 400);
+
+// 클라이언트 파일명에서 확장자 fallback (octet-stream 케이스 대응).
+$origExt = strtolower(pathinfo((string)($file['name'] ?? ''), PATHINFO_EXTENSION));
+
+$ext = null;
+if (isset($allowed[$mime])) {
+    $ext = $allowed[$mime];
+}
+if ($ext === null && $origExt && in_array($origExt, $listExts, true)) {
+    $ext = $origExt;   // octet-stream 인 경우 확장자로 결정
+}
+if (!$ext) {
+    jout(['ok' => false, 'error' => '지원하지 않는 형식입니다 (' . ($mime ?: 'unknown') . ').'], 400);
 }
 
-$isVideo = isset($allowedVideo[$mime]);
-$maxBytes = $isVideo ? 30 * 1024 * 1024 : 10 * 1024 * 1024;
+$isVideo = isset($allowedVideo[$mime]) || in_array($ext, ['mp4', 'webm', 'mov'], true);
+$isImage = isset($allowedImage[$mime]) || in_array($ext, ['png', 'jpg', 'jpeg', 'gif', 'webp'], true);
+$isDoc   = !$isVideo && !$isImage;
+
+$maxBytes = $isVideo ? 100 * 1024 * 1024 : ($isImage ? 20 * 1024 * 1024 : 50 * 1024 * 1024);
 if ((int)$file['size'] > $maxBytes) {
-    jout(['ok' => false, 'error' => '파일이 너무 큽니다. ' . ($isVideo ? '동영상은 최대 30MB' : '이미지는 최대 10MB')], 400);
+    jout(['ok' => false, 'error' => '파일이 너무 큽니다. (이미지 ≤ 20MB · 동영상 ≤ 100MB · 일반 파일 ≤ 50MB)'], 400);
 }
 
-$ext = $allowed[$mime];
-
-if (!is_dir($uploadsDir)) {
-    if (!@mkdir($uploadsDir, 0755, true) && !is_dir($uploadsDir)) {
-        jout(['ok' => false, 'error' => '업로드 폴더 생성 실패'], 500);
-    }
-}
-
-$ht = $uploadsDir . '/.htaccess';
-if (!is_file($ht)) {
-    $rules = "Options -Indexes\n"
-           . "<FilesMatch \"\\.(php|phtml|phar|cgi|pl|py|sh|inc|env)$\">\n"
-           . "  Require all denied\n"
-           . "</FilesMatch>\n"
-           . "<IfModule mod_php.c>\n  php_flag engine off\n</IfModule>\n"
-           . "<IfModule mod_php7.c>\n  php_flag engine off\n</IfModule>\n"
-           . "<IfModule mod_php8.c>\n  php_flag engine off\n</IfModule>\n";
-    @file_put_contents($ht, $rules);
+// uploads root 에 .htaccess 보강 (없으면 생성).
+$rootHt = $uploadsDir . '/.htaccess';
+if (!is_file($rootHt)) {
+    @file_put_contents($rootHt,
+        "Options -Indexes\n"
+        . "<FilesMatch \"\\.(php|phtml|phar|cgi|pl|py|sh|inc|env)$\">\n"
+        . "  Require all denied\n"
+        . "</FilesMatch>\n"
+        . "<IfModule mod_php.c>\n  php_flag engine off\n</IfModule>\n"
+        . "<IfModule mod_php7.c>\n  php_flag engine off\n</IfModule>\n"
+        . "<IfModule mod_php8.c>\n  php_flag engine off\n</IfModule>\n"
+    );
 }
 
 try {
@@ -135,7 +264,7 @@ try {
     $rand = substr(sha1(uniqid('', true)), 0, 10);
 }
 $basename = date('Ymd-His') . '-' . $rand . '.' . $ext;
-$dest = $uploadsDir . '/' . $basename;
+$dest = $userDir . '/' . $basename;
 
 if (!@move_uploaded_file($file['tmp_name'], $dest)) {
     jout(['ok' => false, 'error' => '파일 저장 실패'], 500);
@@ -144,7 +273,7 @@ if (!@move_uploaded_file($file['tmp_name'], $dest)) {
 
 $proto = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
 $host = $_SERVER['HTTP_HOST'] ?? 'youngman-biz.com';
-$publicUrl = $proto . '://' . $host . '/uploads/' . $basename;
+$publicUrl = $proto . '://' . $host . '/uploads/' . rawurlencode($userSeg) . '/' . rawurlencode($basename);
 
 jout([
     'ok' => true,
@@ -152,5 +281,6 @@ jout([
     'name' => $basename,
     'size' => (int)$file['size'],
     'mime' => $mime,
-    'kind' => $isVideo ? 'video' : 'image',
+    'ext' => $ext,
+    'kind' => $isVideo ? 'video' : ($isImage ? 'image' : 'doc'),
 ]);
