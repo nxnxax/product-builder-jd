@@ -151,6 +151,9 @@ export function mountAppHeader(opts) {
         sparkles:  SVG('<path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/><path d="M5 3v4"/><path d="M19 17v4"/><path d="M3 5h4"/><path d="M17 19h4"/>'),
         card:      SVG('<rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/>'),
         upload:    SVG('<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>'),
+        home:      SVG('<path d="M3 10.5 12 3l9 7.5"/><path d="M5 10v10h14V10"/><path d="M9 20v-6h6v6"/>'),
+        building:  SVG('<rect x="4" y="3" width="16" height="18" rx="2"/><path d="M9 21v-4h6v4"/><path d="M8 7h.01"/><path d="M12 7h.01"/><path d="M16 7h.01"/><path d="M8 11h.01"/><path d="M12 11h.01"/><path d="M16 11h.01"/>'),
+        fileText:  SVG('<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8"/><path d="M8 17h5"/>'),
         users:     SVG('<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>'),
         user:      SVG('<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>'),
         megaphone: SVG('<path d="M3 11l18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/>'),
@@ -204,6 +207,22 @@ export function mountAppHeader(opts) {
 
     const primaryHtml = primaryItems.map(i => renderItem(i, 'nav-pill')).join('');
     const secondaryHtml = secondaryItems.map(i => renderItem(i, 'nav-link nav-link-secondary')).join('') + communityHtml;
+    const bottomItems = [
+        { key: 'index.html',     label: '홈',             href: 'index.html',     icon: ICON.home },
+        { key: 'customers.html', label: '고객관리대장',   href: 'customers.html', icon: ICON.users },
+        { key: 'org.html',       label: '조직도',         href: 'org.html',       icon: ICON.building },
+        { key: 'contracts.html', label: '계약자 관리대장', href: 'contracts.html', icon: ICON.fileText },
+    ];
+    const bottomHtml = bottomItems.map(item => {
+        const isHome = item.key === 'index.html' && (path === '' || path === 'index.html');
+        const isActive = isHome || path === item.key;
+        return `
+            <a class="mobile-bottom-nav-item${isActive ? ' active' : ''}" href="${item.href}">
+                <span class="mobile-bottom-nav-icon">${item.icon}</span>
+                <span class="mobile-bottom-nav-label">${escapeHtmlSafe(item.label)}</span>
+            </a>
+        `;
+    }).join('');
 
     if (!root.classList.contains('app-header')) root.classList.add('app-header');
     root.innerHTML = `
@@ -247,6 +266,14 @@ export function mountAppHeader(opts) {
     `;
     [...drawerWrap.children].forEach(c => document.body.appendChild(c));
     const drawerEl = document.querySelector('.mobile-drawer[data-yman-drawer]');
+
+    document.querySelectorAll('[data-yman-bottom-nav]').forEach(el => el.remove());
+    const bottomNav = document.createElement('nav');
+    bottomNav.className = 'mobile-bottom-nav';
+    bottomNav.setAttribute('aria-label', '주요 메뉴');
+    bottomNav.setAttribute('data-yman-bottom-nav', '');
+    bottomNav.innerHTML = bottomHtml;
+    document.body.appendChild(bottomNav);
 
     // logout 핸들러 — 헤더 + 드로어 모두
     const handleLogout = async () => {

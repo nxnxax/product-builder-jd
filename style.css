@@ -2686,3 +2686,84 @@ select:focus {
 }
 .sweep-toast.show { opacity: 1; transform: translateY(0); }
 
+/* ------------------------------------------------------------ Mobile fixed bottom nav */
+.mobile-bottom-nav {
+    display: none;
+}
+
+@media (max-width: 860px) {
+    body {
+        padding-bottom: calc(76px + env(safe-area-inset-bottom, 0px));
+    }
+
+    .mobile-bottom-nav {
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        z-index: 900;
+        width: 100vw;
+        max-width: 100vw;
+        box-sizing: border-box;
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        min-height: 64px;
+        padding: 7px 6px calc(7px + env(safe-area-inset-bottom, 0px));
+        background: rgba(255, 255, 255, 0.97);
+        border-top: 1px solid rgba(20, 14, 8, 0.1);
+        box-shadow: 0 -10px 28px rgba(20, 14, 8, 0.1);
+        backdrop-filter: blur(18px);
+        -webkit-backdrop-filter: blur(18px);
+    }
+
+    .mobile-bottom-nav-item {
+        min-width: 0;
+        height: 52px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 4px;
+        border-radius: 10px;
+        text-decoration: none;
+        color: #6e655c;
+        font-size: 10.5px;
+        font-weight: 650;
+        line-height: 1.1;
+        letter-spacing: 0;
+        -webkit-tap-highlight-color: transparent;
+    }
+
+    .mobile-bottom-nav-icon {
+        width: 23px;
+        height: 23px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        color: currentColor;
+    }
+
+    .mobile-bottom-nav-icon svg {
+        width: 22px;
+        height: 22px;
+        display: block;
+    }
+
+    .mobile-bottom-nav-label {
+        width: 100%;
+        overflow: hidden;
+        text-align: center;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+    }
+
+    .mobile-bottom-nav-item.active,
+    .mobile-bottom-nav-item:active {
+        color: var(--accent, #c8362c);
+        background: rgba(200, 54, 44, 0.07);
+    }
+
+    .mobile-drawer {
+        padding-bottom: calc(88px + env(safe-area-inset-bottom, 0px));
+    }
+}
