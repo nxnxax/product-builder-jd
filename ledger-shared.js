@@ -759,7 +759,9 @@ export function coerceCellForField(field, raw) {
  *  - fields        우리 필드 [{key,label,type}]
  *  - suggested     suggestFieldMapping 결과 (string|null)[]
  *  - fallbackKey   매핑 안 된 컬럼들의 fallback 필드 key (예: 'memo' / 'content')
- *  - onConfirm     async ([{data}]) => void   — 매핑 적용된 row 데이터 배열을 받음.
+ *  - confirmLabel  확인 버튼 라벨 (기본: 'N건 추가하기'). 재수정 모드는 '재적용' 등으로 호출자가 지정.
+ *  - extraDanger   { label, onClick }  — 푸터 좌측에 위험 액션 버튼 (예: "기록 폐기").
+ *  - onConfirm     async (mappedRows, mapping) => void   — 매핑 적용된 row + 최종 mapping 배열.
  */
 export function openImportPreviewModal(opts) {
     const fieldByKey = new Map((opts.fields || []).map(f => [f.key, f]));
@@ -822,8 +824,9 @@ export function openImportPreviewModal(opts) {
                 <p class="form-help error" data-error style="margin-top:10px;display:none;"></p>
             </div>
             <footer class="modal-footer">
+                ${opts.extraDanger ? `<button class="tiny-btn danger modal-footer-spacer" type="button" data-extra>${escapeHtml(opts.extraDanger.label)}</button>` : ''}
                 <button class="tiny-btn" type="button" data-cancel>취소</button>
-                <button class="tiny-btn primary" type="button" data-confirm>${(opts.rows || []).length}건 추가하기</button>
+                <button class="tiny-btn primary" type="button" data-confirm>${escapeHtml(opts.confirmLabel || ((opts.rows || []).length + '건 추가하기'))}</button>
             </footer>
         </div>
     `;
@@ -846,7 +849,7 @@ export function openImportPreviewModal(opts) {
 
         try {
             const rows = buildRowsFromMapping(opts.headers, opts.rows, mapping, optionFields, fieldByKey, opts.fallbackKey);
-            await opts.onConfirm(rows);
+            await opts.onConfirm(rows, mapping.slice());
             close();
         } catch (e) {
             errEl.textContent = (e && e.message) ? e.message : String(e);
@@ -854,6 +857,41 @@ export function openImportPreviewModal(opts) {
             btn.disabled = false;
         }
     });
+
+    if (opts.extraDanger) {
+        md.querySelector('[data-extra]').addEventListener('click', async () => {
+            const errEl = md.querySelector('[data-error]');
+            try {
+                await opts.extraDanger.onClick();
+                close();
+            } catch (e) {
+                errEl.textContent = (e && e.message) ? e.message : String(e);
+                errEl.style.display = '';
+            }
+        });
+    }
+}
+
+/* ---- 마지막 import 세션 보관 (localStorage) ----------------------------- */
+const IMPORT_SESSION_PREFIX = 'ledger:lastImport:';
+
+/** 세션 = { sheet:{name,headers,rows}, mapping, recordIds, importedAt } */
+export function saveImportSession(pageType, groupId, session) {
+    try {
+        localStorage.setItem(IMPORT_SESSION_PREFIX + pageType + ':' + groupId,
+            JSON.stringify({ ...session, importedAt: Date.now() }));
+    } catch (e) { console.warn('import 세션 저장 실패', e); }
+}
+
+export function loadImportSession(pageType, groupId) {
+    try {
+        const raw = localStorage.getItem(IMPORT_SESSION_PREFIX + pageType + ':' + groupId);
+        return raw ? JSON.parse(raw) : null;
+    } catch (e) { return null; }
+}
+
+export function clearImportSession(pageType, groupId) {
+    try { localStorage.removeItem(IMPORT_SESSION_PREFIX + pageType + ':' + groupId); } catch (e) {}
 }
 
 function buildRowsFromMapping(headers, rows, mapping, _optionFields, fieldByKey, fallbackKey) {

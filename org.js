@@ -8,7 +8,8 @@
 
 import { initSupabase, apiRequest, getSession } from './auth-shared.js?v=20260509-phone-toggle';
 import { attachColumnFilters, applyColumnFilters, openRowAddModal, attachPhoneAutoFormat, attachThousandFormat, formatThousand, unformatThousand, getEffectiveFields, mountFieldManager,
-         exportRecordsToExcel, pickExcelFile, parseExcelFile, suggestFieldMapping, openImportPreviewModal } from './ledger-shared.js?v=20260510-excel';
+         exportRecordsToExcel, pickExcelFile, parseExcelFile, suggestFieldMapping, openImportPreviewModal,
+         saveImportSession, loadImportSession, clearImportSession } from './ledger-shared.js?v=20260510-excel-reopen';
 
 const PAGE_TYPE = 'org';
 
@@ -439,6 +440,7 @@ function renderGroupCard(group) {
                 <div class="head-actions">
                     <button type="button" data-export-gid="${group.id}" title="이 그룹을 엑셀로 다운로드">📥 엑셀</button>
                     <button type="button" data-import-gid="${group.id}" title="엑셀 파일을 이 그룹에 업로드">📤 가져오기</button>
+                    ${loadImportSession(PAGE_TYPE, group.id) ? `<button type="button" data-reimport-gid="${group.id}" title="마지막 가져오기 매핑 다시 열어 수정">🔄 매핑 수정</button>` : ''}
                     <button type="button" data-edit-gid="${group.id}">편집</button>
                     <button type="button" data-settings-gid="${group.id}">⚙ 설정</button>
                 </div>
@@ -461,6 +463,9 @@ function bindAccordionEvents() {
     });
     document.querySelectorAll('[data-import-gid]').forEach(b => {
         b.addEventListener('click', (e) => { e.stopPropagation(); importToGroup(parseInt(b.dataset.importGid, 10)); });
+    });
+    document.querySelectorAll('[data-reimport-gid]').forEach(b => {
+        b.addEventListener('click', (e) => { e.stopPropagation(); reopenImportSession(parseInt(b.dataset.reimportGid, 10)); });
     });
     document.querySelectorAll('[data-set-main]').forEach(cb => {
         cb.addEventListener('change', () => {
@@ -789,19 +794,63 @@ async function importToGroup(gid) {
         fields,
         fallbackKey: FALLBACK_FIELD_KEY,
         suggested,
-        onConfirm: async (mappedRows) => {
-            for (const data of mappedRows) {
-                // team 정규화 (정수만 저장, 본부장은 빈값).
-                if ('team' in data) {
-                    const t = teamFromString(data.team);
-                    if (data.title === '본부장' || t === 0) delete data.team;
-                    else if (t) data.team = t;
-                    else delete data.team;
-                }
-                // 직함이 없는데 이름이 있으면 기본 '팀원'.
-                if (!data.title && data.name) data.title = '팀원';
-                await api('ledger-records', { method: 'POST', body: { groupId: gid, data, source: 'excel' } });
+        onConfirm: async (mappedRows, finalMapping) => {
+            const newIds = await applyImportRows(gid, mappedRows);
+            saveImportSession(PAGE_TYPE, gid, { sheet, mapping: finalMapping, recordIds: newIds });
+            await loadRecords();
+        },
+    });
+}
+
+async function applyImportRows(gid, mappedRows) {
+    const ids = [];
+    for (const data of mappedRows) {
+        if ('team' in data) {
+            const t = teamFromString(data.team);
+            if (data.title === '본부장' || t === 0) delete data.team;
+            else if (t) data.team = t;
+            else delete data.team;
+        }
+        if (!data.title && data.name) data.title = '팀원';
+        const res = await api('ledger-records', { method: 'POST', body: { groupId: gid, data, source: 'excel' } });
+        if (res?.id) ids.push(res.id);
+    }
+    return ids;
+}
+
+async function reopenImportSession(gid) {
+    const g = groups.find(x => x.id === gid);
+    if (!g) return;
+    const sess = loadImportSession(PAGE_TYPE, gid);
+    if (!sess || !sess.sheet) { alert('저장된 가져오기 기록이 없습니다.'); return; }
+    const fields = fieldsWithTeam(g);
+    const mapping = (Array.isArray(sess.mapping) && sess.mapping.length === sess.sheet.headers.length)
+        ? sess.mapping : suggestFieldMapping(sess.sheet.headers, fields, FIELD_SYNONYMS);
+    openImportPreviewModal({
+        title: `"${g.name}" 매핑 재수정`,
+        sheetName: sess.sheet.name,
+        headers: sess.sheet.headers,
+        rows: sess.sheet.rows,
+        fields,
+        fallbackKey: FALLBACK_FIELD_KEY,
+        suggested: mapping,
+        confirmLabel: `${(sess.sheet.rows || []).length}건 다시 적용`,
+        extraDanger: {
+            label: '이 가져오기 기록 폐기',
+            onClick: async () => {
+                if (!confirm('가져오기 기록을 폐기합니다. (이미 추가된 행은 그대로 남고 매핑 수정 버튼만 사라집니다.) 진행할까요?')) throw new Error('취소됨');
+                clearImportSession(PAGE_TYPE, gid);
+                renderRecords();
+            },
+        },
+        onConfirm: async (mappedRows, finalMapping) => {
+            const oldIds = Array.isArray(sess.recordIds) ? sess.recordIds.filter(Boolean) : [];
+            if (oldIds.length) {
+                try { await api('ledger-records-bulk', { method: 'POST', body: { ids: oldIds } }); }
+                catch (e) { /* 이미 일부 삭제됐을 수 있음 */ }
             }
+            const newIds = await applyImportRows(gid, mappedRows);
+            saveImportSession(PAGE_TYPE, gid, { sheet: sess.sheet, mapping: finalMapping, recordIds: newIds });
             await loadRecords();
         },
     });
