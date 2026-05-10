@@ -12,7 +12,7 @@
 import { initSupabase, apiRequest, getSession } from './auth-shared.js?v=20260509-phone-toggle';
 import { attachColumnFilters, applyColumnFilters, openRowAddModal, attachPhoneAutoFormat, getEffectiveFields, mountFieldManager,
          exportRecordsToExcel, pickExcelFile, parseExcelFile, suggestFieldMapping, openImportPreviewModal,
-         saveImportSession, loadImportSession, clearImportSession } from './ledger-shared.js?v=20260510-progress';
+         saveImportSession, loadImportSession, clearImportSession } from './ledger-shared.js?v=20260510-collapse';
 
 const PAGE_TYPE = 'customer';
 
@@ -299,9 +299,10 @@ function bindExtraPickerEvents() {
 
 function renderGroupCard(group) {
     const grpRecs = records.filter(r => r.groupId === group.id);
-    const bodyHtml = renderTable(group, applyFilters(grpRecs));
+    const open = expandedGroupIds.has(group.id);
+    const bodyHtml = open ? renderTable(group, applyFilters(grpRecs)) : '';
     return `
-        <div class="accordion-card open" data-gid="${group.id}">
+        <div class="accordion-card ${open ? 'open' : ''}" data-gid="${group.id}">
             <div class="accordion-head">
                 <h3>${escapeHtml(group.name)} <span class="head-count">(${grpRecs.length}건)</span></h3>
                 <label class="main-checkbox" title="이 그룹을 메인으로 설정">
@@ -309,6 +310,7 @@ function renderGroupCard(group) {
                     <span>메인그룹</span>
                 </label>
                 <div class="head-actions">
+                    <button type="button" data-toggle-gid="${group.id}" title="${open ? '접기' : '펼치기'}">${open ? '▼ 접기' : '▶ 펼치기'}</button>
                     <button type="button" data-export-gid="${group.id}" title="이 그룹을 엑셀로 다운로드">📥 엑셀</button>
                     <button type="button" data-import-gid="${group.id}" title="엑셀 파일을 이 그룹에 업로드">📤 가져오기</button>
                     ${loadImportSession(PAGE_TYPE, group.id) ? `<button type="button" data-reimport-gid="${group.id}" title="마지막 가져오기 매핑 다시 열어 수정">🔄 매핑 수정</button>` : ''}
@@ -359,6 +361,15 @@ function bindAccordionEvents() {
     });
     document.querySelectorAll('[data-reimport-gid]').forEach(b => {
         b.addEventListener('click', (e) => { e.stopPropagation(); reopenImportSession(parseInt(b.dataset.reimportGid, 10)); });
+    });
+    document.querySelectorAll('[data-toggle-gid]').forEach(b => {
+        b.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const gid = parseInt(b.dataset.toggleGid, 10);
+            if (expandedGroupIds.has(gid)) expandedGroupIds.delete(gid);
+            else expandedGroupIds.add(gid);
+            renderRecords();
+        });
     });
     document.querySelectorAll('[data-set-main]').forEach(cb => {
         cb.addEventListener('change', () => {

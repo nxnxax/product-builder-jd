@@ -9,7 +9,7 @@
 import { initSupabase, apiRequest, getSession } from './auth-shared.js?v=20260509-phone-toggle';
 import { attachColumnFilters, applyColumnFilters, openRowAddModal, attachPhoneAutoFormat, attachThousandFormat, formatThousand, unformatThousand, getEffectiveFields, mountFieldManager,
          exportRecordsToExcel, pickExcelFile, parseExcelFile, suggestFieldMapping, openImportPreviewModal,
-         saveImportSession, loadImportSession, clearImportSession } from './ledger-shared.js?v=20260510-progress';
+         saveImportSession, loadImportSession, clearImportSession } from './ledger-shared.js?v=20260510-collapse';
 
 const PAGE_TYPE = 'org';
 
@@ -415,17 +415,20 @@ function renderGroupCard(group) {
         else byTeam.unassigned.push(r);
     });
 
+    const open = expandedGroupIds.has(group.id);
     let bodyHtml = '';
-    // 팀장 모드가 아니면 본부장 섹션을 가장 상단에 노출 (비어있어도 추가 버튼 노출).
-    if (!isLeadMode) {
-        bodyHtml += renderTeamSection('본부장', 0, heads, group, { hq: true });
+    if (open) {
+        // 팀장 모드가 아니면 본부장 섹션을 가장 상단에 노출 (비어있어도 추가 버튼 노출).
+        if (!isLeadMode) {
+            bodyHtml += renderTeamSection('본부장', 0, heads, group, { hq: true });
+        }
+        bodyHtml += [...activeTeams].sort((a, b) => a - b).map(t => renderTeamSection(t + '팀', t, byTeam[t], group)).join('');
+        if (byTeam.unassigned.length > 0) bodyHtml += renderTeamSection('미지정', null, byTeam.unassigned, group);
     }
-    bodyHtml += [...activeTeams].sort((a, b) => a - b).map(t => renderTeamSection(t + '팀', t, byTeam[t], group)).join('');
-    if (byTeam.unassigned.length > 0) bodyHtml += renderTeamSection('미지정', null, byTeam.unassigned, group);
 
     const role = ownerRoleOf(group);
     return `
-        <div class="accordion-card open" data-gid="${group.id}">
+        <div class="accordion-card ${open ? 'open' : ''}" data-gid="${group.id}">
             <div class="accordion-head">
                 <h3>${escapeHtml(group.name)} <span class="head-count">(${groupRecs.length}명)</span></h3>
                 <span class="role-label">내 직책</span>
@@ -438,6 +441,7 @@ function renderGroupCard(group) {
                     <span>메인그룹</span>
                 </label>
                 <div class="head-actions">
+                    <button type="button" data-toggle-gid="${group.id}" title="${open ? '접기' : '펼치기'}">${open ? '▼ 접기' : '▶ 펼치기'}</button>
                     <button type="button" data-export-gid="${group.id}" title="이 그룹을 엑셀로 다운로드">📥 엑셀</button>
                     <button type="button" data-import-gid="${group.id}" title="엑셀 파일을 이 그룹에 업로드">📤 가져오기</button>
                     ${loadImportSession(PAGE_TYPE, group.id) ? `<button type="button" data-reimport-gid="${group.id}" title="마지막 가져오기 매핑 다시 열어 수정">🔄 매핑 수정</button>` : ''}
@@ -466,6 +470,15 @@ function bindAccordionEvents() {
     });
     document.querySelectorAll('[data-reimport-gid]').forEach(b => {
         b.addEventListener('click', (e) => { e.stopPropagation(); reopenImportSession(parseInt(b.dataset.reimportGid, 10)); });
+    });
+    document.querySelectorAll('[data-toggle-gid]').forEach(b => {
+        b.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const gid = parseInt(b.dataset.toggleGid, 10);
+            if (expandedGroupIds.has(gid)) expandedGroupIds.delete(gid);
+            else expandedGroupIds.add(gid);
+            renderRecords();
+        });
     });
     document.querySelectorAll('[data-set-main]').forEach(cb => {
         cb.addEventListener('change', () => {

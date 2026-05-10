@@ -2643,3 +2643,8 @@ select:focus {
     border-radius: 50%; animation: imSpin 0.8s linear infinite; }
 @keyframes imSpin { to { transform: rotate(360deg); } }
 
+/* ------------------------------------------------------------ Accordion collapse */
+.accordion-card:not(.open) .accordion-body { display: none; }
+.accordion-card:not(.open) { box-shadow: 0 1px 3px rgba(20, 14, 8, 0.04); }
+.accordion-card:not(.open) .accordion-head { background: #fff; }
+
