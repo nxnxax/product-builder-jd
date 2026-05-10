@@ -10,7 +10,8 @@
  */
 
 import { initSupabase, apiRequest, getSession } from './auth-shared.js?v=20260509-phone-toggle';
-import { attachColumnFilters, applyColumnFilters, openRowAddModal, attachPhoneAutoFormat, getEffectiveFields, mountFieldManager } from './ledger-shared.js?v=20260509-fields';
+import { attachColumnFilters, applyColumnFilters, openRowAddModal, attachPhoneAutoFormat, getEffectiveFields, mountFieldManager,
+         exportRecordsToExcel, pickExcelFile, parseExcelFile, suggestFieldMapping, openImportPreviewModal } from './ledger-shared.js?v=20260510-excel';
 
 const PAGE_TYPE = 'customer';
 
@@ -27,6 +28,19 @@ const DEFAULT_FIELDS = [
     { key: 'content',  label: '내용',   type: 'textarea',     filterable: true,  width: 280 },
     { key: 'memo',     label: '비고',   type: 'text',         filterable: false, width: 140 },
 ];
+
+// 엑셀 헤더 → 우리 필드 매칭용 한국어 동의어 사전. 매핑 안 되는 컬럼은 fallbackKey 로 합쳐짐.
+const FIELD_SYNONYMS = {
+    managed:  ['관리', '관리상태', '관리여부'],
+    date:     ['날짜', '일자', '등록일', '상담일', '통화일', '접수일', '문의일'],
+    level:    ['레벨', '등급', '관심도', '관심', '단계'],
+    customer: ['고객명', '고객', '성명', '이름', '의뢰인', '문의자'],
+    phone:    ['연락처', '휴대폰', '휴대폰번호', '핸드폰', '핸드폰번호', '전화번호', '전화', '모바일', 'HP', 'tel', 'phone', '번호'],
+    region:   ['거주지역', '거주지', '주소', '지역', '사는곳', 'address'],
+    content:  ['내용', '상담내용', '통화내용', '상담', '문의내용', '메모내용'],
+    memo:     ['비고', '메모', '특이사항', '참고', '기타', 'note', 'remarks'],
+};
+const FALLBACK_FIELD_KEY = 'content';
 
 /* ============== State ============== */
 let supabaseClient = null;
@@ -99,6 +113,8 @@ function bindUI() {
 
     document.getElementById('bulkClearBtn').addEventListener('click', () => { selectedIds.clear(); renderRecords(); });
     document.getElementById('bulkDeleteBtn').addEventListener('click', bulkDelete);
+
+    document.getElementById('exportAllBtn')?.addEventListener('click', exportAllGroups);
 }
 
 /* ============== 설정 모달 (필드 관리) ============== */
@@ -292,6 +308,8 @@ function renderGroupCard(group) {
                     <span>메인그룹</span>
                 </label>
                 <div class="head-actions">
+                    <button type="button" data-export-gid="${group.id}" title="이 그룹을 엑셀로 다운로드">📥 엑셀</button>
+                    <button type="button" data-import-gid="${group.id}" title="엑셀 파일을 이 그룹에 업로드">📤 가져오기</button>
                     <button type="button" data-edit-gid="${group.id}">편집</button>
                     <button type="button" data-settings-gid="${group.id}">⚙ 설정</button>
                 </div>
@@ -330,6 +348,12 @@ function bindAccordionEvents() {
     });
     document.querySelectorAll('[data-settings-gid]').forEach(b => {
         b.addEventListener('click', (e) => { e.stopPropagation(); openSettingsModal(parseInt(b.dataset.settingsGid, 10)); });
+    });
+    document.querySelectorAll('[data-export-gid]').forEach(b => {
+        b.addEventListener('click', (e) => { e.stopPropagation(); exportGroup(parseInt(b.dataset.exportGid, 10)); });
+    });
+    document.querySelectorAll('[data-import-gid]').forEach(b => {
+        b.addEventListener('click', (e) => { e.stopPropagation(); importToGroup(parseInt(b.dataset.importGid, 10)); });
     });
     document.querySelectorAll('[data-set-main]').forEach(cb => {
         cb.addEventListener('change', () => {
@@ -531,6 +555,72 @@ async function deleteRow(id) {
         await api('ledger-records', { method: 'DELETE', body: { id } });
         await loadRecords();
     } catch (e) { showError('삭제 실패: ' + e.message); }
+}
+
+/* ============== 엑셀 다운로드 / 업로드 ============== */
+async function exportGroup(gid) {
+    const g = groups.find(x => x.id === gid);
+    if (!g) return;
+    const fields = getEffectiveFields(g, DEFAULT_FIELDS);
+    const rows = records.filter(r => r.groupId === gid);
+    if (rows.length === 0) {
+        if (!confirm(`"${g.name}" 그룹에 행이 없습니다. 빈 양식만 다운로드할까요?`)) return;
+    }
+    try {
+        await exportRecordsToExcel({
+            sheets: [{ name: g.name, fields, rows }],
+            fileName: `고객관리대장_${g.name}_${todayStamp()}.xlsx`,
+        });
+    } catch (e) { showError('엑셀 다운로드 실패: ' + e.message); }
+}
+
+async function exportAllGroups() {
+    if (groups.length === 0) { alert('내보낼 그룹이 없습니다.'); return; }
+    const sheets = groups.map(g => ({
+        name: g.name,
+        fields: getEffectiveFields(g, DEFAULT_FIELDS),
+        rows: records.filter(r => r.groupId === g.id),
+    }));
+    try {
+        await exportRecordsToExcel({ sheets, fileName: `고객관리대장_전체_${todayStamp()}.xlsx` });
+    } catch (e) { showError('엑셀 다운로드 실패: ' + e.message); }
+}
+
+async function importToGroup(gid) {
+    const g = groups.find(x => x.id === gid);
+    if (!g) return;
+    const file = await pickExcelFile();
+    if (!file) return;
+    let parsed;
+    try { parsed = await parseExcelFile(file); }
+    catch (e) { showError('엑셀 파일을 읽지 못했습니다: ' + e.message); return; }
+    if (!parsed.length || !parsed[0].headers.length) { alert('빈 파일이거나 헤더 행이 없습니다.'); return; }
+    const sheet = parsed[0];   // 단일 시트만 사용 (첫 시트)
+    const fields = getEffectiveFields(g, DEFAULT_FIELDS);
+    const suggested = suggestFieldMapping(sheet.headers, fields, FIELD_SYNONYMS);
+
+    openImportPreviewModal({
+        title: `"${g.name}" 에 가져오기`,
+        sheetName: sheet.name,
+        headers: sheet.headers,
+        rows: sheet.rows,
+        fields,
+        fallbackKey: FALLBACK_FIELD_KEY,
+        suggested,
+        onConfirm: async (mappedRows) => {
+            // 기본값: 신규 행은 '관리중' 상태로 (사용자가 비관리로 명시 안 한 경우).
+            for (const data of mappedRows) {
+                if (data.managed === undefined || data.managed === '') data.managed = true;
+                await api('ledger-records', { method: 'POST', body: { groupId: gid, data, source: 'excel' } });
+            }
+            await loadRecords();
+        },
+    });
+}
+
+function todayStamp() {
+    const d = new Date();
+    return d.getFullYear() + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0');
 }
 
 async function bulkDelete() {

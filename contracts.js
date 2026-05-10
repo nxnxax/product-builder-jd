@@ -11,7 +11,8 @@
  */
 
 import { initSupabase, apiRequest, getSession } from './auth-shared.js?v=20260509-phone-toggle';
-import { attachColumnFilters, applyColumnFilters, openRowAddModal, attachPhoneAutoFormat, attachThousandFormat, formatThousand, unformatThousand, getEffectiveFields, mountFieldManager } from './ledger-shared.js?v=20260509-fields';
+import { attachColumnFilters, applyColumnFilters, openRowAddModal, attachPhoneAutoFormat, attachThousandFormat, formatThousand, unformatThousand, getEffectiveFields, mountFieldManager,
+         exportRecordsToExcel, pickExcelFile, parseExcelFile, suggestFieldMapping, openImportPreviewModal } from './ledger-shared.js?v=20260510-excel';
 
 const PAGE_TYPE = 'contract';
 const TAX_RATE = 0.033;   // 실수령액 = commission * (1 - TAX_RATE)
@@ -35,6 +36,32 @@ const DEFAULT_FIELDS = [
     { key: 'status',       label: '계약상태',    type: 'status_switch',  filterable: true,  width: 80 },
     { key: 'memo',         label: '비고',        type: 'text',           filterable: false, width: 140 },
 ];
+
+const FIELD_SYNONYMS = {
+    paid:         ['수수료', '수수료지급', '정산', '지급', '지급여부'],
+    manager:      ['담당자', '담당', '영업담당', '영업사원', '담당직원', '담당자명'],
+    managerTitle: ['직함', '직급', '직위', '직책'],
+    unitType:     ['타입', '평형', '평수', 'type', '면적'],
+    dong:         ['동', '동수', '건물동', '동호'],
+    ho:           ['호', '호수', '호실'],
+    customer:     ['고객명', '고객', '성명', '이름', '계약자', '계약자명', '매수자', '분양고객', '명의자'],
+    subDate:      ['청약일', '청약일자', '가계약일', '가청약일', '청약'],
+    mainDate:     ['정계약일', '본계약일', '계약일', '계약일자', '본계약'],
+    docs:         ['서류보완', '서류', '보완서류', '서류상태', '제출서류'],
+    phone:        ['연락처', '휴대폰', '휴대폰번호', '핸드폰', '핸드폰번호', '전화번호', '전화', '모바일', 'HP', 'tel', 'phone', '번호'],
+    status:       ['계약상태', '상태', '진행상태'],
+    memo:         ['비고', '메모', '특이사항', '참고', '기타', 'note', 'remarks'],
+};
+const FALLBACK_FIELD_KEY = 'memo';
+
+// 한국어 status 값 ↔ 내부 코드. export 시 한국어로, import 시 코드로 변환.
+const STATUS_TO_KO = { active: '정계약', cancel: '해지', '': '가계약' };
+function statusFromKo(s) {
+    const v = String(s || '').trim();
+    if (/정계약|active/i.test(v)) return 'active';
+    if (/해지|취소|cancel/i.test(v)) return 'cancel';
+    return '';
+}
 
 /* ============== State ============== */
 let supabaseClient = null;
@@ -152,6 +179,8 @@ function bindUI() {
 
     document.getElementById('bulkClearBtn').addEventListener('click', () => { selectedIds.clear(); renderRecords(); });
     document.getElementById('bulkDeleteBtn').addEventListener('click', bulkDelete);
+
+    document.getElementById('exportAllBtn')?.addEventListener('click', exportAllGroups);
 }
 
 /* ============== Group modal ============== */
@@ -457,6 +486,8 @@ function renderGroupCard(group) {
                     <span>메인그룹</span>
                 </label>
                 <div class="head-actions">
+                    <button type="button" data-export-gid="${group.id}" title="이 현장을 엑셀로 다운로드">📥 엑셀</button>
+                    <button type="button" data-import-gid="${group.id}" title="엑셀 파일을 이 현장에 업로드">📤 가져오기</button>
                     <button type="button" data-edit-gid="${group.id}">편집</button>
                     <button type="button" data-settings-gid="${group.id}">⚙ 설정</button>
                 </div>
@@ -496,6 +527,12 @@ function bindAccordionEvents() {
     });
     document.querySelectorAll('[data-settings-gid]').forEach(b => {
         b.addEventListener('click', (e) => { e.stopPropagation(); openSettingsModal(parseInt(b.dataset.settingsGid, 10)); });
+    });
+    document.querySelectorAll('[data-export-gid]').forEach(b => {
+        b.addEventListener('click', (e) => { e.stopPropagation(); exportGroup(parseInt(b.dataset.exportGid, 10)); });
+    });
+    document.querySelectorAll('[data-import-gid]').forEach(b => {
+        b.addEventListener('click', (e) => { e.stopPropagation(); importToGroup(parseInt(b.dataset.importGid, 10)); });
     });
     document.querySelectorAll('[data-set-main]').forEach(cb => {
         cb.addEventListener('change', () => {
@@ -822,6 +859,94 @@ async function deleteRow(id) {
         await api('ledger-records', { method: 'DELETE', body: { id } });
         await loadRecords();
     } catch (e) { showError('삭제 실패: ' + e.message); }
+}
+
+/* ============== 엑셀 다운로드 / 업로드 ============== */
+function buildExportRows(group) {
+    // 한글 친화 변환: status 코드 → 한국어, paid_unpaid → 미지급/지급, manager 자동 매칭은 그대로.
+    return records.filter(r => r.groupId === group.id).map(r => {
+        const d = r.data || {};
+        const out = { ...d };
+        if ('status' in out) out.status = STATUS_TO_KO[d.status || ''] ?? (d.status || '');
+        // paid 토글은 ledger-shared 가 pay_switch 처리 — boolean 그대로 두면 OK.
+        return { data: out };
+    });
+}
+
+async function exportGroup(gid) {
+    const g = groups.find(x => x.id === gid);
+    if (!g) return;
+    const fields = getEffectiveFields(g, DEFAULT_FIELDS);
+    const rows = buildExportRows(g);
+    if (rows.length === 0) {
+        if (!confirm(`"${g.name}" 현장에 계약이 없습니다. 빈 양식만 다운로드할까요?`)) return;
+    }
+    try {
+        await exportRecordsToExcel({
+            sheets: [{ name: g.name, fields, rows }],
+            fileName: `계약자관리대장_${g.name}_${todayStamp()}.xlsx`,
+        });
+    } catch (e) { showError('엑셀 다운로드 실패: ' + e.message); }
+}
+
+async function exportAllGroups() {
+    if (groups.length === 0) { alert('내보낼 현장이 없습니다.'); return; }
+    const sheets = groups.map(g => ({
+        name: g.name,
+        fields: getEffectiveFields(g, DEFAULT_FIELDS),
+        rows: buildExportRows(g),
+    }));
+    try {
+        await exportRecordsToExcel({ sheets, fileName: `계약자관리대장_전체_${todayStamp()}.xlsx` });
+    } catch (e) { showError('엑셀 다운로드 실패: ' + e.message); }
+}
+
+async function importToGroup(gid) {
+    const g = groups.find(x => x.id === gid);
+    if (!g) return;
+    const file = await pickExcelFile();
+    if (!file) return;
+    let parsed;
+    try { parsed = await parseExcelFile(file); }
+    catch (e) { showError('엑셀 파일을 읽지 못했습니다: ' + e.message); return; }
+    if (!parsed.length || !parsed[0].headers.length) { alert('빈 파일이거나 헤더 행이 없습니다.'); return; }
+    const sheet = parsed[0];
+    const fields = getEffectiveFields(g, DEFAULT_FIELDS);
+    const suggested = suggestFieldMapping(sheet.headers, fields, FIELD_SYNONYMS);
+
+    openImportPreviewModal({
+        title: `"${g.name}" 현장에 가져오기`,
+        sheetName: sheet.name,
+        headers: sheet.headers,
+        rows: sheet.rows,
+        fields,
+        fallbackKey: FALLBACK_FIELD_KEY,
+        suggested,
+        onConfirm: async (mappedRows) => {
+            for (const data of mappedRows) {
+                // 한국어 status 를 코드값으로 변환.
+                if ('status' in data) data.status = statusFromKo(data.status);
+                // pay_switch 는 매핑 결과가 boolean. 비어 있으면 false (지급) 로 둠.
+                if (!('paid_unpaid' in data) && data.paid !== undefined) {
+                    data.paid_unpaid = data.paid === true || /미지급/.test(String(data.paid));
+                    delete data.paid;
+                }
+                // 담당자 자동 직함 매핑: org 직원 목록에서 같은 이름 찾으면 직함 자동 채움.
+                if (data.manager && !data.managerTitle) {
+                    const employees = orgEmployeesFor(g);
+                    const emp = employees.find(e => (e.data?.name || '') === data.manager);
+                    if (emp?.data?.title) data.managerTitle = emp.data.title;
+                }
+                await api('ledger-records', { method: 'POST', body: { groupId: gid, data, source: 'excel' } });
+            }
+            await loadRecords();
+        },
+    });
+}
+
+function todayStamp() {
+    const d = new Date();
+    return d.getFullYear() + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0');
 }
 
 async function bulkDelete() {

@@ -7,7 +7,8 @@
  */
 
 import { initSupabase, apiRequest, getSession } from './auth-shared.js?v=20260509-phone-toggle';
-import { attachColumnFilters, applyColumnFilters, openRowAddModal, attachPhoneAutoFormat, attachThousandFormat, formatThousand, unformatThousand, getEffectiveFields, mountFieldManager } from './ledger-shared.js?v=20260509-fields';
+import { attachColumnFilters, applyColumnFilters, openRowAddModal, attachPhoneAutoFormat, attachThousandFormat, formatThousand, unformatThousand, getEffectiveFields, mountFieldManager,
+         exportRecordsToExcel, pickExcelFile, parseExcelFile, suggestFieldMapping, openImportPreviewModal } from './ledger-shared.js?v=20260510-excel';
 
 const PAGE_TYPE = 'org';
 
@@ -27,6 +28,19 @@ const DEFAULT_FIELD_SCHEMA = {
         { key: 'memo',    label: '비고',   type: 'text',        filterable: false },
     ],
 };
+
+const FIELD_SYNONYMS = {
+    joined:  ['투입일', '입사일', '시작일', '가입일', '입사년월일', '입사일자', '등록일', '시작'],
+    title:   ['직함', '직급', '직위', '직책'],
+    name:    ['이름', '성명', '직원명', '사원명', '담당자명', '담당자', '본부장', '팀장', '팀원'],
+    rrn:     ['주민번호', '주민등록번호', '주민', 'rrn'],
+    phone:   ['연락처', '휴대폰', '휴대폰번호', '핸드폰', '핸드폰번호', '전화번호', '전화', '모바일', 'HP', 'tel', 'phone'],
+    account: ['계좌', '계좌번호', '입금계좌', '통장번호', '입금정보', '입금'],
+    memo:    ['비고', '메모', '특이사항', '참고', '기타', 'note', 'remarks'],
+    // team 은 row 에서 빠져있지만 import 시 엑셀에 '팀' 컬럼이 있으면 인식해서 data.team 채움.
+    team:    ['팀', '소속팀', '소속', '팀번호'],
+};
+const FALLBACK_FIELD_KEY = 'memo';
 
 const DEFAULT_SETTINGS = {
     active_teams: [1, 2, 3],
@@ -131,6 +145,8 @@ function bindUI() {
         renderRecords();
     });
     document.getElementById('bulkDeleteBtn').addEventListener('click', bulkDelete);
+
+    document.getElementById('exportAllBtn')?.addEventListener('click', exportAllGroups);
 }
 
 /* ============== Group modal ============== */
@@ -421,6 +437,8 @@ function renderGroupCard(group) {
                     <span>메인그룹</span>
                 </label>
                 <div class="head-actions">
+                    <button type="button" data-export-gid="${group.id}" title="이 그룹을 엑셀로 다운로드">📥 엑셀</button>
+                    <button type="button" data-import-gid="${group.id}" title="엑셀 파일을 이 그룹에 업로드">📤 가져오기</button>
                     <button type="button" data-edit-gid="${group.id}">편집</button>
                     <button type="button" data-settings-gid="${group.id}">⚙ 설정</button>
                 </div>
@@ -437,6 +455,12 @@ function bindAccordionEvents() {
     });
     document.querySelectorAll('[data-settings-gid]').forEach(b => {
         b.addEventListener('click', (e) => { e.stopPropagation(); openSettingsModal(parseInt(b.dataset.settingsGid, 10)); });
+    });
+    document.querySelectorAll('[data-export-gid]').forEach(b => {
+        b.addEventListener('click', (e) => { e.stopPropagation(); exportGroup(parseInt(b.dataset.exportGid, 10)); });
+    });
+    document.querySelectorAll('[data-import-gid]').forEach(b => {
+        b.addEventListener('click', (e) => { e.stopPropagation(); importToGroup(parseInt(b.dataset.importGid, 10)); });
     });
     document.querySelectorAll('[data-set-main]').forEach(cb => {
         cb.addEventListener('change', () => {
@@ -680,6 +704,112 @@ async function deleteRow(id) {
     } catch (e) {
         showError('삭제 실패: ' + e.message);
     }
+}
+
+/* ============== 엑셀 다운로드 / 업로드 ============== */
+
+// '팀' 컬럼을 export/import 모두에 포함시킨 임시 fields. team 은 row 에서 빠져있지만
+// 엑셀에서는 1열 자리를 차지함 — 행 추가/수정 시 사용자가 팀을 인식할 수 있도록.
+function fieldsWithTeam(group) {
+    const base = getEffectiveFields(group, DEFAULT_FIELD_SCHEMA.fields);
+    // NO 다음에 팀 삽입.
+    const noIdx = base.findIndex(f => f.type === 'auto_number');
+    const insertAt = noIdx >= 0 ? noIdx + 1 : 0;
+    const out = [...base];
+    out.splice(insertAt, 0, { key: 'team', label: '팀', type: 'text', filterable: false });
+    return out;
+}
+
+function buildExportRowsOrg(group) {
+    return records.filter(r => r.groupId === group.id).map(r => {
+        const d = r.data || {};
+        const out = { ...d };
+        // 팀 표시: 본부장은 '본부' / 미지정은 빈값 / 그 외 'N팀'.
+        if (d.title === '본부장') out.team = '본부';
+        else if (d.team) out.team = String(parseInt(d.team, 10) || '') ? String(parseInt(d.team, 10)) + '팀' : '';
+        else out.team = '';
+        return { data: out };
+    });
+}
+
+async function exportGroup(gid) {
+    const g = groups.find(x => x.id === gid);
+    if (!g) return;
+    const fields = fieldsWithTeam(g);
+    const rows = buildExportRowsOrg(g);
+    if (rows.length === 0) {
+        if (!confirm(`"${g.name}" 그룹에 인원이 없습니다. 빈 양식만 다운로드할까요?`)) return;
+    }
+    try {
+        await exportRecordsToExcel({
+            sheets: [{ name: g.name, fields, rows }],
+            fileName: `조직도_${g.name}_${todayStamp()}.xlsx`,
+        });
+    } catch (e) { showError('엑셀 다운로드 실패: ' + e.message); }
+}
+
+async function exportAllGroups() {
+    if (groups.length === 0) { alert('내보낼 그룹이 없습니다.'); return; }
+    const sheets = groups.map(g => ({
+        name: g.name,
+        fields: fieldsWithTeam(g),
+        rows: buildExportRowsOrg(g),
+    }));
+    try {
+        await exportRecordsToExcel({ sheets, fileName: `조직도_전체_${todayStamp()}.xlsx` });
+    } catch (e) { showError('엑셀 다운로드 실패: ' + e.message); }
+}
+
+function teamFromString(v) {
+    const s = String(v || '').trim();
+    if (!s) return null;
+    if (/본부/.test(s)) return 0;     // 본부장은 team=0 으로 처리 (data.team 비움)
+    const m = s.match(/(\d+)/);
+    return m ? parseInt(m[1], 10) : null;
+}
+
+async function importToGroup(gid) {
+    const g = groups.find(x => x.id === gid);
+    if (!g) return;
+    const file = await pickExcelFile();
+    if (!file) return;
+    let parsed;
+    try { parsed = await parseExcelFile(file); }
+    catch (e) { showError('엑셀 파일을 읽지 못했습니다: ' + e.message); return; }
+    if (!parsed.length || !parsed[0].headers.length) { alert('빈 파일이거나 헤더 행이 없습니다.'); return; }
+    const sheet = parsed[0];
+    const fields = fieldsWithTeam(g);   // team 컬럼 인식 가능하도록
+    const suggested = suggestFieldMapping(sheet.headers, fields, FIELD_SYNONYMS);
+
+    openImportPreviewModal({
+        title: `"${g.name}" 에 가져오기`,
+        sheetName: sheet.name,
+        headers: sheet.headers,
+        rows: sheet.rows,
+        fields,
+        fallbackKey: FALLBACK_FIELD_KEY,
+        suggested,
+        onConfirm: async (mappedRows) => {
+            for (const data of mappedRows) {
+                // team 정규화 (정수만 저장, 본부장은 빈값).
+                if ('team' in data) {
+                    const t = teamFromString(data.team);
+                    if (data.title === '본부장' || t === 0) delete data.team;
+                    else if (t) data.team = t;
+                    else delete data.team;
+                }
+                // 직함이 없는데 이름이 있으면 기본 '팀원'.
+                if (!data.title && data.name) data.title = '팀원';
+                await api('ledger-records', { method: 'POST', body: { groupId: gid, data, source: 'excel' } });
+            }
+            await loadRecords();
+        },
+    });
+}
+
+function todayStamp() {
+    const d = new Date();
+    return d.getFullYear() + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0');
 }
 
 async function bulkDelete() {

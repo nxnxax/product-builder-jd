@@ -2589,3 +2589,41 @@ select:focus {
     font-weight: 700;
 }
 
+/* ------------------------------------------------------------ Excel import preview */
+.import-preview-modal .modal-panel { width: min(900px, 96vw); }
+.import-meta { display: flex; gap: 18px; padding: 8px 12px; background: #fbf7ef;
+    border: 1px solid rgba(20, 14, 8, 0.06); border-radius: 8px;
+    font-size: 12.5px; color: #4f4943; margin-bottom: 14px; }
+.import-meta b { color: #0e0d0c; font-weight: 600; }
+
+.import-mapping { border: 1px solid rgba(20, 14, 8, 0.09); border-radius: 8px; overflow: hidden; }
+.import-mapping .im-head, .import-mapping .im-row {
+    display: grid; grid-template-columns: 1.2fr 1.4fr 1.4fr; gap: 12px;
+    align-items: center; padding: 9px 14px; font-size: 13px;
+}
+.import-mapping .im-head { background: #fbf7ef; color: #4f4943;
+    font-weight: 600; font-size: 12px; letter-spacing: 0.02em; border-bottom: 1px solid rgba(20, 14, 8, 0.09); }
+.import-mapping .im-row + .im-row { border-top: 1px solid rgba(20, 14, 8, 0.05); }
+.import-mapping .im-row:hover { background: #fbfaf5; }
+.import-mapping .im-h { font-weight: 600; color: #0e0d0c; word-break: break-all; }
+.import-mapping .im-s { color: #6e655c; font-size: 12.5px; word-break: break-all;
+    overflow: hidden; text-overflow: ellipsis; }
+.import-mapping select { width: 100%; height: 32px; padding: 0 10px;
+    border: 1px solid rgba(20, 14, 8, 0.12); border-radius: 6px;
+    background: #fff; font-family: inherit; font-size: 13px; color: #0e0d0c; outline: none; }
+.import-mapping select:focus { border-color: #0e0d0c; }
+
+.import-sample { margin-top: 14px; }
+.import-sample summary { cursor: pointer; font-size: 12.5px; color: #4f4943;
+    padding: 6px 4px; user-select: none; }
+.import-sample summary:hover { color: #0e0d0c; }
+.im-sample-wrap { overflow-x: auto; max-height: 240px; overflow-y: auto;
+    border: 1px solid rgba(20, 14, 8, 0.09); border-radius: 8px; margin-top: 6px; }
+.im-sample-tbl { width: 100%; border-collapse: collapse; font-size: 12px; }
+.im-sample-tbl th { background: #fbf7ef; padding: 6px 10px; text-align: left;
+    font-weight: 600; color: #4f4943; border-bottom: 1px solid rgba(20, 14, 8, 0.09);
+    white-space: nowrap; position: sticky; top: 0; z-index: 1; }
+.im-sample-tbl td { padding: 5px 10px; border-bottom: 1px solid rgba(20, 14, 8, 0.05);
+    color: #2a2520; vertical-align: top; max-width: 220px; word-break: break-word; }
+.im-sample-tbl tr:last-child td { border-bottom: 0; }
+

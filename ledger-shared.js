@@ -507,3 +507,377 @@ function collectEntry(fields, defaults, md) {
     });
     return data;
 }
+
+/* =========================================================================
+   엑셀 다운로드 / 업로드
+   - SheetJS (xlsx) 를 CDN 에서 동적 로드. 한 번 로드되면 재사용.
+   - PII 격리: 업로드 파일은 클라이언트에서만 파싱. 서버로는 매핑된
+     레코드 데이터만 ledger-records POST 로 전달.
+   ========================================================================= */
+
+const SHEETJS_URL = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
+let sheetJsPromise = null;
+
+export function loadSheetJS() {
+    if (typeof window !== 'undefined' && window.XLSX) return Promise.resolve(window.XLSX);
+    if (sheetJsPromise) return sheetJsPromise;
+    sheetJsPromise = new Promise((resolve, reject) => {
+        const s = document.createElement('script');
+        s.src = SHEETJS_URL;
+        s.async = true;
+        s.onload = () => resolve(window.XLSX);
+        s.onerror = () => { sheetJsPromise = null; reject(new Error('엑셀 라이브러리(SheetJS) 로드 실패')); };
+        document.head.appendChild(s);
+    });
+    return sheetJsPromise;
+}
+
+/** 토글/스위치 등 boolean 값을 사람이 읽을 수 있는 한국어로 변환. */
+function exportCellValue(field, raw) {
+    if (raw === null || raw === undefined || raw === '') return '';
+    if (field.type === 'manage_switch') return raw ? '관리중' : '비관리중';
+    if (field.type === 'pay_switch')    return raw ? '지급'   : '미지급';
+    if (field.type === 'status_switch') {
+        // contracts.js 의 status 값: 'active' / 'cancelled' 등 자유. 그대로 표시.
+        return String(raw);
+    }
+    if (typeof raw === 'boolean') return raw ? 'O' : 'X';
+    return String(raw);
+}
+
+/**
+ * 그룹 → 시트 형태로 .xlsx 저장.
+ * @param {Object} opts
+ *  - sheets: [{ name, fields, rows: [{data}] }]
+ *  - fileName: 'foo.xlsx'
+ */
+export async function exportRecordsToExcel({ sheets, fileName }) {
+    const XLSX = await loadSheetJS();
+    const wb = XLSX.utils.book_new();
+    sheets.forEach(s => {
+        // auto_number / commission_view 는 자동 계산 컬럼이라 export 제외.
+        const cols = (s.fields || []).filter(f => f.type !== 'auto_number' && f.type !== 'commission_view');
+        const headers = cols.map(f => f.label);
+        const aoa = [headers];
+        (s.rows || []).forEach(r => {
+            const d = (r && typeof r === 'object' && r.data) ? r.data : (r || {});
+            aoa.push(cols.map(f => exportCellValue(f, d[f.key])));
+        });
+        const ws = XLSX.utils.aoa_to_sheet(aoa);
+        // 컬럼 폭: 한글 가독성을 위해 라벨 + 데이터 길이 기준으로 적당히.
+        ws['!cols'] = cols.map((f, ci) => {
+            let max = String(f.label || '').length;
+            for (let r = 1; r < aoa.length; r++) {
+                const v = aoa[r][ci];
+                const len = String(v ?? '').length;
+                if (len > max) max = len;
+            }
+            return { wch: Math.min(40, Math.max(8, max + 2)) };
+        });
+        // 시트 이름은 31자 제한 + 금지 문자.
+        const safeName = String(s.name || 'Sheet').replace(/[\\/?*[\]:]/g, '_').slice(0, 31) || 'Sheet';
+        // 중복 시트명 회피.
+        let nm = safeName, n = 2;
+        while (wb.SheetNames.includes(nm)) { nm = (safeName + ' ' + n).slice(0, 31); n++; }
+        XLSX.utils.book_append_sheet(wb, ws, nm);
+    });
+    XLSX.writeFile(wb, fileName || 'export.xlsx');
+}
+
+/** 파일 선택 dialog 띄우고 File 반환. 취소하면 null. */
+export function pickExcelFile() {
+    return new Promise((resolve) => {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = '.xlsx,.xls,.csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+        input.style.display = 'none';
+        let settled = false;
+        input.addEventListener('change', () => {
+            settled = true;
+            const f = input.files && input.files[0] ? input.files[0] : null;
+            input.remove();
+            resolve(f);
+        });
+        // 취소 감지: focus 돌아온 뒤 일정 시간 안에 change 안 오면 null.
+        const onFocus = () => {
+            setTimeout(() => {
+                if (!settled) { input.remove(); resolve(null); }
+                window.removeEventListener('focus', onFocus);
+            }, 500);
+        };
+        window.addEventListener('focus', onFocus, { once: true });
+        document.body.appendChild(input);
+        input.click();
+    });
+}
+
+/** 엑셀 셀 값을 문자열로. SheetJS Date 객체도 처리. */
+function cellToString(v) {
+    if (v === null || v === undefined) return '';
+    if (v instanceof Date) {
+        // YYYY-MM-DD
+        const y = v.getFullYear();
+        const m = String(v.getMonth() + 1).padStart(2, '0');
+        const d = String(v.getDate()).padStart(2, '0');
+        return `${y}-${m}-${d}`;
+    }
+    return String(v).trim();
+}
+
+/**
+ * .xlsx / .csv 파싱.
+ * @returns Promise<[{ name, headers: string[], rows: string[][] }]>
+ */
+export async function parseExcelFile(file) {
+    const XLSX = await loadSheetJS();
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(buf, { type: 'array', cellDates: true });
+    const out = [];
+    wb.SheetNames.forEach(nm => {
+        const ws = wb.Sheets[nm];
+        if (!ws) return;
+        const aoa = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: '', blankrows: false });
+        if (!aoa.length) return;
+        // 첫 비어있지 않은 행을 헤더로. 그 위는 무시.
+        let headerIdx = aoa.findIndex(r => r.some(c => String(c ?? '').trim() !== ''));
+        if (headerIdx < 0) return;
+        const headers = aoa[headerIdx].map(c => cellToString(c));
+        const rows = [];
+        for (let i = headerIdx + 1; i < aoa.length; i++) {
+            const r = aoa[i];
+            if (!r) continue;
+            // 모두 빈 행은 스킵.
+            const allEmpty = headers.every((_, ci) => cellToString(r[ci]) === '');
+            if (allEmpty) continue;
+            rows.push(headers.map((_, ci) => cellToString(r[ci])));
+        }
+        out.push({ name: nm, headers, rows });
+    });
+    return out;
+}
+
+/* ---- 헤더 유사도 매핑 ---------------------------------------------------- */
+
+/** 비교용 정규화. 공백/괄호/특수문자 제거, 소문자, 한자/영문 대소문자 무시. */
+function normalizeHeader(s) {
+    return String(s || '')
+        .toLowerCase()
+        .replace(/[\s　_\-./()\[\]{}·.,'":;!?]+/g, '')
+        .replace(/번호/g, '번호'); // placeholder for future normalization
+}
+
+/**
+ * 엑셀 헤더 → 우리 필드 key 매핑 제안.
+ * @param headers 엑셀 첫 행 (string[])
+ * @param fields  우리 필드 [{key, label, type}]
+ * @param synonyms { [fieldKey]: string[] }   각 필드의 후보 한국어 동의어
+ * @returns string[]   headers 와 같은 길이. 각 원소 = 매핑된 fieldKey 또는 null.
+ */
+export function suggestFieldMapping(headers, fields, synonyms) {
+    // auto_number / commission_view 는 매핑 대상 아님 (자동 계산).
+    const targets = (fields || []).filter(f => f.type !== 'auto_number' && f.type !== 'commission_view');
+
+    // 각 field 에 대해 후보 키워드 집합.
+    const fieldCandidates = targets.map(f => {
+        const list = new Set();
+        list.add(normalizeHeader(f.label));
+        list.add(normalizeHeader(f.key));
+        (synonyms?.[f.key] || []).forEach(s => list.add(normalizeHeader(s)));
+        return { field: f, keys: [...list].filter(Boolean) };
+    });
+
+    const used = new Set();
+    return headers.map(h => {
+        const norm = normalizeHeader(h);
+        if (!norm) return null;
+        // 1) 정확 일치 우선 (아직 안 쓰인 필드 중)
+        for (const fc of fieldCandidates) {
+            if (used.has(fc.field.key)) continue;
+            if (fc.keys.includes(norm)) { used.add(fc.field.key); return fc.field.key; }
+        }
+        // 2) 한쪽이 다른 쪽을 포함 (헤더가 후보 키워드 포함, 또는 키워드가 헤더 포함)
+        for (const fc of fieldCandidates) {
+            if (used.has(fc.field.key)) continue;
+            for (const k of fc.keys) {
+                if (k.length < 2) continue;
+                if (norm === k) { used.add(fc.field.key); return fc.field.key; }
+                if (norm.includes(k) || k.includes(norm)) { used.add(fc.field.key); return fc.field.key; }
+            }
+        }
+        return null;
+    });
+}
+
+/** 엑셀 셀 값 → 우리 필드 타입에 맞춰 변환. */
+export function coerceCellForField(field, raw) {
+    const v = String(raw ?? '').trim();
+    if (!v) return '';
+    if (field.type === 'date') {
+        // 이미 YYYY-MM-DD 면 그대로. 한국식 'YYYY.MM.DD' / 'YYYY/MM/DD' 도 처리.
+        const m = v.match(/^(\d{4})[.\-\/년 ]+(\d{1,2})[.\-\/월 ]+(\d{1,2})/);
+        if (m) {
+            const y = m[1]; const mo = m[2].padStart(2, '0'); const d = m[3].padStart(2, '0');
+            return `${y}-${mo}-${d}`;
+        }
+        // 엑셀 시리얼 수 (1900-01-01 기준)
+        if (/^\d+(\.\d+)?$/.test(v)) {
+            const serial = parseFloat(v);
+            if (serial > 59 && serial < 80000) {
+                const ms = (serial - 25569) * 86400 * 1000;
+                const d = new Date(ms);
+                if (!isNaN(d.getTime())) {
+                    const y = d.getUTCFullYear();
+                    const mo = String(d.getUTCMonth() + 1).padStart(2, '0');
+                    const da = String(d.getUTCDate()).padStart(2, '0');
+                    return `${y}-${mo}-${da}`;
+                }
+            }
+        }
+        return v;
+    }
+    if (field.type === 'tel') {
+        const digits = v.replace(/\D/g, '').slice(0, 11);
+        if (!digits) return '';
+        if (digits.length <= 3) return digits;
+        if (digits.length <= 7) return digits.slice(0, 3) + '-' + digits.slice(3);
+        return digits.slice(0, 3) + '-' + digits.slice(3, 7) + '-' + digits.slice(7);
+    }
+    if (field.type === 'manage_switch')  return /관리중|true|y|o|1/i.test(v) && !/비관리|false|n|x|0/i.test(v);
+    if (field.type === 'pay_switch')     return /지급|true|y|o|1/i.test(v) && !/미지급|false|n|x|0/i.test(v);
+    if (field.type === 'number')         return parseInt(v.replace(/[^\d-]/g, ''), 10) || 0;
+    return v;
+}
+
+/**
+ * 엑셀 import 미리보기 모달. 사용자가 헤더-필드 매핑 수정 후 확인 누르면 onConfirm.
+ *
+ * @param opts
+ *  - title         모달 제목
+ *  - sheetName     엑셀 시트명
+ *  - headers       엑셀 헤더 string[]
+ *  - rows          엑셀 데이터 string[][]
+ *  - fields        우리 필드 [{key,label,type}]
+ *  - suggested     suggestFieldMapping 결과 (string|null)[]
+ *  - fallbackKey   매핑 안 된 컬럼들의 fallback 필드 key (예: 'memo' / 'content')
+ *  - onConfirm     async ([{data}]) => void   — 매핑 적용된 row 데이터 배열을 받음.
+ */
+export function openImportPreviewModal(opts) {
+    const fieldByKey = new Map((opts.fields || []).map(f => [f.key, f]));
+    // 매핑 가능한 필드 (auto/commission 제외).
+    const optionFields = (opts.fields || []).filter(f => f.type !== 'auto_number' && f.type !== 'commission_view');
+    let mapping = (opts.suggested || []).slice();
+    const md = document.createElement('div');
+    md.className = 'modal-backdrop import-preview-modal';
+    md.style.zIndex = '300';
+    const PREVIEW_LIMIT = 5;
+    const previewRows = (opts.rows || []).slice(0, PREVIEW_LIMIT);
+    md.innerHTML = `
+        <div class="modal-panel" style="max-width:900px;">
+            <header class="modal-header">
+                <div>
+                    <h2>${escapeHtml(opts.title || '엑셀 가져오기')}</h2>
+                    <p class="modal-subtitle">엑셀의 각 열이 우리 양식의 어느 필드로 들어갈지 확인해주세요. 매핑 안 된 열은 ${escapeHtml(fieldByKey.get(opts.fallbackKey)?.label || '비고')} 에 합쳐서 들어갑니다.</p>
+                </div>
+            </header>
+            <div class="modal-body">
+                <div class="import-meta">
+                    <span><b>시트:</b> ${escapeHtml(opts.sheetName || '-')}</span>
+                    <span><b>총 행:</b> ${(opts.rows || []).length}건</span>
+                </div>
+                <div class="import-mapping">
+                    <div class="im-head">
+                        <span>엑셀 열 (헤더)</span>
+                        <span>샘플</span>
+                        <span>우리 양식 필드</span>
+                    </div>
+                    ${(opts.headers || []).map((h, i) => {
+                        const sample = previewRows.map(r => String(r[i] ?? '').trim()).filter(Boolean).slice(0, 2).join(' / ');
+                        const sel = mapping[i] || '__fallback__';
+                        return `
+                            <div class="im-row">
+                                <span class="im-h">${escapeHtml(h || '(빈 헤더)')}</span>
+                                <span class="im-s">${escapeHtml(sample) || '<i style="color:#a3a39a;">-</i>'}</span>
+                                <select data-mi="${i}">
+                                    <option value="__ignore__" ${sel === '__ignore__' ? 'selected' : ''}>— 무시 —</option>
+                                    <option value="__fallback__" ${sel === '__fallback__' ? 'selected' : ''}>↳ ${escapeHtml(fieldByKey.get(opts.fallbackKey)?.label || '비고')} 에 합쳐서</option>
+                                    <optgroup label="우리 필드">
+                                        ${optionFields.map(f => `<option value="${f.key}" ${sel === f.key ? 'selected' : ''}>${escapeHtml(f.label)}</option>`).join('')}
+                                    </optgroup>
+                                </select>
+                            </div>
+                        `;
+                    }).join('')}
+                </div>
+                <details class="import-sample" ${previewRows.length > 0 ? 'open' : ''}>
+                    <summary>샘플 ${previewRows.length}건 미리보기</summary>
+                    <div class="im-sample-wrap">
+                        <table class="im-sample-tbl">
+                            <thead><tr>${(opts.headers || []).map(h => `<th>${escapeHtml(h || '-')}</th>`).join('')}</tr></thead>
+                            <tbody>
+                                ${previewRows.map(r => `<tr>${(opts.headers || []).map((_, i) => `<td>${escapeHtml(String(r[i] ?? ''))}</td>`).join('')}</tr>`).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                </details>
+                <p class="form-help error" data-error style="margin-top:10px;display:none;"></p>
+            </div>
+            <footer class="modal-footer">
+                <button class="tiny-btn" type="button" data-cancel>취소</button>
+                <button class="tiny-btn primary" type="button" data-confirm>${(opts.rows || []).length}건 추가하기</button>
+            </footer>
+        </div>
+    `;
+    document.body.appendChild(md);
+
+    const close = () => md.remove();
+    md.querySelector('[data-cancel]').addEventListener('click', close);
+    md.addEventListener('click', (e) => { if (e.target === md) close(); });
+    md.querySelectorAll('select[data-mi]').forEach(sel => {
+        sel.addEventListener('change', () => {
+            const i = parseInt(sel.dataset.mi, 10);
+            mapping[i] = sel.value;
+        });
+    });
+
+    md.querySelector('[data-confirm]').addEventListener('click', async () => {
+        const errEl = md.querySelector('[data-error]');
+        const btn = md.querySelector('[data-confirm]');
+        btn.disabled = true; errEl.style.display = 'none';
+
+        try {
+            const rows = buildRowsFromMapping(opts.headers, opts.rows, mapping, optionFields, fieldByKey, opts.fallbackKey);
+            await opts.onConfirm(rows);
+            close();
+        } catch (e) {
+            errEl.textContent = (e && e.message) ? e.message : String(e);
+            errEl.style.display = '';
+            btn.disabled = false;
+        }
+    });
+}
+
+function buildRowsFromMapping(headers, rows, mapping, _optionFields, fieldByKey, fallbackKey) {
+    const fallbackField = fieldByKey.get(fallbackKey) || null;
+    return (rows || []).map(r => {
+        const data = {};
+        const fallbackParts = [];
+        (headers || []).forEach((h, i) => {
+            const target = mapping[i];
+            const cell = String(r[i] ?? '').trim();
+            if (!cell) return;
+            if (!target || target === '__ignore__') return;
+            if (target === '__fallback__') {
+                fallbackParts.push(`[${h || '-'}] ${cell}`);
+                return;
+            }
+            const f = fieldByKey.get(target);
+            if (!f) return;
+            data[target] = coerceCellForField(f, cell);
+        });
+        if (fallbackParts.length && fallbackField) {
+            const existing = data[fallbackField.key] ? String(data[fallbackField.key]) + '\n' : '';
+            data[fallbackField.key] = existing + fallbackParts.join('\n');
+        }
+        return data;
+    });
+}
