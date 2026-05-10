@@ -2709,7 +2709,7 @@ select:focus {
         grid-template-columns: repeat(4, minmax(0, 1fr));
         min-height: 64px;
         padding: 7px 6px calc(7px + env(safe-area-inset-bottom, 0px));
-        background: rgba(255, 255, 255, 0.97);
+        background: rgba(246, 246, 244, 0.92);
         border-top: 1px solid rgba(20, 14, 8, 0.1);
         box-shadow: 0 -10px 28px rgba(20, 14, 8, 0.1);
         backdrop-filter: blur(18px);
