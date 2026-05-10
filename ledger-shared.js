@@ -611,7 +611,7 @@ export function pickExcelFile() {
     });
 }
 
-/** 엑셀 셀 값을 문자열로. SheetJS Date 객체도 처리. */
+/** 엑셀 셀 값을 문자열로. SheetJS Date 객체도 처리. NBSP/ZWSP 등 정규화. */
 function cellToString(v) {
     if (v === null || v === undefined) return '';
     if (v instanceof Date) {
@@ -621,7 +621,18 @@ function cellToString(v) {
         const d = String(v.getDate()).padStart(2, '0');
         return `${y}-${m}-${d}`;
     }
-    return String(v).trim();
+    return String(v)
+        .replace(/[ ​‌‍﻿]/g, ' ')   // NBSP, ZWSP, BOM 을 공백으로
+        .trim();
+}
+
+/** "의미있는 값" 판정. 빈 문자열 / '-' / 'N/A' 등 placeholder 도 빈 값 취급. */
+function isMeaningful(v) {
+    const s = cellToString(v);
+    if (!s) return false;
+    if (/^[-–—_~・·.\s]+$/.test(s)) return false;            // '-', '_', 점만 있는 셀
+    if (/^(n\/?a|na|none|null|nil|undefined)$/i.test(s)) return false;
+    return true;
 }
 
 /**
@@ -644,37 +655,52 @@ export async function parseExcelFile(file) {
         const headers = aoa[headerIdx].map(c => cellToString(c));
 
         // 카운터 (NO/번호/#) 컬럼 인덱스 식별 — 이 컬럼만 채워진 행은 데이터 없음으로 간주.
-        const counterCols = identifyCounterColumns(headers, aoa.slice(headerIdx + 1, headerIdx + 6));
+        const counterCols = identifyCounterColumns(headers, aoa.slice(headerIdx + 1, headerIdx + 16));
 
         const rows = [];
+        let skipped = 0;
         for (let i = headerIdx + 1; i < aoa.length; i++) {
             const r = aoa[i];
             if (!r) continue;
             // 의미있는 컬럼 (카운터 외) 중 하나라도 값이 있어야 채택.
-            // 모든 컬럼이 카운터로 식별된 경우 (예외) 에는 기존처럼 모두 빈 행만 스킵.
+            // 모든 컬럼이 카운터로 식별된 예외에는 기존처럼 모든 셀이 비어있는 행만 스킵.
             const hasMeaningful = (counterCols.size < headers.length)
-                ? headers.some((_, ci) => !counterCols.has(ci) && cellToString(r[ci]) !== '')
-                : headers.some((_, ci) => cellToString(r[ci]) !== '');
-            if (!hasMeaningful) continue;
+                ? headers.some((_, ci) => !counterCols.has(ci) && isMeaningful(r[ci]))
+                : headers.some((_, ci) => isMeaningful(r[ci]));
+            if (!hasMeaningful) { skipped++; continue; }
             rows.push(headers.map((_, ci) => cellToString(r[ci])));
         }
-        out.push({ name: nm, headers, rows });
+        out.push({ name: nm, headers, rows, skippedBlank: skipped });
     });
     return out;
 }
 
-/** NO / 번호 / # / 순번 등 카운터 컬럼 식별. 빈 헤더라도 첫 데이터가 순수 1~4자리 정수면 카운터로 추정. */
-const COUNTER_HEADER_NORMS = new Set(['no', 'no.', '번호', '#', '순번', '순서', '순', 'num', 'idx', 'index']);
+/**
+ * NO / 번호 / # / 순번 등 카운터 컬럼 식별.
+ * 1) 헤더가 알려진 카운터 단어이면 즉시 카운터.
+ * 2) 첫 컬럼 (CI=0) 의 샘플이 1, 2, 3, ... 처럼 단조 증가 정수면 카운터.
+ * 3) 헤더 비어있고 샘플이 모두 1~4자리 정수만이면 카운터로 추정.
+ */
+const COUNTER_HEADER_NORMS = new Set([
+    'no', 'no.', 'num', 'number', 'idx', 'index', '#',
+    '번호', '순번', '순서', '순', '연번', '항번', '번',
+]);
 function identifyCounterColumns(headers, sampleRows) {
     const out = new Set();
     headers.forEach((h, ci) => {
         const norm = normalizeHeader(h);
         if (COUNTER_HEADER_NORMS.has(norm)) { out.add(ci); return; }
-        // 헤더 비어있고 샘플 모두 1~4자리 정수만 들어있으면 카운터로 추정.
-        if (!norm) {
-            const samples = sampleRows.map(r => cellToString(r?.[ci] ?? '')).filter(Boolean);
-            if (samples.length >= 1 && samples.every(s => /^\d{1,4}$/.test(s))) out.add(ci);
-        }
+
+        const samples = sampleRows.map(r => cellToString(r?.[ci] ?? '')).filter(Boolean);
+        if (samples.length < 2) return;
+        // 모두 1~5자리 정수만이면 카운터 후보
+        if (!samples.every(s => /^\d{1,5}$/.test(s))) return;
+        const nums = samples.map(Number);
+        // 단조 증가 (또는 1씩 증가) 면 카운터로 확정 — 첫 컬럼/헤더 문구와 무관하게.
+        const monotonic = nums.every((n, i) => i === 0 || n > nums[i - 1]);
+        if (monotonic) { out.add(ci); return; }
+        // 헤더 비어있고 정수만 있으면 카운터로 추정.
+        if (!norm) out.add(ci);
     });
     return out;
 }
@@ -783,6 +809,7 @@ export function coerceCellForField(field, raw) {
  *  - suggested     suggestFieldMapping 결과 (string|null)[]
  *  - fallbackKey   매핑 안 된 컬럼들의 fallback 필드 key (예: 'memo' / 'content')
  *  - confirmLabel  확인 버튼 라벨 (기본: 'N건 추가하기'). 재수정 모드는 '재적용' 등으로 호출자가 지정.
+ *  - skippedBlank  parseExcelFile 가 NO 만 있고 다른 칸 비어있어 자동 제외한 행 수 (정보용).
  *  - extraDanger   { label, onClick }  — 푸터 좌측에 위험 액션 버튼 (예: "기록 폐기").
  *  - onConfirm     async (mappedRows, mapping, ctx) => void
  *                  ctx.setProgress(done, total, label?) 로 진행률 표시 가능.
@@ -808,7 +835,8 @@ export function openImportPreviewModal(opts) {
             <div class="modal-body">
                 <div class="import-meta">
                     <span><b>시트:</b> ${escapeHtml(opts.sheetName || '-')}</span>
-                    <span><b>총 행:</b> ${(opts.rows || []).length}건</span>
+                    <span><b>가져올 행:</b> ${(opts.rows || []).length}건</span>
+                    ${opts.skippedBlank > 0 ? `<span class="im-skipped">NO 만 있고 비어있는 ${opts.skippedBlank}건은 자동 제외됨</span>` : ''}
                 </div>
                 <div class="import-mapping">
                     <div class="im-head">

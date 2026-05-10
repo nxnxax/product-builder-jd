@@ -2594,10 +2594,11 @@ select:focus {
 
 /* ------------------------------------------------------------ Excel import preview */
 .import-preview-modal .modal-panel { width: min(900px, 96vw); }
-.import-meta { display: flex; gap: 18px; padding: 8px 12px; background: #fbf7ef;
+.import-meta { display: flex; flex-wrap: wrap; gap: 8px 18px; padding: 8px 12px; background: #fbf7ef;
     border: 1px solid rgba(20, 14, 8, 0.06); border-radius: 8px;
     font-size: 12.5px; color: #4f4943; margin-bottom: 14px; }
 .import-meta b { color: #0e0d0c; font-weight: 600; }
+.import-meta .im-skipped { color: #8a2620; font-weight: 600; }
 
 .import-mapping { border: 1px solid rgba(20, 14, 8, 0.09); border-radius: 8px; overflow: hidden; }
 .import-mapping .im-head, .import-mapping .im-row {

@@ -13,7 +13,7 @@
 import { initSupabase, apiRequest, getSession } from './auth-shared.js?v=20260509-phone-toggle';
 import { attachColumnFilters, applyColumnFilters, openRowAddModal, attachPhoneAutoFormat, attachThousandFormat, formatThousand, unformatThousand, getEffectiveFields, mountFieldManager,
          exportRecordsToExcel, pickExcelFile, parseExcelFile, suggestFieldMapping, openImportPreviewModal,
-         saveImportSession, loadImportSession, clearImportSession } from './ledger-shared.js?v=20260510-skip-blank';
+         saveImportSession, loadImportSession, clearImportSession } from './ledger-shared.js?v=20260510-skip-blank-v2';
 
 const PAGE_TYPE = 'contract';
 const TAX_RATE = 0.033;   // 실수령액 = commission * (1 - TAX_RATE)
@@ -938,6 +938,7 @@ async function importToGroup(gid) {
         sheetName: sheet.name,
         headers: sheet.headers,
         rows: sheet.rows,
+        skippedBlank: sheet.skippedBlank || 0,
         fields,
         fallbackKey: FALLBACK_FIELD_KEY,
         suggested,
