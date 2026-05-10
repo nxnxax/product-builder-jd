@@ -9,45 +9,133 @@
     <link rel="apple-touch-icon" href="logo_main.png">
     <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
     <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
-    <link rel="stylesheet" href="style.css?v=20260510-landing">
+    <link rel="stylesheet" href="style.css?v=20260510-dynamic">
     <style>
         /* ========== 사이트 메인 (랜딩) ========== */
         .landing-shell { max-width: 1240px; margin: 0 auto; padding: 56px 28px 100px; }
 
         /* Hero */
-        .hero { padding: 70px 0 60px; text-align: center; position: relative; }
-        .hero::before {
-            content: ''; position: absolute; inset: 0; pointer-events: none;
-            background:
-              radial-gradient(720px 320px at 50% 0%, rgba(200, 54, 44, 0.08), transparent 60%);
-            z-index: -1;
+        .hero {
+            padding: 90px 0 60px; text-align: center;
+            position: relative; overflow: hidden;
         }
+        /* 배경 떠다니는 gradient blob */
+        .hero-bg { position: absolute; inset: -10% -10% -10% -10%; pointer-events: none; z-index: 0; overflow: hidden; }
+        .hero-bg .blob {
+            position: absolute; width: 460px; height: 460px;
+            border-radius: 50%; filter: blur(80px); opacity: 0.55;
+            animation: floatBlob 14s ease-in-out infinite;
+        }
+        .hero-bg .blob-1 { background: radial-gradient(circle, rgba(200, 54, 44, 0.32), transparent 70%);
+            top: -120px; left: -80px; animation-delay: 0s; }
+        .hero-bg .blob-2 { background: radial-gradient(circle, rgba(255, 169, 90, 0.28), transparent 70%);
+            top: 80px; right: -100px; animation-delay: -4s; }
+        .hero-bg .blob-3 { background: radial-gradient(circle, rgba(180, 60, 80, 0.22), transparent 70%);
+            bottom: -150px; left: 38%; animation-delay: -8s; width: 540px; height: 540px; }
+        @keyframes floatBlob {
+            0%, 100% { transform: translate(0, 0) scale(1); }
+            33% { transform: translate(30px, -20px) scale(1.05); }
+            66% { transform: translate(-20px, 30px) scale(0.95); }
+        }
+
+        .hero-inner { position: relative; z-index: 1; }
         .hero-eyebrow {
-            display: inline-block; padding: 5px 13px;
-            background: rgba(200, 54, 44, 0.08); color: var(--ledger-accent-deep, #8a2620);
+            display: inline-flex; align-items: center; gap: 8px;
+            padding: 6px 14px;
+            background: rgba(255, 255, 255, 0.7);
+            backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+            color: var(--ledger-accent-deep, #8a2620);
+            border: 1px solid rgba(200, 54, 44, 0.18);
             border-radius: 99px; font-size: 12.5px; font-weight: 600;
-            letter-spacing: 0.02em; margin-bottom: 18px;
+            letter-spacing: 0.02em; margin-bottom: 22px;
+            opacity: 0; transform: translateY(8px);
+            animation: fadeUp 600ms 100ms ease-out forwards;
+        }
+        .hero-eyebrow::before {
+            content: ''; width: 6px; height: 6px; border-radius: 50%;
+            background: var(--ledger-accent, #c8362c);
+            box-shadow: 0 0 0 0 rgba(200, 54, 44, 0.5);
+            animation: pulse 1.8s ease-out infinite;
+        }
+        @keyframes pulse {
+            0% { box-shadow: 0 0 0 0 rgba(200, 54, 44, 0.5); }
+            70% { box-shadow: 0 0 0 8px rgba(200, 54, 44, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(200, 54, 44, 0); }
         }
         .hero-title {
-            margin: 0 0 18px; font-size: clamp(34px, 5.2vw, 58px);
-            font-weight: 700; letter-spacing: -0.025em; line-height: 1.15;
+            margin: 0 0 18px; font-size: clamp(34px, 5.2vw, 60px);
+            font-weight: 800; letter-spacing: -0.028em; line-height: 1.18;
             color: #0e0d0c;
+            opacity: 0; transform: translateY(14px);
+            animation: fadeUp 700ms 200ms ease-out forwards;
         }
-        .hero-title .accent { color: var(--ledger-accent, #c8362c); }
+        .hero-title .accent {
+            background: linear-gradient(135deg, #c8362c 0%, #ff7a5c 100%);
+            -webkit-background-clip: text; background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .hero-tagline {
+            font-size: clamp(15px, 1.45vw, 18px); font-weight: 700;
+            color: var(--ledger-accent-deep, #8a2620); margin: 0 0 14px;
+            opacity: 0; transform: translateY(12px);
+            animation: fadeUp 700ms 320ms ease-out forwards;
+        }
         .hero-sub {
-            max-width: 680px; margin: 0 auto 32px;
-            font-size: clamp(15px, 1.4vw, 17.5px); line-height: 1.7;
+            max-width: 720px; margin: 0 auto 36px;
+            font-size: clamp(14.5px, 1.35vw, 16.5px); line-height: 1.75;
             color: #4f4943;
+            opacity: 0; transform: translateY(12px);
+            animation: fadeUp 700ms 440ms ease-out forwards;
         }
-        .hero-cta { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; align-items: center; }
+        .hero-cta {
+            display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; align-items: center;
+            opacity: 0; animation: fadeUp 700ms 560ms ease-out forwards;
+        }
+        @keyframes fadeUp {
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* 마스코트 — Ideogram 으로 교체 가능한 placeholder */
+        .mascot {
+            width: 180px; height: 180px;
+            margin: 0 auto 22px;
+            position: relative;
+            animation: bobble 4.5s ease-in-out infinite;
+        }
+        @keyframes bobble {
+            0%, 100% { transform: translateY(0) rotate(-2deg); }
+            50% { transform: translateY(-10px) rotate(2deg); }
+        }
+        .mascot::after {
+            content: ''; position: absolute;
+            bottom: -14px; left: 50%; transform: translateX(-50%);
+            width: 130px; height: 14px; border-radius: 50%;
+            background: rgba(20, 14, 8, 0.12); filter: blur(6px);
+            animation: shadowSync 4.5s ease-in-out infinite;
+        }
+        @keyframes shadowSync {
+            0%, 100% { transform: translateX(-50%) scale(1); opacity: 0.4; }
+            50% { transform: translateX(-50%) scale(0.8); opacity: 0.25; }
+        }
         .cta-primary {
             display: inline-flex; align-items: center; gap: 8px;
-            padding: 14px 24px; background: #0e0d0c; color: #fff;
-            border-radius: 999px; font-size: 15px; font-weight: 600;
-            text-decoration: none; transition: all 200ms;
-            box-shadow: 0 6px 18px rgba(20, 14, 8, 0.16);
+            padding: 14px 26px;
+            background: linear-gradient(135deg, #0e0d0c 0%, #2a2520 100%);
+            color: #fff;
+            border-radius: 999px; font-size: 15px; font-weight: 700;
+            text-decoration: none; transition: all 220ms;
+            box-shadow: 0 6px 18px rgba(20, 14, 8, 0.18);
+            position: relative; overflow: hidden;
         }
-        .cta-primary:hover { background: var(--ledger-accent, #c8362c); transform: translateY(-2px); box-shadow: 0 10px 24px rgba(200, 54, 44, 0.28); }
+        .cta-primary::before {
+            content: ''; position: absolute; inset: 0;
+            background: linear-gradient(135deg, #c8362c 0%, #8a2620 100%);
+            opacity: 0; transition: opacity 220ms;
+            border-radius: inherit;
+        }
+        .cta-primary > * { position: relative; z-index: 1; }
+        .cta-primary:hover { transform: translateY(-3px); box-shadow: 0 14px 28px rgba(200, 54, 44, 0.32); }
+        .cta-primary:hover::before { opacity: 1; }
         .cta-link {
             color: #4f4943; font-size: 14px; text-decoration: none;
             padding: 8px 14px; border-radius: 99px; transition: background 160ms;
@@ -69,21 +157,33 @@
             background: #fff; border: 1px solid rgba(20, 14, 8, 0.08);
             border-radius: 18px; padding: 28px;
             text-decoration: none; color: inherit;
-            transition: transform 220ms cubic-bezier(0.4,0,0.2,1),
-                        box-shadow 220ms, border-color 220ms;
+            transition: transform 280ms cubic-bezier(0.34, 1.56, 0.64, 1),
+                        box-shadow 280ms, border-color 280ms;
             overflow: hidden;
+            opacity: 0; transform: translateY(20px);
+        }
+        .lcard.in-view {
+            opacity: 1; transform: translateY(0);
         }
         .lcard:hover {
-            transform: translateY(-4px);
-            box-shadow: 0 16px 36px rgba(20, 14, 8, 0.1);
+            transform: translateY(-6px) scale(1.01);
+            box-shadow: 0 22px 48px rgba(20, 14, 8, 0.12);
             border-color: var(--ledger-accent-deep, #8a2620);
         }
         .lcard::after {
             content: ''; position: absolute; inset: 0; border-radius: 18px;
-            pointer-events: none; opacity: 0; transition: opacity 220ms;
+            pointer-events: none; opacity: 0; transition: opacity 280ms;
             box-shadow: inset 0 0 0 2px var(--ledger-accent, #c8362c);
         }
-        .lcard:hover::after { opacity: 0.18; }
+        .lcard:hover::after { opacity: 0.22; }
+        /* 떠다니는 작은 sparkle (큰 카드만) */
+        .lcard.big::before {
+            content: ''; position: absolute;
+            top: -40px; right: -40px; width: 200px; height: 200px;
+            background: radial-gradient(circle, rgba(200, 54, 44, 0.18), transparent 70%);
+            border-radius: 50%; pointer-events: none;
+            animation: floatBlob 9s ease-in-out infinite;
+        }
         .lcard-tag {
             position: absolute; top: 18px; right: 18px;
             font-size: 11px; font-weight: 700; letter-spacing: 0.05em;
@@ -154,12 +254,16 @@
             padding: 18px 20px; background: #fff;
             border: 1px solid rgba(20, 14, 8, 0.08);
             border-radius: 14px; text-decoration: none; color: inherit;
-            transition: all 200ms;
+            transition: transform 280ms cubic-bezier(0.34, 1.56, 0.64, 1),
+                        box-shadow 280ms, border-color 280ms,
+                        opacity 280ms ease-out;
+            opacity: 0; transform: translateY(16px);
         }
+        .board-chip.in-view { opacity: 1; transform: translateY(0); }
         .board-chip:hover {
-            transform: translateY(-2px);
+            transform: translateY(-3px);
             border-color: var(--ledger-accent-deep, #8a2620);
-            box-shadow: 0 8px 20px rgba(20, 14, 8, 0.06);
+            box-shadow: 0 10px 22px rgba(20, 14, 8, 0.08);
         }
         .board-chip-icon {
             width: 44px; height: 44px; border-radius: 12px;
@@ -182,6 +286,13 @@
             margin-top: 80px; padding: 28px 0;
             text-align: center; color: #8a847e; font-size: 12.5px;
             border-top: 1px solid rgba(20, 14, 8, 0.06);
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .hero-bg .blob, .mascot, .mascot::after, .lcard.big::before,
+            .hero-eyebrow, .hero-eyebrow::before,
+            .hero-title, .hero-tagline, .hero-sub, .hero-cta { animation: none !important; }
+            .lcard, .board-chip { opacity: 1 !important; transform: none !important; transition: none !important; }
         }
 
         @media (max-width: 880px) {
@@ -279,12 +390,62 @@
         <!-- 사이트 간판 (랜딩) -->
         <div class="landing-shell">
             <section class="hero">
-                <div class="hero-eyebrow">분양 영업의 모든 흐름을 한 화면에</div>
-                <h1 class="hero-title">현장도, 사람도, 수수료도 — <br><span class="accent">YOUNGMAN</span> 한곳에서.</h1>
-                <p class="hero-sub">현장별 계약자·고객·조직·정산을 따로 관리할 필요 없습니다. 입력 한번이면 자동으로 분배되고, 정리되고, 기록됩니다.</p>
-                <div class="hero-cta">
-                    <a class="cta-primary" href="contracts.html">계약자 관리대장 열기 →</a>
-                    <a class="cta-link" href="#tour">기능 한눈에 보기 ↓</a>
+                <div class="hero-bg" aria-hidden="true">
+                    <span class="blob blob-1"></span>
+                    <span class="blob blob-2"></span>
+                    <span class="blob blob-3"></span>
+                </div>
+                <div class="hero-inner">
+                    <!-- 마스코트 (Ideogram 캐릭터로 교체 예정. 지금은 SVG placeholder) -->
+                    <div class="mascot" aria-hidden="true">
+                        <svg viewBox="0 0 200 200" width="180" height="180">
+                            <defs>
+                                <linearGradient id="bodyGrad" x1="0" y1="0" x2="1" y2="1">
+                                    <stop offset="0%" stop-color="#ff8870"/>
+                                    <stop offset="100%" stop-color="#c8362c"/>
+                                </linearGradient>
+                                <radialGradient id="cheekGrad" cx="50%" cy="50%" r="50%">
+                                    <stop offset="0%" stop-color="#ff9d8a" stop-opacity="0.7"/>
+                                    <stop offset="100%" stop-color="#ff9d8a" stop-opacity="0"/>
+                                </radialGradient>
+                            </defs>
+                            <!-- 몸통 (둥근 카드 모양) -->
+                            <rect x="38" y="58" width="124" height="124" rx="32" fill="url(#bodyGrad)"/>
+                            <!-- 머리 후광 -->
+                            <circle cx="100" cy="62" r="36" fill="#fff8f7" stroke="rgba(200,54,44,0.2)" stroke-width="2"/>
+                            <!-- 머리 -->
+                            <circle cx="100" cy="62" r="32" fill="#ffe8e0"/>
+                            <!-- 눈 -->
+                            <ellipse cx="86" cy="62" rx="3.5" ry="5" fill="#0e0d0c"/>
+                            <ellipse cx="114" cy="62" rx="3.5" ry="5" fill="#0e0d0c"/>
+                            <ellipse cx="87" cy="60" rx="1.2" ry="1.6" fill="#fff"/>
+                            <ellipse cx="115" cy="60" rx="1.2" ry="1.6" fill="#fff"/>
+                            <!-- 볼 -->
+                            <circle cx="80" cy="72" r="6" fill="url(#cheekGrad)"/>
+                            <circle cx="120" cy="72" r="6" fill="url(#cheekGrad)"/>
+                            <!-- 입 (작은 미소) -->
+                            <path d="M93 76 Q100 82 107 76" stroke="#0e0d0c" stroke-width="2.2" stroke-linecap="round" fill="none"/>
+                            <!-- 안테나 -->
+                            <line x1="100" y1="30" x2="100" y2="20" stroke="#0e0d0c" stroke-width="2.4" stroke-linecap="round"/>
+                            <circle cx="100" cy="17" r="4" fill="#c8362c"/>
+                            <!-- 가슴 명찰 -->
+                            <rect x="78" y="116" width="44" height="22" rx="6" fill="#fff8f7"/>
+                            <text x="100" y="131" text-anchor="middle" font-family="Pretendard, sans-serif" font-size="10" font-weight="800" fill="#c8362c">YOUNGMAN</text>
+                            <!-- 팔 -->
+                            <ellipse cx="34" cy="120" rx="10" ry="20" fill="#c8362c"/>
+                            <ellipse cx="166" cy="120" rx="10" ry="20" fill="#c8362c"/>
+                            <!-- 흔드는 손 (오른팔 끝) -->
+                            <circle cx="166" cy="100" r="9" fill="#ffe8e0"/>
+                        </svg>
+                    </div>
+                    <div class="hero-eyebrow">당신의 든든한 영업 비서, 영맨</div>
+                    <h1 class="hero-title">고객관리, 이제 <span class="accent">영맨</span>에게 맡기세요</h1>
+                    <p class="hero-tagline">소실률 0%의 든든한 비서!</p>
+                    <p class="hero-sub">이제 영업·문서 관리도 AI 가 똑똑하게.<br>죽을 때까지 지워지지 않는 확실한 비서가 되어 드립니다.</p>
+                    <div class="hero-cta">
+                        <a class="cta-primary" href="contracts.html">지금 시작하기 →</a>
+                        <a class="cta-link" href="#tour">기능 한눈에 보기 ↓</a>
+                    </div>
                 </div>
             </section>
 
@@ -438,6 +599,28 @@
         </form>
     </div>
 
-    <script src="main.js?v=20260510-landing" type="module"></script>
+    <script src="main.js?v=20260510-dynamic" type="module"></script>
+    <script>
+        // 카드 등장 애니메이션 — viewport 에 들어오면 fade-up.
+        (function () {
+            if (!('IntersectionObserver' in window)) {
+                document.querySelectorAll('.lcard, .board-chip').forEach(el => el.classList.add('in-view'));
+                return;
+            }
+            const io = new IntersectionObserver((entries) => {
+                entries.forEach(e => {
+                    if (e.isIntersecting) {
+                        e.target.classList.add('in-view');
+                        io.unobserve(e.target);
+                    }
+                });
+            }, { threshold: 0.12, rootMargin: '0px 0px -8% 0px' });
+            // 카드들에 staggered delay 부여.
+            document.querySelectorAll('.lcard, .board-chip').forEach((el, i) => {
+                el.style.transitionDelay = (i % 4) * 80 + 'ms';
+                io.observe(el);
+            });
+        })();
+    </script>
 </body>
 </html>
