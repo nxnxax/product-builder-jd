@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>다운로드 · YOUNGMAN</title>
+  <link rel="icon" type="image/png" href="logo_main.png">
+  <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
+  <link rel="stylesheet" href="style.css?v=20260510-paste-hint">
+  <style>
+    body { background: var(--bg-subtle, #fbf7ef); }
+    .dl-shell {
+      max-width: 540px; margin: 5rem auto 4rem;
+      padding: 0 1.25rem;
+    }
+    .dl-card {
+      background: #fff;
+      border: 1px solid rgba(20, 14, 8, 0.09);
+      border-radius: 16px;
+      box-shadow: 0 8px 28px rgba(20, 14, 8, 0.06);
+      overflow: hidden;
+    }
+    .dl-brand {
+      padding: 18px 22px;
+      border-bottom: 1px solid rgba(20, 14, 8, 0.06);
+      display: flex; align-items: center; gap: 10px;
+      font-size: 13.5px; color: #4f4943; font-weight: 600;
+      letter-spacing: -0.01em;
+    }
+    .dl-brand img { width: 22px; height: 22px; border-radius: 5px; }
+    .dl-brand a { color: inherit; text-decoration: none; }
+    .dl-preview {
+      background: #fbf7ef;
+      min-height: 220px;
+      display: flex; align-items: center; justify-content: center;
+      padding: 24px;
+      color: #8a847e;
+    }
+    .dl-preview img, .dl-preview video {
+      max-width: 100%; max-height: 360px;
+      border-radius: 10px; display: block;
+    }
+    .dl-icon {
+      width: 96px; height: 96px;
+      border-radius: 14px; background: #fff;
+      border: 1px solid rgba(20, 14, 8, 0.08);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.4rem; font-weight: 700;
+      color: #4f4943;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      letter-spacing: 0.05em;
+    }
+    .dl-info { padding: 22px 24px 8px; }
+    .dl-info h1 {
+      margin: 0; font-size: 17px; font-weight: 700;
+      color: #0e0d0c; letter-spacing: -0.01em;
+      word-break: break-all; line-height: 1.45;
+    }
+    .dl-info .meta {
+      margin-top: 6px; font-size: 12.5px; color: #8a847e;
+      display: flex; gap: 12px; flex-wrap: wrap;
+    }
+    .dl-actions {
+      padding: 16px 24px 24px;
+      display: flex; gap: 10px; flex-wrap: wrap;
+    }
+    .dl-btn {
+      flex: 1; min-width: 140px;
+      padding: 12px 16px; border-radius: 10px;
+      font-family: inherit; font-size: 14px; font-weight: 600;
+      cursor: pointer; text-decoration: none;
+      text-align: center; border: 1px solid rgba(20, 14, 8, 0.12);
+      background: #fff; color: #0e0d0c;
+      transition: all 160ms;
+    }
+    .dl-btn:hover { background: #fbf7ef; }
+    .dl-btn.primary {
+      background: #c8362c; color: #fff; border-color: #c8362c;
+    }
+    .dl-btn.primary:hover { background: #8a2620; border-color: #8a2620; }
+    .dl-foot {
+      margin-top: 16px; text-align: center;
+      font-size: 12px; color: #8a847e;
+    }
+    .dl-foot a { color: #c8362c; text-decoration: none; }
+    .dl-error {
+      padding: 30px 24px; text-align: center;
+      color: #b91c1c; font-size: 14px; font-weight: 500;
+    }
+  </style>
+</head>
+<body>
+
+<main class="dl-shell">
+  <div class="dl-card">
+    <div class="dl-brand">
+      <img src="logo_main.png" alt="">
+      <a href="index.html">YOUNGMAN · 개인자료함</a>
+    </div>
+    <div id="content">
+      <div class="dl-preview"><span style="font-size:13px;color:#8a847e;">불러오는 중…</span></div>
+    </div>
+  </div>
+  <p class="dl-foot">이 페이지는 YOUNGMAN 개인자료함에서 공유된 파일입니다.</p>
+</main>
+
+<script>
+  (function () {
+    const params = new URLSearchParams(location.search);
+    const u = (params.get('u') || '').trim();
+    const n = (params.get('n') || '').trim();
+    const content = document.getElementById('content');
+
+    function bad(msg) {
+      content.innerHTML = '<div class="dl-error">' + msg + '</div>';
+    }
+
+    // 파라미터 검증 (anti-injection): u 는 'u_<16hex>', n 은 영문/숫자/.-_ 만.
+    if (!u || !/^u_[0-9a-f]{16}$/.test(u)) { bad('잘못된 링크입니다.'); return; }
+    if (!n || !/^[\w.\-]+$/.test(n) || n.length > 200) { bad('잘못된 파일명입니다.'); return; }
+
+    const fileUrl = '/uploads/' + encodeURIComponent(u) + '/' + encodeURIComponent(n);
+    const ext = (n.split('.').pop() || '').toLowerCase();
+    const isImage = ['png','jpg','jpeg','gif','webp'].includes(ext);
+    const isVideo = ['mp4','webm','mov'].includes(ext);
+
+    // HEAD 요청으로 파일 존재 + 크기 확인.
+    fetch(fileUrl, { method: 'HEAD' }).then(res => {
+      if (!res.ok) {
+        bad(res.status === 404 ? '파일을 찾을 수 없습니다 (이미 삭제되었거나 잘못된 링크).' : '파일을 불러올 수 없습니다 (' + res.status + ').');
+        return;
+      }
+      const size = parseInt(res.headers.get('Content-Length') || '0', 10);
+      render(size);
+    }).catch(err => {
+      bad('네트워크 오류: ' + (err.message || err));
+    });
+
+    function fmtSize(bytes) {
+      if (!bytes) return '-';
+      const u = ['B','KB','MB','GB'];
+      let i = 0; let n = bytes;
+      while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
+      return n.toFixed(n >= 10 || i === 0 ? 0 : 1) + ' ' + u[i];
+    }
+
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    }
+
+    function render(size) {
+      const safeName = escapeHtml(n);
+      let preview;
+      if (isImage) {
+        preview = `<img src="${fileUrl}" alt="${safeName}">`;
+      } else if (isVideo) {
+        preview = `<video src="${fileUrl}" controls style="max-width:100%;max-height:360px;border-radius:10px;"></video>`;
+      } else {
+        preview = `<div class="dl-icon">${escapeHtml((ext || '파일').toUpperCase())}</div>`;
+      }
+
+      content.innerHTML = `
+        <div class="dl-preview">${preview}</div>
+        <div class="dl-info">
+          <h1>${safeName}</h1>
+          <div class="meta">
+            <span>${fmtSize(size)}</span>
+            <span>${escapeHtml((ext || '').toUpperCase()) || '파일'}</span>
+          </div>
+        </div>
+        <div class="dl-actions">
+          <a class="dl-btn" href="${fileUrl}" target="_blank" rel="noopener">새 탭에서 열기</a>
+          <a class="dl-btn primary" href="${fileUrl}" download="${safeName}">⬇ 다운로드</a>
+        </div>
+      `;
+    }
+  })();
+</script>
+</body>
+</html>

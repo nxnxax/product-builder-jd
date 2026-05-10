@@ -6,7 +6,7 @@
   <title>개인자료함 · YOUNGMAN</title>
   <link rel="icon" type="image/png" href="logo_main.png">
   <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
-  <link rel="stylesheet" href="style.css?v=20260510-paste-hint">
+  <link rel="stylesheet" href="style.css?v=20260510-dl-page">
   <style>
     .upload-wrap { max-width: 760px; margin: 3rem auto 5rem; padding: 0 1.5rem; }
     .upload-wrap h2 { margin: 0 0 .35rem; font-size: 1.6rem; letter-spacing: -.01em; }
@@ -115,7 +115,7 @@
   </main>
 
   <script type="module">
-    import { initSupabase, getSession, getAccessToken, bootApp } from './auth-shared.js?v=20260510-paste-hint';
+    import { initSupabase, getSession, getAccessToken, bootApp } from './auth-shared.js?v=20260510-dl-page';
 
     const fileInput = document.getElementById('file-input');
     const dropZone = document.getElementById('drop-zone');
@@ -182,22 +182,23 @@
         statusEl.className = 'upload-status success';
         statusEl.innerHTML = '';
         const span = document.createElement('span');
-        span.innerHTML = '업로드 완료 — URL: <code></code>';
+        span.innerHTML = '업로드 완료 — 공유 URL: <code></code>';
         span.querySelector('code').textContent = data.url;
         const btn = document.createElement('button');
         btn.className = 'copy-btn';
         btn.type = 'button';
         btn.textContent = 'URL 복사';
         btn.addEventListener('click', () => copyText(data.url, btn));
-        const dl = document.createElement('a');
-        dl.className = 'copy-btn';
-        dl.href = data.url;
-        dl.download = data.name;
-        dl.textContent = '다운로드';
-        dl.style.textDecoration = 'none';
+        const open = document.createElement('a');
+        open.className = 'copy-btn';
+        open.href = data.url;
+        open.target = '_blank';
+        open.rel = 'noopener';
+        open.textContent = '다운로드 페이지 열기';
+        open.style.textDecoration = 'none';
         statusEl.appendChild(span);
         statusEl.appendChild(btn);
-        statusEl.appendChild(dl);
+        statusEl.appendChild(open);
         loadRecent();
       } catch (e) {
         setStatus('실패: ' + (e.message || e), 'error');
@@ -218,21 +219,24 @@
         for (const f of files) {
           const item = document.createElement('div');
           item.className = 'recent-item';
-          const url = f.url || ('/uploads/' + encodeURIComponent(f.name));
-          const fullUrl = location.origin + url;
+          // src = 파일 직접 경로 (썸네일 표시용), shareUrl = 다운로드 페이지 (URL 복사용)
+          const src = f.src || ('/uploads/' + encodeURIComponent(f.name));
+          const shareUrl = f.shareUrl || src;
+          const fullShareUrl = location.origin + shareUrl;
 
           const thumb = document.createElement('a');
           thumb.className = 'thumb';
-          thumb.href = url;
+          thumb.href = shareUrl;          // 썸네일 클릭 → 다운로드 페이지
           thumb.target = '_blank';
+          thumb.rel = 'noopener';
           if (f.kind === 'video') {
             const v = document.createElement('video');
-            v.src = url; v.muted = true; v.playsInline = true; v.preload = 'metadata';
+            v.src = src; v.muted = true; v.playsInline = true; v.preload = 'metadata';
             v.style.cssText = 'width:100%;height:100%;object-fit:cover;display:block;background:#000;';
             thumb.appendChild(v);
           } else if (f.kind === 'image') {
             const img = document.createElement('img');
-            img.src = url; img.loading = 'lazy'; img.alt = f.name;
+            img.src = src; img.loading = 'lazy'; img.alt = f.name;
             thumb.appendChild(img);
           } else {
             const dt = document.createElement('div');
@@ -250,12 +254,13 @@
           const actions = document.createElement('div');
           actions.className = 'actions';
 
-          const dl = document.createElement('a');
-          dl.className = 'copy-btn';
-          dl.href = url;
-          dl.download = f.name;
-          dl.textContent = '다운로드';
-          dl.style.textDecoration = 'none';
+          const open = document.createElement('a');
+          open.className = 'copy-btn';
+          open.href = shareUrl;
+          open.target = '_blank';
+          open.rel = 'noopener';
+          open.textContent = '다운로드 페이지';
+          open.style.textDecoration = 'none';
 
           const cp = document.createElement('button');
           cp.className = 'copy-btn';
@@ -263,7 +268,7 @@
           cp.textContent = 'URL 복사';
           cp.addEventListener('click', (ev) => {
             ev.preventDefault();
-            copyText(fullUrl, cp);
+            copyText(fullShareUrl, cp);
           });
 
           const del = document.createElement('button');
@@ -287,7 +292,7 @@
             }
           });
 
-          actions.appendChild(dl);
+          actions.appendChild(open);
           actions.appendChild(cp);
           actions.appendChild(del);
           meta.appendChild(name);

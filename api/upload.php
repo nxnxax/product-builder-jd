@@ -230,7 +230,10 @@ if ($method === 'GET') {
                 'size' => filesize($p),
                 'kind' => $kind,
                 'ext' => $ext,
-                'url' => '/uploads/' . rawurlencode($userSeg) . '/' . rawurlencode($f),
+                // 파일 직접 경로 (자료실 미리보기 / 새 탭에서 열기용).
+                'src' => '/uploads/' . rawurlencode($userSeg) . '/' . rawurlencode($f),
+                // 외부 공유용 다운로드 페이지 (URL 복사 시 이 주소가 들어감).
+                'shareUrl' => '/download.html?u=' . rawurlencode($userSeg) . '&n=' . rawurlencode($f),
             ];
         }
         usort($files, function($a, $b) { return $b['mtime'] <=> $a['mtime']; });
@@ -316,11 +319,15 @@ if (!@move_uploaded_file($file['tmp_name'], $dest)) {
 
 $proto = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
 $host = $_SERVER['HTTP_HOST'] ?? 'youngman-biz.com';
-$publicUrl = $proto . '://' . $host . '/uploads/' . rawurlencode($userSeg) . '/' . rawurlencode($basename);
+$src = '/uploads/' . rawurlencode($userSeg) . '/' . rawurlencode($basename);
+$shareUrl = $proto . '://' . $host . '/download.html?u=' . rawurlencode($userSeg) . '&n=' . rawurlencode($basename);
+$publicUrl = $proto . '://' . $host . $src;
 
 jout([
     'ok' => true,
-    'url' => $publicUrl,
+    'url' => $shareUrl,           // URL 복사 / 외부 공유용 (다운로드 페이지)
+    'directUrl' => $publicUrl,    // 파일 직접 경로 (자료실 미리보기용)
+    'src' => $src,
     'name' => $basename,
     'size' => (int)$file['size'],
     'mime' => $mime,
