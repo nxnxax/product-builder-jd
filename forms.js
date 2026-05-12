@@ -14,8 +14,13 @@
  * 토글 필드는 settings.customFields[i] = { key, label, type:'toggle', onLabel, offLabel, custom:true }
  */
 
-import { initSupabase, apiRequest, getSession, refreshNavForms } from './auth-shared.js?v=20260512-custom-forms-nav';
-import { isLedgerMobile, onLedgerViewportChange, openRowAddModal } from './ledger-shared.js?v=20260512-custom-forms-nav';
+import { initSupabase, apiRequest, getSession, refreshNavForms } from './auth-shared.js?v=20260512-forms-toolkit';
+import {
+    isLedgerMobile, onLedgerViewportChange, openRowAddModal,
+    attachColumnFilters, applyColumnFilters,
+    exportRecordsToExcel, pickExcelFile, parseExcelFile,
+    suggestFieldMapping, openImportPreviewModal,
+} from './ledger-shared.js?v=20260512-forms-toolkit';
 
 const PAGE_TYPE = 'custom';
 
@@ -67,6 +72,7 @@ let records = [];              // 활성 양식의 records
 let editingFormId = null;      // 빌더 모달에서 편집 중인 양식 id (null = 새 양식)
 let builderDraft = [];         // 빌더 모달 안의 working schema
 let selectedIds = new Set();
+let filterState = { filters: {} };   // 컬럼 헤더 클릭 필터 상태
 
 /* ============== Boot ============== */
 (async function boot() {
@@ -193,45 +199,168 @@ function renderFormUse() {
     const fields = [...BASE_FIELDS, ...(form.settings?.customFields || [])];
     const content = document.getElementById('content');
 
+    // 필터 적용된 records
+    const filteredRows = applyColumnFilters(filterState.filters, records, (r, k) => r.data?.[k]);
     const mobile = isLedgerMobile();
     const bodyHtml = mobile
-        ? renderMobileCards(form, records, fields)
-        : renderTable(form, records, fields);
+        ? renderMobileCards(form, filteredRows, fields)
+        : renderTable(form, filteredRows, fields);
+
+    const hasSelection = selectedIds.size > 0;
+    const filterCount = Object.values(filterState.filters || {}).reduce((n, s) => n + (s?.size ? 1 : 0), 0);
 
     content.innerHTML = `
         <div class="use-head">
             <button class="back-btn" type="button" id="backBtn">← 양식 목록</button>
             <h2>${escapeHtml(form.name)}</h2>
         </div>
-        <div class="ledger-cards-toolbar" style="border:1px solid var(--ledger-line);border-radius:10px 10px 0 0;margin-bottom:0;border-bottom:0">
-            <button class="tiny-btn primary" type="button" id="addRowBtn">+ 행 추가</button>
+        <div class="ledger-cards-toolbar" style="border:1px solid var(--ledger-line);border-radius:10px 10px 0 0;margin-bottom:0;border-bottom:0;flex-wrap:wrap;gap:6px;justify-content:flex-end">
+            ${hasSelection
+                ? `<span style="margin-right:auto;color:var(--ledger-accent-deep);font-size:13px;font-weight:600">${selectedIds.size}개 선택</span>
+                   <button class="tiny-btn" type="button" id="clearSelBtn">선택 해제</button>
+                   <button class="tiny-btn danger" type="button" id="bulkDelBtn">선택 삭제</button>`
+                : `<span style="margin-right:auto;color:#8a847e;font-size:12.5px">총 ${records.length}건${filterCount ? ` · 필터 ${filterCount}` : ''}</span>
+                   <button class="tiny-btn" type="button" id="exportBtn">📥 엑셀 다운로드</button>
+                   <button class="tiny-btn" type="button" id="importBtn">📤 엑셀 가져오기</button>
+                   <button class="tiny-btn primary" type="button" id="addRowBtn">+ 행 추가</button>`}
         </div>
         <div style="border:1px solid var(--ledger-line);border-radius:0 0 12px 12px;overflow:hidden;background:#fff">${bodyHtml}</div>
     `;
 
     document.getElementById('backBtn').addEventListener('click', exitForm);
-    document.getElementById('addRowBtn').addEventListener('click', () => openRowEntry(form, fields, null));
+    document.getElementById('addRowBtn')?.addEventListener('click', () => openRowEntry(form, fields, null));
+    document.getElementById('exportBtn')?.addEventListener('click', () => exportForm(form, fields, filteredRows));
+    document.getElementById('importBtn')?.addEventListener('click', () => importToForm(form, fields));
+    document.getElementById('clearSelBtn')?.addEventListener('click', () => { selectedIds.clear(); render(); });
+    document.getElementById('bulkDelBtn')?.addEventListener('click', () => bulkDeleteSelected(form));
+
     bindRowEvents(form, fields);
+    bindSelectionEvents();
+
+    // 데스크탑 모드 컬럼 헤더 클릭 필터 부착
+    if (!mobile) {
+        attachColumnFilters({
+            state: filterState,
+            headers: document.querySelectorAll('.ledger-tbl thead th[data-col-key]'),
+            fields: fields.filter(f => f.type !== 'auto_number'),
+            getRows: () => records,
+            getValue: (r, k) => r.data?.[k],
+            onChange: () => render(),
+        });
+    }
+}
+
+function bindSelectionEvents() {
+    document.querySelectorAll('[data-select]').forEach(cb => {
+        cb.addEventListener('change', (e) => {
+            const id = parseInt(cb.dataset.select, 10);
+            if (cb.checked) selectedIds.add(id);
+            else selectedIds.delete(id);
+            // 인라인 토글로 빠르게 액션 바만 갱신 — 전체 render 는 비용 부담
+            render();
+        });
+        cb.addEventListener('click', e => e.stopPropagation());  // 카드 펼침 방지
+    });
+    document.querySelectorAll('[data-select-all]').forEach(cb => {
+        cb.addEventListener('change', () => {
+            if (cb.checked) records.forEach(r => selectedIds.add(r.id));
+            else selectedIds.clear();
+            render();
+        });
+    });
+}
+
+async function bulkDeleteSelected(form) {
+    if (selectedIds.size === 0) return;
+    if (!confirm(`선택한 ${selectedIds.size}개 행을 삭제할까요?`)) return;
+    const ids = [...selectedIds];
+    try {
+        // bulk endpoint 가 있으면 한 번에, 없으면 순차 DELETE
+        try {
+            await api('ledger-records-bulk', { method: 'DELETE', body: { ids } });
+        } catch {
+            for (const id of ids) {
+                try { await api('ledger-records', { method: 'DELETE', body: { id } }); } catch {}
+            }
+        }
+        selectedIds.clear();
+        await loadRecords(activeFormId);
+        render();
+    } catch (e) {
+        alert('삭제 실패: ' + (e.message || ''));
+    }
+}
+
+async function exportForm(form, fields, rows) {
+    try {
+        await exportRecordsToExcel({
+            sheets: [{ name: form.name, fields, rows }],
+            fileName: `${form.name.replace(/[\\/?*[\]:]/g, '_')}.xlsx`,
+        });
+    } catch (e) {
+        alert('엑셀 다운로드 실패: ' + (e.message || ''));
+    }
+}
+
+async function importToForm(form, fields) {
+    let file;
+    try { file = await pickExcelFile(); } catch { return; }
+    if (!file) return;
+    let parsed;
+    try { parsed = await parseExcelFile(file); }
+    catch (e) { alert('엑셀 파싱 실패: ' + e.message); return; }
+    if (!parsed?.rows?.length) { alert('파일에 데이터가 없습니다.'); return; }
+
+    const importableFields = fields.filter(f => f.type !== 'auto_number' && f.type !== 'formula');
+    const mapping = suggestFieldMapping(parsed.headers, importableFields, {});
+
+    openImportPreviewModal({
+        title: `"${form.name}" 양식에 엑셀 가져오기`,
+        headers: parsed.headers,
+        rows: parsed.rows,
+        fields: importableFields,
+        mapping,
+        onConfirm: async ({ finalMapping }) => {
+            const records = parsed.rows.map(row => {
+                const data = {};
+                parsed.headers.forEach((h, i) => {
+                    const targetKey = finalMapping[h];
+                    if (!targetKey) return;
+                    data[targetKey] = row[i];
+                });
+                return data;
+            }).filter(d => Object.values(d).some(v => v !== '' && v != null));
+
+            for (const data of records) {
+                try { await api('ledger-records', { method: 'POST', body: { page_type: PAGE_TYPE, group_id: activeFormId, data } }); } catch {}
+            }
+            await loadRecords(activeFormId);
+            render();
+        }
+    });
 }
 
 /* 데스크탑 표 */
 function renderTable(form, rows, fields) {
     const cells = fields.filter(f => f.type !== 'auto_number');
+    const allSelected = rows.length > 0 && rows.every(r => selectedIds.has(r.id));
     return `
         <div class="tbl-wrap">
             <table class="ledger-tbl">
                 <thead>
                     <tr>
+                        <th class="col-check"><input type="checkbox" data-select-all="${form.id}" ${allSelected ? 'checked' : ''}></th>
                         <th class="col-no">NO</th>
-                        ${cells.map(f => `<th>${escapeHtml(f.label)}</th>`).join('')}
+                        ${cells.map(f => `<th data-col-key="${escapeAttr(f.key)}">${escapeHtml(f.label)}</th>`).join('')}
                         <th class="col-action"></th>
                     </tr>
                 </thead>
                 <tbody>
                     ${rows.length === 0
-                        ? `<tr><td colspan="${cells.length + 2}" style="text-align:center;color:#8a847e;padding:24px;font-size:13px;">표시할 항목이 없습니다.</td></tr>`
+                        ? `<tr><td colspan="${cells.length + 3}" style="text-align:center;color:#8a847e;padding:24px;font-size:13px;">표시할 항목이 없습니다.</td></tr>`
                         : rows.map((r, i) => `
-                            <tr data-id="${r.id}">
+                            <tr data-id="${r.id}" class="${selectedIds.has(r.id) ? 'selected' : ''}">
+                                <td class="col-check"><input type="checkbox" data-select="${r.id}" ${selectedIds.has(r.id) ? 'checked' : ''}></td>
                                 <td class="col-no">${i + 1}</td>
                                 ${cells.map(f => `<td>${renderCellInner(f, r.data?.[f.key], r.data || {}, fields)}</td>`).join('')}
                                 <td class="col-action">
