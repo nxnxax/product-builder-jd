@@ -14,13 +14,13 @@
  * 토글 필드는 settings.customFields[i] = { key, label, type:'toggle', onLabel, offLabel, custom:true }
  */
 
-import { initSupabase, apiRequest, getSession, refreshNavForms } from './auth-shared.js?v=20260512-kapp-shell';
+import { initSupabase, apiRequest, getSession, refreshNavForms } from './auth-shared.js?v=20260512-form-accordion';
 import {
     isLedgerMobile, onLedgerViewportChange, openRowAddModal,
     attachColumnFilters, applyColumnFilters,
     exportRecordsToExcel, pickExcelFile, parseExcelFile,
     suggestFieldMapping, openImportPreviewModal,
-} from './ledger-shared.js?v=20260512-kapp-shell';
+} from './ledger-shared.js?v=20260512-form-accordion';
 
 const PAGE_TYPE = 'custom';
 
@@ -455,27 +455,37 @@ function renderFormUse() {
     const hasSelection = selectedIds.size > 0;
     const filterCount = Object.values(filterState.filters || {}).reduce((n, s) => n + (s?.size ? 1 : 0), 0);
 
+    // 조직도/계약자/고객 관리대장과 동일한 accordion-card 구조로 렌더
     content.innerHTML = `
         <div class="ledger-head">
             <div>
                 <h1 class="ledger-title">${escapeHtml(form.name)}</h1>
-                <p class="ledger-sub">사용자 정의 양식 · 총 ${records.length}건${filterCount ? ` · 필터 ${filterCount}` : ''}</p>
+                <p class="ledger-sub">총 ${records.length}건${filterCount ? ` · 필터 ${filterCount}` : ''}</p>
             </div>
             <div style="display:flex;gap:6px;flex-wrap:wrap">
-                <button class="tiny-btn" type="button" id="editFormBtn">⚙ 양식 편집</button>
-                <button class="tiny-btn" type="button" id="newFormBtn">+ 새 양식</button>
+                <button class="tiny-btn primary" type="button" id="newFormBtn">+ 새 양식 만들기</button>
             </div>
         </div>
-        <div class="ledger-cards-toolbar" style="border:1px solid var(--ledger-line);border-radius:12px 12px 0 0;margin-bottom:0;border-bottom:0;flex-wrap:wrap;gap:6px;justify-content:flex-end;background:#fbf7ef">
-            ${hasSelection
-                ? `<span style="margin-right:auto;color:var(--ledger-accent-deep);font-size:14px;font-weight:700">${selectedIds.size}개 선택</span>
-                   <button class="tiny-btn" type="button" id="clearSelBtn">선택 해제</button>
-                   <button class="tiny-btn danger" type="button" id="bulkDelBtn">선택 삭제</button>`
-                : `<button class="tiny-btn" type="button" id="exportBtn">📥 엑셀 다운로드</button>
-                   <button class="tiny-btn" type="button" id="importBtn">📤 엑셀 가져오기</button>
-                   <button class="tiny-btn primary" type="button" id="addRowBtn">+ 행 추가</button>`}
+        <div class="accordion-card open" data-form-id="${form.id}">
+            <div class="accordion-head">
+                <h3>${escapeHtml(form.name)} <span class="head-count">(${records.length}건)</span></h3>
+                <div class="head-actions">
+                    <button type="button" id="exportBtn" title="이 양식을 엑셀로 다운로드">📥 엑셀 다운로드</button>
+                    <button type="button" id="importBtn" title="엑셀 파일을 이 양식에 업로드">📤 엑셀 가져오기</button>
+                    <button type="button" id="editFormBtn" title="양식 항목/설정 편집">⚙ 양식 편집</button>
+                </div>
+            </div>
+            <div class="accordion-body">
+                <div class="ledger-cards-toolbar" style="flex-wrap:wrap;gap:6px;justify-content:flex-end;background:#fbfaf5;border-bottom:1px solid var(--ledger-line);padding:10px 18px;margin:0">
+                    ${hasSelection
+                        ? `<span style="margin-right:auto;color:var(--ledger-accent-deep);font-size:14px;font-weight:700">${selectedIds.size}개 선택</span>
+                           <button class="tiny-btn" type="button" id="clearSelBtn">선택 해제</button>
+                           <button class="tiny-btn danger" type="button" id="bulkDelBtn">선택 삭제</button>`
+                        : `<button class="tiny-btn primary" type="button" id="addRowBtn">+ 행 추가</button>`}
+                </div>
+                ${bodyHtml}
+            </div>
         </div>
-        <div style="border:1px solid var(--ledger-line);border-radius:0 0 12px 12px;overflow:hidden;background:#fff">${bodyHtml}</div>
     `;
 
     document.getElementById('editFormBtn')?.addEventListener('click', () => openBuilder(activeFormId));
@@ -1498,10 +1508,12 @@ async function saveBuilder() {
 
     try {
         const settingsPayload = { customFields: builderDraft, customSettings: builderSettings };
+        const wasNew = !editingFormId;
+        let newId = null;
         if (editingFormId) {
             await api('ledger-groups', { method: 'PATCH', body: { id: editingFormId, name, settings: settingsPayload } });
         } else {
-            await api('ledger-groups', {
+            const res = await api('ledger-groups', {
                 method: 'POST',
                 body: {
                     pageType: PAGE_TYPE,
@@ -1510,10 +1522,22 @@ async function saveBuilder() {
                     settings: settingsPayload,
                 },
             });
+            newId = res?.item?.id || res?.id;
         }
         closeBuilder();
-        await loadForms();
         try { await refreshNavForms(); } catch {}
+
+        if (wasNew && newId) {
+            // 새 양식 = 자체 페이지로 즉시 이동 (조직도/계약자처럼)
+            window.location.href = `forms.html?form=${newId}`;
+            return;
+        }
+        // 기존 양식 편집: 그 자리에서 갱신 후 재렌더
+        await loadForms();
+        if (activeFormId) {
+            await loadRecords(activeFormId);
+            await buildFormulaCtx(activeFormId);
+        }
         render();
     } catch (e) {
         setErr('저장 실패: ' + (e.message || ''));
