@@ -14,13 +14,13 @@
  * 토글 필드는 settings.customFields[i] = { key, label, type:'toggle', onLabel, offLabel, custom:true }
  */
 
-import { initSupabase, apiRequest, getSession, refreshNavForms } from './auth-shared.js?v=20260512-forms-fixes1';
+import { initSupabase, apiRequest, getSession, refreshNavForms } from './auth-shared.js?v=20260512-forms-phase2';
 import {
     isLedgerMobile, onLedgerViewportChange, openRowAddModal,
     attachColumnFilters, applyColumnFilters,
     exportRecordsToExcel, pickExcelFile, parseExcelFile,
     suggestFieldMapping, openImportPreviewModal,
-} from './ledger-shared.js?v=20260512-forms-fixes1';
+} from './ledger-shared.js?v=20260512-forms-phase2';
 
 const PAGE_TYPE = 'custom';
 
@@ -32,7 +32,7 @@ const BASE_FIELDS = [
 
 const FIELD_TYPE_LABELS = {
     text: '텍스트', number: '숫자', date: '날짜', tel: '전화번호',
-    textarea: '긴 텍스트', toggle: 'ON/OFF 토글', auto_number: '번호',
+    textarea: '긴 텍스트', toggle: 'ON/OFF 토글', switch: '좌우 스위치', auto_number: '번호',
     select: '드롭다운', file: '첨부파일', formula: '수식', ref: '다른 양식 참조',
 };
 
@@ -242,12 +242,29 @@ let formulaCtx = { refCache: {}, aggCache: {}, aggFieldMap: {} };
     }
     bindBuilderModal();
     await loadForms();
-    // URL ?form=<id> 가 있으면 그 양식 사용 모드로 자동 진입
+    // 진입 분기:
+    //  - ?form=<id> 있으면 그 양식 사용 모드
+    //  - ?new=1 또는 양식 없으면 빌더 모달 자동 오픈 (새 양식 만들기)
+    //  - 양식 있고 파라미터 없으면 가장 최근 양식 사용 모드
     const params = new URLSearchParams(location.search);
     const requestedId = parseInt(params.get('form'), 10);
+    const wantNew = params.get('new') === '1';
     if (requestedId && forms.find(f => f.id === requestedId)) {
         activeFormId = requestedId;
         await loadRecords(requestedId);
+        await buildFormulaCtx(requestedId);
+    } else if (wantNew || forms.length === 0) {
+        // 빌더 자동 오픈 — 양식 목록 페이지 대신 곧바로 새 양식 만들기
+        render();
+        setTimeout(() => openBuilder(null), 100);
+        onLedgerViewportChange(() => render());
+        return;
+    } else {
+        // 가장 최근 만든 양식 자동 진입 (id 내림차순)
+        const latest = forms.slice().sort((a, b) => b.id - a.id)[0];
+        activeFormId = latest.id;
+        await loadRecords(latest.id);
+        await buildFormulaCtx(latest.id);
     }
     render();
     onLedgerViewportChange(() => render());
@@ -416,24 +433,30 @@ function renderFormUse() {
     const filterCount = Object.values(filterState.filters || {}).reduce((n, s) => n + (s?.size ? 1 : 0), 0);
 
     content.innerHTML = `
-        <div class="use-head">
-            <button class="back-btn" type="button" id="backBtn">← 양식 목록</button>
-            <h2>${escapeHtml(form.name)}</h2>
+        <div class="ledger-head">
+            <div>
+                <h1 class="ledger-title">${escapeHtml(form.name)}</h1>
+                <p class="ledger-sub">사용자 정의 양식 · 총 ${records.length}건${filterCount ? ` · 필터 ${filterCount}` : ''}</p>
+            </div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap">
+                <button class="tiny-btn" type="button" id="editFormBtn">⚙ 양식 편집</button>
+                <button class="tiny-btn" type="button" id="newFormBtn">+ 새 양식</button>
+            </div>
         </div>
-        <div class="ledger-cards-toolbar" style="border:1px solid var(--ledger-line);border-radius:10px 10px 0 0;margin-bottom:0;border-bottom:0;flex-wrap:wrap;gap:6px;justify-content:flex-end">
+        <div class="ledger-cards-toolbar" style="border:1px solid var(--ledger-line);border-radius:12px 12px 0 0;margin-bottom:0;border-bottom:0;flex-wrap:wrap;gap:6px;justify-content:flex-end;background:#fbf7ef">
             ${hasSelection
-                ? `<span style="margin-right:auto;color:var(--ledger-accent-deep);font-size:13px;font-weight:600">${selectedIds.size}개 선택</span>
+                ? `<span style="margin-right:auto;color:var(--ledger-accent-deep);font-size:14px;font-weight:700">${selectedIds.size}개 선택</span>
                    <button class="tiny-btn" type="button" id="clearSelBtn">선택 해제</button>
                    <button class="tiny-btn danger" type="button" id="bulkDelBtn">선택 삭제</button>`
-                : `<span style="margin-right:auto;color:#8a847e;font-size:12.5px">총 ${records.length}건${filterCount ? ` · 필터 ${filterCount}` : ''}</span>
-                   <button class="tiny-btn" type="button" id="exportBtn">📥 엑셀 다운로드</button>
+                : `<button class="tiny-btn" type="button" id="exportBtn">📥 엑셀 다운로드</button>
                    <button class="tiny-btn" type="button" id="importBtn">📤 엑셀 가져오기</button>
                    <button class="tiny-btn primary" type="button" id="addRowBtn">+ 행 추가</button>`}
         </div>
         <div style="border:1px solid var(--ledger-line);border-radius:0 0 12px 12px;overflow:hidden;background:#fff">${bodyHtml}</div>
     `;
 
-    document.getElementById('backBtn').addEventListener('click', exitForm);
+    document.getElementById('editFormBtn')?.addEventListener('click', () => openBuilder(activeFormId));
+    document.getElementById('newFormBtn')?.addEventListener('click', () => { window.location.href = 'forms.html?new=1'; });
     document.getElementById('addRowBtn')?.addEventListener('click', () => openRowEntry(form, fields, null));
     document.getElementById('exportBtn')?.addEventListener('click', () => exportForm(form, fields, filteredRows));
     document.getElementById('importBtn')?.addEventListener('click', () => importToForm(form, fields));
@@ -634,6 +657,15 @@ function renderCellInner(f, v, fullData, allFields) {
         const offLabel = f.offLabel || 'OFF';
         return `<span class="toggle-cell ${on ? 'on' : 'off'}">${escapeHtml(on ? onLabel : offLabel)}</span>`;
     }
+    if (f.type === 'switch') {
+        const on = !!v;
+        const onLabel = f.onLabel || 'ON';
+        const offLabel = f.offLabel || 'OFF';
+        return `<span class="switch-cell ${on ? 'on' : 'off'}" aria-label="${escapeAttr(on ? onLabel : offLabel)}">
+            <span class="switch-track"><span class="switch-thumb"></span></span>
+            <span class="switch-label">${escapeHtml(on ? onLabel : offLabel)}</span>
+        </span>`;
+    }
     if (f.type === 'formula') {
         const result = evalFormula(f.formula, fullData || {}, allFields, formulaCtx);
         if (result === '' || result === undefined || result === null) return `<span class="cell-empty">-</span>`;
@@ -658,7 +690,7 @@ function renderCellInner(f, v, fullData, allFields) {
 }
 
 function cellDisplay(f, v, fullData, allFields) {
-    if (f.type === 'toggle') return v ? (f.onLabel || 'ON') : (f.offLabel || 'OFF');
+    if (f.type === 'toggle' || f.type === 'switch') return v ? (f.onLabel || 'ON') : (f.offLabel || 'OFF');
     if (f.type === 'formula') {
         const r = evalFormula(f.formula, fullData || {}, allFields, formulaCtx);
         if (r === '' || r === undefined || r === null) return '';
@@ -727,6 +759,17 @@ async function openRowEntry(form, fields, existing) {
                         <label>${labelHtml}</label>
                         <div>
                             <button type="button" class="tiny-btn ${v ? 'primary' : ''}" data-toggle-field="${field.key}" data-toggle-val="${v ? '1' : '0'}">${escapeHtml(v ? (field.onLabel || 'ON') : (field.offLabel || 'OFF'))}</button>
+                        </div>
+                    </div>`;
+            }
+            if (field.type === 'switch') {
+                const v = !!defs[field.key];
+                return `
+                    <div class="modal-row">
+                        <label>${labelHtml}</label>
+                        <div class="switch-control" data-switch-field="${field.key}" data-switch-val="${v ? '1' : '0'}" role="switch" aria-checked="${v}">
+                            <span class="switch-track ${v ? 'on' : 'off'}"><span class="switch-thumb"></span></span>
+                            <span class="switch-label-text">${escapeHtml(v ? (field.onLabel || 'ON') : (field.offLabel || 'OFF'))}</span>
                         </div>
                     </div>`;
             }
@@ -806,6 +849,19 @@ async function openRowEntry(form, fields, existing) {
                     btn.classList.toggle('primary', next);
                 });
             });
+            // 좌우 스위치
+            md.querySelectorAll('[data-switch-field]').forEach(el => {
+                el.addEventListener('click', () => {
+                    const cur = el.dataset.switchVal === '1';
+                    const next = !cur;
+                    const f = dataFields.find(x => x.key === el.dataset.switchField);
+                    el.dataset.switchVal = next ? '1' : '0';
+                    el.setAttribute('aria-checked', String(next));
+                    el.querySelector('.switch-track').classList.toggle('on', next);
+                    el.querySelector('.switch-track').classList.toggle('off', !next);
+                    el.querySelector('.switch-label-text').textContent = next ? (f.onLabel || 'ON') : (f.offLabel || 'OFF');
+                });
+            });
             // 파일 업로드
             md.querySelectorAll('[data-file-field]').forEach(input => {
                 const key = input.dataset.fileField;
@@ -859,6 +915,10 @@ async function openRowEntry(form, fields, existing) {
             // toggle
             md.querySelectorAll('[data-toggle-field]').forEach(btn => {
                 data[btn.dataset.toggleField] = btn.dataset.toggleVal === '1';
+            });
+            // switch
+            md.querySelectorAll('[data-switch-field]').forEach(el => {
+                data[el.dataset.switchField] = el.dataset.switchVal === '1';
             });
             // select
             md.querySelectorAll('[data-select-field]').forEach(s => {
@@ -1075,8 +1135,9 @@ function startFieldEdit(idx) {
             }
         }
     }
-    // type 변경에 따른 extra row 표시
+    // type 변경에 따른 extra row 표시 + 수식 도구 갱신
     modal.querySelector('[data-add-type]').dispatchEvent(new Event('change'));
+    try { window.__formsRefreshFormulaTools?.(); } catch {}
     // UI 상태 — "수정 중" 박스 + 버튼 라벨 변경
     const status = modal.querySelector('[data-edit-status]');
     const goBtn = modal.querySelector('[data-add-go]');
@@ -1130,7 +1191,8 @@ function bindBuilderModal() {
 
     function syncExtraRows() {
         const t = typeSelect.value;
-        extraToggle.classList.toggle('hidden', t !== 'toggle');
+        // toggle/switch 둘 다 onLabel/offLabel 입력 필요
+        extraToggle.classList.toggle('hidden', t !== 'toggle' && t !== 'switch');
         extraSelect.classList.toggle('hidden', t !== 'select');
         extraFormula.classList.toggle('hidden', t !== 'formula');
         extraRef.classList.toggle('hidden', t !== 'ref');
@@ -1183,6 +1245,87 @@ function bindBuilderModal() {
 
     typeSelect.addEventListener('change', syncExtraRows);
 
+    // ===== 수식 UI 빌더 =====
+    const formulaInsertField = modal.querySelector('[data-formula-insert-field]');
+    const formulaInsertRef = modal.querySelector('[data-formula-insert-ref]');
+    const formulaInsertFn = modal.querySelector('[data-formula-insert-fn]');
+    const formulaOps = modal.querySelectorAll('[data-formula-op]');
+    const formulaClear = modal.querySelector('[data-formula-clear]');
+
+    function insertAtCursor(text) {
+        const input = formulaInput;
+        const start = input.selectionStart ?? input.value.length;
+        const end = input.selectionEnd ?? input.value.length;
+        const v = input.value;
+        input.value = v.slice(0, start) + text + v.slice(end);
+        const newPos = start + text.length;
+        try { input.setSelectionRange(newPos, newPos); } catch {}
+        input.focus();
+    }
+
+    function refreshFormulaTools() {
+        // 같은 양식의 필드 (builderDraft + BASE_FIELDS 의 created_at)
+        const sameFields = [
+            ...BASE_FIELDS.filter(f => f.type !== 'auto_number'),
+            ...builderDraft.filter((_, i) => i !== editingFieldIndex && builderDraft[i].type !== 'formula'),
+        ];
+        formulaInsertField.innerHTML = `<option value="">+ 항목 삽입</option>` +
+            sameFields.map(f => `<option value="{${escapeAttr(f.label)}}">${escapeHtml(f.label)}</option>`).join('');
+
+        // 다른 양식 참조 (allRefGroups 의 그룹 + 사용자 정의 필드)
+        const refOpts = [];
+        for (const g of allRefGroups) {
+            if (g.id === editingFormId) continue;
+            const pageLabel = { customer: '고객', org: '조직도', contract: '계약자', custom: g.name };
+            const cf = g.settings?.customFields || [];
+            if (cf.length > 0) {
+                cf.forEach(f => {
+                    refOpts.push({
+                        value: `SUM("${g.name}","${f.label}")`,
+                        label: `[${pageLabel[g.pageType] || g.name}] ${g.name} · ${f.label} 합계`,
+                    });
+                });
+            }
+        }
+        formulaInsertRef.innerHTML = `<option value="">+ 다른 양식 셀</option>` +
+            refOpts.map(o => `<option value="${escapeAttr(o.value)}">${escapeHtml(o.label)}</option>`).join('');
+    }
+
+    formulaInsertField.addEventListener('change', () => {
+        const v = formulaInsertField.value;
+        if (v) insertAtCursor(v);
+        formulaInsertField.value = '';
+    });
+    formulaInsertRef.addEventListener('change', () => {
+        const v = formulaInsertRef.value;
+        if (v) insertAtCursor(v);
+        formulaInsertRef.value = '';
+    });
+    formulaInsertFn.addEventListener('change', () => {
+        const v = formulaInsertFn.value;
+        if (!v) return;
+        // __c __a __b 자리표시자를 빈 공간으로 치환 (사용자가 채워 넣기)
+        const text = v.replace(/__c/g, '').replace(/__a/g, '').replace(/__b/g, '');
+        insertAtCursor(text);
+        formulaInsertFn.value = '';
+    });
+    formulaOps.forEach(btn => {
+        btn.addEventListener('click', () => {
+            insertAtCursor(btn.dataset.formulaOp);
+        });
+    });
+    formulaClear?.addEventListener('click', () => {
+        formulaInput.value = '';
+        formulaInput.focus();
+    });
+
+    // type 변경 시 수식 옵션 갱신 (formula 모드 진입 시점에 한 번 더)
+    typeSelect.addEventListener('change', () => {
+        if (typeSelect.value === 'formula') refreshFormulaTools();
+    });
+    // openBuilder / startFieldEdit 진입 시점에도 호출 필요 — 외부에서 호출 가능하게 노출
+    window.__formsRefreshFormulaTools = refreshFormulaTools;
+
     const requiredCheck = modal.querySelector('[data-add-required]');
     const cancelBtn = modal.querySelector('[data-add-cancel]');
     if (cancelBtn) cancelBtn.addEventListener('click', cancelFieldEdit);
@@ -1215,7 +1358,7 @@ function bindBuilderModal() {
             delete newField.refFormId;
             delete newField.refLabelKey;
         }
-        if (type === 'toggle') {
+        if (type === 'toggle' || type === 'switch') {
             newField.onLabel = (onInput.value || '').trim() || 'ON';
             newField.offLabel = (offInput.value || '').trim() || 'OFF';
         } else if (type === 'select') {

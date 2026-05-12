@@ -311,12 +311,12 @@ export function mountAppHeader(opts) {
 
     // 슬롯별 옵션: [신규 양식 신청] + 기본 양식 + 사용자 정의 양식들
     const SLOT1_OPTIONS = [
-        { key: 'forms.html',    label: '+ 신규 양식 신청', href: 'forms.html', isNew: true },
+        { key: 'forms.html?new=1', label: '+ 신규 양식 신청', href: 'forms.html?new=1', isNew: true },
         { key: 'org.html',      label: '조직도',           href: 'org.html' },
         ...customFormOptions,
     ];
     const SLOT2_OPTIONS = [
-        { key: 'forms.html',    label: '+ 신규 양식 신청', href: 'forms.html', isNew: true },
+        { key: 'forms.html?new=1', label: '+ 신규 양식 신청', href: 'forms.html?new=1', isNew: true },
         { key: 'contracts.html', label: '계약자 관리대장', href: 'contracts.html' },
         ...customFormOptions,
     ];

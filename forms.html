@@ -6,7 +6,7 @@
 <title>내 양식 · YOUNGMAN</title>
 <link rel="icon" type="image/png" href="logo_main.png">
 <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
-<link rel="stylesheet" href="style.css?v=20260512-forms-fixes1">
+<link rel="stylesheet" href="style.css?v=20260512-forms-phase2">
 <style>
 :root{
     --ledger-line:rgba(20,14,8,.09); --ledger-line-strong:rgba(20,14,8,.16);
@@ -97,9 +97,36 @@
 .toggle-cell.on{background:#e6f4ea;color:#1b5e20;border-color:#a5d6a7}
 .toggle-cell.off{background:#fce8e6;color:#8a2620;border-color:#f1c4c1}
 
+/* 좌우 스위치 (양식 사용 + 모달) */
+.switch-cell{display:inline-flex;align-items:center;gap:10px;cursor:pointer;user-select:none;font-size:14px;font-weight:600}
+.switch-cell .switch-track{display:inline-block;width:44px;height:24px;border-radius:99px;background:#d1cdc6;position:relative;transition:background 200ms;flex-shrink:0}
+.switch-cell .switch-thumb{position:absolute;top:2px;left:2px;width:20px;height:20px;border-radius:50%;background:#fff;box-shadow:0 2px 5px rgba(0,0,0,.15);transition:left 200ms}
+.switch-cell.on .switch-track{background:var(--ledger-accent)}
+.switch-cell.on .switch-thumb{left:22px}
+.switch-cell .switch-label{color:#0e0d0c}
+
+/* 모달 안 스위치 컨트롤 */
+.switch-control{display:inline-flex;align-items:center;gap:12px;cursor:pointer;user-select:none;padding:6px 0}
+.switch-control .switch-track{display:inline-block;width:52px;height:28px;border-radius:99px;background:#d1cdc6;position:relative;transition:background 200ms;flex-shrink:0}
+.switch-control .switch-thumb{position:absolute;top:3px;left:3px;width:22px;height:22px;border-radius:50%;background:#fff;box-shadow:0 2px 6px rgba(0,0,0,.18);transition:left 200ms}
+.switch-control .switch-track.on{background:var(--ledger-accent)}
+.switch-control .switch-track.on .switch-thumb{left:27px}
+.switch-control .switch-label-text{font-size:15px;font-weight:600;color:#0e0d0c}
+
 /* 수식 도움말 details */
 .formula-help summary{padding:6px 0;font-size:13px !important}
 .formula-help code{background:#f4efe7;padding:2px 6px;border-radius:4px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;color:#4f4943}
+
+/* 수식 UI 빌더 */
+.formula-builder{display:flex;flex-direction:column;gap:10px;width:100%;margin-top:10px;padding:12px;background:#fff;border:1px solid var(--ledger-line);border-radius:10px}
+.formula-toolbar{display:flex;gap:8px;flex-wrap:wrap}
+.formula-toolbar select{flex:1 1 140px;padding:8px 10px;border:1px solid var(--ledger-line);border-radius:8px;font-size:13.5px;font-weight:600;background:#fbf7ef;color:#0e0d0c;cursor:pointer;font-family:inherit}
+.formula-toolbar select:hover{background:#fff;border-color:var(--ledger-line-strong)}
+.formula-ops{display:flex;gap:6px;flex-wrap:wrap}
+.formula-ops button{padding:8px 14px;border:1px solid var(--ledger-line);background:#fbf7ef;color:#0e0d0c;font-size:15px;font-weight:700;border-radius:8px;cursor:pointer;font-family:inherit;min-width:42px}
+.formula-ops button:hover{background:#fff;border-color:var(--ledger-line-strong)}
+.formula-ops .formula-clear{margin-left:auto;color:var(--ledger-accent);border-color:rgba(200,54,44,.25);min-width:auto;padding:8px 12px;font-size:13px}
+.formula-ops .formula-clear:hover{background:#fff8f7}
 
 /* 모바일에서 form-grid 1열 / 패딩 줄임 + 빌더 모달 정리 */
 @media (max-width:640px){
@@ -164,6 +191,7 @@
                     <option value="tel">전화번호</option>
                     <option value="textarea">긴 텍스트</option>
                     <option value="toggle">ON/OFF 토글</option>
+                    <option value="switch">좌우 스위치</option>
                     <option value="select">드롭다운 (선택)</option>
                     <option value="file">첨부파일</option>
                     <option value="formula">수식 (자동 계산)</option>
@@ -179,19 +207,46 @@
                     <textarea data-add-options placeholder="옵션을 한 줄에 하나씩 입력&#10;예:&#10;진행중&#10;완료&#10;보류" rows="3"></textarea>
                 </div>
                 <div class="extra-row hidden" data-extra-formula>
-                    <input type="text" data-add-formula placeholder="클릭하여 기능 추가 — 예: {수량} * {단가}">
-                    <details class="formula-help" style="margin:0">
-                        <summary style="font-size:13px;color:#4f4943;cursor:pointer;font-weight:700">사용 가능 함수 보기</summary>
-                        <div style="font-size:13px;color:#0e0d0c;line-height:1.7;padding:10px 12px;background:#fff;border:1px solid var(--ledger-line);border-radius:8px;margin-top:8px">
-                            <div><b>같은 양식 필드</b> · <code>{항목이름}</code></div>
-                            <div><b>참조 양식의 속성</b> · <code>{고객.연락처}</code></div>
-                            <div><b>조건문</b> · <code>IF(조건, 참값, 거짓값)</code> — 비교는 =, !=, &lt;, &gt;</div>
-                            <div><b>날짜 일수</b> · <code>DAYS({종료일}, {시작일})</code> / <code>TODAY()</code></div>
-                            <div><b>문자열 연결</b> · <code>CONCAT({성}, " ", {이름})</code></div>
-                            <div><b>다른 양식 집계</b> · <code>SUM("고객", "수수료")</code> · AVG / MIN / MAX / COUNT 동일</div>
-                            <div style="margin-top:6px;color:#4f4943">사칙연산 + − × ÷ ( ) 도 사용 가능</div>
+                    <input type="text" data-add-formula placeholder="아래 버튼으로 수식 조립 — 예: {수량} * {단가}">
+                    <!-- UI 빌더 — 클릭으로 수식 조립 -->
+                    <div class="formula-builder">
+                        <div class="formula-toolbar">
+                            <select data-formula-insert-field><option value="">+ 항목 삽입</option></select>
+                            <select data-formula-insert-ref><option value="">+ 다른 양식 셀</option></select>
+                            <select data-formula-insert-fn>
+                                <option value="">+ 함수 삽입</option>
+                                <option value="IF(__c,__a,__b)">IF (조건)</option>
+                                <option value="DAYS(__a,__b)">DAYS (날짜차)</option>
+                                <option value="TODAY()">TODAY (오늘)</option>
+                                <option value="CONCAT(__a,__b)">CONCAT (연결)</option>
+                                <option value="SUM(__a,__b)">SUM (합계)</option>
+                                <option value="AVG(__a,__b)">AVG (평균)</option>
+                                <option value="MIN(__a,__b)">MIN</option>
+                                <option value="MAX(__a,__b)">MAX</option>
+                                <option value="COUNT(__a)">COUNT (개수)</option>
+                            </select>
                         </div>
-                    </details>
+                        <div class="formula-ops">
+                            <button type="button" data-formula-op="+">+</button>
+                            <button type="button" data-formula-op="-">−</button>
+                            <button type="button" data-formula-op="*">×</button>
+                            <button type="button" data-formula-op="/">÷</button>
+                            <button type="button" data-formula-op="(">(</button>
+                            <button type="button" data-formula-op=")">)</button>
+                            <button type="button" data-formula-op="*0.01" title="× 1%">×1%</button>
+                            <button type="button" data-formula-clear class="formula-clear">지우기</button>
+                        </div>
+                        <details class="formula-help" style="margin:0">
+                            <summary style="font-size:13px;color:#4f4943;cursor:pointer;font-weight:700">함수 설명 보기</summary>
+                            <div style="font-size:13px;color:#0e0d0c;line-height:1.7;padding:10px 12px;background:#fff;border:1px solid var(--ledger-line);border-radius:8px;margin-top:8px">
+                                <div><b>IF(조건, 참값, 거짓값)</b> — 비교는 =, !=, &lt;, &gt;</div>
+                                <div><b>DAYS(A, B)</b> — 두 날짜 차이 (일수)</div>
+                                <div><b>TODAY()</b> — 오늘 (YYYY-MM-DD)</div>
+                                <div><b>CONCAT(a, b, …)</b> — 문자열 연결</div>
+                                <div><b>SUM/AVG/MIN/MAX/COUNT("양식", "필드")</b> — 다른 양식 집계</div>
+                            </div>
+                        </details>
+                    </div>
                 </div>
                 <div class="extra-row hidden" data-extra-ref>
                     <select data-add-ref-form><option value="">참조할 양식을 선택하세요…</option></select>
@@ -210,10 +265,10 @@
 </div>
 
 <script type="module">
-    import { mountAppHeader } from './auth-shared.js?v=20260512-forms-fixes1';
+    import { mountAppHeader } from './auth-shared.js?v=20260512-forms-phase2';
     mountAppHeader();
 </script>
-<script type="module" src="forms.js?v=20260512-forms-fixes1"></script>
+<script type="module" src="forms.js?v=20260512-forms-phase2"></script>
 
 </body>
 </html>
