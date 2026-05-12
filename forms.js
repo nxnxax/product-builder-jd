@@ -14,13 +14,13 @@
  * 토글 필드는 settings.customFields[i] = { key, label, type:'toggle', onLabel, offLabel, custom:true }
  */
 
-import { initSupabase, apiRequest, getSession, refreshNavForms } from './auth-shared.js?v=20260512-form-search';
+import { initSupabase, apiRequest, getSession, refreshNavForms } from './auth-shared.js?v=20260512-nav-caret';
 import {
     isLedgerMobile, onLedgerViewportChange, openRowAddModal,
     attachColumnFilters, applyColumnFilters,
     exportRecordsToExcel, pickExcelFile, parseExcelFile,
     suggestFieldMapping, openImportPreviewModal,
-} from './ledger-shared.js?v=20260512-form-search';
+} from './ledger-shared.js?v=20260512-nav-caret';
 
 const PAGE_TYPE = 'custom';
 
@@ -443,6 +443,8 @@ function exitForm() {
 function renderFormUse() {
     const form = forms.find(f => f.id === activeFormId);
     if (!form) { exitForm(); return; }
+    // 페이지 제목(브라우저 탭) 동적 갱신 — 양식 이름이 페이지 제목
+    try { document.title = `${form.name} · YOUNGMAN`; } catch {}
     const fields = [...BASE_FIELDS, ...(form.settings?.customFields || [])];
     const content = document.getElementById('content');
 
