@@ -48,6 +48,9 @@ const authPasswordConfirm = document.getElementById('auth-password-confirm');
 const authNickname = document.getElementById('auth-nickname');
 const nicknameField = document.getElementById('nickname-field');
 const authNicknameStatus = document.getElementById('auth-nickname-status');
+const nicknameCheckBtn = document.getElementById('nickname-check-btn');
+const authDivider = document.querySelector('.auth-divider');
+const authEmailGroup = authEmail?.closest('.form-group');
 const authEmailStatus = document.getElementById('auth-email-status');
 const authSubmit = document.getElementById('auth-submit');
 const authMessage = document.getElementById('auth-message');
@@ -581,6 +584,34 @@ const liveCheckNickname = debounce(async () => {
 authEmail.addEventListener('input', liveCheckEmail);
 if (authNickname) authNickname.addEventListener('input', liveCheckNickname);
 
+if (nicknameCheckBtn) {
+    nicknameCheckBtn.addEventListener('click', async () => {
+        if (!authNickname) return;
+        const nickname = authNickname.value.trim();
+        if (!nickname) {
+            setAvailabilityStatus(authNicknameStatus, '닉네임을 먼저 입력해주세요.', 'error');
+            authNickname.focus();
+            return;
+        }
+        if (!isValidNickname(nickname)) {
+            setAvailabilityStatus(authNicknameStatus, '2~20자, 한글/영문/숫자/_/- 만 가능', 'error');
+            authNickname.focus();
+            return;
+        }
+        nicknameCheckBtn.disabled = true;
+        setAvailabilityStatus(authNicknameStatus, '확인 중…', 'checking');
+        const r = await checkAvailability({ nickname });
+        nicknameCheckBtn.disabled = false;
+        if (!r || !r.ok) {
+            setAvailabilityStatus(authNicknameStatus, '확인 실패 — 잠시 후 다시 시도해주세요.', 'error');
+            return;
+        }
+        setAvailabilityStatus(authNicknameStatus,
+            r.nickname_taken ? '이미 사용 중인 닉네임입니다.' : '사용 가능한 닉네임입니다.',
+            r.nickname_taken ? 'error' : 'success');
+    });
+}
+
 async function resolveDisplayName() {
     if (!currentSession?.user) return '';
     const meta = currentSession.user.user_metadata || {};
@@ -843,6 +874,12 @@ function setAuthMode(mode) {
     authPassword.closest('.form-group')?.classList.remove('hidden');
     authPasswordConfirm.required = mode === 'signup';
     authEmail.readOnly = false;
+    // 일반 login/signup 모드에선 이메일 칸·Google 버튼·divider 항상 노출.
+    // (oauth pending 분기에서 다시 숨김 처리)
+    if (authEmailGroup) authEmailGroup.classList.remove('hidden');
+    if (googleLoginBtn) googleLoginBtn.classList.remove('hidden');
+    if (authDivider) authDivider.classList.remove('hidden');
+    authEmail.required = true;
     if (mode === 'login') authPasswordConfirm.value = '';
     if (authEmailStatus) setAvailabilityStatus(authEmailStatus, '', '');
     if (authNicknameStatus) setAvailabilityStatus(authNicknameStatus, '', '');
@@ -858,9 +895,14 @@ function setAuthMode(mode) {
         loginTab.classList.add('hidden');
         signupTab.classList.add('hidden');
         authSwitchText.textContent = '소셜 회원가입 추가정보 입력';
+        // 소셜 인증 완료 후 추가정보 단계 — 이메일/비번/Google 버튼/divider 전부 불필요.
         authEmail.readOnly = true;
+        authEmail.required = false;
         authPassword.required = false;
         authPasswordConfirm.required = false;
+        if (authEmailGroup) authEmailGroup.classList.add('hidden');
+        if (googleLoginBtn) googleLoginBtn.classList.add('hidden');
+        if (authDivider) authDivider.classList.add('hidden');
         authPassword.closest('.form-group')?.classList.add('hidden');
         confirmPasswordField.classList.add('hidden');
         if (nicknameField) nicknameField.classList.remove('hidden');

@@ -9,7 +9,7 @@
     <link rel="apple-touch-icon" href="logo_main.png">
     <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
     <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
-    <link rel="stylesheet" href="style.css?v=20260512-footer-dark">
+    <link rel="stylesheet" href="style.css?v=20260512-nickname-check">
     <style>
         /* ========== 사이트 메인 (랜딩) ========== */
         /* main.dashboard 의 padding/max-width 를 메인에서만 풀어서 hero 풀폭 보장 */
@@ -492,7 +492,10 @@
                 </div>
                 <div id="nickname-field" class="form-group hidden">
                     <label for="auth-nickname">닉네임</label>
-                    <input type="text" id="auth-nickname" autocomplete="username" placeholder="2~20자, 영문/숫자/한글" minlength="2" maxlength="20">
+                    <div class="verify-row">
+                        <input type="text" id="auth-nickname" autocomplete="username" placeholder="영맨 사이트에서 사용하실 닉네임을 입력해주세요" minlength="2" maxlength="20">
+                        <button type="button" id="nickname-check-btn" class="secondary-btn">중복확인</button>
+                    </div>
                     <p id="auth-nickname-status" class="availability-status" aria-live="polite"></p>
                 </div>
                 <div class="form-group">
@@ -541,7 +544,7 @@
 
     <header id="app-header" class="app-header"></header>
     <script type="module">
-        import { mountAppHeader } from './auth-shared.js?v=20260512-policy';
+        import { mountAppHeader } from './auth-shared.js?v=20260512-nickname-check';
         mountAppHeader();
     </script>
 
@@ -877,7 +880,7 @@
         </form>
     </div>
 
-    <script src="main.js?v=20260512-policy" type="module"></script>
+    <script src="main.js?v=20260512-nickname-check" type="module"></script>
     <script>
         // 카드 등장 애니메이션 — viewport 에 들어오면 fade-up.
         (function () {
