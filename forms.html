@@ -6,7 +6,7 @@
 <title>내 양식 · YOUNGMAN</title>
 <link rel="icon" type="image/png" href="logo_main.png">
 <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
-<link rel="stylesheet" href="style.css?v=20260512-form-slot-push">
+<link rel="stylesheet" href="style.css?v=20260512-forms-ledger-css">
 <style>
 :root{
     --ledger-line:rgba(20,14,8,.09); --ledger-line-strong:rgba(20,14,8,.16);
@@ -35,6 +35,39 @@
 .form-card-new:hover{border-color:#0e0d0c;color:#0e0d0c;background:#fbf7ef}
 .empty-state{padding:60px 20px;text-align:center;color:#8a847e}
 .empty-state h2{margin:0 0 8px;font-size:18px;color:#4f4943}
+
+/* ===== Ledger 표 + accordion-card — customers/contracts/org 와 동일 UI ===== */
+.tbl-wrap{overflow-x:auto}
+table.ledger-tbl{width:100%;border-collapse:collapse;font-size:13.5px}
+.ledger-tbl thead th{background:#fbf7ef;border-bottom:1px solid var(--ledger-line-strong);text-align:left;padding:10px 12px;font-weight:600;font-size:12.5px;color:#4f4943;letter-spacing:.01em;white-space:nowrap}
+.ledger-tbl tbody td{padding:9px 12px;border-bottom:1px solid var(--ledger-line);vertical-align:middle}
+.ledger-tbl tbody tr:hover{background:#fbfaf5}
+.ledger-tbl tbody tr.selected{background:#fff8f7}
+.ledger-tbl .col-no{width:48px;text-align:center;color:#8a847e;font-variant-numeric:tabular-nums}
+.ledger-tbl .col-check{width:36px;text-align:center}
+.ledger-tbl .col-check input[type=checkbox]{width:15px;height:15px;cursor:pointer;accent-color:var(--ledger-accent)}
+.ledger-tbl .col-action{width:120px;text-align:right;white-space:nowrap}
+.row-action-btn{border:0;background:transparent;color:#8a847e;font-size:13px;cursor:pointer;padding:4px 6px;border-radius:5px;font-family:inherit;display:inline-flex;align-items:center;gap:2px}
+.row-action-btn:hover{color:var(--ledger-accent);background:#fff8f7}
+.row-action-btn.danger:hover{color:var(--ledger-accent)}
+.ledger-tbl thead th[data-col-key]{cursor:pointer;user-select:none;position:relative;transition:background 120ms}
+.ledger-tbl thead th[data-col-key]:hover{background:#f4efe7 !important}
+.ledger-tbl thead th[data-col-key].col-filtered{color:var(--ledger-accent) !important;background:rgba(200,54,44,.08) !important}
+.cell-text{display:inline-block;font-size:13px;color:#0e0d0c;line-height:1.4}
+.cell-multiline{white-space:pre-wrap;max-width:280px;font-size:12.5px;color:#4f4943}
+.cell-empty{color:#c4bfb8;font-size:13px}
+
+.accordion-card{background:#fff;border:1px solid var(--ledger-line-strong);border-radius:14px;margin-bottom:14px;overflow:hidden;box-shadow:0 2px 6px rgba(20,14,8,.04)}
+.accordion-card.open{box-shadow:0 10px 28px rgba(20,14,8,.09);border-color:var(--ledger-accent-deep)}
+.accordion-card.open .accordion-head{background:linear-gradient(180deg,var(--ledger-bg) 0%,#fff 100%);border-bottom:1px solid var(--ledger-line)}
+.accordion-head{display:flex;align-items:center;gap:12px;padding:16px 20px;user-select:none;position:relative;flex-wrap:wrap}
+.accordion-head::before{content:'';width:4px;height:34px;border-radius:99px;background:var(--ledger-accent);flex-shrink:0;opacity:1}
+.accordion-head h3{margin:0;font-size:18px;font-weight:700;letter-spacing:-.015em;color:#0e0d0c}
+.accordion-head .head-count{color:#8a847e;font-size:13.5px;margin-left:6px;font-weight:500}
+.accordion-head .head-actions{display:flex;gap:4px;margin-left:auto;flex-wrap:wrap}
+.accordion-head .head-actions button{border:1px solid transparent;background:transparent;padding:7px 13px;border-radius:7px;cursor:pointer;font-size:13.5px;color:#4f4943;font-family:inherit;font-weight:600}
+.accordion-head .head-actions button:hover{background:#fbf7ef;color:#0e0d0c;border-color:var(--ledger-line)}
+.accordion-body{display:block}
 
 /* 양식 사용 화면 — 상단 백 버튼 */
 .use-head{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:18px}
@@ -299,10 +332,10 @@
 </div>
 
 <script type="module">
-    import { mountAppHeader } from './auth-shared.js?v=20260512-form-slot-push';
+    import { mountAppHeader } from './auth-shared.js?v=20260512-forms-ledger-css';
     mountAppHeader();
 </script>
-<script type="module" src="forms.js?v=20260512-form-slot-push"></script>
+<script type="module" src="forms.js?v=20260512-forms-ledger-css"></script>
 
 </body>
 </html>
