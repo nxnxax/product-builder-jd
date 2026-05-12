@@ -298,17 +298,26 @@ small { color: var(--fg-tertiary); font-size: 13px; }
 }
 .nav-pill-dropdown .nav-dropdown-menu {
     top: 100%;
-    left: 0;
-    min-width: 200px;
+    /* 가운데 정렬 — pill 중앙에 dropdown 의 중앙 맞춤 */
+    left: 50%;
+    transform: translateX(-50%);
+    min-width: 220px;
     padding-top: 6px;
-}
-/* 슬롯 dropdown 은 hover 자동 펼침 비활성화 — caret 클릭으로만 펼침 */
-.nav-pill-dropdown:hover > .nav-dropdown-menu,
-.nav-pill-dropdown:focus-within > .nav-dropdown-menu {
-    display: none;
 }
 .nav-pill-dropdown.open > .nav-dropdown-menu { display: block; }
 .nav-pill-dropdown .nav-dropdown-item .nav-dropdown-icon { display: none; }
+
+/* hover 영역 ↔ dropdown menu 사이 invisible bridge — 마우스 이동 중 hover 끊김 방지 */
+.nav-pill-dropdown::after {
+    content: '';
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    height: 12px;
+    background: transparent;
+    pointer-events: auto;
+}
 
 /* 보조 기능 (마케팅 / Lotto / 명함 / 업로드 / 커뮤니티) — 우측에 작은 간격으로 */
 .nav-secondary {
