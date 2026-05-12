@@ -14,13 +14,13 @@
  * 토글 필드는 settings.customFields[i] = { key, label, type:'toggle', onLabel, offLabel, custom:true }
  */
 
-import { initSupabase, apiRequest, getSession, refreshNavForms } from './auth-shared.js?v=20260512-forms-phase2';
+import { initSupabase, apiRequest, getSession, refreshNavForms } from './auth-shared.js?v=20260512-form-settings';
 import {
     isLedgerMobile, onLedgerViewportChange, openRowAddModal,
     attachColumnFilters, applyColumnFilters,
     exportRecordsToExcel, pickExcelFile, parseExcelFile,
     suggestFieldMapping, openImportPreviewModal,
-} from './ledger-shared.js?v=20260512-forms-phase2';
+} from './ledger-shared.js?v=20260512-form-settings';
 
 const PAGE_TYPE = 'custom';
 
@@ -93,6 +93,20 @@ function evalFormula(formula, data, fields, ctx) {
     expr = expr.replace(/\bCONCAT\s*\(([^()]+)\)/g, (_, args) => {
         const parts = splitArgs(args).map(a => stringify(resolveValue(a, data, fields)));
         return JSON.stringify(parts.join(''));
+    });
+
+    // 5a) SETTING("양식이름", "설정키") — 다른 양식의 customSettings 값
+    expr = expr.replace(/\bSETTING\s*\(([^()]+)\)/g, (_, args) => {
+        const argList = splitArgs(args).map(a => stripQuotes(String(a).trim()));
+        const formName = argList[0];
+        const settingKey = argList[1];
+        const cache = ctx?.settingsCache || {};
+        const formMap = cache[formName] || {};
+        const v = formMap[settingKey];
+        if (v === undefined || v === null || v === '') return '0';
+        const n = parseFloat(String(v).replace(/,/g, ''));
+        if (Number.isFinite(n)) return String(n);
+        return JSON.stringify(String(v));
     });
 
     // 5) SUM/AVG/MIN/MAX/COUNT("양식","필드")
@@ -222,11 +236,12 @@ let records = [];              // 활성 양식의 records
 let editingFormId = null;      // 빌더 모달에서 편집 중인 양식 id (null = 새 양식)
 let builderDraft = [];         // 빌더 모달 안의 working schema
 let editingFieldIndex = -1;    // 빌더 안에서 수정 중인 field index (-1 = 신규 추가 모드)
+let builderSettings = {};      // 빌더 모달 안 양식 설정 (key-value) 작업본
 let selectedIds = new Set();
 let filterState = { filters: {} };   // 컬럼 헤더 클릭 필터 상태
 
 // 수식용 캐시 — 페이지 진입 시 ref·집계 대상 양식 records 미리 로드
-let formulaCtx = { refCache: {}, aggCache: {}, aggFieldMap: {} };
+let formulaCtx = { refCache: {}, aggCache: {}, aggFieldMap: {}, settingsCache: {} };
 
 /* ============== Boot ============== */
 (async function boot() {
@@ -371,10 +386,18 @@ async function enterForm(formId) {
    - 현재 양식의 수식들이 참조하는 양식 (SUM/AVG/...) → aggCache[양식이름]
    - 집계 함수의 필드 라벨 → 필드 key 매핑 */
 async function buildFormulaCtx(formId) {
-    formulaCtx = { refCache: {}, aggCache: {}, aggFieldMap: {} };
+    formulaCtx = { refCache: {}, aggCache: {}, aggFieldMap: {}, settingsCache: {} };
     const form = forms.find(f => f.id === formId);
     if (!form) return;
     const fields = (form.settings?.customFields) || [];
+
+    // 모든 양식의 customSettings 미리 캐시 (SETTING 함수용) — allRefGroups 사용
+    (allRefGroups || []).forEach(g => {
+        const cs = g.settings?.customSettings;
+        if (cs && Object.keys(cs).length > 0) {
+            formulaCtx.settingsCache[g.name] = cs;
+        }
+    });
 
     // (1) ref 필드 → 참조 양식 records 로드 (page_type 무관)
     for (const f of fields) {
@@ -998,6 +1021,7 @@ function openBuilder(formId) {
     editingFieldIndex = -1;
     const form = formId ? forms.find(f => f.id === formId) : null;
     builderDraft = form?.settings?.customFields ? JSON.parse(JSON.stringify(form.settings.customFields)) : [];
+    builderSettings = form?.settings?.customSettings ? JSON.parse(JSON.stringify(form.settings.customSettings)) : {};
     document.getElementById('builderTitle').textContent = form ? '양식 편집' : '새 양식 만들기';
     document.getElementById('formTitleInput').value = form?.name || '';
     document.getElementById('builderError').classList.add('hidden');
@@ -1013,6 +1037,7 @@ function openBuilder(formId) {
     modal.querySelector('[data-edit-status]').classList.add('hidden');
     modal.querySelector('[data-add-go]').textContent = '+ 항목 추가';
     renderFieldList();
+    renderSettingsList();
     document.getElementById('builderModal').classList.remove('hidden');
 }
 
@@ -1021,6 +1046,31 @@ function closeBuilder() {
     editingFormId = null;
     editingFieldIndex = -1;
     builderDraft = [];
+    builderSettings = {};
+}
+
+/* 양식 설정 (customSettings) — 사용자 정의 키-값 렌더링 */
+function renderSettingsList() {
+    const list = document.getElementById('settingsList');
+    if (!list) return;
+    const keys = Object.keys(builderSettings);
+    list.innerHTML = keys.length === 0
+        ? `<p class="form-help" style="margin:0;color:#8a847e;font-size:13px">아직 등록된 설정이 없습니다. 아래에서 추가하세요.</p>`
+        : keys.map(k => `
+            <div class="settings-item" data-setting-row="${escapeAttr(k)}">
+                <span class="settings-item-key">${escapeHtml(k)}</span>
+                <span class="settings-item-val">${escapeHtml(String(builderSettings[k]))}</span>
+                <button type="button" class="icon-btn danger" data-setting-del="${escapeAttr(k)}" title="삭제">×</button>
+            </div>
+        `).join('');
+    list.querySelectorAll('[data-setting-del]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const k = btn.dataset.settingDel;
+            if (!confirm(`설정 "${k}" 를 삭제할까요?`)) return;
+            delete builderSettings[k];
+            renderSettingsList();
+        });
+    });
 }
 
 function renderFieldList() {
@@ -1248,6 +1298,7 @@ function bindBuilderModal() {
     // ===== 수식 UI 빌더 =====
     const formulaInsertField = modal.querySelector('[data-formula-insert-field]');
     const formulaInsertRef = modal.querySelector('[data-formula-insert-ref]');
+    const formulaInsertSetting = modal.querySelector('[data-formula-insert-setting]');
     const formulaInsertFn = modal.querySelector('[data-formula-insert-fn]');
     const formulaOps = modal.querySelectorAll('[data-formula-op]');
     const formulaClear = modal.querySelector('[data-formula-clear]');
@@ -1289,6 +1340,24 @@ function bindBuilderModal() {
         }
         formulaInsertRef.innerHTML = `<option value="">+ 다른 양식 셀</option>` +
             refOpts.map(o => `<option value="${escapeAttr(o.value)}">${escapeHtml(o.label)}</option>`).join('');
+
+        // 다른 양식 설정값 (customSettings)
+        if (formulaInsertSetting) {
+            const settingOpts = [];
+            const pageLabel = { customer: '고객', org: '조직도', contract: '계약자', custom: '내 양식' };
+            for (const g of allRefGroups) {
+                const cs = g.settings?.customSettings;
+                if (!cs) continue;
+                Object.keys(cs).forEach(k => {
+                    settingOpts.push({
+                        value: `SETTING("${g.name}","${k}")`,
+                        label: `[${pageLabel[g.pageType] || g.pageType}] ${g.name} · ${k} (${cs[k]})`,
+                    });
+                });
+            }
+            formulaInsertSetting.innerHTML = `<option value="">+ 다른 양식 설정값</option>` +
+                settingOpts.map(o => `<option value="${escapeAttr(o.value)}">${escapeHtml(o.label)}</option>`).join('');
+        }
     }
 
     formulaInsertField.addEventListener('change', () => {
@@ -1300,6 +1369,11 @@ function bindBuilderModal() {
         const v = formulaInsertRef.value;
         if (v) insertAtCursor(v);
         formulaInsertRef.value = '';
+    });
+    formulaInsertSetting?.addEventListener('change', () => {
+        const v = formulaInsertSetting.value;
+        if (v) insertAtCursor(v);
+        formulaInsertSetting.value = '';
     });
     formulaInsertFn.addEventListener('change', () => {
         const v = formulaInsertFn.value;
@@ -1389,6 +1463,28 @@ function bindBuilderModal() {
     document.getElementById('builderCancel').addEventListener('click', closeBuilder);
     document.getElementById('builderSave').addEventListener('click', saveBuilder);
     document.getElementById('builderDelete').addEventListener('click', deleteForm);
+
+    // 양식 설정 추가 핸들러
+    const settingKey = modal.querySelector('[data-setting-key]');
+    const settingValue = modal.querySelector('[data-setting-value]');
+    const settingAdd = modal.querySelector('[data-setting-add]');
+    if (settingAdd) {
+        const addSetting = () => {
+            const k = (settingKey.value || '').trim();
+            const v = (settingValue.value || '').trim();
+            if (!k) { settingKey.focus(); return; }
+            if (!v) { settingValue.focus(); return; }
+            builderSettings[k] = v;
+            settingKey.value = '';
+            settingValue.value = '';
+            renderSettingsList();
+            settingKey.focus();
+        };
+        settingAdd.addEventListener('click', addSetting);
+        [settingKey, settingValue].forEach(el => {
+            el.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); addSetting(); } });
+        });
+    }
 }
 
 async function saveBuilder() {
@@ -1401,9 +1497,9 @@ async function saveBuilder() {
     if (dup) return setErr(`이미 같은 이름의 양식이 있습니다 ("${name}").`);
 
     try {
+        const settingsPayload = { customFields: builderDraft, customSettings: builderSettings };
         if (editingFormId) {
-            const settings = { customFields: builderDraft };
-            await api('ledger-groups', { method: 'PATCH', body: { id: editingFormId, name, settings } });
+            await api('ledger-groups', { method: 'PATCH', body: { id: editingFormId, name, settings: settingsPayload } });
         } else {
             await api('ledger-groups', {
                 method: 'POST',
@@ -1411,7 +1507,7 @@ async function saveBuilder() {
                     pageType: PAGE_TYPE,
                     name,
                     isDefault: false,
-                    settings: { customFields: builderDraft },
+                    settings: settingsPayload,
                 },
             });
         }

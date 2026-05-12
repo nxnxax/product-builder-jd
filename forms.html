@@ -6,7 +6,7 @@
 <title>내 양식 · YOUNGMAN</title>
 <link rel="icon" type="image/png" href="logo_main.png">
 <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
-<link rel="stylesheet" href="style.css?v=20260512-forms-phase2">
+<link rel="stylesheet" href="style.css?v=20260512-form-settings">
 <style>
 :root{
     --ledger-line:rgba(20,14,8,.09); --ledger-line-strong:rgba(20,14,8,.16);
@@ -117,6 +117,26 @@
 .formula-help summary{padding:6px 0;font-size:13px !important}
 .formula-help code{background:#f4efe7;padding:2px 6px;border-radius:4px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;color:#4f4943}
 
+/* 양식 설정 섹션 */
+.settings-section{margin-top:18px;padding:14px 16px;background:#fbf7ef;border:1px solid var(--ledger-line);border-radius:12px}
+.settings-section[open]{background:#fff;border-color:var(--ledger-line-strong)}
+.settings-section summary{cursor:pointer;font-size:15px;font-weight:700;color:#0e0d0c;list-style:none;padding:2px 0}
+.settings-section summary::-webkit-details-marker{display:none}
+.settings-section summary::after{content:" ▾";color:#8a847e;font-size:13px}
+.settings-section[open] summary::after{content:" ▴"}
+.settings-section code{background:#f4efe7;padding:2px 6px;border-radius:4px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;color:#4f4943}
+.settings-list{display:flex;flex-direction:column;gap:8px;margin-top:10px}
+.settings-list:empty{display:none}
+.settings-item{display:grid;grid-template-columns:1fr 1fr auto;gap:8px;align-items:center;padding:10px 12px;background:#fbf7ef;border:1px solid var(--ledger-line);border-radius:9px}
+.settings-item-key{font-size:14.5px;font-weight:700;color:#0e0d0c}
+.settings-item-val{font-size:14.5px;font-weight:600;color:#4f4943}
+.settings-item .icon-btn{border:0;background:transparent;cursor:pointer;width:32px;height:32px;border-radius:6px;color:#8a847e;font-size:15px;display:inline-flex;align-items:center;justify-content:center}
+.settings-item .icon-btn.danger:hover{color:var(--ledger-accent);background:#fff8f7}
+.settings-add{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+.settings-add input{flex:1 1 140px;min-width:0;padding:9px 12px;border:1px solid var(--ledger-line);border-radius:8px;font-size:14px;font-weight:500;background:#fff;color:#0e0d0c;font-family:inherit;outline:none}
+.settings-add input:focus{border-color:#0e0d0c}
+.settings-add .tiny-btn{flex:0 0 auto;white-space:nowrap}
+
 /* 수식 UI 빌더 */
 .formula-builder{display:flex;flex-direction:column;gap:10px;width:100%;margin-top:10px;padding:12px;background:#fff;border:1px solid var(--ledger-line);border-radius:10px}
 .formula-toolbar{display:flex;gap:8px;flex-wrap:wrap}
@@ -213,6 +233,7 @@
                         <div class="formula-toolbar">
                             <select data-formula-insert-field><option value="">+ 항목 삽입</option></select>
                             <select data-formula-insert-ref><option value="">+ 다른 양식 셀</option></select>
+                            <select data-formula-insert-setting><option value="">+ 다른 양식 설정값</option></select>
                             <select data-formula-insert-fn>
                                 <option value="">+ 함수 삽입</option>
                                 <option value="IF(__c,__a,__b)">IF (조건)</option>
@@ -254,6 +275,19 @@
                     <input type="text" data-add-ref-label-key-text placeholder="또는 직접 키 입력 (예: customer, name)" maxlength="40" class="hidden">
                 </div>
             </div>
+
+            <!-- 양식 설정 — 사용자 정의 키-값 (수수료, 비율 등) -->
+            <details class="settings-section" id="settingsSection">
+                <summary>⚙ 양식 설정 (수수료·비율 등)</summary>
+                <p class="form-help" style="margin:8px 0 6px;color:#4f4943">이 양식의 고정값을 등록하면 다른 양식 수식에서 <code>SETTING("이 양식", "키")</code> 로 참조 가능합니다.</p>
+                <div id="settingsList" class="settings-list"></div>
+                <div class="settings-add">
+                    <input type="text" data-setting-key placeholder="설정 이름 (예: 팀장수수료)" maxlength="30">
+                    <input type="text" data-setting-value placeholder="값 (예: 3.3 또는 텍스트)" maxlength="50">
+                    <button type="button" class="tiny-btn primary" data-setting-add>+ 설정 추가</button>
+                </div>
+            </details>
+
             <p class="form-help error hidden" id="builderError"></p>
         </div>
         <footer class="modal-footer">
@@ -265,10 +299,10 @@
 </div>
 
 <script type="module">
-    import { mountAppHeader } from './auth-shared.js?v=20260512-forms-phase2';
+    import { mountAppHeader } from './auth-shared.js?v=20260512-form-settings';
     mountAppHeader();
 </script>
-<script type="module" src="forms.js?v=20260512-forms-phase2"></script>
+<script type="module" src="forms.js?v=20260512-form-settings"></script>
 
 </body>
 </html>
