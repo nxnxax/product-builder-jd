@@ -1759,11 +1759,11 @@ select:focus {
     text-align: left;
     background: transparent;
     border: 0;
-    padding: 8px 10px;
+    padding: 11px 14px;
     border-radius: var(--radius-sm);
     color: var(--fg-secondary);
-    font-size: 14px;
-    font-weight: 500;
+    font-size: 15px;
+    font-weight: 600;
     cursor: pointer;
     transition: var(--transition);
     display: block;
@@ -1774,7 +1774,11 @@ select:focus {
 .side-nav a:hover { background: var(--bg-muted); color: var(--fg); }
 
 .side-nav button.active,
-.side-nav a.active { background: var(--bg-muted); color: var(--fg); font-weight: 600; }
+.side-nav a.active {
+    background: var(--accent-soft);
+    color: var(--accent-deep);
+    font-weight: 700;
+}
 
 .section-stack > * + * { margin-top: 32px; }
 
@@ -1790,20 +1794,27 @@ select:focus {
 .field-row:last-child { border-bottom: 0; }
 
 .field-row .field-label {
-    font-size: 13.5px;
-    font-weight: 500;
-    color: var(--fg-secondary);
-    padding-top: 9px;
+    font-size: 15.5px;
+    font-weight: 700;
+    color: var(--fg);
+    padding-top: 10px;
+    letter-spacing: -0.005em;
 }
 
-.field-row .field-control { display: flex; flex-direction: column; gap: 6px; }
+.field-row .field-control { display: flex; flex-direction: column; gap: 8px; }
 .field-row .field-control input,
-.field-row .field-control select { max-width: 360px; }
+.field-row .field-control select {
+    max-width: 420px;
+    font-size: 15.5px;
+    font-weight: 500;
+    padding: 10px 12px;
+}
 
 .field-row .field-meta {
-    font-size: 12.5px;
-    color: var(--fg-tertiary);
-    padding-top: 9px;
+    font-size: 15px;
+    color: var(--fg);
+    font-weight: 500;
+    padding-top: 10px;
 }
 
 /* ------------------------------------------------------------------ Toggle */
@@ -2247,11 +2258,11 @@ select:focus {
     .side-nav button { white-space: nowrap; }
     .side-nav button.active { background: var(--bg-muted); }
 
-    .field-row { grid-template-columns: 1fr; gap: 6px; padding: 14px 0; }
-    .field-row .field-label { padding-top: 0; font-size: 12px; color: var(--fg-tertiary); }
-    .field-row .field-meta { padding-top: 0; }
+    .field-row { grid-template-columns: 1fr; gap: 8px; padding: 14px 0; }
+    .field-row .field-label { padding-top: 0; font-size: 14.5px; color: var(--fg); font-weight: 700; }
+    .field-row .field-meta { padding-top: 0; font-size: 15px; }
     .field-row .field-control input,
-    .field-row .field-control select { max-width: 100%; }
+    .field-row .field-control select { max-width: 100%; font-size: 16px; }
 
     .table-wrapper { border-radius: var(--radius-md); border: 1px solid var(--border); }
     .data-table thead { display: none; }

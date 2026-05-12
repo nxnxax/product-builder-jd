@@ -6,7 +6,7 @@
     <title>내 정보 · YOUNGMAN</title>
     <link rel="icon" type="image/png" href="logo_main.png">
     <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
-    <link rel="stylesheet" href="style.css?v=20260512-formula-fns">
+    <link rel="stylesheet" href="style.css?v=20260512-profile-polish">
 </head>
 <body>
     <header id="app-header" class="app-header"></header>
@@ -28,12 +28,12 @@
 
             <div class="section-stack">
                 <section id="loading-state" class="card">
-                    <p style="color:var(--fg-tertiary);font-size:14px;margin:0;">불러오는 중…</p>
+                    <p style="color:var(--fg-secondary);font-size:16px;font-weight:500;margin:0;">불러오는 중…</p>
                 </section>
 
                 <section id="signed-out-state" class="card hidden" style="text-align:center;padding:64px 24px;">
-                    <h3 style="margin-bottom:8px;">로그인이 필요합니다</h3>
-                    <p style="color:var(--fg-tertiary);margin-bottom:20px;">내 정보를 확인하려면 먼저 로그인하세요.</p>
+                    <h3 style="margin-bottom:10px;font-size:20px;">로그인이 필요합니다</h3>
+                    <p style="color:var(--fg-secondary);margin-bottom:24px;font-size:16px;">내 정보를 확인하려면 먼저 로그인하세요.</p>
                     <a href="index.html" class="primary-btn" style="text-decoration:none;display:inline-flex;">로그인 페이지로</a>
                 </section>
 
@@ -147,13 +147,13 @@
                         </div>
                     </form>
 
-                    <div id="token-fresh" class="hidden" style="margin-top:20px;padding:16px;border:1px solid var(--accent);border-radius:10px;background:rgba(59,130,246,0.05);">
-                        <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:8px;">
-                            <strong style="font-size:14px;">새 토큰이 발급되었습니다</strong>
-                            <button type="button" class="secondary-btn" id="token-fresh-copy" style="padding:4px 10px;font-size:12px;">복사</button>
+                    <div id="token-fresh" class="hidden" style="margin-top:20px;padding:18px;border:1px solid var(--accent);border-radius:12px;background:var(--accent-soft);">
+                        <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:10px;">
+                            <strong style="font-size:16px;color:var(--accent-deep)">새 토큰이 발급되었습니다</strong>
+                            <button type="button" class="secondary-btn" id="token-fresh-copy" style="padding:6px 14px;font-size:14px;font-weight:600;">복사</button>
                         </div>
-                        <code id="token-fresh-value" style="display:block;font-family:var(--font-mono);font-size:13px;word-break:break-all;background:var(--bg-secondary);padding:10px;border-radius:6px;"></code>
-                        <p class="form-help" style="margin-top:8px;color:var(--danger);">⚠ 이 화면을 떠나면 평문 토큰을 다시 볼 수 없습니다.</p>
+                        <code id="token-fresh-value" style="display:block;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:14.5px;font-weight:600;word-break:break-all;background:#fff;border:1px solid var(--border);padding:12px;border-radius:8px;"></code>
+                        <p style="margin-top:10px;color:var(--accent-deep);font-size:14px;font-weight:600;">⚠ 이 화면을 떠나면 평문 토큰을 다시 볼 수 없습니다.</p>
                     </div>
 
                     <div style="margin-top:32px;">
@@ -189,6 +189,6 @@
         </div>
     </main>
 
-    <script src="profile.js?v=20260512-formula-fns" type="module"></script>
+    <script src="profile.js?v=20260512-profile-polish" type="module"></script>
 </body>
 </html>
