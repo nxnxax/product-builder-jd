@@ -10,12 +10,12 @@
  *  - 본부장 계약 → 본부장(=팀원+팀장+본부장 셋 다 받음)
  */
 
-import { initSupabase, apiRequest, getSession } from './auth-shared.js?v=20260512-mobile-cards3';
+import { initSupabase, apiRequest, getSession } from './auth-shared.js?v=20260512-mobile-cards4';
 import { attachColumnFilters, applyColumnFilters, openRowAddModal, attachPhoneAutoFormat, attachThousandFormat, formatThousand, unformatThousand, getEffectiveFields, mountFieldManager,
          exportRecordsToExcel, pickExcelFile, parseExcelFile, suggestFieldMapping, openImportPreviewModal,
          saveImportSession, loadImportSession, clearImportSession,
          findBlankRecordIds, showSweepToast,
-         isLedgerMobile, onLedgerViewportChange } from './ledger-shared.js?v=20260512-mobile-cards3';
+         isLedgerMobile, onLedgerViewportChange } from './ledger-shared.js?v=20260512-mobile-cards4';
 
 const PAGE_TYPE = 'contract';
 const TAX_RATE = 0.033;   // 실수령액 = commission * (1 - TAX_RATE)
@@ -601,7 +601,7 @@ function renderMobileCard(r, displayNo, group, fields) {
                     <div class="ledger-card-title">${escapeHtml(titleVal)}</div>
                     ${subParts ? `<div class="ledger-card-sub">${subParts}</div>` : ''}
                 </div>
-                <button class="ledger-card-toggle" type="button" aria-label="펼치기">▾</button>
+                <button class="ledger-card-toggle" type="button" aria-label="펼치기/접기"><span class="toggle-label-open">펼치기</span><span class="toggle-label-close">접기</span></button>
             </div>
             <div class="ledger-card-body">
                 ${detailHtml}

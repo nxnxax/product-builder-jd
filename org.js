@@ -6,12 +6,12 @@
  * Phase 3 의 계약자 관리대장이 이 그룹의 settings.commissions 를 읽어 정산.
  */
 
-import { initSupabase, apiRequest, getSession } from './auth-shared.js?v=20260512-mobile-cards3';
+import { initSupabase, apiRequest, getSession } from './auth-shared.js?v=20260512-mobile-cards4';
 import { attachColumnFilters, applyColumnFilters, openRowAddModal, attachPhoneAutoFormat, attachThousandFormat, formatThousand, unformatThousand, getEffectiveFields, mountFieldManager,
          exportRecordsToExcel, pickExcelFile, parseExcelFile, suggestFieldMapping, openImportPreviewModal,
          saveImportSession, loadImportSession, clearImportSession,
          findBlankRecordIds, showSweepToast,
-         isLedgerMobile, onLedgerViewportChange } from './ledger-shared.js?v=20260512-mobile-cards3';
+         isLedgerMobile, onLedgerViewportChange } from './ledger-shared.js?v=20260512-mobile-cards4';
 
 const PAGE_TYPE = 'org';
 
@@ -632,7 +632,7 @@ function renderMobileCardOrg(r, displayNo, group, fields, allowedTitles) {
                     <div class="ledger-card-title">${escapeHtml(titleVal)}</div>
                     ${subParts ? `<div class="ledger-card-sub">${subParts}</div>` : ''}
                 </div>
-                <button class="ledger-card-toggle" type="button" aria-label="펼치기">▾</button>
+                <button class="ledger-card-toggle" type="button" aria-label="펼치기/접기"><span class="toggle-label-open">펼치기</span><span class="toggle-label-close">접기</span></button>
             </div>
             <div class="ledger-card-body">
                 ${detailHtml}

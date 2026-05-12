@@ -9,12 +9,12 @@
  *  - client_idempotency_key 로 같은 통화의 중복 전송 차단
  */
 
-import { initSupabase, apiRequest, getSession } from './auth-shared.js?v=20260512-mobile-cards3';
+import { initSupabase, apiRequest, getSession } from './auth-shared.js?v=20260512-mobile-cards4';
 import { attachColumnFilters, applyColumnFilters, openRowAddModal, attachPhoneAutoFormat, getEffectiveFields, mountFieldManager,
          exportRecordsToExcel, pickExcelFile, parseExcelFile, suggestFieldMapping, openImportPreviewModal,
          saveImportSession, loadImportSession, clearImportSession,
          findBlankRecordIds, showSweepToast,
-         isLedgerMobile, onLedgerViewportChange } from './ledger-shared.js?v=20260512-mobile-cards3';
+         isLedgerMobile, onLedgerViewportChange } from './ledger-shared.js?v=20260512-mobile-cards4';
 
 const MOBILE_PRIMARY_KEYS = ['customer', 'phone', 'date'];
 
@@ -416,7 +416,7 @@ function renderMobileCard(r, displayNo, group, fields) {
                     <div class="ledger-card-title">${escapeHtml(titleVal)}</div>
                     ${subParts ? `<div class="ledger-card-sub">${subParts}</div>` : ''}
                 </div>
-                <button class="ledger-card-toggle" type="button" aria-label="펼치기">▾</button>
+                <button class="ledger-card-toggle" type="button" aria-label="펼치기/접기"><span class="toggle-label-open">펼치기</span><span class="toggle-label-close">접기</span></button>
             </div>
             <div class="ledger-card-body">
                 ${detailHtml}
