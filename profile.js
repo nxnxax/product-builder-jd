@@ -6,7 +6,7 @@ import {
     mountAppHeader,
     refreshAppHeader,
     getInitial,
-} from './auth-shared.js?v=20260512-nav-slots';
+} from './auth-shared.js?v=20260512-hamburger-fix';
 
 const tabButtons = document.querySelectorAll('.side-nav button[data-tab]');
 const tabSections = document.querySelectorAll('.profile-tab');
