@@ -9,7 +9,7 @@
     <link rel="apple-touch-icon" href="logo_main.png">
     <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
     <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
-    <link rel="stylesheet" href="style.css?v=20260510-bottom-nav">
+    <link rel="stylesheet" href="style.css?v=20260512-policy">
     <style>
         /* ========== 사이트 메인 (랜딩) ========== */
         /* main.dashboard 의 padding/max-width 를 메인에서만 풀어서 hero 풀폭 보장 */
@@ -503,6 +503,24 @@
                     <label for="auth-password-confirm">비밀번호 확인</label>
                     <input type="password" id="auth-password-confirm" autocomplete="new-password" minlength="6" placeholder="비밀번호 재입력">
                 </div>
+                <div id="signup-agreements" class="signup-agreements hidden" aria-label="동의 항목">
+                    <div class="agreement-row signup-agreements-all">
+                        <input type="checkbox" id="agree-all">
+                        <label for="agree-all">전체 동의</label>
+                    </div>
+                    <div class="agreement-row">
+                        <input type="checkbox" id="agree-terms" data-agreement="required">
+                        <label for="agree-terms"><span class="agreement-tag req">필수</span><a href="terms.html" target="_blank" rel="noopener">이용약관</a>에 동의합니다.</label>
+                    </div>
+                    <div class="agreement-row">
+                        <input type="checkbox" id="agree-privacy" data-agreement="required">
+                        <label for="agree-privacy"><span class="agreement-tag req">필수</span><a href="privacy.html" target="_blank" rel="noopener">개인정보처리방침</a>에 동의합니다.</label>
+                    </div>
+                    <div class="agreement-row">
+                        <input type="checkbox" id="agree-marketing" data-agreement="optional">
+                        <label for="agree-marketing"><span class="agreement-tag opt">선택</span>마케팅 정보 수신에 동의합니다.</label>
+                    </div>
+                </div>
                 <button type="submit" id="auth-submit" class="primary-btn">로그인</button>
                 <p id="auth-message" class="auth-message" aria-live="polite"></p>
                 <div id="auth-notice" class="auth-notice hidden" role="alertdialog" aria-live="assertive">
@@ -523,7 +541,7 @@
 
     <header id="app-header" class="app-header"></header>
     <script type="module">
-        import { mountAppHeader } from './auth-shared.js?v=20260510-bottom-nav';
+        import { mountAppHeader } from './auth-shared.js?v=20260512-policy';
         mountAppHeader();
     </script>
 

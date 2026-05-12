@@ -62,6 +62,11 @@ const googleLoginLabel = document.getElementById('google-login-label');
 const loginTab = document.getElementById('login-tab');
 const signupTab = document.getElementById('signup-tab');
 const authSwitchText = document.getElementById('auth-switch-text');
+const signupAgreements = document.getElementById('signup-agreements');
+const agreeAll = document.getElementById('agree-all');
+const agreeTerms = document.getElementById('agree-terms');
+const agreePrivacy = document.getElementById('agree-privacy');
+const agreeMarketing = document.getElementById('agree-marketing');
 const openLoginBtn = document.getElementById('open-login-btn');
 // 헤더 user-menu / user-display / admin-link / logout-btn 은 mountAppHeader (inline script) 가 생성.
 const userMenu = document.getElementById('user-menu');
@@ -376,21 +381,15 @@ async function handlePostOAuthSession() {
             return;
         }
 
-        // 2) 회원이 아니면 — 의도(login/signup) 상관 없이 Google 프로필 정보로 자동 회원가입.
-        //    사용자 입장에선 Google 로그인 한 번으로 가입+로그인 동시에 끝나야 자연스러움.
-        const fullName = user.user_metadata?.full_name
-                       || user.user_metadata?.name
-                       || (user.email ? user.email.split('@')[0] : '');
-        console.log('[Auth] Auto-registering Google user as member:', user.email);
+        // 2) 회원이 아니면 — NICE/약관 동의 요건상 자동 가입 금지.
+        //    사이트 내 추가정보 입력 단계(닉네임 + 약관/처리방침/마케팅 동의)로 이동.
+        console.log('[Auth] New social user — entering signup completion flow:', user.email);
         try {
-            await completeGoogleSignup({ fullName, phone: '', nickname: '' });
-            // completeGoogleSignup 가 closeAuthPanel + renderSignedIn 까지 처리.
+            startGoogleSignupFlow(user);
         } catch (e) {
-            // 자동가입 실패 시 사용자에게 명확히 알리고 패널 띄움.
-            console.error('[Auth] Auto-signup failed:', e);
+            console.error('[Auth] startGoogleSignupFlow failed:', e);
             try { openAuthPanel('login'); } catch {}
-            const msg = (e && e.message) ? e.message : '회원 정보를 저장하지 못했습니다.';
-            setAuthMessage('Google 로그인은 됐지만 회원 등록에 실패했습니다: ' + msg + ' — 잠시 후 다시 시도해주세요.', 'error');
+            setAuthMessage('소셜 로그인 추가정보 입력 단계로 이동하지 못했습니다. 다시 시도해주세요.', 'error');
             try { await supabaseClient.auth.signOut(); } catch {}
         }
     } catch (error) {
@@ -832,6 +831,10 @@ function setAuthMode(mode) {
     signupFields.classList.toggle('hidden', mode !== 'signup');
     confirmPasswordField.classList.toggle('hidden', mode !== 'signup');
     if (nicknameField) nicknameField.classList.toggle('hidden', mode !== 'signup');
+    if (signupAgreements) {
+        signupAgreements.classList.toggle('hidden', mode !== 'signup');
+        if (mode !== 'signup') resetSignupAgreements();
+    }
     authName.required = mode === 'signup';
     authPhone.required = mode === 'signup';
     if (authNickname) authNickname.required = mode === 'signup';
@@ -854,7 +857,7 @@ function setAuthMode(mode) {
     if (oauthSignupPending && mode === 'signup') {
         loginTab.classList.add('hidden');
         signupTab.classList.add('hidden');
-        authSwitchText.textContent = 'Google 회원가입 추가정보 입력';
+        authSwitchText.textContent = '소셜 회원가입 추가정보 입력';
         authEmail.readOnly = true;
         authPassword.required = false;
         authPasswordConfirm.required = false;
@@ -862,8 +865,48 @@ function setAuthMode(mode) {
         confirmPasswordField.classList.add('hidden');
         if (nicknameField) nicknameField.classList.remove('hidden');
         if (authNickname) authNickname.required = true;
+        if (signupFields) signupFields.classList.add('hidden');
+        if (signupAgreements) signupAgreements.classList.remove('hidden');
         authSubmit.textContent = '회원가입 완료';
     }
+}
+
+function resetSignupAgreements() {
+    if (agreeAll) agreeAll.checked = false;
+    if (agreeTerms) agreeTerms.checked = false;
+    if (agreePrivacy) agreePrivacy.checked = false;
+    if (agreeMarketing) agreeMarketing.checked = false;
+}
+
+// 전체 동의 ↔ 개별 동의 양방향 sync.
+if (agreeAll) {
+    agreeAll.addEventListener('change', () => {
+        const v = agreeAll.checked;
+        if (agreeTerms) agreeTerms.checked = v;
+        if (agreePrivacy) agreePrivacy.checked = v;
+        if (agreeMarketing) agreeMarketing.checked = v;
+    });
+}
+[agreeTerms, agreePrivacy, agreeMarketing].forEach(box => {
+    if (!box) return;
+    box.addEventListener('change', () => {
+        if (!agreeAll) return;
+        agreeAll.checked = !!(agreeTerms?.checked && agreePrivacy?.checked && agreeMarketing?.checked);
+    });
+});
+
+function validateSignupAgreements() {
+    if (!agreeTerms?.checked) {
+        setAuthMessage('이용약관에 동의해야 가입할 수 있습니다.', 'error');
+        agreeTerms?.focus();
+        return false;
+    }
+    if (!agreePrivacy?.checked) {
+        setAuthMessage('개인정보처리방침에 동의해야 가입할 수 있습니다.', 'error');
+        agreePrivacy?.focus();
+        return false;
+    }
+    return true;
 }
 
 function openAuthPanel(mode = 'login') {
@@ -940,7 +983,16 @@ async function handleAuthSubmit(event) {
             authNickname?.focus();
             return;
         }
+        if (!validateSignupAgreements()) return;
     }
+
+    const marketingOptIn = !!agreeMarketing?.checked;
+    const consentMeta = {
+        terms_agreed: !!agreeTerms?.checked,
+        privacy_agreed: !!agreePrivacy?.checked,
+        marketing_opt_in: marketingOptIn,
+        consent_at: new Date().toISOString()
+    };
 
     if (authMode === 'signup' && !oauthSignupPending) {
         if (!fullName) {
@@ -982,7 +1034,7 @@ async function handleAuthSubmit(event) {
 
     try {
         if (oauthSignupPending) {
-            await completeGoogleSignup({ fullName, phone, nickname });
+            await completeGoogleSignup({ fullName, phone, nickname, consent: consentMeta });
             return;
         }
 
@@ -998,7 +1050,11 @@ async function handleAuthSubmit(event) {
                         phone_verified: false,
                         identity_verified: false,
                         app_registered: true,
-                        signup_method: 'email'
+                        signup_method: 'email',
+                        terms_agreed: consentMeta.terms_agreed,
+                        privacy_agreed: consentMeta.privacy_agreed,
+                        marketing_opt_in: consentMeta.marketing_opt_in,
+                        consent_at: consentMeta.consent_at
                     }
                 }
             });
@@ -1015,7 +1071,11 @@ async function handleAuthSubmit(event) {
                     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
                     body: JSON.stringify({
                         resource: 'auth-member',
-                        email, fullName, phone, nickname, provider: 'email'
+                        email, fullName, phone, nickname, provider: 'email',
+                        terms_agreed: consentMeta.terms_agreed,
+                        privacy_agreed: consentMeta.privacy_agreed,
+                        marketing_opt_in: consentMeta.marketing_opt_in,
+                        consent_at: consentMeta.consent_at
                     })
                 });
             } catch { /* non-fatal — backend may already have it via trigger */ }
@@ -1031,7 +1091,7 @@ async function handleAuthSubmit(event) {
     }
 }
 
-async function completeGoogleSignup({ fullName, phone, nickname }) {
+async function completeGoogleSignup({ fullName, phone, nickname, consent }) {
     const user = currentSession?.user;
     const email = String(user?.email || authEmail.value || '').trim().toLowerCase();
     if (!user || !email) throw new Error('Google 인증 세션이 없습니다. 다시 시도하세요.');
@@ -1039,20 +1099,31 @@ async function completeGoogleSignup({ fullName, phone, nickname }) {
     const token = await getApiAuthToken({ forceRefresh: true });
     if (!token) throw new Error('Google 인증 토큰을 가져오지 못했습니다. 다시 시도하세요.');
 
+    // OAuth 자동 가입(닉네임/동의 미입력)인지, 추가정보 입력 완료 단계인지 구분.
+    const hasConsent = !!(consent && consent.terms_agreed && consent.privacy_agreed);
+
+    const memberPayload = {
+        resource: 'auth-member',
+        email,
+        fullName: fullName || user.user_metadata?.full_name || user.user_metadata?.name || email.split('@')[0],
+        phone,
+        nickname,
+        provider: user.app_metadata?.provider || 'google'
+    };
+    if (hasConsent) {
+        memberPayload.terms_agreed = consent.terms_agreed;
+        memberPayload.privacy_agreed = consent.privacy_agreed;
+        memberPayload.marketing_opt_in = !!consent.marketing_opt_in;
+        memberPayload.consent_at = consent.consent_at;
+    }
+
     const response = await fetch(`${API_URL}?resource=auth-member`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
             Authorization: `Bearer ${token}`
         },
-        body: JSON.stringify({
-            resource: 'auth-member',
-            email,
-            fullName: fullName || user.user_metadata?.full_name || user.user_metadata?.name || email.split('@')[0],
-            phone,
-            nickname,
-            provider: 'google'
-        })
+        body: JSON.stringify(memberPayload)
     });
     const payload = await response.json().catch(() => null);
     if (!response.ok || !payload || payload.ok === false) {
@@ -1066,8 +1137,14 @@ async function completeGoogleSignup({ fullName, phone, nickname }) {
         phone_verified: false,
         identity_verified: false,
         app_registered: true,
-        signup_method: 'google'
+        signup_method: memberPayload.provider
     };
+    if (hasConsent) {
+        userData.terms_agreed = consent.terms_agreed;
+        userData.privacy_agreed = consent.privacy_agreed;
+        userData.marketing_opt_in = !!consent.marketing_opt_in;
+        userData.consent_at = consent.consent_at;
+    }
     if (payload.role === 'admin' || payload.role === 'owner') {
         userData.role = payload.role;
     }

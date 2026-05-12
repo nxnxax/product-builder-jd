@@ -124,6 +124,96 @@ function readCachedDisplayName() { try { return sessionStorage.getItem(DISPLAY_N
 function cacheAdminFlag(b) { try { sessionStorage.setItem(ADMIN_FLAG_KEY, b ? '1' : '0'); } catch {} }
 function readCachedAdminFlag() { try { return sessionStorage.getItem(ADMIN_FLAG_KEY) === '1'; } catch { return false; } }
 
+// 단색 라인 아이콘 (Lucide 스타일) — currentColor 따라감.
+const SVG = (path) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${path}</svg>`;
+const ICON = {
+    chart:     SVG('<polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/>'),
+    sparkles:  SVG('<path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/><path d="M5 3v4"/><path d="M19 17v4"/><path d="M3 5h4"/><path d="M17 19h4"/>'),
+    card:      SVG('<rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/>'),
+    upload:    SVG('<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>'),
+    home:      SVG('<path d="M3 10.5 12 3l9 7.5"/><path d="M5 10v10h14V10"/><path d="M9 20v-6h6v6"/>'),
+    building:  SVG('<rect x="4" y="3" width="16" height="18" rx="2"/><path d="M9 21v-4h6v4"/><path d="M8 7h.01"/><path d="M12 7h.01"/><path d="M16 7h.01"/><path d="M8 11h.01"/><path d="M12 11h.01"/><path d="M16 11h.01"/>'),
+    fileText:  SVG('<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8"/><path d="M8 17h5"/>'),
+    users:     SVG('<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>'),
+    user:      SVG('<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>'),
+    megaphone: SVG('<path d="M3 11l18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/>'),
+    chat:      SVG('<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>'),
+    help:      SVG('<circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/>'),
+};
+
+// 모바일 하단 nav — 헤더 / 외부 다운로드 페이지 양쪽에서 공유.
+function renderBottomNav(activeKey) {
+    const path = (activeKey || (location.pathname.split('/').pop() || 'index.html')).toLowerCase();
+    const items = [
+        { key: 'index.html',     label: '홈',             href: 'index.html',     icon: ICON.home },
+        { key: 'customers.html', label: '고객관리대장',   href: 'customers.html', icon: ICON.users },
+        { key: 'org.html',       label: '조직도',         href: 'org.html',       icon: ICON.building },
+        { key: 'contracts.html', label: '계약자 관리대장', href: 'contracts.html', icon: ICON.fileText },
+    ];
+    const html = items.map(item => {
+        const isHome = item.key === 'index.html' && (path === '' || path === 'index.html');
+        const isActive = isHome || path === item.key;
+        return `
+            <a class="mobile-bottom-nav-item${isActive ? ' active' : ''}" href="${item.href}">
+                <span class="mobile-bottom-nav-icon">${item.icon}</span>
+                <span class="mobile-bottom-nav-label">${escapeHtmlSafe(item.label)}</span>
+            </a>
+        `;
+    }).join('');
+    document.querySelectorAll('[data-yman-bottom-nav]').forEach(el => el.remove());
+    const nav = document.createElement('nav');
+    nav.className = 'mobile-bottom-nav';
+    nav.setAttribute('aria-label', '주요 메뉴');
+    nav.setAttribute('data-yman-bottom-nav', '');
+    nav.innerHTML = html;
+    document.body.appendChild(nav);
+}
+
+// 헤더 없이 bottom nav 만 그리는 경량 export — 외부 다운로드 등 비로그인 페이지용.
+export function mountBottomNav(opts) {
+    renderBottomNav(opts && opts.activeKey);
+}
+
+// 사이트 전체 공통 footer — 사업자 정보 + 이용약관·개인정보처리방침 링크.
+// 페이지에 <footer id="app-footer"></footer> 마커가 있으면 거기 inject, 없으면 body 끝에 자동 append.
+function renderAppFooter() {
+    const year = new Date().getFullYear();
+    const html = `
+        <div class="app-footer-inner">
+            <div>
+                <div class="app-footer-brand">
+                    <img src="logo_main.png" alt="">
+                    <span>어센트라 (Ascentra)</span>
+                </div>
+                <p class="app-footer-info">
+                    <span>대표 장동훈</span><span>사업자등록번호 393-39-01518</span><span>경기도 화성시 효행로 30, 202호</span><span><a href="mailto:nxnxax@gmail.com">nxnxax@gmail.com</a></span>
+                </p>
+                <div class="app-footer-bottom">&copy; ${year} Ascentra. All rights reserved.</div>
+            </div>
+            <nav class="app-footer-links" aria-label="법적 고지">
+                <a href="terms.html">이용약관</a>
+                <a href="privacy.html">개인정보처리방침</a>
+            </nav>
+        </div>
+    `;
+    let host = document.getElementById('app-footer');
+    if (!host) {
+        document.querySelectorAll('[data-yman-footer]').forEach(el => el.remove());
+        host = document.createElement('footer');
+        host.id = 'app-footer';
+        host.className = 'app-footer';
+        host.setAttribute('data-yman-footer', '');
+        document.body.appendChild(host);
+    } else if (!host.classList.contains('app-footer')) {
+        host.classList.add('app-footer');
+    }
+    host.innerHTML = html;
+}
+
+export function mountAppFooter() {
+    renderAppFooter();
+}
+
 /** 헤더를 #app-header 자리에 즉시 렌더 — session 없이도 캐시로 동작 (FOUC 방지). */
 export function mountAppHeader(opts) {
     const root = document.getElementById('app-header');
@@ -144,22 +234,6 @@ export function mountAppHeader(opts) {
         { key: 'org.html',       label: '조직도',           href: 'org.html' },
         { key: 'contracts.html', label: '계약자 관리대장', href: 'contracts.html' },
     ];
-    // 단색 라인 아이콘 (Lucide 스타일) — currentColor 따라감.
-    const SVG = (path) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${path}</svg>`;
-    const ICON = {
-        chart:     SVG('<polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/>'),
-        sparkles:  SVG('<path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/><path d="M5 3v4"/><path d="M19 17v4"/><path d="M3 5h4"/><path d="M17 19h4"/>'),
-        card:      SVG('<rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/>'),
-        upload:    SVG('<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>'),
-        home:      SVG('<path d="M3 10.5 12 3l9 7.5"/><path d="M5 10v10h14V10"/><path d="M9 20v-6h6v6"/>'),
-        building:  SVG('<rect x="4" y="3" width="16" height="18" rx="2"/><path d="M9 21v-4h6v4"/><path d="M8 7h.01"/><path d="M12 7h.01"/><path d="M16 7h.01"/><path d="M8 11h.01"/><path d="M12 11h.01"/><path d="M16 11h.01"/>'),
-        fileText:  SVG('<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8"/><path d="M8 17h5"/>'),
-        users:     SVG('<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>'),
-        user:      SVG('<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>'),
-        megaphone: SVG('<path d="M3 11l18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/>'),
-        chat:      SVG('<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>'),
-        help:      SVG('<circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/>'),
-    };
 
     const secondaryItems = [
         { key: 'kapp_premium.php',  label: 'N키워드 분석', href: 'kapp_premium.php', icon: ICON.chart },
@@ -207,22 +281,6 @@ export function mountAppHeader(opts) {
 
     const primaryHtml = primaryItems.map(i => renderItem(i, 'nav-pill')).join('');
     const secondaryHtml = secondaryItems.map(i => renderItem(i, 'nav-link nav-link-secondary')).join('') + communityHtml;
-    const bottomItems = [
-        { key: 'index.html',     label: '홈',             href: 'index.html',     icon: ICON.home },
-        { key: 'customers.html', label: '고객관리대장',   href: 'customers.html', icon: ICON.users },
-        { key: 'org.html',       label: '조직도',         href: 'org.html',       icon: ICON.building },
-        { key: 'contracts.html', label: '계약자 관리대장', href: 'contracts.html', icon: ICON.fileText },
-    ];
-    const bottomHtml = bottomItems.map(item => {
-        const isHome = item.key === 'index.html' && (path === '' || path === 'index.html');
-        const isActive = isHome || path === item.key;
-        return `
-            <a class="mobile-bottom-nav-item${isActive ? ' active' : ''}" href="${item.href}">
-                <span class="mobile-bottom-nav-icon">${item.icon}</span>
-                <span class="mobile-bottom-nav-label">${escapeHtmlSafe(item.label)}</span>
-            </a>
-        `;
-    }).join('');
 
     if (!root.classList.contains('app-header')) root.classList.add('app-header');
     root.innerHTML = `
@@ -267,13 +325,8 @@ export function mountAppHeader(opts) {
     [...drawerWrap.children].forEach(c => document.body.appendChild(c));
     const drawerEl = document.querySelector('.mobile-drawer[data-yman-drawer]');
 
-    document.querySelectorAll('[data-yman-bottom-nav]').forEach(el => el.remove());
-    const bottomNav = document.createElement('nav');
-    bottomNav.className = 'mobile-bottom-nav';
-    bottomNav.setAttribute('aria-label', '주요 메뉴');
-    bottomNav.setAttribute('data-yman-bottom-nav', '');
-    bottomNav.innerHTML = bottomHtml;
-    document.body.appendChild(bottomNav);
+    renderBottomNav(path);
+    renderAppFooter();
 
     // logout 핸들러 — 헤더 + 드로어 모두
     const handleLogout = async () => {
