@@ -560,7 +560,7 @@ function ensure_ledger_tables(PDO $pdo): bool {
 
 /** 페이지 타입 검증. 허용된 값만 통과. */
 function valid_ledger_page_type(string $v): bool {
-    return in_array($v, ['contract', 'org', 'customer'], true);
+    return in_array($v, ['contract', 'org', 'customer', 'custom'], true);
 }
 
 /** 그룹 행 → 응답 형태로 변환. JSON 컬럼 디코딩. */

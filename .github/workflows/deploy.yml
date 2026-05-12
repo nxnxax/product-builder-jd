@@ -81,6 +81,8 @@ jobs:
           cp board.js deploy/board.js
           cp terms.html deploy/terms.html
           cp privacy.html deploy/privacy.html
+          cp forms.html deploy/forms.html
+          cp forms.js deploy/forms.js
           cp api/analyze.php deploy/analyze.php
           cp api/records.php deploy/records.php
           cp api/upload.php deploy/upload.php
@@ -168,7 +170,7 @@ jobs:
           set -euo pipefail
           CB="$(date +%s)"
           MISSING=0
-          for f in index.html style.css main.js admin.html admin.js profile.html profile.js auth-shared.js upload.html download.html org.html org.js contracts.html contracts.js customers.html customers.js terms.html privacy.html; do
+          for f in index.html style.css main.js admin.html admin.js profile.html profile.js auth-shared.js upload.html download.html org.html org.js contracts.html contracts.js customers.html customers.js terms.html privacy.html forms.html forms.js; do
             code=$(curl -sk -o /dev/null -w "%{http_code}" "https://youngman-biz.com/${f}?cb=${CB}")
             size=$(curl -sk -o /dev/null -w "%{size_download}" "https://youngman-biz.com/${f}?cb=${CB}")
             echo "  ${f}: HTTP ${code}  size=${size}"

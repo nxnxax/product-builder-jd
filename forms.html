@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>내 양식 · YOUNGMAN</title>
+<link rel="icon" type="image/png" href="logo_main.png">
+<link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
+<link rel="stylesheet" href="style.css?v=20260512-forms">
+<style>
+:root{
+    --ledger-line:rgba(20,14,8,.09); --ledger-line-strong:rgba(20,14,8,.16);
+    --ledger-bg:#fbf7ef; --ledger-accent:#c8362c; --ledger-accent-deep:#8a2620;
+}
+.ledger-shell{max-width:1100px;margin:0 auto;padding:32px 24px 80px}
+.ledger-head{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:18px}
+.ledger-title{margin:0;font-size:24px;letter-spacing:-.02em}
+.ledger-sub{margin:6px 0 0;color:#8a847e;font-size:13.5px;line-height:1.55}
+.tiny-btn{border:1px solid var(--ledger-line-strong);background:#fff;color:#4f4943;font-size:13px;padding:7px 13px;border-radius:8px;cursor:pointer;font-family:inherit;font-weight:500;transition:all 160ms}
+.tiny-btn:hover{background:#fbf7ef;color:#0e0d0c}
+.tiny-btn.primary{background:#0e0d0c;color:#fff;border-color:#0e0d0c}
+.tiny-btn.primary:hover{background:#2a2520}
+.tiny-btn.danger{color:var(--ledger-accent);border-color:rgba(200,54,44,.3)}
+.tiny-btn.danger:hover{background:#fff8f7}
+
+/* 양식 카드 그리드 */
+.form-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px}
+.form-card{background:#fff;border:1px solid var(--ledger-line);border-radius:14px;padding:18px 18px 14px;cursor:pointer;transition:all 160ms;display:flex;flex-direction:column;gap:6px;position:relative}
+.form-card:hover{border-color:var(--ledger-line-strong);box-shadow:0 4px 14px rgba(20,14,8,.06)}
+.form-card-title{font-size:17px;font-weight:700;color:#0e0d0c;letter-spacing:-.01em;line-height:1.3;word-break:break-word}
+.form-card-meta{font-size:12.5px;color:#8a847e}
+.form-card-actions{display:flex;gap:6px;margin-top:8px;padding-top:8px;border-top:1px solid var(--ledger-line)}
+.form-card-actions .tiny-btn{font-size:12px;padding:5px 9px}
+.form-card-new{border:2px dashed var(--ledger-line-strong);background:transparent;align-items:center;justify-content:center;text-align:center;color:#8a847e;font-weight:600;font-size:15px;min-height:140px}
+.form-card-new:hover{border-color:#0e0d0c;color:#0e0d0c;background:#fbf7ef}
+.empty-state{padding:60px 20px;text-align:center;color:#8a847e}
+.empty-state h2{margin:0 0 8px;font-size:18px;color:#4f4943}
+
+/* 양식 사용 화면 — 상단 백 버튼 */
+.use-head{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:18px}
+.back-btn{border:0;background:transparent;color:#4f4943;font-size:14px;cursor:pointer;font-family:inherit;padding:6px 10px;border-radius:8px;font-weight:500}
+.back-btn:hover{background:#fbf7ef;color:#0e0d0c}
+.use-head h2{margin:0;font-size:20px}
+
+/* 빌더 모달 — 큼직 */
+.builder-modal .modal-panel{max-width:680px}
+.builder-modal .modal-body{max-height:60vh;overflow-y:auto}
+.field-list{display:flex;flex-direction:column;gap:8px;margin-top:14px}
+.field-item{display:grid;grid-template-columns:1fr auto auto auto;gap:8px;align-items:center;padding:10px 12px;background:#fbf7ef;border:1px solid var(--ledger-line);border-radius:10px}
+.field-item-name{font-size:14.5px;font-weight:600;color:#0e0d0c;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.field-item-type{font-size:12px;color:#8a847e;padding:3px 8px;background:#fff;border:1px solid var(--ledger-line);border-radius:99px}
+.field-item-toggle-labels{font-size:11.5px;color:#8a847e;margin-top:2px}
+.field-item .icon-btn{border:0;background:transparent;cursor:pointer;width:28px;height:28px;border-radius:6px;color:#8a847e;font-size:14px}
+.field-item .icon-btn:hover{background:#fff;color:#0e0d0c}
+.field-item .icon-btn.danger:hover{color:var(--ledger-accent)}
+
+.field-add-row{display:flex;gap:8px;align-items:center;margin-top:14px;padding:12px;background:#fbf7ef;border:1px dashed var(--ledger-line-strong);border-radius:10px}
+.field-add-row input[type=text],.field-add-row select{padding:8px 12px;border:1px solid var(--ledger-line);border-radius:8px;font-size:13.5px;font-family:inherit;background:#fff;color:#0e0d0c;outline:none}
+.field-add-row input[type=text]:focus,.field-add-row select:focus{border-color:#0e0d0c}
+.field-add-row input[data-add-label]{flex:1;min-width:120px}
+.field-add-row .toggle-extra{display:flex;gap:6px;width:100%;margin-top:8px}
+.field-add-row .toggle-extra input{flex:1}
+
+/* 폼 제목 입력 */
+.form-title-input{width:100%;padding:12px 14px;border:1px solid var(--ledger-line-strong);border-radius:10px;font-size:16px;font-weight:600;font-family:inherit;color:#0e0d0c;outline:none;margin-bottom:8px;background:#fff}
+.form-title-input:focus{border-color:#0e0d0c}
+
+/* 토글 셀 — 양식 사용 화면 */
+.toggle-cell{display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border-radius:99px;font-size:13px;font-weight:600;cursor:pointer;user-select:none;border:1px solid transparent}
+.toggle-cell.on{background:#e6f4ea;color:#1b5e20;border-color:#a5d6a7}
+.toggle-cell.off{background:#fce8e6;color:#8a2620;border-color:#f1c4c1}
+
+/* 모바일에서 form-grid 1열 / 패딩 줄임 */
+@media (max-width:640px){
+    .ledger-shell{padding:18px 12px 80px}
+    .ledger-title{font-size:20px}
+    .form-grid{grid-template-columns:1fr;gap:10px}
+    .form-card{padding:14px}
+    .builder-modal .modal-panel{max-width:none;margin:8px}
+    .field-add-row{flex-wrap:wrap}
+    .field-add-row input[data-add-label]{flex:1 1 100%}
+    .field-add-row select{flex:1 1 auto}
+    .toggle-cell{font-size:15px;padding:7px 16px}
+}
+</style>
+</head>
+<body>
+
+<header id="app-header" class="app-header"></header>
+
+<main id="app-dashboard" class="dashboard">
+    <div class="ledger-shell">
+        <div id="content"></div>
+    </div>
+</main>
+
+<!-- 양식 빌더 모달 -->
+<div id="builderModal" class="modal-backdrop hidden builder-modal" data-no-close-bg>
+    <div class="modal-panel">
+        <header class="modal-header">
+            <div>
+                <h2 id="builderTitle">새 양식 만들기</h2>
+                <p class="modal-subtitle">내가 쓰기 편한 항목으로 양식을 직접 구성합니다.</p>
+            </div>
+        </header>
+        <div class="modal-body">
+            <label class="form-help" for="formTitleInput" style="font-weight:600;color:#4f4943;">양식 제목</label>
+            <input type="text" id="formTitleInput" class="form-title-input" placeholder="예: 거래처 명함, 매물 리스트, 미팅 일지..." maxlength="40">
+
+            <div class="form-help" style="margin-top:14px;font-weight:600;color:#4f4943;">항목 (필드)</div>
+            <div id="fieldList" class="field-list"></div>
+
+            <div class="field-add-row">
+                <input type="text" data-add-label placeholder="새 항목 이름 (예: 거래처명, 가격, 진행상태)" maxlength="30">
+                <select data-add-type>
+                    <option value="text">텍스트</option>
+                    <option value="number">숫자</option>
+                    <option value="date">날짜</option>
+                    <option value="tel">전화번호</option>
+                    <option value="textarea">긴 텍스트</option>
+                    <option value="toggle">ON/OFF 토글</option>
+                </select>
+                <button type="button" class="tiny-btn primary" data-add-go>+ 항목 추가</button>
+                <div class="toggle-extra hidden" data-toggle-extra>
+                    <input type="text" data-add-on placeholder="ON 라벨 (예: 완료, 계약)" maxlength="12">
+                    <input type="text" data-add-off placeholder="OFF 라벨 (예: 미완료, 가계약)" maxlength="12">
+                </div>
+            </div>
+            <p class="form-help error hidden" id="builderError"></p>
+        </div>
+        <footer class="modal-footer">
+            <button class="tiny-btn danger" type="button" id="builderDelete" style="margin-right:auto;display:none">양식 삭제</button>
+            <button class="tiny-btn" type="button" id="builderCancel">취소</button>
+            <button class="tiny-btn primary" type="button" id="builderSave">저장</button>
+        </footer>
+    </div>
+</div>
+
+<script type="module">
+    import { mountAppHeader } from './auth-shared.js?v=20260512-forms';
+    mountAppHeader();
+</script>
+<script type="module" src="forms.js?v=20260512-forms"></script>
+
+</body>
+</html>
