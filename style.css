@@ -2772,10 +2772,10 @@ select:focus {
    사이트 전체 공통 footer — auth-shared.js 의 mountAppFooter() 가 inject. */
 .app-footer {
     margin-top: 64px;
-    padding: 28px 24px 36px;
-    background: var(--bg);
-    border-top: 1px solid var(--border);
-    color: var(--fg-tertiary);
+    padding: 32px 24px 40px;
+    background: #0e0d0c;
+    border-top: 0;
+    color: rgba(255, 255, 255, 0.55);
     font-size: 13px;
     line-height: 1.65;
 }
@@ -2792,22 +2792,27 @@ select:focus {
     align-items: center;
     gap: 10px;
     margin-bottom: 10px;
-    color: var(--fg-secondary);
+    color: rgba(255, 255, 255, 0.92);
     font-weight: 600;
     font-size: 14px;
     letter-spacing: -0.01em;
 }
-.app-footer-brand img { height: 22px; width: auto; }
+.app-footer-brand img {
+    height: 22px;
+    width: auto;
+    filter: brightness(0) invert(1);
+    opacity: 0.92;
+}
 .app-footer-info {
     margin: 0;
-    color: var(--fg-tertiary);
+    color: rgba(255, 255, 255, 0.5);
     font-size: 12.5px;
 }
 .app-footer-info span { white-space: nowrap; }
 .app-footer-info span + span::before {
     content: "·";
     margin: 0 8px;
-    color: var(--fg-quaternary);
+    color: rgba(255, 255, 255, 0.25);
 }
 .app-footer-info a {
     color: inherit;
@@ -2816,8 +2821,8 @@ select:focus {
     transition: var(--transition);
 }
 .app-footer-info a:hover {
-    color: var(--fg-secondary);
-    border-bottom-color: var(--border-strong);
+    color: rgba(255, 255, 255, 0.85);
+    border-bottom-color: rgba(255, 255, 255, 0.35);
 }
 .app-footer-links {
     display: flex;
@@ -2826,7 +2831,7 @@ select:focus {
     font-size: 13px;
 }
 .app-footer-links a {
-    color: var(--fg-secondary);
+    color: rgba(255, 255, 255, 0.78);
     text-decoration: none;
     transition: var(--transition);
 }
@@ -2834,8 +2839,8 @@ select:focus {
 .app-footer-bottom {
     margin-top: 14px;
     padding-top: 14px;
-    border-top: 1px solid var(--border);
-    color: var(--fg-quaternary);
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    color: rgba(255, 255, 255, 0.35);
     font-size: 12px;
 }
 @media (max-width: 720px) {
