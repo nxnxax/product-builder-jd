@@ -14,8 +14,8 @@
  * 토글 필드는 settings.customFields[i] = { key, label, type:'toggle', onLabel, offLabel, custom:true }
  */
 
-import { initSupabase, apiRequest, getSession } from './auth-shared.js?v=20260512-hamburger-fix';
-import { isLedgerMobile, onLedgerViewportChange, openRowAddModal } from './ledger-shared.js?v=20260512-hamburger-fix';
+import { initSupabase, apiRequest, getSession } from './auth-shared.js?v=20260512-slot-dropdown';
+import { isLedgerMobile, onLedgerViewportChange, openRowAddModal } from './ledger-shared.js?v=20260512-slot-dropdown';
 
 const PAGE_TYPE = 'custom';
 

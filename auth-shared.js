@@ -151,19 +151,30 @@ const ICON = {
 };
 
 // 모바일 하단 nav — 헤더 / 외부 다운로드 페이지 양쪽에서 공유.
+// 4탭: 홈 / 고객관리대장(메인) / 슬롯1 / 슬롯2 — 슬롯은 헤더와 동기화됨.
+const SLOT_KEY_LABELS = {
+    'org.html': '조직도',
+    'contracts.html': '계약자',
+    'forms.html': '신규 양식',
+};
 function renderBottomNav(activeKey) {
     const path = (activeKey || (location.pathname.split('/').pop() || 'index.html')).toLowerCase();
+    const email = (() => { try { return (sessionStorage.getItem('erp.userEmail') || '').toLowerCase(); } catch { return ''; } })();
+    const slotKey = (s) => `yman_nav_${s}:${email || 'anon'}`;
+    const slot1Key = (() => { try { return localStorage.getItem(slotKey('slot1')) || 'org.html'; } catch { return 'org.html'; } })();
+    const slot2Key = (() => { try { return localStorage.getItem(slotKey('slot2')) || 'contracts.html'; } catch { return 'contracts.html'; } })();
     const items = [
         { key: 'index.html',     label: '홈',             href: 'index.html',     icon: ICON.home },
-        { key: 'customers.html', label: '고객관리대장',   href: 'customers.html', icon: ICON.users },
-        { key: 'org.html',       label: '조직도',         href: 'org.html',       icon: ICON.building },
-        { key: 'contracts.html', label: '계약자 관리대장', href: 'contracts.html', icon: ICON.fileText },
+        { key: 'customers.html', label: '고객관리대장',   href: 'customers.html', icon: ICON.users, main: true },
+        { key: slot1Key, label: SLOT_KEY_LABELS[slot1Key] || '양식 1', href: slot1Key, icon: ICON.building },
+        { key: slot2Key, label: SLOT_KEY_LABELS[slot2Key] || '양식 2', href: slot2Key, icon: ICON.fileText },
     ];
     const html = items.map(item => {
         const isHome = item.key === 'index.html' && (path === '' || path === 'index.html');
         const isActive = isHome || path === item.key;
+        const cls = `mobile-bottom-nav-item${isActive ? ' active' : ''}${item.main ? ' main' : ''}`;
         return `
-            <a class="mobile-bottom-nav-item${isActive ? ' active' : ''}" href="${item.href}">
+            <a class="${cls}" href="${item.href}">
                 <span class="mobile-bottom-nav-icon">${item.icon}</span>
                 <span class="mobile-bottom-nav-label">${escapeHtmlSafe(item.label)}</span>
             </a>
@@ -414,10 +425,16 @@ export function mountAppHeader(opts) {
     });
 
     // 슬롯 pill 버튼 클릭:
-    // - caret(▾) 영역 = dropdown 토글
-    // - 그 외 영역 = 현재 선택된 양식 페이지로 이동
+    // - 모바일 drawer 안에서는 항상 dropdown 토글 (페이지 이동 X — 하위 항목 선택해야)
+    // - 데스크탑에선 caret(▾) = dropdown 토글, 그 외 영역 = 현재 선택된 양식 페이지로 이동
     document.querySelectorAll('[data-slot-open]').forEach(btn => {
         btn.addEventListener('click', (e) => {
+            const inDrawer = !!btn.closest('.mobile-drawer');
+            if (inDrawer) {
+                e.preventDefault();
+                btn.closest('.nav-dropdown')?.classList.toggle('open');
+                return;
+            }
             const isCaret = e.target.closest('.nav-pill-caret');
             if (isCaret) {
                 e.preventDefault();

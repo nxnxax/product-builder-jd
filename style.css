@@ -280,12 +280,24 @@ small { color: var(--fg-tertiary); font-size: 13px; }
     transform: rotate(180deg);
 }
 .nav-pill-dropdown .nav-dropdown-menu {
-    top: calc(100% + 4px);
+    top: 100%;          /* pill 과 menu 사이 gap 제거 — hover bridge 안 끊김 */
     left: 0;
     min-width: 200px;
+    padding-top: 6px;   /* 시각적 여백은 menu 안쪽 padding 으로 */
 }
 .nav-pill-dropdown.open > .nav-dropdown-menu { display: block; }
 .nav-pill-dropdown .nav-dropdown-item .nav-dropdown-icon { display: none; }
+/* invisible bridge — pill 영역에서 menu 로 마우스 이동할 때 hover 유지 보장 */
+.nav-pill-dropdown::after {
+    content: '';
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    height: 10px;
+    background: transparent;
+    pointer-events: auto;
+}
 
 /* 보조 기능 (마케팅 / Lotto / 명함 / 업로드 / 커뮤니티) — 우측에 작은 간격으로 */
 .nav-secondary {
@@ -2042,6 +2054,61 @@ select:focus {
         font-size: 14.5px;
     }
 
+    /* drawer 안 양식 선택 슬롯 — accordion 형태 */
+    .mobile-drawer .nav-pill-dropdown {
+        display: block !important;
+        width: 100%;
+        position: static;
+    }
+    .mobile-drawer .nav-pill-dropdown::after {
+        display: none !important;   /* desktop bridge 비활성 */
+    }
+    .mobile-drawer .nav-pill-slot {
+        width: 100%;
+        justify-content: space-between !important;
+        padding: 14px 16px !important;
+        gap: 8px !important;
+    }
+    .mobile-drawer .nav-pill-slot .nav-pill-prefix {
+        font-size: 11px;
+        padding: 3px 8px;
+    }
+    .mobile-drawer .nav-pill-slot .nav-pill-caret {
+        margin-left: auto;
+        font-size: 14px;
+        padding: 2px 8px;
+    }
+    .mobile-drawer .nav-pill-dropdown .nav-dropdown-menu {
+        position: static !important;
+        display: none !important;
+        background: var(--bg-muted) !important;
+        margin: 4px 0 0 !important;
+        padding: 0 !important;
+        border: 0 !important;
+        box-shadow: none !important;
+        border-radius: 8px;
+        overflow: hidden;
+    }
+    .mobile-drawer .nav-pill-dropdown.open > .nav-dropdown-menu {
+        display: block !important;
+    }
+    .mobile-drawer .nav-pill-dropdown .nav-dropdown-item {
+        padding: 13px 20px 13px 36px;
+        background: transparent !important;
+        border-bottom: 1px solid var(--border);
+        border-radius: 0 !important;
+        font-size: 14px;
+        color: var(--fg-secondary);
+    }
+    .mobile-drawer .nav-pill-dropdown .nav-dropdown-item:last-child {
+        border-bottom: 0;
+    }
+    .mobile-drawer .nav-pill-dropdown .nav-dropdown-item.active {
+        color: var(--accent);
+        font-weight: 700;
+        background: rgba(200, 54, 44, 0.06) !important;
+    }
+
     /* 보조 기능 — 행 단위 list */
     .mobile-drawer .nav-secondary > .nav-link,
     .mobile-drawer .nav-secondary > .nav-dropdown > .nav-static {
@@ -2791,9 +2858,9 @@ select:focus {
         grid-template-columns: repeat(4, minmax(0, 1fr));
         min-height: 64px;
         padding: 7px 6px calc(7px + env(safe-area-inset-bottom, 0px));
-        background: rgba(246, 246, 244, 0.92);
-        border-top: 1px solid rgba(20, 14, 8, 0.1);
-        box-shadow: 0 -10px 28px rgba(20, 14, 8, 0.1);
+        background: rgba(214, 208, 199, 0.96);  /* 본문(베이지/흰) 과 구분되는 짙은 회색 톤 */
+        border-top: 1px solid rgba(20, 14, 8, 0.18);
+        box-shadow: 0 -10px 28px rgba(20, 14, 8, 0.14);
         backdrop-filter: blur(18px);
         -webkit-backdrop-filter: blur(18px);
     }
@@ -2842,7 +2909,16 @@ select:focus {
     .mobile-bottom-nav-item.active,
     .mobile-bottom-nav-item:active {
         color: var(--accent, #c8362c);
-        background: rgba(200, 54, 44, 0.07);
+        background: rgba(255, 255, 255, 0.55);
+    }
+    /* 고객관리대장 = bottom-nav 의 메인 — 빨강으로 강조 */
+    .mobile-bottom-nav-item.main {
+        color: var(--accent, #c8362c);
+        font-weight: 800;
+    }
+    .mobile-bottom-nav-item.main.active {
+        background: var(--accent, #c8362c);
+        color: #fff;
     }
 
     .mobile-drawer {
