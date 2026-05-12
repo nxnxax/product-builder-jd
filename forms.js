@@ -14,13 +14,13 @@
  * 토글 필드는 settings.customFields[i] = { key, label, type:'toggle', onLabel, offLabel, custom:true }
  */
 
-import { initSupabase, apiRequest, getSession, refreshNavForms } from './auth-shared.js?v=20260512-auth-polish';
+import { initSupabase, apiRequest, getSession, refreshNavForms } from './auth-shared.js?v=20260512-forms-fixes1';
 import {
     isLedgerMobile, onLedgerViewportChange, openRowAddModal,
     attachColumnFilters, applyColumnFilters,
     exportRecordsToExcel, pickExcelFile, parseExcelFile,
     suggestFieldMapping, openImportPreviewModal,
-} from './ledger-shared.js?v=20260512-auth-polish';
+} from './ledger-shared.js?v=20260512-forms-fixes1';
 
 const PAGE_TYPE = 'custom';
 
@@ -216,6 +216,7 @@ function lookupAggFieldKey(formName, fieldLabel, ctx) {
 /* ============== State ============== */
 let supabaseClient = null;
 let forms = [];               // 내 양식 목록 (= ledger-groups 의 page_type=custom 들)
+let allRefGroups = [];         // ref 필드에서 참조 가능한 모든 그룹 (custom + customer + org + contract)
 let activeFormId = null;       // 양식 사용 모드일 때 그 양식 id
 let records = [];              // 활성 양식의 records
 let editingFormId = null;      // 빌더 모달에서 편집 중인 양식 id (null = 새 양식)
@@ -268,6 +269,13 @@ async function loadForms() {
     } catch (e) {
         console.error('[forms] load failed', e);
         forms = [];
+    }
+    // ref 참조 가능한 모든 그룹 (page_type 무관) — 빌더 모달의 "다른 양식 참조"
+    try {
+        const all = await api('ledger-groups');
+        allRefGroups = all.items || [];
+    } catch {
+        allRefGroups = forms.slice();
     }
 }
 
@@ -351,12 +359,13 @@ async function buildFormulaCtx(formId) {
     if (!form) return;
     const fields = (form.settings?.customFields) || [];
 
-    // (1) ref 필드 → 참조 양식 records 로드
+    // (1) ref 필드 → 참조 양식 records 로드 (page_type 무관)
     for (const f of fields) {
         if (f.type !== 'ref' || !f.refFormId) continue;
         try {
             const res = await api('ledger-records', { query: `group_id=${f.refFormId}` });
-            const targetForm = forms.find(x => x.id === f.refFormId);
+            const targetForm = allRefGroups.find(x => x.id === f.refFormId)
+                            || forms.find(x => x.id === f.refFormId);
             formulaCtx.refCache[f.key] = {
                 rows: res.items || [],
                 fields: targetForm?.settings?.customFields || [],
@@ -529,7 +538,7 @@ async function importToForm(form, fields) {
             }).filter(d => Object.values(d).some(v => v !== '' && v != null));
 
             for (const data of records) {
-                try { await api('ledger-records', { method: 'POST', body: { page_type: PAGE_TYPE, group_id: activeFormId, data } }); } catch {}
+                try { await api('ledger-records', { method: 'POST', body: { groupId: activeFormId, data, source: 'web' } }); } catch {}
             }
             await loadRecords(activeFormId);
             render();
@@ -891,7 +900,7 @@ async function openRowEntry(form, fields, existing) {
             if (existing) {
                 await api('ledger-records', { method: 'PATCH', body: { id: existing.id, data } });
             } else {
-                await api('ledger-records', { method: 'POST', body: { page_type: PAGE_TYPE, group_id: activeFormId, data } });
+                await api('ledger-records', { method: 'POST', body: { groupId: activeFormId, data, source: 'web' } });
             }
             await loadRecords(activeFormId);
             render();
@@ -1050,13 +1059,20 @@ function startFieldEdit(idx) {
     if (f.type === 'ref') {
         const refFormSelect = modal.querySelector('[data-add-ref-form]');
         const refLabelKeySelect = modal.querySelector('[data-add-ref-label-key]');
+        const refLabelKeyText = modal.querySelector('[data-add-ref-label-key-text]');
         refFormSelect.value = String(f.refFormId || '');
-        // 라벨 키 options 채우고 현재 값 선택
-        const target = forms.find(x => x.id === f.refFormId);
+        const target = allRefGroups.find(x => x.id === f.refFormId);
         if (target) {
             const cf = (target.settings?.customFields || []).filter(x => ['text','number','date'].includes(x.type));
-            refLabelKeySelect.innerHTML = cf.map(x => `<option value="${escapeAttr(x.key)}" ${x.key === f.refLabelKey ? 'selected' : ''}>${escapeHtml(x.label)}</option>`).join('');
-            refLabelKeySelect.disabled = false;
+            if (cf.length > 0) {
+                refLabelKeySelect.innerHTML = cf.map(x => `<option value="${escapeAttr(x.key)}" ${x.key === f.refLabelKey ? 'selected' : ''}>${escapeHtml(x.label)}</option>`).join('');
+                refLabelKeySelect.disabled = false;
+                refLabelKeySelect.classList.remove('hidden');
+                refLabelKeyText?.classList.add('hidden');
+            } else {
+                refLabelKeySelect.classList.add('hidden');
+                if (refLabelKeyText) { refLabelKeyText.value = f.refLabelKey || ''; refLabelKeyText.classList.remove('hidden'); }
+            }
         }
     }
     // type 변경에 따른 extra row 표시
@@ -1080,6 +1096,16 @@ function cancelFieldEdit() {
     modal.querySelector('[data-add-off]').value = '';
     modal.querySelector('[data-add-options]').value = '';
     modal.querySelector('[data-add-formula]').value = '';
+    const refForm = modal.querySelector('[data-add-ref-form]');
+    if (refForm) refForm.value = '';
+    const refKey = modal.querySelector('[data-add-ref-label-key]');
+    if (refKey) {
+        refKey.innerHTML = `<option value="">참조 양식 선택 후 표시할 항목 선택</option>`;
+        refKey.disabled = true;
+        refKey.classList.remove('hidden');
+    }
+    const refKeyText = modal.querySelector('[data-add-ref-label-key-text]');
+    if (refKeyText) { refKeyText.value = ''; refKeyText.classList.add('hidden'); }
     modal.querySelectorAll('[data-extra-toggle], [data-extra-select], [data-extra-formula], [data-extra-ref]').forEach(el => el.classList.add('hidden'));
     modal.querySelector('[data-edit-status]').classList.add('hidden');
     modal.querySelector('[data-add-go]').textContent = '+ 항목 추가';
@@ -1112,26 +1138,47 @@ function bindBuilderModal() {
     }
     function populateRefFormOptions() {
         const cur = refFormSelect.value;
+        const pageLabel = { customer: '고객', org: '조직도', contract: '계약자', custom: '내 양식' };
+        // page_type 별로 그룹화해서 보기 좋게 (custom 우선, 그 다음 customer/org/contract)
+        const ordered = [...allRefGroups]
+            .filter(g => g.id !== editingFormId)
+            .sort((a, b) => {
+                const order = { custom: 0, customer: 1, org: 2, contract: 3 };
+                return (order[a.pageType] ?? 9) - (order[b.pageType] ?? 9);
+            });
         refFormSelect.innerHTML = `<option value="">참조할 양식을 선택하세요…</option>` +
-            forms.filter(f => f.id !== editingFormId).map(f =>
-                `<option value="${f.id}" ${String(f.id) === cur ? 'selected' : ''}>${escapeHtml(f.name)}</option>`).join('');
+            ordered.map(g =>
+                `<option value="${g.id}" data-page-type="${g.pageType}" ${String(g.id) === cur ? 'selected' : ''}>[${pageLabel[g.pageType] || g.pageType}] ${escapeHtml(g.name)}</option>`).join('');
     }
+    const refLabelKeyText = modal.querySelector('[data-add-ref-label-key-text]');
     refFormSelect.addEventListener('change', () => {
         const fid = parseInt(refFormSelect.value, 10);
-        const target = forms.find(f => f.id === fid);
+        const target = allRefGroups.find(g => g.id === fid);
         if (!target) {
             refLabelKeySelect.innerHTML = `<option value="">참조 양식 선택 후 표시할 항목 선택</option>`;
             refLabelKeySelect.disabled = true;
+            refLabelKeySelect.classList.remove('hidden');
+            refLabelKeyText?.classList.add('hidden');
             return;
         }
         const cf = (target.settings?.customFields || []).filter(f => ['text','number','date'].includes(f.type));
-        if (cf.length === 0) {
-            refLabelKeySelect.innerHTML = `<option value="">참조 양식에 표시 가능한 항목이 없습니다</option>`;
-            refLabelKeySelect.disabled = true;
-            return;
+        if (cf.length > 0) {
+            // 사용자 정의 필드 있음 → select 사용
+            refLabelKeySelect.innerHTML = cf.map(f => `<option value="${escapeAttr(f.key)}">${escapeHtml(f.label)}</option>`).join('');
+            refLabelKeySelect.disabled = false;
+            refLabelKeySelect.classList.remove('hidden');
+            refLabelKeyText?.classList.add('hidden');
+        } else {
+            // 사용자 정의 필드 없음 (조직도/계약자/고객 기본 fields 사용) → 자유 입력 fallback
+            refLabelKeySelect.classList.add('hidden');
+            refLabelKeyText?.classList.remove('hidden');
+            const hints = {
+                customer: 'customer, phone, level, region 등',
+                org: 'name, title, phone, account 등',
+                contract: 'customer, manager, mainDate, phone 등',
+            };
+            if (refLabelKeyText) refLabelKeyText.placeholder = `필드 키 입력 — ${hints[target.pageType] || 'name'}`;
         }
-        refLabelKeySelect.innerHTML = cf.map(f => `<option value="${escapeAttr(f.key)}">${escapeHtml(f.label)}</option>`).join('');
-        refLabelKeySelect.disabled = false;
     });
 
     typeSelect.addEventListener('change', syncExtraRows);
@@ -1181,9 +1228,12 @@ function bindBuilderModal() {
             newField.formula = f;
         } else if (type === 'ref') {
             if (!refFormSelect.value) { alert('참조할 양식을 선택해주세요.'); return; }
-            if (!refLabelKeySelect.value) { alert('표시할 항목을 선택해주세요.'); return; }
+            const labelKey = refLabelKeySelect.classList.contains('hidden')
+                ? (refLabelKeyText?.value || '').trim()
+                : refLabelKeySelect.value;
+            if (!labelKey) { alert('표시할 항목 키를 입력하거나 선택해주세요.'); return; }
             newField.refFormId = parseInt(refFormSelect.value, 10);
-            newField.refLabelKey = refLabelKeySelect.value;
+            newField.refLabelKey = labelKey;
         }
         if (existing) {
             builderDraft[editingFieldIndex] = newField;

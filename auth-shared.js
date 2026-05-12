@@ -517,8 +517,23 @@ export function mountAppHeader(opts) {
     const handleLogout = async () => {
         cacheDisplayName('');
         cacheAdminFlag(false);
-        try { if (supabaseClient) await supabaseClient.auth.signOut(); } catch {}
-        window.location.href = 'index.html';
+        // 사용자 식별 캐시 즉시 정리 (다른 페이지로 이동 전 visual 반영)
+        try { sessionStorage.removeItem('erp.userEmail'); } catch {}
+        try { sessionStorage.removeItem('erpOAuthIntent'); localStorage.removeItem('erpOAuthIntent'); } catch {}
+        try { localStorage.removeItem('erpOAuthPendingSignup'); localStorage.removeItem('erpOAuthEmail'); } catch {}
+        document.body.classList.add('is-anon');
+        document.body.classList.remove('is-admin');
+        // signOut 이 hang 되더라도 3초 안에 강제 이동 (네트워크 이슈 fallback)
+        try {
+            if (supabaseClient) {
+                await Promise.race([
+                    supabaseClient.auth.signOut(),
+                    new Promise(r => setTimeout(r, 2500)),
+                ]);
+            }
+        } catch {}
+        try { window.location.assign('index.html'); }
+        catch { window.location.href = 'index.html'; }
     };
     const logoutBtn = root.querySelector('#logout-btn');
     if (logoutBtn) logoutBtn.addEventListener('click', handleLogout);

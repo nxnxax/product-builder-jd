@@ -6,7 +6,7 @@
 <title>내 양식 · YOUNGMAN</title>
 <link rel="icon" type="image/png" href="logo_main.png">
 <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
-<link rel="stylesheet" href="style.css?v=20260512-auth-polish">
+<link rel="stylesheet" href="style.css?v=20260512-forms-fixes1">
 <style>
 :root{
     --ledger-line:rgba(20,14,8,.09); --ledger-line-strong:rgba(20,14,8,.16);
@@ -61,7 +61,8 @@
 .field-add-row input[type=text]:focus,.field-add-row select:focus{border-color:#0e0d0c}
 .field-add-row input[data-add-label]{flex:1;min-width:160px}
 .field-add-row select[data-add-type]{flex:0 0 auto;min-width:140px}
-.field-add-row .tiny-btn{padding:10px 16px !important;font-size:14px !important;font-weight:600 !important}
+.field-add-row .tiny-btn{padding:10px 16px !important;font-size:14px !important;font-weight:600 !important;white-space:nowrap;flex-shrink:0}
+.field-add-row .add-go-btn{margin-left:auto;flex-shrink:0;white-space:nowrap;min-width:120px}
 .field-add-row .toggle-extra{display:flex;gap:8px;width:100%;margin-top:10px}
 .field-add-row .toggle-extra input{flex:1}
 .field-add-row .extra-row{display:flex;flex-direction:column;gap:8px;width:100%;margin-top:10px}
@@ -169,32 +170,33 @@
                     <option value="ref">다른 양식 참조</option>
                 </select>
                 <label class="add-required-check"><input type="checkbox" data-add-required> 필수</label>
-                <button type="button" class="tiny-btn primary" data-add-go>+ 항목 추가</button>
+                <button type="button" class="tiny-btn primary add-go-btn" data-add-go>+ 항목 추가</button>
                 <div class="extra-row hidden" data-extra-toggle>
-                    <input type="text" data-add-on placeholder="ON 라벨 (예: 완료, 계약)" maxlength="12">
-                    <input type="text" data-add-off placeholder="OFF 라벨 (예: 미완료, 가계약)" maxlength="12">
+                    <input type="text" data-add-on placeholder="ON 문구 (예: 완료, 계약)" maxlength="12">
+                    <input type="text" data-add-off placeholder="OFF 문구 (예: 미완료, 가계약)" maxlength="12">
                 </div>
                 <div class="extra-row hidden" data-extra-select>
                     <textarea data-add-options placeholder="옵션을 한 줄에 하나씩 입력&#10;예:&#10;진행중&#10;완료&#10;보류" rows="3"></textarea>
                 </div>
                 <div class="extra-row hidden" data-extra-formula>
-                    <input type="text" data-add-formula placeholder="예: {수량} * {단가} / IF({관리}, {단가}*0.9, {단가})">
+                    <input type="text" data-add-formula placeholder="클릭하여 기능 추가 — 예: {수량} * {단가}">
                     <details class="formula-help" style="margin:0">
-                        <summary style="font-size:12px;color:#8a847e;cursor:pointer;font-weight:600">사용 가능 함수 보기</summary>
-                        <div style="font-size:11.5px;color:#4f4943;line-height:1.7;padding:8px 10px;background:#fff;border:1px solid var(--ledger-line);border-radius:8px;margin-top:6px">
+                        <summary style="font-size:13px;color:#4f4943;cursor:pointer;font-weight:700">사용 가능 함수 보기</summary>
+                        <div style="font-size:13px;color:#0e0d0c;line-height:1.7;padding:10px 12px;background:#fff;border:1px solid var(--ledger-line);border-radius:8px;margin-top:8px">
                             <div><b>같은 양식 필드</b> · <code>{항목이름}</code></div>
                             <div><b>참조 양식의 속성</b> · <code>{고객.연락처}</code></div>
                             <div><b>조건문</b> · <code>IF(조건, 참값, 거짓값)</code> — 비교는 =, !=, &lt;, &gt;</div>
                             <div><b>날짜 일수</b> · <code>DAYS({종료일}, {시작일})</code> / <code>TODAY()</code></div>
                             <div><b>문자열 연결</b> · <code>CONCAT({성}, " ", {이름})</code></div>
                             <div><b>다른 양식 집계</b> · <code>SUM("고객", "수수료")</code> · AVG / MIN / MAX / COUNT 동일</div>
-                            <div style="margin-top:4px;color:#8a847e">사칙연산 + − × ÷ ( ) 도 사용 가능</div>
+                            <div style="margin-top:6px;color:#4f4943">사칙연산 + − × ÷ ( ) 도 사용 가능</div>
                         </div>
                     </details>
                 </div>
                 <div class="extra-row hidden" data-extra-ref>
                     <select data-add-ref-form><option value="">참조할 양식을 선택하세요…</option></select>
                     <select data-add-ref-label-key disabled><option value="">참조 양식 선택 후 표시할 항목 선택</option></select>
+                    <input type="text" data-add-ref-label-key-text placeholder="또는 직접 키 입력 (예: customer, name)" maxlength="40" class="hidden">
                 </div>
             </div>
             <p class="form-help error hidden" id="builderError"></p>
@@ -208,10 +210,10 @@
 </div>
 
 <script type="module">
-    import { mountAppHeader } from './auth-shared.js?v=20260512-auth-polish';
+    import { mountAppHeader } from './auth-shared.js?v=20260512-forms-fixes1';
     mountAppHeader();
 </script>
-<script type="module" src="forms.js?v=20260512-auth-polish"></script>
+<script type="module" src="forms.js?v=20260512-forms-fixes1"></script>
 
 </body>
 </html>
