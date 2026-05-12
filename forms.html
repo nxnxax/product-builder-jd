@@ -6,7 +6,7 @@
 <title>내 양식 · YOUNGMAN</title>
 <link rel="icon" type="image/png" href="logo_main.png">
 <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
-<link rel="stylesheet" href="style.css?v=20260512-builder-ux">
+<link rel="stylesheet" href="style.css?v=20260512-formula-fns">
 <style>
 :root{
     --ledger-line:rgba(20,14,8,.09); --ledger-line-strong:rgba(20,14,8,.16);
@@ -153,8 +153,19 @@
                     <textarea data-add-options placeholder="옵션을 한 줄에 하나씩 입력&#10;예:&#10;진행중&#10;완료&#10;보류" rows="3"></textarea>
                 </div>
                 <div class="extra-row hidden" data-extra-formula>
-                    <input type="text" data-add-formula placeholder="수식 입력. 다른 항목은 {항목이름} 으로 참조. 예: {수량} * {단가}">
-                    <p class="form-help" style="margin:0;font-size:12px;color:#8a847e;">사칙연산만 가능: + − × ÷ ( )</p>
+                    <input type="text" data-add-formula placeholder="예: {수량} * {단가} / IF({관리}, {단가}*0.9, {단가})">
+                    <details class="formula-help" style="margin:0">
+                        <summary style="font-size:12px;color:#8a847e;cursor:pointer;font-weight:600">사용 가능 함수 보기</summary>
+                        <div style="font-size:11.5px;color:#4f4943;line-height:1.7;padding:8px 10px;background:#fff;border:1px solid var(--ledger-line);border-radius:8px;margin-top:6px">
+                            <div><b>같은 양식 필드</b> · <code>{항목이름}</code></div>
+                            <div><b>참조 양식의 속성</b> · <code>{고객.연락처}</code></div>
+                            <div><b>조건문</b> · <code>IF(조건, 참값, 거짓값)</code> — 비교는 =, !=, &lt;, &gt;</div>
+                            <div><b>날짜 일수</b> · <code>DAYS({종료일}, {시작일})</code> / <code>TODAY()</code></div>
+                            <div><b>문자열 연결</b> · <code>CONCAT({성}, " ", {이름})</code></div>
+                            <div><b>다른 양식 집계</b> · <code>SUM("고객", "수수료")</code> · AVG / MIN / MAX / COUNT 동일</div>
+                            <div style="margin-top:4px;color:#8a847e">사칙연산 + − × ÷ ( ) 도 사용 가능</div>
+                        </div>
+                    </details>
                 </div>
                 <div class="extra-row hidden" data-extra-ref>
                     <select data-add-ref-form><option value="">참조할 양식을 선택하세요…</option></select>
@@ -172,10 +183,10 @@
 </div>
 
 <script type="module">
-    import { mountAppHeader } from './auth-shared.js?v=20260512-builder-ux';
+    import { mountAppHeader } from './auth-shared.js?v=20260512-formula-fns';
     mountAppHeader();
 </script>
-<script type="module" src="forms.js?v=20260512-builder-ux"></script>
+<script type="module" src="forms.js?v=20260512-formula-fns"></script>
 
 </body>
 </html>

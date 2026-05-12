@@ -6,7 +6,7 @@ import {
     mountAppHeader,
     refreshAppHeader,
     getInitial,
-} from './auth-shared.js?v=20260512-builder-ux';
+} from './auth-shared.js?v=20260512-formula-fns';
 
 const tabButtons = document.querySelectorAll('.side-nav button[data-tab]');
 const tabSections = document.querySelectorAll('.profile-tab');

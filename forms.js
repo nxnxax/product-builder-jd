@@ -14,13 +14,13 @@
  * 토글 필드는 settings.customFields[i] = { key, label, type:'toggle', onLabel, offLabel, custom:true }
  */
 
-import { initSupabase, apiRequest, getSession, refreshNavForms } from './auth-shared.js?v=20260512-builder-ux';
+import { initSupabase, apiRequest, getSession, refreshNavForms } from './auth-shared.js?v=20260512-formula-fns';
 import {
     isLedgerMobile, onLedgerViewportChange, openRowAddModal,
     attachColumnFilters, applyColumnFilters,
     exportRecordsToExcel, pickExcelFile, parseExcelFile,
     suggestFieldMapping, openImportPreviewModal,
-} from './ledger-shared.js?v=20260512-builder-ux';
+} from './ledger-shared.js?v=20260512-formula-fns';
 
 const PAGE_TYPE = 'custom';
 
@@ -38,30 +38,179 @@ const FIELD_TYPE_LABELS = {
 
 const API_URL = 'records.php';
 
-/* 사칙연산 + 필드참조만 허용하는 안전한 수식 평가기.
-   허용: 숫자 . + - * / ( ) , 공백. 그 외 문자 있으면 평가 거부. */
-function evalFormula(formula, data, fields) {
+/* ============== 수식 평가기 — 함수·비교·문자열·ref 점표기 지원 ==============
+   지원:
+     * 같은 양식 필드 참조: {필드라벨}
+     * 다른 양식 참조 필드의 속성: {ref필드라벨.속성라벨}
+     * 함수:
+         IF(조건, 참값, 거짓값)
+         DAYS(날짜A, 날짜B)              — 일수 차이 (A - B)
+         TODAY()                           — 오늘 (YYYY-MM-DD)
+         CONCAT(a, b, ...)                 — 문자열 연결
+         SUM("양식이름", "필드이름")        — 다른 custom 양식 합계
+         AVG / MIN / MAX / COUNT 동일 형식
+     * 사칙연산 + - * / 와 비교 = != < > <= >=
+     * 문자열은 큰따옴표 또는 작은따옴표
+   안전: regex 화이트리스트 통과 후 Function() 평가 — 알파벳·한글·숫자·연산자만 허용 */
+
+// 외부 캐시: { byFormName: { [name]: [records...] }, fieldByLabel: { [name]: { [fieldLabel]: key } } }
+// refCache.byRefField: { [refFieldKey]: { rows: [...], fields: [...] } }
+function evalFormula(formula, data, fields, ctx) {
     if (!formula) return '';
-    // {필드라벨 또는 키} → 그 필드 값 (숫자 변환)
-    const resolved = String(formula).replace(/\{([^}]+)\}/g, (_, raw) => {
-        const k = raw.trim();
-        let v;
-        if (fields && fields.length) {
-            const f = fields.find(x => x.label === k) || fields.find(x => x.key === k);
-            if (f) v = data[f.key];
-        } else {
-            v = data[k];
-        }
-        if (v === undefined || v === null || v === '') return '0';
-        const n = parseFloat(String(v).replace(/,/g, ''));
-        return Number.isFinite(n) ? String(n) : '0';
+    let expr = String(formula);
+    const refCache = (ctx && ctx.refCache) || {};
+    const aggCache = (ctx && ctx.aggCache) || {};
+
+    // 1) {ref필드.속성} — ref 필드의 참조 행에서 속성 값 가져오기
+    expr = expr.replace(/\{([^.}]+)\.([^}]+)\}/g, (_, refLabel, subLabel) => {
+        const f = (fields || []).find(x => x.label === refLabel.trim() || x.key === refLabel.trim());
+        if (!f || f.type !== 'ref') return '0';
+        const cur = data[f.key];
+        if (!cur || !cur.id) return '0';
+        const cache = refCache[f.key];
+        if (!cache) return '0';
+        const row = cache.rows.find(r => r.id === cur.id);
+        if (!row) return '0';
+        const subKey = (cache.fields || []).find(x => x.label === subLabel.trim() || x.key === subLabel.trim())?.key || subLabel.trim();
+        const v = row.data?.[subKey];
+        return toLiteral(v);
     });
-    if (!/^[\d\s+\-*/().]+$/.test(resolved)) return '';
+
+    // 2) TODAY()
+    expr = expr.replace(/\bTODAY\s*\(\s*\)/g, () => {
+        return JSON.stringify(new Date().toISOString().slice(0, 10));
+    });
+
+    // 3) DAYS(a, b) → 일수 차이
+    expr = expr.replace(/\bDAYS\s*\(([^()]+),([^()]+)\)/g, (_, a, b) => {
+        const da = parseDateLike(resolveValue(a, data, fields));
+        const db = parseDateLike(resolveValue(b, data, fields));
+        if (!da || !db) return '0';
+        return String(Math.floor((da - db) / 86400000));
+    });
+
+    // 4) CONCAT(a, b, ...) — 문자열 연결
+    expr = expr.replace(/\bCONCAT\s*\(([^()]+)\)/g, (_, args) => {
+        const parts = splitArgs(args).map(a => stringify(resolveValue(a, data, fields)));
+        return JSON.stringify(parts.join(''));
+    });
+
+    // 5) SUM/AVG/MIN/MAX/COUNT("양식","필드")
+    expr = expr.replace(/\b(SUM|AVG|MIN|MAX|COUNT)\s*\(([^()]+)\)/g, (_, fn, args) => {
+        const argList = splitArgs(args).map(a => stripQuotes(String(a).trim()));
+        const formName = argList[0];
+        const fieldName = argList[1];
+        const rows = aggCache[formName] || [];
+        if (fn === 'COUNT') return String(rows.length);
+        if (!fieldName) return '0';
+        const fieldKey = lookupAggFieldKey(formName, fieldName, ctx) || fieldName;
+        const nums = rows.map(r => parseFloat(String(r.data?.[fieldKey] ?? '0').replace(/,/g, '')))
+                          .filter(n => Number.isFinite(n));
+        if (nums.length === 0) return '0';
+        if (fn === 'SUM') return String(nums.reduce((a, b) => a + b, 0));
+        if (fn === 'AVG') return String(nums.reduce((a, b) => a + b, 0) / nums.length);
+        if (fn === 'MIN') return String(Math.min(...nums));
+        if (fn === 'MAX') return String(Math.max(...nums));
+        return '0';
+    });
+
+    // 6) IF(조건, 참값, 거짓값) → ((cond) ? a : b)
+    expr = expr.replace(/\bIF\s*\(([^()]+),([^()]+),([^()]+)\)/g, (_, c, a, b) => {
+        return `((${c}) ? (${a}) : (${b}))`;
+    });
+
+    // 7) 일반 {필드라벨} → 값 치환
+    expr = expr.replace(/\{([^}]+)\}/g, (_, raw) => {
+        return toLiteral(resolveValue(`{${raw}}`, data, fields));
+    });
+
+    // 8) = → ===, != → !==
+    expr = expr.replace(/(^|[^!=<>])=([^=])/g, '$1===$2').replace(/!==/g, '!==');
+
+    // 9) 안전 화이트리스트 — 알파벳·한글·숫자·연산자·괄호·문자열·논리만
+    if (!/^[\d\s+\-*/().,!=<>?:'"À-￿ A-Za-z_]+$/.test(expr)) return '';
+
     try {
-        const result = Function(`"use strict"; return (${resolved})`)();
-        if (typeof result !== 'number' || !Number.isFinite(result)) return '';
+        const result = Function(`"use strict"; return (${expr})`)();
+        if (typeof result === 'number' && !Number.isFinite(result)) return '';
         return result;
     } catch { return ''; }
+}
+
+function resolveValue(expr, data, fields) {
+    const s = String(expr).trim();
+    // {필드} 패턴
+    const m = s.match(/^\{([^.}]+)\}$/);
+    if (m) {
+        const k = m[1].trim();
+        const f = (fields || []).find(x => x.label === k) || (fields || []).find(x => x.key === k);
+        if (f) return data[f.key];
+        return data[k];
+    }
+    // 따옴표 문자열
+    if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
+        return s.slice(1, -1);
+    }
+    // 숫자
+    const n = parseFloat(s.replace(/,/g, ''));
+    if (Number.isFinite(n)) return n;
+    return s;
+}
+
+function toLiteral(v) {
+    if (v === undefined || v === null || v === '') return '0';
+    if (typeof v === 'number') return String(v);
+    if (typeof v === 'boolean') return v ? 'true' : 'false';
+    const s = String(v).replace(/,/g, '');
+    const n = parseFloat(s);
+    if (Number.isFinite(n) && /^-?\d+(\.\d+)?$/.test(s.trim())) return String(n);
+    return JSON.stringify(String(v));
+}
+
+function stringify(v) {
+    if (v === undefined || v === null) return '';
+    if (typeof v === 'object') return JSON.stringify(v);
+    return String(v);
+}
+
+function parseDateLike(v) {
+    if (!v) return null;
+    const s = String(v).replace(/\./g, '-');
+    const d = new Date(s);
+    return isNaN(d) ? null : d;
+}
+
+function splitArgs(s) {
+    // 단순 콤마 분리 — 중첩 괄호 안 콤마는 미지원 (1차)
+    const out = [];
+    let depth = 0, buf = '', inStr = false, strCh = '';
+    for (const c of String(s)) {
+        if (inStr) {
+            buf += c;
+            if (c === strCh) inStr = false;
+            continue;
+        }
+        if (c === '"' || c === "'") { inStr = true; strCh = c; buf += c; continue; }
+        if (c === '(') depth++;
+        else if (c === ')') depth--;
+        if (c === ',' && depth === 0) { out.push(buf); buf = ''; }
+        else buf += c;
+    }
+    if (buf.trim()) out.push(buf);
+    return out.map(s => s.trim());
+}
+
+function stripQuotes(s) {
+    if (!s) return s;
+    if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) return s.slice(1, -1);
+    return s;
+}
+
+function lookupAggFieldKey(formName, fieldLabel, ctx) {
+    if (!ctx || !ctx.aggFieldMap) return null;
+    const map = ctx.aggFieldMap[formName];
+    if (!map) return null;
+    return map[fieldLabel] || null;
 }
 
 /* ============== State ============== */
@@ -74,6 +223,9 @@ let builderDraft = [];         // 빌더 모달 안의 working schema
 let editingFieldIndex = -1;    // 빌더 안에서 수정 중인 field index (-1 = 신규 추가 모드)
 let selectedIds = new Set();
 let filterState = { filters: {} };   // 컬럼 헤더 클릭 필터 상태
+
+// 수식용 캐시 — 페이지 진입 시 ref·집계 대상 양식 records 미리 로드
+let formulaCtx = { refCache: {}, aggCache: {}, aggFieldMap: {} };
 
 /* ============== Boot ============== */
 (async function boot() {
@@ -185,7 +337,51 @@ async function enterForm(formId) {
     activeFormId = formId;
     selectedIds = new Set();
     await loadRecords(formId);
+    await buildFormulaCtx(formId);
     render();
+}
+
+/* 수식용 ctx 캐시 구축:
+   - 현재 양식의 ref 필드들이 가리키는 양식 records → refCache[refFieldKey]
+   - 현재 양식의 수식들이 참조하는 양식 (SUM/AVG/...) → aggCache[양식이름]
+   - 집계 함수의 필드 라벨 → 필드 key 매핑 */
+async function buildFormulaCtx(formId) {
+    formulaCtx = { refCache: {}, aggCache: {}, aggFieldMap: {} };
+    const form = forms.find(f => f.id === formId);
+    if (!form) return;
+    const fields = (form.settings?.customFields) || [];
+
+    // (1) ref 필드 → 참조 양식 records 로드
+    for (const f of fields) {
+        if (f.type !== 'ref' || !f.refFormId) continue;
+        try {
+            const res = await api('ledger-records', { query: `group_id=${f.refFormId}` });
+            const targetForm = forms.find(x => x.id === f.refFormId);
+            formulaCtx.refCache[f.key] = {
+                rows: res.items || [],
+                fields: targetForm?.settings?.customFields || [],
+            };
+        } catch {}
+    }
+
+    // (2) 수식에서 SUM/AVG/MIN/MAX/COUNT 참조하는 양식 이름 추출 → 그 양식 records 로드
+    const aggRefs = new Set();
+    fields.forEach(f => {
+        if (f.type !== 'formula' || !f.formula) return;
+        const matches = String(f.formula).matchAll(/\b(?:SUM|AVG|MIN|MAX|COUNT)\s*\(\s*["']?([^,"')]+)["']?/g);
+        for (const m of matches) aggRefs.add(m[1].trim());
+    });
+    for (const formName of aggRefs) {
+        const target = forms.find(x => x.name === formName);
+        if (!target) continue;
+        try {
+            const res = await api('ledger-records', { query: `group_id=${target.id}` });
+            formulaCtx.aggCache[formName] = res.items || [];
+            const map = {};
+            (target.settings?.customFields || []).forEach(x => { map[x.label] = x.key; });
+            formulaCtx.aggFieldMap[formName] = map;
+        } catch {}
+    }
 }
 
 function exitForm() {
@@ -430,9 +626,12 @@ function renderCellInner(f, v, fullData, allFields) {
         return `<span class="toggle-cell ${on ? 'on' : 'off'}">${escapeHtml(on ? onLabel : offLabel)}</span>`;
     }
     if (f.type === 'formula') {
-        const result = evalFormula(f.formula, fullData || {}, allFields);
-        if (result === '') return `<span class="cell-empty">-</span>`;
-        return `<span class="cell-text" style="color:#1d5da3;font-weight:600">${escapeHtml(Number(result).toLocaleString('ko-KR'))}</span>`;
+        const result = evalFormula(f.formula, fullData || {}, allFields, formulaCtx);
+        if (result === '' || result === undefined || result === null) return `<span class="cell-empty">-</span>`;
+        if (typeof result === 'number') {
+            return `<span class="cell-text" style="color:#1d5da3;font-weight:600">${escapeHtml(Number(result).toLocaleString('ko-KR'))}</span>`;
+        }
+        return `<span class="cell-text" style="color:#1d5da3;font-weight:600">${escapeHtml(String(result))}</span>`;
     }
     if (f.type === 'file') {
         if (!v || !v.url) return `<span class="cell-empty">-</span>`;
@@ -452,8 +651,9 @@ function renderCellInner(f, v, fullData, allFields) {
 function cellDisplay(f, v, fullData, allFields) {
     if (f.type === 'toggle') return v ? (f.onLabel || 'ON') : (f.offLabel || 'OFF');
     if (f.type === 'formula') {
-        const r = evalFormula(f.formula, fullData || {}, allFields);
-        return r === '' ? '' : Number(r).toLocaleString('ko-KR');
+        const r = evalFormula(f.formula, fullData || {}, allFields, formulaCtx);
+        if (r === '' || r === undefined || r === null) return '';
+        return typeof r === 'number' ? Number(r).toLocaleString('ko-KR') : String(r);
     }
     if (f.type === 'file') return v?.name || '';
     if (f.type === 'ref') return v?.label || '';
@@ -633,8 +833,9 @@ async function openRowEntry(form, fields, existing) {
                 const recalc = () => {
                     const cur = collectModalRawData(md, dataFields, defaults);
                     formulaPreviews.forEach(el => {
-                        const r = evalFormula(el.dataset.formula, cur, dataFields);
-                        el.textContent = r === '' ? '-' : Number(r).toLocaleString('ko-KR');
+                        const r = evalFormula(el.dataset.formula, cur, dataFields, formulaCtx);
+                        if (r === '' || r === undefined || r === null) { el.textContent = '-'; return; }
+                        el.textContent = typeof r === 'number' ? Number(r).toLocaleString('ko-KR') : String(r);
                     });
                 };
                 md.querySelectorAll('input, select, textarea').forEach(el => {
