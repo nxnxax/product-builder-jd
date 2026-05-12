@@ -232,6 +232,72 @@ async function refreshNavFormsCache() {
 // forms.js 가 양식 생성/삭제 후 명시적으로 호출 가능 — drawer/bottom-nav 즉시 동기화
 export function refreshNavForms() { return refreshNavFormsCache(); }
 
+/* =========================================================================
+   로그아웃 — 동기적으로 즉시 storage 정리 + 페이지 이동.
+   - signOut 은 fire-and-forget (await 안 함 — 네트워크 이슈에도 즉시 이동)
+   - 모든 supabase/erp 관련 키를 sessionStorage / localStorage 에서 일괄 제거
+   - window.location.replace 로 history 정리하며 이동
+   ========================================================================= */
+export function performLogout(e) {
+    try { e?.preventDefault?.(); e?.stopPropagation?.(); } catch {}
+
+    // 시각적 즉시 반영
+    try {
+        document.body.classList.add('is-anon');
+        document.body.classList.remove('is-admin');
+    } catch {}
+
+    // sessionStorage 일괄 정리
+    try {
+        const keys = [];
+        for (let i = 0; i < sessionStorage.length; i++) keys.push(sessionStorage.key(i));
+        keys.forEach(k => {
+            if (!k) return;
+            if (k.startsWith('erp') || k.startsWith('sb-') || k.startsWith('supabase')) {
+                try { sessionStorage.removeItem(k); } catch {}
+            }
+        });
+    } catch {}
+
+    // localStorage 일괄 정리 (supabase 세션 토큰 + erp OAuth 흔적)
+    try {
+        const keys = [];
+        for (let i = 0; i < localStorage.length; i++) keys.push(localStorage.key(i));
+        keys.forEach(k => {
+            if (!k) return;
+            if (k.startsWith('erp') || k.startsWith('sb-') || k.startsWith('supabase')) {
+                try { localStorage.removeItem(k); } catch {}
+            }
+        });
+    } catch {}
+
+    // signOut fire-and-forget — 결과 기다리지 않음
+    try {
+        if (supabaseClient && supabaseClient.auth && typeof supabaseClient.auth.signOut === 'function') {
+            // catch attach 후 호출 — unhandled rejection 방지
+            supabaseClient.auth.signOut().catch(() => {});
+        }
+    } catch {}
+
+    // 즉시 페이지 이동 — replace 로 history 안 남김
+    try {
+        window.location.replace('index.html');
+    } catch {
+        try { window.location.href = 'index.html'; } catch {}
+    }
+}
+
+// document 레벨 backup 클릭 위임 — mountAppHeader 가 어떤 이유로 핸들러를 부착 못 했어도 작동.
+// 모든 #logout-btn / #drawer-logout-btn 클릭이 항상 performLogout 트리거.
+if (typeof document !== 'undefined' && typeof window !== 'undefined' && !window.__ymanLogoutBound) {
+    document.addEventListener('click', (e) => {
+        const btn = e.target?.closest?.('#logout-btn, #drawer-logout-btn, [data-logout]');
+        if (!btn) return;
+        performLogout(e);
+    }, true);   // capture phase — 다른 핸들러보다 먼저
+    window.__ymanLogoutBound = true;
+}
+
 // 사이트 전체 공통 footer — 사업자 정보 + 이용약관·개인정보처리방침 링크.
 // 페이지에 <footer id="app-footer"></footer> 마커가 있으면 거기 inject, 없으면 body 끝에 자동 append.
 function renderAppFooter() {
@@ -513,32 +579,12 @@ export function mountAppHeader(opts) {
     // 백그라운드로 사용자 정의 양식 목록 갱신 — 다음 페이지 진입 시 dropdown 에 반영
     refreshNavFormsCache();
 
-    // logout 핸들러 — 헤더 + 드로어 모두
-    const handleLogout = async () => {
-        cacheDisplayName('');
-        cacheAdminFlag(false);
-        // 사용자 식별 캐시 즉시 정리 (다른 페이지로 이동 전 visual 반영)
-        try { sessionStorage.removeItem('erp.userEmail'); } catch {}
-        try { sessionStorage.removeItem('erpOAuthIntent'); localStorage.removeItem('erpOAuthIntent'); } catch {}
-        try { localStorage.removeItem('erpOAuthPendingSignup'); localStorage.removeItem('erpOAuthEmail'); } catch {}
-        document.body.classList.add('is-anon');
-        document.body.classList.remove('is-admin');
-        // signOut 이 hang 되더라도 3초 안에 강제 이동 (네트워크 이슈 fallback)
-        try {
-            if (supabaseClient) {
-                await Promise.race([
-                    supabaseClient.auth.signOut(),
-                    new Promise(r => setTimeout(r, 2500)),
-                ]);
-            }
-        } catch {}
-        try { window.location.assign('index.html'); }
-        catch { window.location.href = 'index.html'; }
-    };
+    // mountAppHeader 내 inline 등록 — 동기적으로 즉시 storage 정리 + 페이지 이동.
+    // (지연 await 없음 — signOut 은 fire-and-forget. document 레벨 backup 핸들러도 별도 등록)
     const logoutBtn = root.querySelector('#logout-btn');
-    if (logoutBtn) logoutBtn.addEventListener('click', handleLogout);
+    if (logoutBtn) logoutBtn.addEventListener('click', performLogout);
     const drawerLogoutBtn = drawerEl?.querySelector('#drawer-logout-btn');
-    if (drawerLogoutBtn) drawerLogoutBtn.addEventListener('click', handleLogout);
+    if (drawerLogoutBtn) drawerLogoutBtn.addEventListener('click', performLogout);
 
     // 모바일 사이드 드로어 — 햄버거 토글 / 아코디언 서브메뉴
     const hamburger = root.querySelector('.mobile-menu-toggle');
