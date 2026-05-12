@@ -207,15 +207,18 @@ $openapi_ready=($NAVER_CLIENT_ID!==''&&$NAVER_CLIENT_SECRET!=='');
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>네이버 키워드 마케팅 분석</title>
+<title>네이버 키워드 마케팅 분석 · YOUNGMAN</title>
+<link rel="icon" type="image/png" href="logo_main.png">
+<link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
+<link rel="stylesheet" href="style.css?v=20260512-kapp-shell">
 <style>
 :root{
   --bg:#ffffff; --card:#ffffff; --text:#0a0a0a; --muted:#8e8e93; --secondary:#525252;
-  --line:rgba(0,0,0,0.08); --line-strong:rgba(0,0,0,0.14);
-  --soft:#fafafa; --bg-muted:#f5f5f7; --accent:#0066ff; --success:#047a55;
+  --line:rgba(20,14,8,0.09); --line-strong:rgba(20,14,8,0.16);
+  --soft:#fbf7ef; --bg-muted:#f4efe7; --accent:#c8362c; --success:#047a55;
 }
 *{box-sizing:border-box}
-body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",Pretendard,Inter,"Helvetica Neue",sans-serif;background:var(--bg);color:var(--text);letter-spacing:-.005em;overflow-x:hidden;-webkit-font-smoothing:antialiased}
+body{margin:0;font-family:Pretendard,-apple-system,BlinkMacSystemFont,"SF Pro Text",Inter,"Helvetica Neue",sans-serif;background:var(--bg);color:var(--text);letter-spacing:-.005em;overflow-x:hidden;-webkit-font-smoothing:antialiased}
 .wrap{max-width:1180px;margin:0 auto;padding:32px 24px 64px}
 .hero{background:transparent;border:0;border-radius:0;padding:0 0 8px;box-shadow:none;margin-bottom:32px}
 .badge{display:inline-flex;padding:0;border-radius:0;background:transparent;color:var(--muted);font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase}
@@ -393,6 +396,14 @@ tr:last-child td{border-bottom:0}
 </style>
 </head>
 <body>
+
+<header id="app-header" class="app-header"></header>
+<script type="module">
+    import { mountAppHeader, mountAppFooter } from './auth-shared.js?v=20260512-kapp-shell';
+    mountAppHeader();
+    mountAppFooter();
+</script>
+
 <div class="wrap">
   <section class="hero">
     <div class="badge">NAVER MARKETING ANALYZER</div>
