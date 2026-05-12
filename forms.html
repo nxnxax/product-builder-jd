@@ -6,7 +6,7 @@
 <title>내 양식 · YOUNGMAN</title>
 <link rel="icon" type="image/png" href="logo_main.png">
 <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
-<link rel="stylesheet" href="style.css?v=20260512-profile-polish">
+<link rel="stylesheet" href="style.css?v=20260512-builder-polish">
 <style>
 :root{
     --ledger-line:rgba(20,14,8,.09); --ledger-line-strong:rgba(20,14,8,.16);
@@ -42,63 +42,88 @@
 .back-btn:hover{background:#fbf7ef;color:#0e0d0c}
 .use-head h2{margin:0;font-size:20px}
 
-/* 빌더 모달 — 큼직 */
+/* 빌더 모달 — 큼직 + 시력 약한 사용자 대응 */
 .builder-modal .modal-panel{max-width:680px}
-.builder-modal .modal-body{max-height:60vh;overflow-y:auto}
-.field-list{display:flex;flex-direction:column;gap:8px;margin-top:14px}
-.field-item{display:grid;grid-template-columns:1fr auto auto auto;gap:8px;align-items:center;padding:10px 12px;background:#fbf7ef;border:1px solid var(--ledger-line);border-radius:10px}
-.field-item-name{font-size:14.5px;font-weight:600;color:#0e0d0c;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.field-item-type{font-size:12px;color:#8a847e;padding:3px 8px;background:#fff;border:1px solid var(--ledger-line);border-radius:99px}
-.field-item-toggle-labels{font-size:11.5px;color:#8a847e;margin-top:2px}
-.field-item .icon-btn{border:0;background:transparent;cursor:pointer;width:28px;height:28px;border-radius:6px;color:#8a847e;font-size:14px}
-.field-item .icon-btn:hover{background:#fff;color:#0e0d0c}
-.field-item .icon-btn.danger:hover{color:var(--ledger-accent)}
+.builder-modal .modal-body{max-height:65vh;overflow-y:auto;padding:8px 4px}
+.field-list{display:flex;flex-direction:column;gap:10px;margin-top:16px}
+.field-item{display:grid;grid-template-columns:1fr auto auto;gap:10px;align-items:center;padding:14px 14px;background:#fbf7ef;border:1px solid var(--ledger-line);border-radius:12px}
+.field-item.editing{background:rgba(200,54,44,.07);border-color:rgba(200,54,44,.3)}
+.field-item-name{font-size:16px;font-weight:700;color:#0e0d0c;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;letter-spacing:-.005em}
+.field-item-type{font-size:13px;font-weight:600;color:#4f4943;padding:4px 10px;background:#fff;border:1px solid var(--ledger-line);border-radius:99px;white-space:nowrap}
+.field-item-toggle-labels{font-size:13px;color:#4f4943;margin-top:4px;font-weight:500}
+.field-item .icon-btn{border:1px solid transparent;background:transparent;cursor:pointer;width:36px;height:36px;border-radius:8px;color:#4f4943;font-size:16px;font-weight:600;display:inline-flex;align-items:center;justify-content:center}
+.field-item .icon-btn:hover{background:#fff;color:#0e0d0c;border-color:var(--ledger-line)}
+.field-item .icon-btn.danger:hover{color:var(--ledger-accent);border-color:rgba(200,54,44,.3)}
+.field-item .icon-btn:disabled{opacity:.35;cursor:not-allowed}
 
-.field-add-row{display:flex;gap:8px;align-items:center;margin-top:14px;padding:12px;background:#fbf7ef;border:1px dashed var(--ledger-line-strong);border-radius:10px}
-.field-add-row input[type=text],.field-add-row select{padding:8px 12px;border:1px solid var(--ledger-line);border-radius:8px;font-size:13.5px;font-family:inherit;background:#fff;color:#0e0d0c;outline:none}
+.field-add-row{display:flex;gap:10px;align-items:center;margin-top:18px;padding:14px;background:#fbf7ef;border:1px dashed var(--ledger-line-strong);border-radius:12px;flex-wrap:wrap}
+.field-add-row input[type=text],.field-add-row select{padding:10px 14px;border:1px solid var(--ledger-line);border-radius:9px;font-size:15px;font-weight:500;font-family:inherit;background:#fff;color:#0e0d0c;outline:none}
 .field-add-row input[type=text]:focus,.field-add-row select:focus{border-color:#0e0d0c}
-.field-add-row input[data-add-label]{flex:1;min-width:120px}
-.field-add-row .toggle-extra{display:flex;gap:6px;width:100%;margin-top:8px}
+.field-add-row input[data-add-label]{flex:1;min-width:160px}
+.field-add-row select[data-add-type]{flex:0 0 auto;min-width:140px}
+.field-add-row .tiny-btn{padding:10px 16px !important;font-size:14px !important;font-weight:600 !important}
+.field-add-row .toggle-extra{display:flex;gap:8px;width:100%;margin-top:10px}
 .field-add-row .toggle-extra input{flex:1}
-.field-add-row .extra-row{display:flex;flex-direction:column;gap:6px;width:100%;margin-top:8px}
+.field-add-row .extra-row{display:flex;flex-direction:column;gap:8px;width:100%;margin-top:10px}
 .field-add-row .extra-row input,.field-add-row .extra-row select,.field-add-row .extra-row textarea{
-    padding:8px 12px;border:1px solid var(--ledger-line);border-radius:8px;font-size:13.5px;
+    padding:10px 14px;border:1px solid var(--ledger-line);border-radius:9px;font-size:15px;font-weight:500;
     font-family:inherit;background:#fff;color:#0e0d0c;outline:none;width:100%;box-sizing:border-box;
 }
-.field-add-row .extra-row textarea{resize:vertical;min-height:72px;line-height:1.5}
+.field-add-row .extra-row textarea{resize:vertical;min-height:84px;line-height:1.5}
 .field-add-row .extra-row[data-extra-toggle]{flex-direction:row}
 .field-add-row .extra-row[data-extra-toggle] input{flex:1}
 .field-add-row .extra-row[data-extra-ref]{flex-direction:row;flex-wrap:wrap}
 .field-add-row .extra-row[data-extra-ref] select{flex:1 1 160px}
-.field-add-row .add-required-check{display:inline-flex;align-items:center;gap:5px;font-size:12.5px;color:#4f4943;font-weight:500;white-space:nowrap;cursor:pointer}
-.field-add-row .add-required-check input{accent-color:var(--ledger-accent);width:15px;height:15px}
-.field-add-row .add-edit-status{flex:1 1 100%;background:rgba(200,54,44,0.07);border:1px solid rgba(200,54,44,.18);border-radius:8px;padding:7px 12px;font-size:12.5px;color:var(--ledger-accent-deep);font-weight:600;display:flex;align-items:center;gap:8px}
-.field-add-row .add-edit-status .tiny-btn{margin-left:auto;font-size:11.5px;padding:4px 9px}
+.field-add-row .add-required-check{display:inline-flex;align-items:center;gap:7px;font-size:14px;color:#0e0d0c;font-weight:600;white-space:nowrap;cursor:pointer;padding:6px 4px}
+.field-add-row .add-required-check input{accent-color:var(--ledger-accent);width:17px;height:17px;cursor:pointer}
+.field-add-row .add-edit-status{flex:1 1 100%;background:rgba(200,54,44,0.08);border:1px solid rgba(200,54,44,.22);border-radius:9px;padding:10px 14px;font-size:14px;color:var(--ledger-accent-deep);font-weight:700;display:flex;align-items:center;gap:8px}
+.field-add-row .add-edit-status .tiny-btn{margin-left:auto;font-size:13px !important;padding:6px 12px !important}
 
 /* 필드 리스트 — 편집/순서 변경 버튼 영역 + 필수 뱃지 */
-.field-item-required-badge{display:inline-block;margin-left:6px;padding:1px 6px;background:rgba(200,54,44,.1);color:var(--ledger-accent-deep);border-radius:4px;font-size:10.5px;font-weight:700}
-.field-item-actions{display:inline-flex;gap:2px}
+.field-item-required-badge{display:inline-block;margin-left:8px;padding:2px 8px;background:rgba(200,54,44,.12);color:var(--ledger-accent-deep);border-radius:5px;font-size:12.5px;font-weight:700;vertical-align:2px}
+.field-item-actions{display:inline-flex;gap:3px}
+
+/* 빌더 모달 안 양식 제목 라벨도 가독성 */
+.builder-modal label[for=formTitleInput],
+.builder-modal .form-help{font-size:14px !important;font-weight:600 !important;color:#0e0d0c !important;margin-bottom:6px;display:block}
 
 /* 폼 제목 입력 */
-.form-title-input{width:100%;padding:12px 14px;border:1px solid var(--ledger-line-strong);border-radius:10px;font-size:16px;font-weight:600;font-family:inherit;color:#0e0d0c;outline:none;margin-bottom:8px;background:#fff}
+.form-title-input{width:100%;padding:13px 16px;border:1px solid var(--ledger-line-strong);border-radius:10px;font-size:17px;font-weight:700;font-family:inherit;color:#0e0d0c;outline:none;margin-bottom:10px;background:#fff}
 .form-title-input:focus{border-color:#0e0d0c}
 
 /* 토글 셀 — 양식 사용 화면 */
-.toggle-cell{display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border-radius:99px;font-size:13px;font-weight:600;cursor:pointer;user-select:none;border:1px solid transparent}
+.toggle-cell{display:inline-flex;align-items:center;gap:6px;padding:6px 14px;border-radius:99px;font-size:14.5px;font-weight:700;cursor:pointer;user-select:none;border:1px solid transparent}
 .toggle-cell.on{background:#e6f4ea;color:#1b5e20;border-color:#a5d6a7}
 .toggle-cell.off{background:#fce8e6;color:#8a2620;border-color:#f1c4c1}
 
-/* 모바일에서 form-grid 1열 / 패딩 줄임 */
+/* 수식 도움말 details */
+.formula-help summary{padding:6px 0;font-size:13px !important}
+.formula-help code{background:#f4efe7;padding:2px 6px;border-radius:4px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;color:#4f4943}
+
+/* 모바일에서 form-grid 1열 / 패딩 줄임 + 빌더 모달 정리 */
 @media (max-width:640px){
     .ledger-shell{padding:18px 12px 80px}
     .ledger-title{font-size:20px}
     .form-grid{grid-template-columns:1fr;gap:10px}
     .form-card{padding:14px}
-    .builder-modal .modal-panel{max-width:none;margin:8px}
-    .field-add-row{flex-wrap:wrap}
-    .field-add-row input[data-add-label]{flex:1 1 100%}
-    .field-add-row select{flex:1 1 auto}
-    .toggle-cell{font-size:15px;padding:7px 16px}
+    .builder-modal .modal-panel{max-width:none;margin:8px;max-height:calc(100vh - 16px);display:flex;flex-direction:column}
+    .builder-modal .modal-body{max-height:none;flex:1}
+    /* 필드 항목 — 2단으로: 이름/뱃지 한 줄, 타입+액션 둘째 줄 */
+    .field-item{grid-template-columns:1fr auto;grid-template-rows:auto auto;gap:8px;padding:14px 12px}
+    .field-item > div:first-child{grid-column:1 / -1}
+    .field-item-name{font-size:16.5px;white-space:normal;word-break:break-word}
+    .field-item-type{grid-column:1;justify-self:start;font-size:13px}
+    .field-item-actions{grid-column:2;justify-self:end}
+    .field-item .icon-btn{width:40px;height:40px;font-size:17px}
+    /* 추가/편집 행 — wrap 깔끔하게 */
+    .field-add-row{flex-direction:column;align-items:stretch;gap:10px;padding:14px 12px}
+    .field-add-row input[data-add-label]{flex:1 1 auto;min-width:0;width:100%}
+    .field-add-row select[data-add-type]{width:100%;min-width:0}
+    .field-add-row .add-required-check{justify-content:flex-start;width:100%;padding:4px 0;font-size:15px}
+    .field-add-row .tiny-btn{width:100%;text-align:center;padding:12px 18px !important;font-size:15.5px !important}
+    .field-add-row .add-edit-status{padding:11px 14px;font-size:14.5px}
+    .field-add-row .add-edit-status .tiny-btn{width:auto;flex:0 0 auto}
+    .toggle-cell{font-size:15.5px;padding:8px 18px}
 }
 </style>
 </head>
@@ -183,10 +208,10 @@
 </div>
 
 <script type="module">
-    import { mountAppHeader } from './auth-shared.js?v=20260512-profile-polish';
+    import { mountAppHeader } from './auth-shared.js?v=20260512-builder-polish';
     mountAppHeader();
 </script>
-<script type="module" src="forms.js?v=20260512-profile-polish"></script>
+<script type="module" src="forms.js?v=20260512-builder-polish"></script>
 
 </body>
 </html>
