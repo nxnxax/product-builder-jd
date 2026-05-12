@@ -14,13 +14,13 @@
  * 토글 필드는 settings.customFields[i] = { key, label, type:'toggle', onLabel, offLabel, custom:true }
  */
 
-import { initSupabase, apiRequest, getSession, refreshNavForms } from './auth-shared.js?v=20260512-nav-caret';
+import { initSupabase, apiRequest, getSession, refreshNavForms } from './auth-shared.js?v=20260512-form-slot';
 import {
     isLedgerMobile, onLedgerViewportChange, openRowAddModal,
     attachColumnFilters, applyColumnFilters,
     exportRecordsToExcel, pickExcelFile, parseExcelFile,
     suggestFieldMapping, openImportPreviewModal,
-} from './ledger-shared.js?v=20260512-nav-caret';
+} from './ledger-shared.js?v=20260512-form-slot';
 
 const PAGE_TYPE = 'custom';
 
@@ -1575,7 +1575,16 @@ async function saveBuilder() {
     if (dup) return setErr(`이미 같은 이름의 양식이 있습니다 ("${name}").`);
 
     try {
-        const settingsPayload = { customFields: builderDraft, customSettings: builderSettings };
+        // 양식이 어느 슬롯에 속하는지 — URL ?slot 우선, 없으면 기존 값 유지, 그것도 없으면 slot1
+        const urlParams = new URLSearchParams(location.search);
+        const slotFromUrl = urlParams.get('slot');
+        const navSlot = (slotFromUrl === 'slot1' || slotFromUrl === 'slot2')
+            ? slotFromUrl
+            : (builderSettings.__navSlot || 'slot1');
+        // customSettings 안에 __navSlot 메타 보존
+        const payloadSettings = { ...builderSettings, __navSlot: navSlot };
+        const settingsPayload = { customFields: builderDraft, customSettings: payloadSettings };
+
         const wasNew = !editingFormId;
         let newId = null;
         if (editingFormId) {
@@ -1596,8 +1605,9 @@ async function saveBuilder() {
         try { await refreshNavForms(); } catch {}
 
         if (wasNew && newId) {
-            // 새 양식 = 자체 페이지로 즉시 이동 (조직도/계약자처럼)
-            window.location.href = `forms.html?form=${newId}`;
+            // 새 양식 = 자체 페이지로 즉시 이동 — assign 우선, 실패 시 href fallback
+            try { window.location.assign(`forms.html?form=${newId}`); }
+            catch { window.location.href = `forms.html?form=${newId}`; }
             return;
         }
         // 기존 양식 편집: 그 자리에서 갱신 후 재렌더

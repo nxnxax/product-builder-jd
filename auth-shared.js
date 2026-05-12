@@ -214,7 +214,11 @@ async function refreshNavFormsCache() {
     if (!currentSession?.user) return;
     try {
         const payload = await apiRequest('ledger-groups?page_type=custom');
-        const list = (payload?.items || []).map(f => ({ id: f.id, name: f.name }));
+        const list = (payload?.items || []).map(f => ({
+            id: f.id,
+            name: f.name,
+            navSlot: f.settings?.customSettings?.__navSlot || 'slot1',
+        }));
         const newJson = JSON.stringify(list);
         let oldJson = '';
         try { oldJson = sessionStorage.getItem('erp.customForms') || ''; } catch {}
@@ -362,29 +366,32 @@ export function mountAppHeader(opts) {
         try { return localStorage.getItem(slotKey(slot)) || fallback; }
         catch { return fallback; }
     };
-    // 사용자 정의 양식 목록 — sessionStorage 캐시 (refreshNavForms 가 비동기 갱신)
+    // 사용자 정의 양식 목록 — sessionStorage 캐시 (refreshNavForms 가 비동기 갱신).
+    // 각 양식의 navSlot 메타도 함께 저장됨 (slot1 / slot2). 슬롯 메뉴는 자기 slot 의 양식만 노출.
     let cachedForms = [];
     try {
         const raw = sessionStorage.getItem('erp.customForms');
         if (raw) cachedForms = JSON.parse(raw) || [];
     } catch { cachedForms = []; }
-    const customFormOptions = cachedForms.map(f => ({
+    const toOption = (f) => ({
         key: `forms.html?form=${f.id}`,
         label: f.name,
         href: `forms.html?form=${f.id}`,
         custom: true,
-    }));
+    });
+    const slot1Forms = cachedForms.filter(f => (f.navSlot || 'slot1') === 'slot1').map(toOption);
+    const slot2Forms = cachedForms.filter(f => f.navSlot === 'slot2').map(toOption);
 
-    // 슬롯별 옵션: [신규 양식 신청] + 기본 양식 + 사용자 정의 양식들
+    // 슬롯별 옵션: [신규 양식 신청 (해당 슬롯 지정)] + 기본 양식 + 사용자 정의 양식들 (slot 매칭)
     const SLOT1_OPTIONS = [
-        { key: 'forms.html?new=1', label: '+ 신규 양식 신청', href: 'forms.html?new=1', isNew: true },
+        { key: 'forms.html?new=1&slot=slot1', label: '+ 신규 양식 신청', href: 'forms.html?new=1&slot=slot1', isNew: true },
         { key: 'org.html',      label: '조직도',           href: 'org.html' },
-        ...customFormOptions,
+        ...slot1Forms,
     ];
     const SLOT2_OPTIONS = [
-        { key: 'forms.html?new=1', label: '+ 신규 양식 신청', href: 'forms.html?new=1', isNew: true },
+        { key: 'forms.html?new=1&slot=slot2', label: '+ 신규 양식 신청', href: 'forms.html?new=1&slot=slot2', isNew: true },
         { key: 'contracts.html', label: '계약자 관리대장', href: 'contracts.html' },
-        ...customFormOptions,
+        ...slot2Forms,
     ];
     const slot1Sel = getSlot('slot1', 'org.html');
     const slot2Sel = getSlot('slot2', 'contracts.html');
