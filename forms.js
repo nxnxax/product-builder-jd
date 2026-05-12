@@ -14,13 +14,13 @@
  * 토글 필드는 settings.customFields[i] = { key, label, type:'toggle', onLabel, offLabel, custom:true }
  */
 
-import { initSupabase, apiRequest, getSession, refreshNavForms } from './auth-shared.js?v=20260512-dropdown-center';
+import { initSupabase, apiRequest, getSession, refreshNavForms } from './auth-shared.js?v=20260512-form-slot-push';
 import {
     isLedgerMobile, onLedgerViewportChange, openRowAddModal,
     attachColumnFilters, applyColumnFilters,
     exportRecordsToExcel, pickExcelFile, parseExcelFile,
     suggestFieldMapping, openImportPreviewModal,
-} from './ledger-shared.js?v=20260512-dropdown-center';
+} from './ledger-shared.js?v=20260512-form-slot-push';
 
 const PAGE_TYPE = 'custom';
 
@@ -1602,6 +1602,18 @@ async function saveBuilder() {
             newId = res?.item?.id || res?.id;
         }
         closeBuilder();
+
+        // 신규 양식이면 sessionStorage 캐시에 즉시 push (refreshNavForms 비동기 timing 안전망)
+        if (wasNew && newId) {
+            try {
+                const cur = JSON.parse(sessionStorage.getItem('erp.customForms') || '[]');
+                if (!cur.some(c => c.id === newId)) {
+                    cur.push({ id: newId, name, navSlot });
+                    sessionStorage.setItem('erp.customForms', JSON.stringify(cur));
+                }
+            } catch {}
+        }
+
         try { await refreshNavForms(); } catch {}
 
         if (wasNew && newId) {
