@@ -6,11 +6,11 @@
  * Phase 3 의 계약자 관리대장이 이 그룹의 settings.commissions 를 읽어 정산.
  */
 
-import { initSupabase, apiRequest, getSession } from './auth-shared.js?v=20260512-modal-close';
+import { initSupabase, apiRequest, getSession } from './auth-shared.js?v=20260512-mobile-cards';
 import { attachColumnFilters, applyColumnFilters, openRowAddModal, attachPhoneAutoFormat, attachThousandFormat, formatThousand, unformatThousand, getEffectiveFields, mountFieldManager,
          exportRecordsToExcel, pickExcelFile, parseExcelFile, suggestFieldMapping, openImportPreviewModal,
          saveImportSession, loadImportSession, clearImportSession,
-         findBlankRecordIds, showSweepToast } from './ledger-shared.js?v=20260510-sweep';
+         findBlankRecordIds, showSweepToast } from './ledger-shared.js?v=20260512-mobile-cards';
 
 const PAGE_TYPE = 'org';
 
@@ -578,22 +578,30 @@ function renderTeamSection(title, teamNo, rows, group, opts) {
 function renderRow(r, displayNo, allowedTitles, fields) {
     const d = r.data || {};
     const checked = selectedIds.has(r.id) ? 'checked' : '';
-    const cellHtml = (f) => {
+    const fs = fields || DEFAULT_FIELD_SCHEMA.fields;
+    const primaryIdx = fs.findIndex(f => f.type !== 'auto_number');
+    const cellHtml = (f, i) => {
         const v = d[f.key];
-        if (f.type === 'auto_number') return `<td class="col-no">${displayNo}</td>`;
+        const cls = [
+            f.type === 'auto_number' ? 'col-no' : '',
+            i === primaryIdx ? 'col-primary' : '',
+        ].filter(Boolean).join(' ');
+        const clsAttr = cls ? ` class="${cls}"` : '';
+        const labelAttr = f.type === 'auto_number' ? '' : (f.label ? ` data-label="${escapeHtml(f.label)}"` : '');
+        if (f.type === 'auto_number') return `<td${clsAttr}>${displayNo}</td>`;
         if (f.type === 'textarea') {
-            return v ? `<td><span class="cell-text cell-multiline">${escapeHtml(v)}</span></td>` : `<td><span class="cell-empty">-</span></td>`;
+            return v ? `<td${clsAttr}${labelAttr}><span class="cell-text cell-multiline">${escapeHtml(v)}</span></td>` : `<td${clsAttr}${labelAttr}><span class="cell-empty">-</span></td>`;
         }
         if (f.type === 'date') {
-            return v ? `<td><span class="cell-text">${escapeHtml(String(v).replace(/-/g, '.'))}</span></td>` : `<td><span class="cell-empty">-</span></td>`;
+            return v ? `<td${clsAttr}${labelAttr}><span class="cell-text">${escapeHtml(String(v).replace(/-/g, '.'))}</span></td>` : `<td${clsAttr}${labelAttr}><span class="cell-empty">-</span></td>`;
         }
         // 모두 read-only span (편집은 ✎ 버튼 → 모달)
-        return v ? `<td><span class="cell-text">${escapeHtml(v)}</span></td>` : `<td><span class="cell-empty">-</span></td>`;
+        return v ? `<td${clsAttr}${labelAttr}><span class="cell-text">${escapeHtml(v)}</span></td>` : `<td${clsAttr}${labelAttr}><span class="cell-empty">-</span></td>`;
     };
     return `
         <tr data-id="${r.id}" class="${selectedIds.has(r.id) ? 'selected' : ''}">
             <td class="col-check"><input type="checkbox" data-select="${r.id}" ${checked}></td>
-            ${(fields || DEFAULT_FIELD_SCHEMA.fields).map(cellHtml).join('')}
+            ${fs.map((f, i) => cellHtml(f, i)).join('')}
             <td class="col-action">
                 <button class="row-action-btn" data-edit-row="${r.id}" title="수정"><span class="ico">✎</span><span class="lbl">수정</span></button>
                 <button class="row-action-btn danger" data-delete-row="${r.id}" title="삭제"><span class="ico">×</span><span class="lbl">삭제</span></button>

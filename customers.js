@@ -9,11 +9,11 @@
  *  - client_idempotency_key 로 같은 통화의 중복 전송 차단
  */
 
-import { initSupabase, apiRequest, getSession } from './auth-shared.js?v=20260512-modal-close';
+import { initSupabase, apiRequest, getSession } from './auth-shared.js?v=20260512-mobile-cards';
 import { attachColumnFilters, applyColumnFilters, openRowAddModal, attachPhoneAutoFormat, getEffectiveFields, mountFieldManager,
          exportRecordsToExcel, pickExcelFile, parseExcelFile, suggestFieldMapping, openImportPreviewModal,
          saveImportSession, loadImportSession, clearImportSession,
-         findBlankRecordIds, showSweepToast } from './ledger-shared.js?v=20260510-sweep';
+         findBlankRecordIds, showSweepToast } from './ledger-shared.js?v=20260512-mobile-cards';
 
 const PAGE_TYPE = 'customer';
 
@@ -424,10 +424,18 @@ function renderRow(r, displayNo, group) {
         dead ? 'row-dead' : '',
     ].filter(Boolean).join(' ');
     const fields = getEffectiveFields(group, DEFAULT_FIELDS);
+    const primaryIdx = fields.findIndex(f => f.type !== 'auto_number');
     return `
         <tr data-id="${r.id}" data-gid="${group.id}" class="${cls}">
             <td class="col-check"><input type="checkbox" data-select="${r.id}" ${selectedIds.has(r.id) ? 'checked' : ''}></td>
-            ${fields.map(f => `<td>${renderCell(f, r, d, displayNo)}</td>`).join('')}
+            ${fields.map((f, i) => {
+                const cls = [
+                    f.type === 'auto_number' ? 'col-no' : '',
+                    i === primaryIdx ? 'col-primary' : '',
+                ].filter(Boolean).join(' ');
+                const label = f.type === 'auto_number' ? '' : (f.label || '');
+                return `<td${cls ? ` class="${cls}"` : ''}${label ? ` data-label="${escapeHtml(label)}"` : ''}>${renderCell(f, r, d, displayNo)}</td>`;
+            }).join('')}
             <td class="col-action">
                 <button class="row-action-btn" data-edit-row="${r.id}" title="수정"><span class="ico">✎</span><span class="lbl">수정</span></button>
                 <button class="row-action-btn danger" data-delete-row="${r.id}" title="삭제"><span class="ico">×</span><span class="lbl">삭제</span></button>

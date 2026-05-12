@@ -10,11 +10,11 @@
  *  - 본부장 계약 → 본부장(=팀원+팀장+본부장 셋 다 받음)
  */
 
-import { initSupabase, apiRequest, getSession } from './auth-shared.js?v=20260512-modal-close';
+import { initSupabase, apiRequest, getSession } from './auth-shared.js?v=20260512-mobile-cards';
 import { attachColumnFilters, applyColumnFilters, openRowAddModal, attachPhoneAutoFormat, attachThousandFormat, formatThousand, unformatThousand, getEffectiveFields, mountFieldManager,
          exportRecordsToExcel, pickExcelFile, parseExcelFile, suggestFieldMapping, openImportPreviewModal,
          saveImportSession, loadImportSession, clearImportSession,
-         findBlankRecordIds, showSweepToast } from './ledger-shared.js?v=20260510-sweep';
+         findBlankRecordIds, showSweepToast } from './ledger-shared.js?v=20260512-mobile-cards';
 
 const PAGE_TYPE = 'contract';
 const TAX_RATE = 0.033;   // 실수령액 = commission * (1 - TAX_RATE)
@@ -610,10 +610,18 @@ function renderRow(r, displayNo, group) {
         d.status === 'cancel' ? 'row-cancel' : '',  // 해지된 행 = 분홍
     ].filter(Boolean).join(' ');
     const fields = getEffectiveFields(group, DEFAULT_FIELDS);
+    const primaryIdx = fields.findIndex(f => f.type !== 'auto_number');
     return `
         <tr data-id="${r.id}" data-gid="${group.id}" class="${cls}">
             <td class="col-check"><input type="checkbox" data-select="${r.id}" ${selectedIds.has(r.id) ? 'checked' : ''}></td>
-            ${fields.map(f => `<td>${renderCell(f, r, d, displayNo, group)}</td>`).join('')}
+            ${fields.map((f, i) => {
+                const cls = [
+                    f.type === 'auto_number' ? 'col-no' : '',
+                    i === primaryIdx ? 'col-primary' : '',
+                ].filter(Boolean).join(' ');
+                const label = f.type === 'auto_number' ? '' : (f.label || '');
+                return `<td${cls ? ` class="${cls}"` : ''}${label ? ` data-label="${escapeHtml(label)}"` : ''}>${renderCell(f, r, d, displayNo, group)}</td>`;
+            }).join('')}
             <td class="col-action">
                 <button class="row-action-btn" data-edit-row="${r.id}" title="수정"><span class="ico">✎</span><span class="lbl">수정</span></button>
                 <button class="row-action-btn danger" data-delete-row="${r.id}" title="삭제"><span class="ico">×</span><span class="lbl">삭제</span></button>

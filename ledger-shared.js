@@ -23,6 +23,21 @@ let activePop = null;
 let docClickBound = false;
 
 /* =========================================================================
+   모바일에서 ledger 표 row 클릭 시 expanded 토글 — 한 번만 부착.
+   체크박스/버튼 등 인터랙티브 요소 클릭은 토글에서 제외.
+   ========================================================================= */
+if (typeof document !== 'undefined' && typeof window !== 'undefined' && !window.__ledgerRowToggleBound) {
+    document.addEventListener('click', (e) => {
+        if (!window.matchMedia('(max-width: 640px)').matches) return;
+        const tr = e.target.closest('.ledger-tbl tbody tr[data-id]');
+        if (!tr) return;
+        if (e.target.closest('input, button, select, textarea, a, label, [data-no-toggle]')) return;
+        tr.classList.toggle('expanded');
+    });
+    window.__ledgerRowToggleBound = true;
+}
+
+/* =========================================================================
    사용자 정의 필드 (custom fields) — 그룹 settings.customFields 에 저장.
    { key, label, type } 형태. type 은 text / date / tel / textarea / number.
    ========================================================================= */
