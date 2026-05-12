@@ -1425,16 +1425,18 @@ select:focus {
 }
 
 .auth-copy h1 {
-    font-size: 22px;
+    font-size: 24px;
     line-height: 1.25;
+    font-weight: 700;
     color: var(--fg);
-    margin-bottom: 6px;
+    margin-bottom: 8px;
     letter-spacing: -0.022em;
 }
 
 .auth-copy p {
-    color: var(--fg-tertiary);
-    font-size: 14px;
+    color: var(--fg-secondary);
+    font-size: 15px;
+    font-weight: 500;
     margin-bottom: 24px;
 }
 
@@ -1512,22 +1514,35 @@ select:focus {
 .google-btn-pill .google-mark { width: 20px; height: 20px; }
 
 /* Auth panel — tighter rhythm than the global form spacing */
-.auth-form .form-group { margin-bottom: 10px; }
-.auth-form .form-group label { margin-bottom: 4px; }
+.auth-form .form-group { margin-bottom: 12px; }
+.auth-form .form-group label {
+    margin-bottom: 6px;
+    font-size: 14.5px;
+    font-weight: 600;
+    color: var(--fg);
+}
+.auth-form .form-group input,
+.auth-form .form-group select {
+    font-size: 15.5px;
+    font-weight: 500;
+    height: 44px;
+    padding: 0 14px;
+}
 .auth-form .auth-divider { margin: 12px 0; }
 .auth-form .signup-fields { margin-bottom: 0; }
 .auth-form .availability-status { margin-top: 4px; min-height: 0; }
 .auth-form .availability-status:empty { display: none; }
-.auth-form .primary-btn { margin-top: 4px; }
+.auth-form .primary-btn { margin-top: 6px; height: 46px; font-size: 15.5px; font-weight: 700; }
 .auth-form .auth-message { margin-top: 8px; min-height: 0; }
 .auth-form .auth-message:empty { display: none; }
 
 /* Availability indicator (email/nickname duplicate check) */
 .availability-status {
     margin: 6px 0 0;
-    font-size: 12px;
+    font-size: 13.5px;
+    font-weight: 500;
     line-height: 1.4;
-    color: var(--fg-tertiary);
+    color: var(--fg-secondary);
     min-height: 1.2em;
 }
 .availability-status.checking { color: var(--fg-tertiary); }
@@ -1538,21 +1553,26 @@ select:focus {
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 6px;
-    margin-top: 16px;
-    color: var(--fg-tertiary);
-    font-size: 13px;
+    gap: 8px;
+    margin-top: 18px;
+    color: var(--fg-secondary);
+    font-size: 14.5px;
+    font-weight: 500;
 }
 
 .auth-switch button {
     border: 0;
     background: transparent;
-    color: var(--fg);
+    color: var(--accent);
     font: inherit;
-    font-weight: 600;
+    font-size: 14.5px;
+    font-weight: 700;
     cursor: pointer;
-    padding: 2px 4px;
+    padding: 4px 6px;
+    text-decoration: underline;
+    text-underline-offset: 3px;
 }
+.auth-switch button:hover { color: var(--accent-deep); }
 
 .signup-fields { margin-bottom: 4px; }
 
@@ -1570,8 +1590,9 @@ select:focus {
 
 .identity-status {
     margin-top: 6px;
-    color: var(--fg-tertiary);
-    font-size: 12px;
+    color: var(--fg-secondary);
+    font-size: 13.5px;
+    font-weight: 500;
     line-height: 1.5;
 }
 
@@ -1581,8 +1602,9 @@ select:focus {
 .auth-message {
     min-height: 1.4em;
     margin-top: 10px;
-    color: var(--fg-tertiary);
-    font-size: 13px;
+    color: var(--fg-secondary);
+    font-size: 14.5px;
+    font-weight: 600;
     line-height: 1.5;
 }
 
@@ -3138,26 +3160,26 @@ select:focus {
 /* ============================================================ Signup agreements
    회원가입 / 소셜 추가정보 단계 하단 동의 체크박스. login 모드에서는 hidden 클래스로 숨김. */
 .signup-agreements {
-    margin-top: 4px;
-    padding: 14px 0 4px;
+    margin-top: 6px;
+    padding: 16px 0 6px;
     border-top: 1px solid var(--border);
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 12px;
 }
 .agreement-row {
     display: flex;
     align-items: flex-start;
-    gap: 10px;
-    font-size: 13.5px;
-    color: var(--fg-secondary);
-    line-height: 1.5;
+    gap: 12px;
+    font-size: 14.5px;
+    color: var(--fg);
+    line-height: 1.55;
 }
 .agreement-row input[type="checkbox"] {
     flex: 0 0 auto;
-    width: 16px;
-    height: 16px;
-    margin-top: 2px;
+    width: 19px;
+    height: 19px;
+    margin-top: 1px;
     accent-color: var(--accent);
     cursor: pointer;
 }
@@ -3166,16 +3188,16 @@ select:focus {
     cursor: pointer;
     color: inherit;
     margin: 0;
-    font-weight: 400;
+    font-weight: 500;
     letter-spacing: -0.005em;
 }
 .agreement-row .agreement-tag {
     display: inline-block;
     margin-right: 6px;
-    padding: 1px 7px;
+    padding: 2px 8px;
     border-radius: 999px;
-    font-size: 11px;
-    font-weight: 600;
+    font-size: 12px;
+    font-weight: 700;
     letter-spacing: -0.01em;
     vertical-align: 1px;
 }
@@ -3188,15 +3210,16 @@ select:focus {
     color: var(--fg-secondary);
 }
 .agreement-row a {
-    color: var(--fg-secondary);
+    color: var(--fg);
+    font-weight: 700;
     text-decoration: underline;
     text-decoration-color: var(--border-strong);
-    text-underline-offset: 2px;
+    text-underline-offset: 3px;
 }
 .agreement-row a:hover { color: var(--accent); text-decoration-color: var(--accent); }
 .signup-agreements-all {
     margin-bottom: 4px;
-    padding-bottom: 10px;
+    padding-bottom: 12px;
     border-bottom: 1px dashed var(--border);
     font-weight: 600;
     color: var(--fg);
