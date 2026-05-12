@@ -157,6 +157,20 @@ const SLOT_KEY_LABELS = {
     'contracts.html': '계약자',
     'forms.html': '신규 양식',
 };
+function resolveSlotLabel(key) {
+    if (SLOT_KEY_LABELS[key]) return SLOT_KEY_LABELS[key];
+    // 사용자 정의 양식 — forms.html?form=<id> 형식
+    const m = String(key).match(/forms\.html\?form=(\d+)/);
+    if (m) {
+        const id = parseInt(m[1], 10);
+        try {
+            const list = JSON.parse(sessionStorage.getItem('erp.customForms') || '[]');
+            const f = list.find(x => x.id === id);
+            if (f) return f.name;
+        } catch {}
+    }
+    return '양식';
+}
 function renderBottomNav(activeKey) {
     const path = (activeKey || (location.pathname.split('/').pop() || 'index.html')).toLowerCase();
     const email = (() => { try { return (sessionStorage.getItem('erp.userEmail') || '').toLowerCase(); } catch { return ''; } })();
@@ -166,8 +180,8 @@ function renderBottomNav(activeKey) {
     const items = [
         { key: 'index.html',     label: '홈',             href: 'index.html',     icon: ICON.home },
         { key: 'customers.html', label: '고객관리대장',   href: 'customers.html', icon: ICON.users, main: true },
-        { key: slot1Key, label: SLOT_KEY_LABELS[slot1Key] || '양식 1', href: slot1Key, icon: ICON.building },
-        { key: slot2Key, label: SLOT_KEY_LABELS[slot2Key] || '양식 2', href: slot2Key, icon: ICON.fileText },
+        { key: slot1Key, label: resolveSlotLabel(slot1Key), href: slot1Key, icon: ICON.building },
+        { key: slot2Key, label: resolveSlotLabel(slot2Key), href: slot2Key, icon: ICON.fileText },
     ];
     const html = items.map(item => {
         const isHome = item.key === 'index.html' && (path === '' || path === 'index.html');
@@ -193,6 +207,30 @@ function renderBottomNav(activeKey) {
 export function mountBottomNav(opts) {
     renderBottomNav(opts && opts.activeKey);
 }
+
+/* 사용자 정의 양식(page_type=custom) 목록을 sessionStorage 에 캐시.
+   현재 캐시와 다르면 nav 를 즉시 재렌더 — 같은 페이지에서도 dropdown 갱신됨. */
+async function refreshNavFormsCache() {
+    if (!currentSession?.user) return;
+    try {
+        const payload = await apiRequest('ledger-groups?page_type=custom');
+        const list = (payload?.items || []).map(f => ({ id: f.id, name: f.name }));
+        const newJson = JSON.stringify(list);
+        let oldJson = '';
+        try { oldJson = sessionStorage.getItem('erp.customForms') || ''; } catch {}
+        if (newJson === oldJson) return;
+        try { sessionStorage.setItem('erp.customForms', newJson); } catch {}
+        // 캐시가 바뀐 경우만 nav 다시 그리기 — 같은 페이지에서도 즉시 반영
+        const root = document.getElementById('app-header');
+        if (root && !root.dataset.navRefreshing) {
+            root.dataset.navRefreshing = '1';
+            try { mountAppHeader(); } finally { delete root.dataset.navRefreshing; }
+        }
+    } catch {}
+}
+
+// forms.js 가 양식 생성/삭제 후 명시적으로 호출 가능 — drawer/bottom-nav 즉시 동기화
+export function refreshNavForms() { return refreshNavFormsCache(); }
 
 // 사이트 전체 공통 footer — 사업자 정보 + 이용약관·개인정보처리방침 링크.
 // 페이지에 <footer id="app-footer"></footer> 마커가 있으면 거기 inject, 없으면 body 끝에 자동 append.
@@ -258,14 +296,29 @@ export function mountAppHeader(opts) {
         try { return localStorage.getItem(slotKey(slot)) || fallback; }
         catch { return fallback; }
     };
-    // 슬롯별 기본 항목 정의 — 1차는 기본 양식만, 추후 사용자 정의 양식이 동적 추가됨
+    // 사용자 정의 양식 목록 — sessionStorage 캐시 (refreshNavForms 가 비동기 갱신)
+    let cachedForms = [];
+    try {
+        const raw = sessionStorage.getItem('erp.customForms');
+        if (raw) cachedForms = JSON.parse(raw) || [];
+    } catch { cachedForms = []; }
+    const customFormOptions = cachedForms.map(f => ({
+        key: `forms.html?form=${f.id}`,
+        label: f.name,
+        href: `forms.html?form=${f.id}`,
+        custom: true,
+    }));
+
+    // 슬롯별 옵션: [신규 양식 신청] + 기본 양식 + 사용자 정의 양식들
     const SLOT1_OPTIONS = [
         { key: 'forms.html',    label: '+ 신규 양식 신청', href: 'forms.html', isNew: true },
         { key: 'org.html',      label: '조직도',           href: 'org.html' },
+        ...customFormOptions,
     ];
     const SLOT2_OPTIONS = [
         { key: 'forms.html',    label: '+ 신규 양식 신청', href: 'forms.html', isNew: true },
         { key: 'contracts.html', label: '계약자 관리대장', href: 'contracts.html' },
+        ...customFormOptions,
     ];
     const slot1Sel = getSlot('slot1', 'org.html');
     const slot2Sel = getSlot('slot2', 'contracts.html');
@@ -456,6 +509,9 @@ export function mountAppHeader(opts) {
         if (e.target.closest('.nav-pill-dropdown')) return;
         document.querySelectorAll('.nav-pill-dropdown.open').forEach(d => d.classList.remove('open'));
     });
+
+    // 백그라운드로 사용자 정의 양식 목록 갱신 — 다음 페이지 진입 시 dropdown 에 반영
+    refreshNavFormsCache();
 
     // logout 핸들러 — 헤더 + 드로어 모두
     const handleLogout = async () => {

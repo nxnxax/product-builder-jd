@@ -14,8 +14,8 @@
  * 토글 필드는 settings.customFields[i] = { key, label, type:'toggle', onLabel, offLabel, custom:true }
  */
 
-import { initSupabase, apiRequest, getSession } from './auth-shared.js?v=20260512-slot-dropdown';
-import { isLedgerMobile, onLedgerViewportChange, openRowAddModal } from './ledger-shared.js?v=20260512-slot-dropdown';
+import { initSupabase, apiRequest, getSession, refreshNavForms } from './auth-shared.js?v=20260512-custom-forms-nav';
+import { isLedgerMobile, onLedgerViewportChange, openRowAddModal } from './ledger-shared.js?v=20260512-custom-forms-nav';
 
 const PAGE_TYPE = 'custom';
 
@@ -82,6 +82,13 @@ let selectedIds = new Set();
     }
     bindBuilderModal();
     await loadForms();
+    // URL ?form=<id> 가 있으면 그 양식 사용 모드로 자동 진입
+    const params = new URLSearchParams(location.search);
+    const requestedId = parseInt(params.get('form'), 10);
+    if (requestedId && forms.find(f => f.id === requestedId)) {
+        activeFormId = requestedId;
+        await loadRecords(requestedId);
+    }
     render();
     onLedgerViewportChange(() => render());
 })();
@@ -759,6 +766,7 @@ async function saveBuilder() {
         }
         closeBuilder();
         await loadForms();
+        try { await refreshNavForms(); } catch {}
         render();
     } catch (e) {
         setErr('저장 실패: ' + (e.message || ''));
@@ -775,6 +783,7 @@ async function deleteForm() {
         closeBuilder();
         if (activeFormId === editingFormId) exitForm();
         await loadForms();
+        try { await refreshNavForms(); } catch {}
         render();
     } catch (e) {
         alert('삭제 실패: ' + (e.message || ''));
