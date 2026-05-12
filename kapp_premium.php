@@ -210,7 +210,7 @@ $openapi_ready=($NAVER_CLIENT_ID!==''&&$NAVER_CLIENT_SECRET!=='');
 <title>네이버 키워드 마케팅 분석 · YOUNGMAN</title>
 <link rel="icon" type="image/png" href="logo_main.png">
 <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
-<link rel="stylesheet" href="style.css?v=20260512-form-accordion">
+<link rel="stylesheet" href="style.css?v=20260512-form-search">
 <style>
 :root{
   --bg:#ffffff; --card:#ffffff; --text:#0a0a0a; --muted:#8e8e93; --secondary:#525252;
@@ -399,7 +399,7 @@ tr:last-child td{border-bottom:0}
 
 <header id="app-header" class="app-header"></header>
 <script type="module">
-    import { mountAppHeader, mountAppFooter } from './auth-shared.js?v=20260512-form-accordion';
+    import { mountAppHeader, mountAppFooter } from './auth-shared.js?v=20260512-form-search';
     mountAppHeader();
     mountAppFooter();
 </script>

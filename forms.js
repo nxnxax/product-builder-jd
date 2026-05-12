@@ -14,13 +14,13 @@
  * 토글 필드는 settings.customFields[i] = { key, label, type:'toggle', onLabel, offLabel, custom:true }
  */
 
-import { initSupabase, apiRequest, getSession, refreshNavForms } from './auth-shared.js?v=20260512-form-accordion';
+import { initSupabase, apiRequest, getSession, refreshNavForms } from './auth-shared.js?v=20260512-form-search';
 import {
     isLedgerMobile, onLedgerViewportChange, openRowAddModal,
     attachColumnFilters, applyColumnFilters,
     exportRecordsToExcel, pickExcelFile, parseExcelFile,
     suggestFieldMapping, openImportPreviewModal,
-} from './ledger-shared.js?v=20260512-form-accordion';
+} from './ledger-shared.js?v=20260512-form-search';
 
 const PAGE_TYPE = 'custom';
 
@@ -239,6 +239,7 @@ let editingFieldIndex = -1;    // 빌더 안에서 수정 중인 field index (-1
 let builderSettings = {};      // 빌더 모달 안 양식 설정 (key-value) 작업본
 let selectedIds = new Set();
 let filterState = { filters: {} };   // 컬럼 헤더 클릭 필터 상태
+let searchQuery = '';                 // 전체 텍스트 검색어
 
 // 수식용 캐시 — 페이지 진입 시 ref·집계 대상 양식 records 미리 로드
 let formulaCtx = { refCache: {}, aggCache: {}, aggFieldMap: {}, settingsCache: {} };
@@ -445,8 +446,23 @@ function renderFormUse() {
     const fields = [...BASE_FIELDS, ...(form.settings?.customFields || [])];
     const content = document.getElementById('content');
 
-    // 필터 적용된 records
-    const filteredRows = applyColumnFilters(filterState.filters, records, (r, k) => r.data?.[k]);
+    // 필터 적용된 records (컬럼 필터 + 텍스트 검색)
+    let filteredRows = applyColumnFilters(filterState.filters, records, (r, k) => r.data?.[k]);
+    if (searchQuery.trim()) {
+        const q = searchQuery.trim().toLowerCase();
+        filteredRows = filteredRows.filter(r => {
+            const d = r.data || {};
+            return fields.some(f => {
+                if (f.type === 'auto_number' || f.type === 'formula') return false;
+                const v = d[f.key];
+                if (v === undefined || v === null || v === '') return false;
+                if (f.type === 'file') return (v.name || '').toLowerCase().includes(q);
+                if (f.type === 'ref') return (v.label || '').toLowerCase().includes(q);
+                if (f.type === 'toggle' || f.type === 'switch') return false;
+                return String(v).toLowerCase().includes(q);
+            });
+        });
+    }
     const mobile = isLedgerMobile();
     const bodyHtml = mobile
         ? renderMobileCards(form, filteredRows, fields)
@@ -455,12 +471,18 @@ function renderFormUse() {
     const hasSelection = selectedIds.size > 0;
     const filterCount = Object.values(filterState.filters || {}).reduce((n, s) => n + (s?.size ? 1 : 0), 0);
 
+    const totalShown = filteredRows.length;
+    const isFiltered = (searchQuery.trim() !== '') || filterCount > 0;
+    const metaText = isFiltered
+        ? `${totalShown}건 표시 · 전체 ${records.length}건${filterCount ? ` · 필터 ${filterCount}` : ''}${searchQuery.trim() ? ` · 검색: "${escapeHtml(searchQuery.trim())}"` : ''}`
+        : `총 ${records.length}건`;
+
     // 조직도/계약자/고객 관리대장과 동일한 accordion-card 구조로 렌더
     content.innerHTML = `
         <div class="ledger-head">
             <div>
                 <h1 class="ledger-title">${escapeHtml(form.name)}</h1>
-                <p class="ledger-sub">총 ${records.length}건${filterCount ? ` · 필터 ${filterCount}` : ''}</p>
+                <p class="ledger-sub">${metaText}</p>
             </div>
             <div style="display:flex;gap:6px;flex-wrap:wrap">
                 <button class="tiny-btn primary" type="button" id="newFormBtn">+ 새 양식 만들기</button>
@@ -468,7 +490,7 @@ function renderFormUse() {
         </div>
         <div class="accordion-card open" data-form-id="${form.id}">
             <div class="accordion-head">
-                <h3>${escapeHtml(form.name)} <span class="head-count">(${records.length}건)</span></h3>
+                <h3>${escapeHtml(form.name)} <span class="head-count">(${totalShown}건${isFiltered ? ` / ${records.length}` : ''})</span></h3>
                 <div class="head-actions">
                     <button type="button" id="exportBtn" title="이 양식을 엑셀로 다운로드">📥 엑셀 다운로드</button>
                     <button type="button" id="importBtn" title="엑셀 파일을 이 양식에 업로드">📤 엑셀 가져오기</button>
@@ -476,9 +498,13 @@ function renderFormUse() {
                 </div>
             </div>
             <div class="accordion-body">
-                <div class="ledger-cards-toolbar" style="flex-wrap:wrap;gap:6px;justify-content:flex-end;background:#fbfaf5;border-bottom:1px solid var(--ledger-line);padding:10px 18px;margin:0">
+                <div class="ledger-cards-toolbar" style="flex-wrap:wrap;gap:8px;align-items:center;justify-content:flex-end;background:#fbfaf5;border-bottom:1px solid var(--ledger-line);padding:10px 18px;margin:0">
+                    <div class="ledger-search-box" style="flex:1 1 200px;min-width:160px;max-width:320px;position:relative;display:flex;align-items:center">
+                        <input type="search" id="searchInput" placeholder="🔍 행 안에서 검색…" value="${escapeAttr(searchQuery)}" style="width:100%;padding:8px 32px 8px 14px;border:1px solid var(--ledger-line);border-radius:8px;font-size:14px;font-weight:500;background:#fff;color:#0e0d0c;font-family:inherit;outline:none">
+                        ${searchQuery ? `<button type="button" id="clearSearchBtn" aria-label="검색 지우기" style="position:absolute;right:6px;width:24px;height:24px;border:0;background:transparent;color:#8a847e;font-size:16px;cursor:pointer;border-radius:5px">×</button>` : ''}
+                    </div>
                     ${hasSelection
-                        ? `<span style="margin-right:auto;color:var(--ledger-accent-deep);font-size:14px;font-weight:700">${selectedIds.size}개 선택</span>
+                        ? `<span style="color:var(--ledger-accent-deep);font-size:14px;font-weight:700">${selectedIds.size}개 선택</span>
                            <button class="tiny-btn" type="button" id="clearSelBtn">선택 해제</button>
                            <button class="tiny-btn danger" type="button" id="bulkDelBtn">선택 삭제</button>`
                         : `<button class="tiny-btn primary" type="button" id="addRowBtn">+ 행 추가</button>`}
@@ -495,6 +521,46 @@ function renderFormUse() {
     document.getElementById('importBtn')?.addEventListener('click', () => importToForm(form, fields));
     document.getElementById('clearSelBtn')?.addEventListener('click', () => { selectedIds.clear(); render(); });
     document.getElementById('bulkDelBtn')?.addEventListener('click', () => bulkDeleteSelected(form));
+
+    // 텍스트 검색 — debounce 로 350ms 지연 후 재렌더
+    const searchInput = document.getElementById('searchInput');
+    if (searchInput) {
+        let timer = null;
+        searchInput.addEventListener('input', (e) => {
+            const v = e.target.value;
+            clearTimeout(timer);
+            timer = setTimeout(() => {
+                searchQuery = v;
+                render();
+                // 재렌더 후 focus 복원
+                requestAnimationFrame(() => {
+                    const newInput = document.getElementById('searchInput');
+                    if (newInput) {
+                        newInput.focus();
+                        try { newInput.setSelectionRange(v.length, v.length); } catch {}
+                    }
+                });
+            }, 350);
+        });
+        // 엔터 키는 즉시 적용
+        searchInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                clearTimeout(timer);
+                searchQuery = e.target.value;
+                render();
+            }
+            if (e.key === 'Escape') {
+                e.preventDefault();
+                searchQuery = '';
+                render();
+            }
+        });
+    }
+    document.getElementById('clearSearchBtn')?.addEventListener('click', () => {
+        searchQuery = '';
+        render();
+    });
 
     bindRowEvents(form, fields);
     bindSelectionEvents();
