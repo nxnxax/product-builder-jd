@@ -10,12 +10,12 @@
  *  - 본부장 계약 → 본부장(=팀원+팀장+본부장 셋 다 받음)
  */
 
-import { initSupabase, apiRequest, getSession } from './auth-shared.js?v=20260512-mobile-cards2';
+import { initSupabase, apiRequest, getSession } from './auth-shared.js?v=20260512-mobile-cards3';
 import { attachColumnFilters, applyColumnFilters, openRowAddModal, attachPhoneAutoFormat, attachThousandFormat, formatThousand, unformatThousand, getEffectiveFields, mountFieldManager,
          exportRecordsToExcel, pickExcelFile, parseExcelFile, suggestFieldMapping, openImportPreviewModal,
          saveImportSession, loadImportSession, clearImportSession,
          findBlankRecordIds, showSweepToast,
-         isLedgerMobile, onLedgerViewportChange } from './ledger-shared.js?v=20260512-mobile-cards2';
+         isLedgerMobile, onLedgerViewportChange } from './ledger-shared.js?v=20260512-mobile-cards3';
 
 const PAGE_TYPE = 'contract';
 const TAX_RATE = 0.033;   // 실수령액 = commission * (1 - TAX_RATE)
@@ -579,9 +579,12 @@ function renderMobileCard(r, displayNo, group, fields) {
         const f = fields.find(x => x.key === k);
         if (!f) return '';
         const v = d[k];
-        if (!v) return '';
-        const display = f.type === 'date' ? String(v).replace(/-/g, '.') : String(v);
-        return `<span>${escapeHtml(display)}</span>`;
+        const display = (!v) ? '-' : (f.type === 'date' ? String(v).replace(/-/g, '.') : String(v));
+        return `
+            <div class="ledger-card-sub-item">
+                <span class="ledger-card-sub-label">${escapeHtml(f.label || '')}</span>
+                <span class="ledger-card-sub-val">${escapeHtml(display)}</span>
+            </div>`;
     }).filter(Boolean).join('');
     const detailFields = fields.filter(f => f.type !== 'auto_number' && f.key !== primaryField?.key);
     const detailHtml = detailFields.map(f => `

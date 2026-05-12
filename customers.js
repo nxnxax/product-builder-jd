@@ -9,12 +9,12 @@
  *  - client_idempotency_key 로 같은 통화의 중복 전송 차단
  */
 
-import { initSupabase, apiRequest, getSession } from './auth-shared.js?v=20260512-mobile-cards2';
+import { initSupabase, apiRequest, getSession } from './auth-shared.js?v=20260512-mobile-cards3';
 import { attachColumnFilters, applyColumnFilters, openRowAddModal, attachPhoneAutoFormat, getEffectiveFields, mountFieldManager,
          exportRecordsToExcel, pickExcelFile, parseExcelFile, suggestFieldMapping, openImportPreviewModal,
          saveImportSession, loadImportSession, clearImportSession,
          findBlankRecordIds, showSweepToast,
-         isLedgerMobile, onLedgerViewportChange } from './ledger-shared.js?v=20260512-mobile-cards2';
+         isLedgerMobile, onLedgerViewportChange } from './ledger-shared.js?v=20260512-mobile-cards3';
 
 const MOBILE_PRIMARY_KEYS = ['customer', 'phone', 'date'];
 
@@ -393,9 +393,12 @@ function renderMobileCard(r, displayNo, group, fields) {
         const f = fields.find(x => x.key === k);
         if (!f) return '';
         const v = d[k];
-        if (!v) return '';
-        const display = f.type === 'date' ? String(v).replace(/-/g, '.') : String(v);
-        return `<span>${escapeHtml(display)}</span>`;
+        const display = (!v) ? '-' : (f.type === 'date' ? String(v).replace(/-/g, '.') : String(v));
+        return `
+            <div class="ledger-card-sub-item">
+                <span class="ledger-card-sub-label">${escapeHtml(f.label || '')}</span>
+                <span class="ledger-card-sub-val">${escapeHtml(display)}</span>
+            </div>`;
     }).filter(Boolean).join('');
     // 상세 (펼침 시 표시) — primary 외 모든 필드
     const detailFields = fields.filter(f => f.type !== 'auto_number' && f.key !== primaryField?.key);
