@@ -6,7 +6,7 @@
 <title>내 양식 · YOUNGMAN</title>
 <link rel="icon" type="image/png" href="logo_main.png">
 <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
-<link rel="stylesheet" href="style.css?v=20260512-forms">
+<link rel="stylesheet" href="style.css?v=20260512-forms2">
 <style>
 :root{
     --ledger-line:rgba(20,14,8,.09); --ledger-line-strong:rgba(20,14,8,.16);
@@ -60,6 +60,16 @@
 .field-add-row input[data-add-label]{flex:1;min-width:120px}
 .field-add-row .toggle-extra{display:flex;gap:6px;width:100%;margin-top:8px}
 .field-add-row .toggle-extra input{flex:1}
+.field-add-row .extra-row{display:flex;flex-direction:column;gap:6px;width:100%;margin-top:8px}
+.field-add-row .extra-row input,.field-add-row .extra-row select,.field-add-row .extra-row textarea{
+    padding:8px 12px;border:1px solid var(--ledger-line);border-radius:8px;font-size:13.5px;
+    font-family:inherit;background:#fff;color:#0e0d0c;outline:none;width:100%;box-sizing:border-box;
+}
+.field-add-row .extra-row textarea{resize:vertical;min-height:72px;line-height:1.5}
+.field-add-row .extra-row[data-extra-toggle]{flex-direction:row}
+.field-add-row .extra-row[data-extra-toggle] input{flex:1}
+.field-add-row .extra-row[data-extra-ref]{flex-direction:row;flex-wrap:wrap}
+.field-add-row .extra-row[data-extra-ref] select{flex:1 1 160px}
 
 /* 폼 제목 입력 */
 .form-title-input{width:100%;padding:12px 14px;border:1px solid var(--ledger-line-strong);border-radius:10px;font-size:16px;font-weight:600;font-family:inherit;color:#0e0d0c;outline:none;margin-bottom:8px;background:#fff}
@@ -119,11 +129,26 @@
                     <option value="tel">전화번호</option>
                     <option value="textarea">긴 텍스트</option>
                     <option value="toggle">ON/OFF 토글</option>
+                    <option value="select">드롭다운 (선택)</option>
+                    <option value="file">첨부파일</option>
+                    <option value="formula">수식 (자동 계산)</option>
+                    <option value="ref">다른 양식 참조</option>
                 </select>
                 <button type="button" class="tiny-btn primary" data-add-go>+ 항목 추가</button>
-                <div class="toggle-extra hidden" data-toggle-extra>
+                <div class="extra-row hidden" data-extra-toggle>
                     <input type="text" data-add-on placeholder="ON 라벨 (예: 완료, 계약)" maxlength="12">
                     <input type="text" data-add-off placeholder="OFF 라벨 (예: 미완료, 가계약)" maxlength="12">
+                </div>
+                <div class="extra-row hidden" data-extra-select>
+                    <textarea data-add-options placeholder="옵션을 한 줄에 하나씩 입력&#10;예:&#10;진행중&#10;완료&#10;보류" rows="3"></textarea>
+                </div>
+                <div class="extra-row hidden" data-extra-formula>
+                    <input type="text" data-add-formula placeholder="수식 입력. 다른 항목은 {항목이름} 으로 참조. 예: {수량} * {단가}">
+                    <p class="form-help" style="margin:0;font-size:12px;color:#8a847e;">사칙연산만 가능: + − × ÷ ( )</p>
+                </div>
+                <div class="extra-row hidden" data-extra-ref>
+                    <select data-add-ref-form><option value="">참조할 양식을 선택하세요…</option></select>
+                    <select data-add-ref-label-key disabled><option value="">참조 양식 선택 후 표시할 항목 선택</option></select>
                 </div>
             </div>
             <p class="form-help error hidden" id="builderError"></p>
@@ -137,10 +162,10 @@
 </div>
 
 <script type="module">
-    import { mountAppHeader } from './auth-shared.js?v=20260512-forms';
+    import { mountAppHeader } from './auth-shared.js?v=20260512-forms2';
     mountAppHeader();
 </script>
-<script type="module" src="forms.js?v=20260512-forms"></script>
+<script type="module" src="forms.js?v=20260512-forms2"></script>
 
 </body>
 </html>
