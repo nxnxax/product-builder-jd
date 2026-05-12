@@ -6,11 +6,12 @@
  * Phase 3 의 계약자 관리대장이 이 그룹의 settings.commissions 를 읽어 정산.
  */
 
-import { initSupabase, apiRequest, getSession } from './auth-shared.js?v=20260512-mobile-cards';
+import { initSupabase, apiRequest, getSession } from './auth-shared.js?v=20260512-mobile-cards2';
 import { attachColumnFilters, applyColumnFilters, openRowAddModal, attachPhoneAutoFormat, attachThousandFormat, formatThousand, unformatThousand, getEffectiveFields, mountFieldManager,
          exportRecordsToExcel, pickExcelFile, parseExcelFile, suggestFieldMapping, openImportPreviewModal,
          saveImportSession, loadImportSession, clearImportSession,
-         findBlankRecordIds, showSweepToast } from './ledger-shared.js?v=20260512-mobile-cards';
+         findBlankRecordIds, showSweepToast,
+         isLedgerMobile, onLedgerViewportChange } from './ledger-shared.js?v=20260512-mobile-cards2';
 
 const PAGE_TYPE = 'org';
 
@@ -89,6 +90,7 @@ let settingsFieldDraft = [];      // working copy of custom fields
     }
     bindUI();
     await loadGroups();
+    onLedgerViewportChange(() => renderRecords());
 })();
 
 /* ============== API helper (auth-shared 의 apiRequest 래핑) ============== */
@@ -539,21 +541,15 @@ async function setMainGroup(gid) {
     }
 }
 
+const MOBILE_PRIMARY_KEYS_ORG = ['name', 'title', 'phone'];
+
 function renderTeamSection(title, teamNo, rows, group, opts) {
     const fields = getEffectiveFields(group, DEFAULT_FIELD_SCHEMA.fields);
     const allowedTitles = rolesAllowedFor(ownerRoleOf(group));
-    const isHq = !!(opts && opts.hq);   // 본부장 전용 섹션
-    return `
-        <section class="team-section ${isHq ? 'team-section-hq' : ''}" data-team="${teamNo ?? ''}" ${isHq ? 'data-hq="1"' : ''}>
-            <div class="team-head">
-                <div>
-                    <h3>${escapeHtml(title)}</h3>
-                    <span class="count">${rows.length}명</span>
-                </div>
-                <div class="actions">
-                    <button class="tiny-btn primary" type="button" data-add-row data-team="${teamNo ?? ''}" ${isHq ? 'data-hq="1"' : ''}>+ 직원 추가</button>
-                </div>
-            </div>
+    const isHq = !!(opts && opts.hq);
+    const bodyHtml = isLedgerMobile()
+        ? renderMobileTeamCards(rows, title, group, fields, allowedTitles)
+        : `
             <div class="tbl-wrap">
                 <table class="ledger-tbl">
                     <thead>
@@ -571,8 +567,78 @@ function renderTeamSection(title, teamNo, rows, group, opts) {
                             : rows.map((r, idx) => renderRow(r, idx + 1, allowedTitles, fields)).join('')}
                     </tbody>
                 </table>
+            </div>`;
+    return `
+        <section class="team-section ${isHq ? 'team-section-hq' : ''}" data-team="${teamNo ?? ''}" ${isHq ? 'data-hq="1"' : ''}>
+            <div class="team-head">
+                <div>
+                    <h3>${escapeHtml(title)}</h3>
+                    <span class="count">${rows.length}명</span>
+                </div>
+                <div class="actions">
+                    <button class="tiny-btn primary" type="button" data-add-row data-team="${teamNo ?? ''}" ${isHq ? 'data-hq="1"' : ''}>+ 직원 추가</button>
+                </div>
             </div>
+            ${bodyHtml}
         </section>`;
+}
+
+function renderMobileTeamCards(rows, title, group, fields, allowedTitles) {
+    if (!rows.length) {
+        return `<div class="ledger-cards-empty">${escapeHtml(title)}에 등록된 인원이 없습니다.</div>`;
+    }
+    return `<div class="ledger-cards">${rows.map((r, i) => renderMobileCardOrg(r, i + 1, group, fields, allowedTitles)).join('')}</div>`;
+}
+
+function renderMobileCardOrg(r, displayNo, group, fields, allowedTitles) {
+    const d = r.data || {};
+    const cls = ['ledger-card', selectedIds.has(r.id) ? 'selected' : ''].filter(Boolean).join(' ');
+    const primaryField = fields.find(f => f.key === 'name') || fields.find(f => f.type !== 'auto_number');
+    const titleVal = primaryField ? (d[primaryField.key] || '-') : '-';
+    const subKeys = MOBILE_PRIMARY_KEYS_ORG.filter(k => k !== primaryField?.key);
+    const subParts = subKeys.map(k => {
+        const f = fields.find(x => x.key === k);
+        if (!f) return '';
+        const v = d[k];
+        if (!v) return '';
+        const display = f.type === 'date' ? String(v).replace(/-/g, '.') : String(v);
+        return `<span>${escapeHtml(display)}</span>`;
+    }).filter(Boolean).join('');
+    const detailFields = fields.filter(f => f.type !== 'auto_number' && f.key !== primaryField?.key);
+    const detailHtml = detailFields.map(f => {
+        const v = d[f.key];
+        let inner;
+        if (f.type === 'textarea') {
+            inner = v ? `<span class="cell-text cell-multiline">${escapeHtml(v)}</span>` : `<span class="cell-empty">-</span>`;
+        } else if (f.type === 'date') {
+            inner = v ? `<span class="cell-text">${escapeHtml(String(v).replace(/-/g, '.'))}</span>` : `<span class="cell-empty">-</span>`;
+        } else {
+            inner = v ? `<span class="cell-text">${escapeHtml(v)}</span>` : `<span class="cell-empty">-</span>`;
+        }
+        return `
+            <div class="ledger-card-field">
+                <span class="ledger-card-label">${escapeHtml(f.label || '')}</span>
+                <span class="ledger-card-value">${inner}</span>
+            </div>`;
+    }).join('');
+    return `
+        <div class="${cls}" data-id="${r.id}">
+            <div class="ledger-card-head">
+                <input type="checkbox" class="ledger-card-check" data-select="${r.id}" ${selectedIds.has(r.id) ? 'checked' : ''}>
+                <div class="ledger-card-summary">
+                    <div class="ledger-card-title">${escapeHtml(titleVal)}</div>
+                    ${subParts ? `<div class="ledger-card-sub">${subParts}</div>` : ''}
+                </div>
+                <button class="ledger-card-toggle" type="button" aria-label="펼치기">▾</button>
+            </div>
+            <div class="ledger-card-body">
+                ${detailHtml}
+                <div class="ledger-card-actions">
+                    <button class="row-action-btn" data-edit-row="${r.id}" type="button"><span class="ico">✎</span><span class="lbl">수정</span></button>
+                    <button class="row-action-btn danger" data-delete-row="${r.id}" type="button"><span class="ico">×</span><span class="lbl">삭제</span></button>
+                </div>
+            </div>
+        </div>`;
 }
 
 function renderRow(r, displayNo, allowedTitles, fields) {

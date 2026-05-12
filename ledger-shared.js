@@ -23,18 +23,48 @@ let activePop = null;
 let docClickBound = false;
 
 /* =========================================================================
-   모바일에서 ledger 표 row 클릭 시 expanded 토글 — 한 번만 부착.
-   체크박스/버튼 등 인터랙티브 요소 클릭은 토글에서 제외.
+   모바일 카드 펼치기/접기 토글 — head 영역 클릭 시 expanded 토글.
+   체크박스/액션 버튼 클릭은 토글에서 제외.
    ========================================================================= */
-if (typeof document !== 'undefined' && typeof window !== 'undefined' && !window.__ledgerRowToggleBound) {
+if (typeof document !== 'undefined' && typeof window !== 'undefined' && !window.__ledgerCardToggleBound) {
     document.addEventListener('click', (e) => {
-        if (!window.matchMedia('(max-width: 640px)').matches) return;
-        const tr = e.target.closest('.ledger-tbl tbody tr[data-id]');
-        if (!tr) return;
-        if (e.target.closest('input, button, select, textarea, a, label, [data-no-toggle]')) return;
-        tr.classList.toggle('expanded');
+        const card = e.target.closest('.ledger-card');
+        if (!card) return;
+        // 본문 영역(.ledger-card-body) 내부 클릭은 토글 안 함
+        if (e.target.closest('.ledger-card-body')) return;
+        // 인터랙티브 요소 클릭은 토글 안 함
+        if (e.target.closest('input, button, select, textarea, a, label, [data-no-toggle]')) {
+            // 단, 카드 자체의 toggle 버튼은 토글 동작
+            if (e.target.closest('.ledger-card-toggle')) {
+                card.classList.toggle('expanded');
+            }
+            return;
+        }
+        card.classList.toggle('expanded');
     });
-    window.__ledgerRowToggleBound = true;
+    window.__ledgerCardToggleBound = true;
+}
+
+/* =========================================================================
+   모바일 viewport 변화 감지 — *.js 가 등록한 콜백을 호출해서 재렌더 유도.
+   ========================================================================= */
+const _ledgerViewportCallbacks = new Set();
+export function onLedgerViewportChange(cb) {
+    if (typeof cb !== 'function') return;
+    _ledgerViewportCallbacks.add(cb);
+}
+if (typeof window !== 'undefined' && !window.__ledgerViewportBound) {
+    try {
+        const mq = window.matchMedia('(max-width: 640px)');
+        const handler = () => _ledgerViewportCallbacks.forEach(cb => { try { cb(); } catch {} });
+        if (mq.addEventListener) mq.addEventListener('change', handler);
+        else mq.addListener(handler);  // 옛 Safari fallback
+        window.__ledgerViewportBound = true;
+    } catch {}
+}
+export function isLedgerMobile() {
+    try { return window.matchMedia('(max-width: 640px)').matches; }
+    catch { return false; }
 }
 
 /* =========================================================================
