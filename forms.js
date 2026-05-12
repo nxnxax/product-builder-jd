@@ -14,8 +14,8 @@
  * 토글 필드는 settings.customFields[i] = { key, label, type:'toggle', onLabel, offLabel, custom:true }
  */
 
-import { initSupabase, apiRequest, getSession } from './auth-shared.js?v=20260512-forms2';
-import { isLedgerMobile, onLedgerViewportChange, openRowAddModal } from './ledger-shared.js?v=20260512-forms2';
+import { initSupabase, apiRequest, getSession } from './auth-shared.js?v=20260512-nav-slots';
+import { isLedgerMobile, onLedgerViewportChange, openRowAddModal } from './ledger-shared.js?v=20260512-nav-slots';
 
 const PAGE_TYPE = 'custom';
 

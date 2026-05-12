@@ -30,8 +30,10 @@ export async function initSupabase() {
         supabaseClient = createClient(config.url, config.anonKey);
         const { data } = await supabaseClient.auth.getSession();
         currentSession = data?.session || null;
+        cacheUserEmail(currentSession?.user?.email);
         supabaseClient.auth.onAuthStateChange((_event, session) => {
             currentSession = session || null;
+            cacheUserEmail(currentSession?.user?.email);
         });
         return { client: supabaseClient, session: currentSession };
     })();
@@ -40,6 +42,13 @@ export async function initSupabase() {
 
 export function getSession() { return currentSession; }
 export function getClient() { return supabaseClient; }
+
+function cacheUserEmail(email) {
+    try {
+        if (email) sessionStorage.setItem('erp.userEmail', String(email).toLowerCase());
+        else sessionStorage.removeItem('erp.userEmail');
+    } catch {}
+}
 
 export async function getAccessToken({ forceRefresh = false } = {}) {
     if (!supabaseClient) return null;
@@ -227,13 +236,30 @@ export function mountAppHeader(opts) {
     document.body.classList.toggle('is-admin', cachedAdmin);
     document.body.classList.toggle('is-anon', !cachedName);
 
-    // 주 기능 (관리대장 3종) — 큰 pill 버튼으로 항상 강조.
-    // 보조 기능 (마케팅·Lotto·명함·업로드) — 우측에 작게 깔림.
-    const primaryItems = [
-        { key: 'customers.html', label: '고객 관리대장',    href: 'customers.html' },
-        { key: 'org.html',       label: '조직도',           href: 'org.html' },
+    // 주 기능 — 고객 관리대장 (메인 강조) + 양식 선택 슬롯 2개 (드롭다운).
+    // 각 슬롯의 선택값은 localStorage 에 사용자 이메일별로 저장됨.
+    const userEmail = (() => {
+        try { return (sessionStorage.getItem('erp.userEmail') || '').toLowerCase(); }
+        catch { return ''; }
+    })();
+    const slotKey = (slot) => `yman_nav_${slot}:${userEmail || 'anon'}`;
+    const getSlot = (slot, fallback) => {
+        try { return localStorage.getItem(slotKey(slot)) || fallback; }
+        catch { return fallback; }
+    };
+    // 슬롯별 기본 항목 정의 — 1차는 기본 양식만, 추후 사용자 정의 양식이 동적 추가됨
+    const SLOT1_OPTIONS = [
+        { key: 'forms.html',    label: '+ 신규 양식 신청', href: 'forms.html', isNew: true },
+        { key: 'org.html',      label: '조직도',           href: 'org.html' },
+    ];
+    const SLOT2_OPTIONS = [
+        { key: 'forms.html',    label: '+ 신규 양식 신청', href: 'forms.html', isNew: true },
         { key: 'contracts.html', label: '계약자 관리대장', href: 'contracts.html' },
     ];
+    const slot1Sel = getSlot('slot1', 'org.html');
+    const slot2Sel = getSlot('slot2', 'contracts.html');
+    const slot1Active = SLOT1_OPTIONS.find(o => o.key === slot1Sel) || SLOT1_OPTIONS[1];
+    const slot2Active = SLOT2_OPTIONS.find(o => o.key === slot2Sel) || SLOT2_OPTIONS[1];
 
     const secondaryItems = [
         { key: 'forms.html',        label: '내 양식',       href: 'forms.html', icon: ICON.fileText },
@@ -280,7 +306,52 @@ export function mountAppHeader(opts) {
         </div>
     `;
 
-    const primaryHtml = primaryItems.map(i => renderItem(i, 'nav-pill')).join('');
+    // 1) 메인 강조 pill — 고객 관리대장
+    const mainPillHtml = `
+        <a class="nav-pill nav-pill-main${path === 'customers.html' ? ' active' : ''}" href="customers.html">
+            <span class="nav-label">고객 관리대장</span>
+        </a>
+    `;
+
+    // 2) 양식 선택 슬롯 1 (기본: 조직도)
+    const slot1IsActive = path === slot1Active.key.toLowerCase();
+    const slot1Html = `
+        <div class="nav-dropdown nav-pill-dropdown ${slot1IsActive ? 'is-active' : ''}" data-nav-slot="slot1">
+            <button class="nav-pill nav-pill-slot${slot1IsActive ? ' active' : ''}" type="button" data-slot-open="slot1">
+                <span class="nav-pill-prefix">양식</span>
+                <span class="nav-label" data-slot-label="slot1">${escapeHtmlSafe(slot1Active.label.replace('+ ', ''))}</span>
+                <span class="nav-pill-caret">▾</span>
+            </button>
+            <div class="nav-dropdown-menu">
+                ${SLOT1_OPTIONS.map(o => `
+                    <a class="nav-dropdown-item${o.key === slot1Sel ? ' active' : ''}" href="${o.href}" data-slot-pick="slot1" data-slot-key="${o.key}">
+                        <span>${escapeHtmlSafe(o.label)}</span>
+                    </a>
+                `).join('')}
+            </div>
+        </div>
+    `;
+
+    // 3) 양식 선택 슬롯 2 (기본: 계약자 관리대장)
+    const slot2IsActive = path === slot2Active.key.toLowerCase();
+    const slot2Html = `
+        <div class="nav-dropdown nav-pill-dropdown ${slot2IsActive ? 'is-active' : ''}" data-nav-slot="slot2">
+            <button class="nav-pill nav-pill-slot${slot2IsActive ? ' active' : ''}" type="button" data-slot-open="slot2">
+                <span class="nav-pill-prefix">양식</span>
+                <span class="nav-label" data-slot-label="slot2">${escapeHtmlSafe(slot2Active.label.replace('+ ', ''))}</span>
+                <span class="nav-pill-caret">▾</span>
+            </button>
+            <div class="nav-dropdown-menu">
+                ${SLOT2_OPTIONS.map(o => `
+                    <a class="nav-dropdown-item${o.key === slot2Sel ? ' active' : ''}" href="${o.href}" data-slot-pick="slot2" data-slot-key="${o.key}">
+                        <span>${escapeHtmlSafe(o.label)}</span>
+                    </a>
+                `).join('')}
+            </div>
+        </div>
+    `;
+
+    const primaryHtml = mainPillHtml + slot1Html + slot2Html;
     const secondaryHtml = secondaryItems.map(i => renderItem(i, 'nav-link nav-link-secondary')).join('') + communityHtml;
 
     if (!root.classList.contains('app-header')) root.classList.add('app-header');
@@ -328,6 +399,46 @@ export function mountAppHeader(opts) {
 
     renderBottomNav(path);
     renderAppFooter();
+
+    // 양식 선택 슬롯 — 항목 클릭 시 localStorage 저장 후 페이지 이동.
+    document.querySelectorAll('[data-slot-pick]').forEach(el => {
+        el.addEventListener('click', (e) => {
+            const slot = el.dataset.slotPick;
+            const key = el.dataset.slotKey;
+            // "+ 신규 양식 신청" (forms.html) 은 슬롯 저장 안 함 — 양식 만들러 가는 일회성
+            if (key !== 'forms.html') {
+                try { localStorage.setItem(slotKey(slot), key); } catch {}
+            }
+            // 기본 <a href> 동작이 페이지 이동 처리
+        });
+    });
+
+    // 슬롯 pill 버튼 클릭:
+    // - caret(▾) 영역 = dropdown 토글
+    // - 그 외 영역 = 현재 선택된 양식 페이지로 이동
+    document.querySelectorAll('[data-slot-open]').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            const isCaret = e.target.closest('.nav-pill-caret');
+            if (isCaret) {
+                e.preventDefault();
+                btn.closest('.nav-dropdown')?.classList.toggle('open');
+                return;
+            }
+            const slot = btn.dataset.slotOpen;
+            const target = slot === 'slot1' ? slot1Active : slot2Active;
+            if (target && target.key !== 'forms.html') {
+                window.location.href = target.href;
+            } else {
+                btn.closest('.nav-dropdown')?.classList.toggle('open');
+            }
+        });
+    });
+
+    // 바깥 클릭 시 열린 슬롯 dropdown 닫기
+    document.addEventListener('click', (e) => {
+        if (e.target.closest('.nav-pill-dropdown')) return;
+        document.querySelectorAll('.nav-pill-dropdown.open').forEach(d => d.classList.remove('open'));
+    });
 
     // logout 핸들러 — 헤더 + 드로어 모두
     const handleLogout = async () => {
