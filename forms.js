@@ -14,13 +14,13 @@
  * 토글 필드는 settings.customFields[i] = { key, label, type:'toggle', onLabel, offLabel, custom:true }
  */
 
-import { initSupabase, apiRequest, getSession, refreshNavForms } from './auth-shared.js?v=20260512-forms-toolkit';
+import { initSupabase, apiRequest, getSession, refreshNavForms } from './auth-shared.js?v=20260512-builder-ux';
 import {
     isLedgerMobile, onLedgerViewportChange, openRowAddModal,
     attachColumnFilters, applyColumnFilters,
     exportRecordsToExcel, pickExcelFile, parseExcelFile,
     suggestFieldMapping, openImportPreviewModal,
-} from './ledger-shared.js?v=20260512-forms-toolkit';
+} from './ledger-shared.js?v=20260512-builder-ux';
 
 const PAGE_TYPE = 'custom';
 
@@ -71,6 +71,7 @@ let activeFormId = null;       // 양식 사용 모드일 때 그 양식 id
 let records = [];              // 활성 양식의 records
 let editingFormId = null;      // 빌더 모달에서 편집 중인 양식 id (null = 새 양식)
 let builderDraft = [];         // 빌더 모달 안의 working schema
+let editingFieldIndex = -1;    // 빌더 안에서 수정 중인 field index (-1 = 신규 추가 모드)
 let selectedIds = new Set();
 let filterState = { filters: {} };   // 컬럼 헤더 클릭 필터 상태
 
@@ -508,11 +509,13 @@ async function openRowEntry(form, fields, existing) {
         fields: dataFields,
         defaults,
         customRender: (field, defs) => {
+            const reqMark = field.required ? '<span style="color:var(--ledger-accent);font-weight:700;margin-left:3px">*</span>' : '';
+            const labelHtml = `${escapeHtml(field.label)}${reqMark}`;
             if (field.type === 'toggle') {
                 const v = !!defs[field.key];
                 return `
                     <div class="modal-row">
-                        <label>${escapeHtml(field.label)}</label>
+                        <label>${labelHtml}</label>
                         <div>
                             <button type="button" class="tiny-btn ${v ? 'primary' : ''}" data-toggle-field="${field.key}" data-toggle-val="${v ? '1' : '0'}">${escapeHtml(v ? (field.onLabel || 'ON') : (field.offLabel || 'OFF'))}</button>
                         </div>
@@ -524,7 +527,7 @@ async function openRowEntry(form, fields, existing) {
                     `<option value="${escapeAttr(o)}" ${o === cur ? 'selected' : ''}>${escapeHtml(o)}</option>`).join('');
                 return `
                     <div class="modal-row">
-                        <label>${escapeHtml(field.label)}</label>
+                        <label>${labelHtml}</label>
                         <select data-select-field="${field.key}" style="width:100%;padding:9px 12px;border:1px solid var(--ledger-line);border-radius:8px;font-size:14px;background:#fff;font-family:inherit">
                             <option value="">-- 선택 --</option>
                             ${opts}
@@ -536,7 +539,7 @@ async function openRowEntry(form, fields, existing) {
                 const curInfo = cur && cur.url ? `<a href="${escapeAttr(cur.url)}" target="_blank" rel="noopener" style="color:#1d5da3;font-size:13px">${escapeHtml(cur.name || '파일')}</a>` : '<span style="color:#8a847e;font-size:13px">첨부 없음</span>';
                 return `
                     <div class="modal-row">
-                        <label>${escapeHtml(field.label)}</label>
+                        <label>${labelHtml}</label>
                         <div style="display:flex;flex-direction:column;gap:6px">
                             <div data-file-current="${field.key}">${curInfo}</div>
                             <input type="file" data-file-field="${field.key}" style="font-size:13px">
@@ -560,12 +563,25 @@ async function openRowEntry(form, fields, existing) {
                 }).join('');
                 return `
                     <div class="modal-row">
-                        <label>${escapeHtml(field.label)}</label>
+                        <label>${labelHtml}</label>
                         <select data-ref-field="${field.key}" style="width:100%;padding:9px 12px;border:1px solid var(--ledger-line);border-radius:8px;font-size:14px;background:#fff;font-family:inherit">
                             <option value="">-- 선택 --</option>
                             ${opts}
                         </select>
                     </div>`;
+            }
+            // 기본(text/date/tel/textarea/number) 은 ledger-shared 의 renderEntryField 가 처리하므로,
+            // required 인 경우만 라벨에 * 표시하기 위해 inline override.
+            if (field.required) {
+                const v = defs[field.key] ?? '';
+                const inputHtml = (() => {
+                    if (field.type === 'date')     return `<input type="date" data-field="${field.key}" value="${escapeAttr(v)}">`;
+                    if (field.type === 'tel')      return `<input type="tel" data-field="${field.key}" value="${escapeAttr(v)}" placeholder="010-...">`;
+                    if (field.type === 'textarea') return `<textarea data-field="${field.key}" rows="3" placeholder="${escapeAttr(field.label)}">${escapeHtml(v)}</textarea>`;
+                    if (field.type === 'number')   return `<input type="text" inputmode="numeric" data-thousand data-field="${field.key}" value="${escapeAttr(v)}" placeholder="0">`;
+                    return `<input type="text" data-field="${field.key}" value="${escapeAttr(v)}" placeholder="${escapeAttr(field.label)}">`;
+                })();
+                return `<div class="modal-row"${field.type === 'textarea' ? ' style="align-items:start;"' : ''}><label class="row-label">${labelHtml}</label><div class="row-control">${inputHtml}</div></div>`;
             }
             return null;
         },
@@ -657,6 +673,20 @@ async function openRowEntry(form, fields, existing) {
             // formula 는 저장 안 함 (렌더 시점에 평가)
             dataFields.forEach(f => { if (f.type === 'formula') delete data[f.key]; });
 
+            // 필수 항목 검증
+            const missing = dataFields.filter(f => {
+                if (!f.required) return false;
+                if (f.type === 'auto_number' || f.type === 'formula') return false;
+                const v = data[f.key];
+                if (f.type === 'toggle') return false;  // 토글은 항상 값이 있음
+                if (f.type === 'file') return !v || !v.url;
+                if (f.type === 'ref') return !v || !v.id;
+                return v === undefined || v === null || v === '';
+            });
+            if (missing.length > 0) {
+                throw new Error('필수 항목을 입력해주세요: ' + missing.map(f => f.label).join(', '));
+            }
+
             if (existing) {
                 await api('ledger-records', { method: 'PATCH', body: { id: existing.id, data } });
             } else {
@@ -695,18 +725,23 @@ function collectModalRawData(md, fields, defaults) {
 /* ============== Builder ============== */
 function openBuilder(formId) {
     editingFormId = formId;
+    editingFieldIndex = -1;
     const form = formId ? forms.find(f => f.id === formId) : null;
     builderDraft = form?.settings?.customFields ? JSON.parse(JSON.stringify(form.settings.customFields)) : [];
     document.getElementById('builderTitle').textContent = form ? '양식 편집' : '새 양식 만들기';
     document.getElementById('formTitleInput').value = form?.name || '';
     document.getElementById('builderError').classList.add('hidden');
     document.getElementById('builderDelete').style.display = form ? '' : 'none';
-    // 빌더 모달 안 type select 초기화 + extra row 동기화
+    // 빌더 모달 안 type select 초기화 + extra row 동기화 + 편집 상태 초기화
     const modal = document.getElementById('builderModal');
     const typeSelect = modal.querySelector('[data-add-type]');
     typeSelect.value = 'text';
+    modal.querySelector('[data-add-label]').value = '';
+    modal.querySelector('[data-add-required]').checked = false;
     modal.querySelectorAll('[data-extra-toggle], [data-extra-select], [data-extra-formula], [data-extra-ref]')
         .forEach(el => el.classList.add('hidden'));
+    modal.querySelector('[data-edit-status]').classList.add('hidden');
+    modal.querySelector('[data-add-go]').textContent = '+ 항목 추가';
     renderFieldList();
     document.getElementById('builderModal').classList.remove('hidden');
 }
@@ -714,6 +749,7 @@ function openBuilder(formId) {
 function closeBuilder() {
     document.getElementById('builderModal').classList.add('hidden');
     editingFormId = null;
+    editingFieldIndex = -1;
     builderDraft = [];
 }
 
@@ -741,15 +777,23 @@ function renderFieldList() {
             const target = forms.find(x => x.id === f.refFormId);
             info = `<div class="field-item-toggle-labels">참조: ${escapeHtml(target?.name || '(삭제된 양식)')}</div>`;
         }
+        const reqBadge = f.required ? `<span class="field-item-required-badge">필수</span>` : '';
+        const isLast = i === builderDraft.length - 1;
+        const isFirst = i === 0;
+        const editingCls = editingFieldIndex === i ? ' editing' : '';
         return `
-            <div class="field-item" data-i="${i}">
+            <div class="field-item${editingCls}" data-i="${i}">
                 <div>
-                    <span class="field-item-name">${escapeHtml(f.label)}</span>
+                    <span class="field-item-name">${escapeHtml(f.label)}${reqBadge}</span>
                     ${info}
                 </div>
                 <span class="field-item-type">${FIELD_TYPE_LABELS[f.type] || f.type}</span>
-                <button class="icon-btn" type="button" data-move-up="${i}" title="위로">↑</button>
-                <button class="icon-btn danger" type="button" data-del="${i}" title="삭제">×</button>
+                <span class="field-item-actions">
+                    <button class="icon-btn" type="button" data-move-up="${i}" title="위로" ${isFirst ? 'disabled' : ''}>↑</button>
+                    <button class="icon-btn" type="button" data-move-down="${i}" title="아래로" ${isLast ? 'disabled' : ''}>↓</button>
+                    <button class="icon-btn" type="button" data-edit-field="${i}" title="편집">✎</button>
+                    <button class="icon-btn danger" type="button" data-del="${i}" title="삭제">×</button>
+                </span>
             </div>`;
     }).join('');
     list.innerHTML = fixed + custom;
@@ -766,9 +810,79 @@ function renderFieldList() {
             const i = parseInt(btn.dataset.moveUp, 10);
             if (i <= 0) return;
             [builderDraft[i - 1], builderDraft[i]] = [builderDraft[i], builderDraft[i - 1]];
+            if (editingFieldIndex === i) editingFieldIndex = i - 1;
+            else if (editingFieldIndex === i - 1) editingFieldIndex = i;
             renderFieldList();
         });
     });
+    list.querySelectorAll('[data-move-down]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const i = parseInt(btn.dataset.moveDown, 10);
+            if (i >= builderDraft.length - 1) return;
+            [builderDraft[i + 1], builderDraft[i]] = [builderDraft[i], builderDraft[i + 1]];
+            if (editingFieldIndex === i) editingFieldIndex = i + 1;
+            else if (editingFieldIndex === i + 1) editingFieldIndex = i;
+            renderFieldList();
+        });
+    });
+    list.querySelectorAll('[data-edit-field]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const i = parseInt(btn.dataset.editField, 10);
+            startFieldEdit(i);
+        });
+    });
+}
+
+/* 필드 편집 모드 시작 — 빌더 add-row 에 그 field 값 채워넣고 "수정 중" 표시 */
+function startFieldEdit(idx) {
+    const f = builderDraft[idx];
+    if (!f) return;
+    editingFieldIndex = idx;
+    const modal = document.getElementById('builderModal');
+    modal.querySelector('[data-add-label]').value = f.label || '';
+    modal.querySelector('[data-add-type]').value = f.type;
+    modal.querySelector('[data-add-required]').checked = !!f.required;
+    modal.querySelector('[data-add-on]').value = f.onLabel || '';
+    modal.querySelector('[data-add-off]').value = f.offLabel || '';
+    modal.querySelector('[data-add-options]').value = (f.options || []).join('\n');
+    modal.querySelector('[data-add-formula]').value = f.formula || '';
+    if (f.type === 'ref') {
+        const refFormSelect = modal.querySelector('[data-add-ref-form]');
+        const refLabelKeySelect = modal.querySelector('[data-add-ref-label-key]');
+        refFormSelect.value = String(f.refFormId || '');
+        // 라벨 키 options 채우고 현재 값 선택
+        const target = forms.find(x => x.id === f.refFormId);
+        if (target) {
+            const cf = (target.settings?.customFields || []).filter(x => ['text','number','date'].includes(x.type));
+            refLabelKeySelect.innerHTML = cf.map(x => `<option value="${escapeAttr(x.key)}" ${x.key === f.refLabelKey ? 'selected' : ''}>${escapeHtml(x.label)}</option>`).join('');
+            refLabelKeySelect.disabled = false;
+        }
+    }
+    // type 변경에 따른 extra row 표시
+    modal.querySelector('[data-add-type]').dispatchEvent(new Event('change'));
+    // UI 상태 — "수정 중" 박스 + 버튼 라벨 변경
+    const status = modal.querySelector('[data-edit-status]');
+    const goBtn = modal.querySelector('[data-add-go]');
+    status.classList.remove('hidden');
+    status.querySelector('[data-edit-target]').textContent = f.label;
+    goBtn.textContent = '✓ 수정 완료';
+    renderFieldList();
+}
+
+function cancelFieldEdit() {
+    editingFieldIndex = -1;
+    const modal = document.getElementById('builderModal');
+    modal.querySelector('[data-add-label]').value = '';
+    modal.querySelector('[data-add-type]').value = 'text';
+    modal.querySelector('[data-add-required]').checked = false;
+    modal.querySelector('[data-add-on]').value = '';
+    modal.querySelector('[data-add-off]').value = '';
+    modal.querySelector('[data-add-options]').value = '';
+    modal.querySelector('[data-add-formula]').value = '';
+    modal.querySelectorAll('[data-extra-toggle], [data-extra-select], [data-extra-formula], [data-extra-ref]').forEach(el => el.classList.add('hidden'));
+    modal.querySelector('[data-edit-status]').classList.add('hidden');
+    modal.querySelector('[data-add-go]').textContent = '+ 항목 추가';
+    renderFieldList();
 }
 
 function bindBuilderModal() {
@@ -821,20 +935,38 @@ function bindBuilderModal() {
 
     typeSelect.addEventListener('change', syncExtraRows);
 
+    const requiredCheck = modal.querySelector('[data-add-required]');
+    const cancelBtn = modal.querySelector('[data-add-cancel]');
+    if (cancelBtn) cancelBtn.addEventListener('click', cancelFieldEdit);
+
     addBtn.addEventListener('click', () => {
         const label = (labelInput.value || '').trim();
         const type = typeSelect.value;
+        const isRequired = !!requiredCheck?.checked;
         if (!label) { labelInput.focus(); return; }
-        if ([...BASE_FIELDS, ...builderDraft].some(f => f.label === label)) {
+        // 중복 검사 — 수정 모드일 땐 자기 자신 제외
+        if ([...BASE_FIELDS, ...builderDraft.filter((_, i) => i !== editingFieldIndex)].some(f => f.label === label)) {
             alert('이미 같은 이름의 항목이 있습니다.');
             return;
         }
-        const newField = {
-            key: `cf_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`,
-            label,
-            type,
-            custom: true,
-        };
+        const existing = editingFieldIndex >= 0 ? builderDraft[editingFieldIndex] : null;
+        const newField = existing
+            ? { ...existing, label, type, required: isRequired }
+            : {
+                key: `cf_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`,
+                label, type,
+                required: isRequired,
+                custom: true,
+            };
+        // type 변경 시 옛 type 의 옵션은 제거 (clean)
+        if (existing && existing.type !== type) {
+            delete newField.onLabel;
+            delete newField.offLabel;
+            delete newField.options;
+            delete newField.formula;
+            delete newField.refFormId;
+            delete newField.refLabelKey;
+        }
         if (type === 'toggle') {
             newField.onLabel = (onInput.value || '').trim() || 'ON';
             newField.offLabel = (offInput.value || '').trim() || 'OFF';
@@ -852,16 +984,12 @@ function bindBuilderModal() {
             newField.refFormId = parseInt(refFormSelect.value, 10);
             newField.refLabelKey = refLabelKeySelect.value;
         }
-        builderDraft.push(newField);
-        labelInput.value = '';
-        onInput.value = '';
-        offInput.value = '';
-        optionsInput.value = '';
-        formulaInput.value = '';
-        refFormSelect.value = '';
-        refLabelKeySelect.innerHTML = `<option value="">참조 양식 선택 후 표시할 항목 선택</option>`;
-        refLabelKeySelect.disabled = true;
-        renderFieldList();
+        if (existing) {
+            builderDraft[editingFieldIndex] = newField;
+        } else {
+            builderDraft.push(newField);
+        }
+        cancelFieldEdit();
     });
 
     document.getElementById('builderCancel').addEventListener('click', closeBuilder);
