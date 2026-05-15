@@ -10,13 +10,13 @@
  *  - 본부장 계약 → 본부장(=팀원+팀장+본부장 셋 다 받음)
  */
 
-import { initSupabase, apiRequest, getSession } from './auth-shared.js?v=20260516-card-search';
+import { initSupabase, apiRequest, getSession } from './auth-shared.js?v=20260516-bulk-bar-unify';
 import { attachColumnFilters, applyColumnFilters, openRowAddModal, attachPhoneAutoFormat, attachThousandFormat, formatThousand, unformatThousand, getEffectiveFields, mountFieldManager,
          exportRecordsToExcel, pickExcelFile, parseExcelFile, suggestFieldMapping, openImportPreviewModal,
          saveImportSession, loadImportSession, clearImportSession,
          findBlankRecordIds, showSweepToast,
          attachCellClickHandlers,
-         isLedgerMobile, onLedgerViewportChange } from './ledger-shared.js?v=20260516-card-search';
+         isLedgerMobile, onLedgerViewportChange } from './ledger-shared.js?v=20260516-bulk-bar-unify';
 
 const PAGE_TYPE = 'contract';
 const TAX_RATE = 0.033;   // 실수령액 = commission * (1 - TAX_RATE)
@@ -350,6 +350,12 @@ function renderRecords() {
     const mainGroup = groups.find(g => g.isDefault) || groups[0];
     const others = groups.filter(g => g.id !== mainGroup.id);
 
+    // bulk-bar 가 #content 자식이면 innerHTML 갱신 시 같이 삭제되니 잠시 body 로 빼냄
+    const bulkBar = document.getElementById('bulkBar');
+    if (bulkBar && bulkBar.parentElement === content) {
+        document.body.appendChild(bulkBar);
+    }
+
     let html = '';
     html += renderGroupPicker(groups, mainGroup.id);
     html += renderGroupCard(mainGroup);
@@ -357,6 +363,12 @@ function renderRecords() {
         html += renderGroupCard(g);
     });
     content.innerHTML = html;
+
+    // 사용자 요청 배치: [그룹목록(extra-groups)] → [bulk-bar] → [그룹 카드들]
+    const picker = content.querySelector('.extra-groups');
+    if (bulkBar && picker) {
+        picker.insertAdjacentElement('afterend', bulkBar);
+    }
 
     bindAccordionEvents();
     bindExtraPickerEvents();
