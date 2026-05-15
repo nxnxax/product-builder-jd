@@ -14,14 +14,14 @@
  * 토글 필드는 settings.customFields[i] = { key, label, type:'toggle', onLabel, offLabel, custom:true }
  */
 
-import { initSupabase, apiRequest, getSession, refreshNavForms } from './auth-shared.js?v=20260516-sms-bulk';
+import { initSupabase, apiRequest, getSession, refreshNavForms } from './auth-shared.js?v=20260516-bulk-bar-pos';
 import {
     isLedgerMobile, onLedgerViewportChange, openRowAddModal,
     attachColumnFilters, applyColumnFilters,
     exportRecordsToExcel, pickExcelFile, parseExcelFile,
     suggestFieldMapping, openImportPreviewModal,
     attachCellClickHandlers,
-} from './ledger-shared.js?v=20260516-sms-bulk';
+} from './ledger-shared.js?v=20260516-bulk-bar-pos';
 
 const PAGE_TYPE = 'custom';
 
