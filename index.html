@@ -9,7 +9,7 @@
     <link rel="apple-touch-icon" href="logo_main.png">
     <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
     <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
-    <link rel="stylesheet" href="style.css?v=20260516-new-landing">
+    <link rel="stylesheet" href="style.css?v=20260516-hero-section1">
     <style>
         :root {
             --brand: #c8362c;
@@ -85,22 +85,41 @@
             -webkit-background-clip: text; background-clip: text;
             -webkit-text-fill-color: transparent;
         }
-        .slogan-rotator {
-            position: relative;
-            min-height: 1.6em;
-            font-size: clamp(15px, 1.6vw, 19px);
-            font-weight: 600;
+        .hero-lead {
+            margin: 0 0 22px;
+            font-size: clamp(15px, 1.55vw, 19px);
             color: var(--ink-3);
-            margin: 0 0 30px;
+            line-height: 1.8;
+            font-weight: 500;
+            max-width: 560px;
             opacity: 0; transform: translateY(12px);
             animation: fadeUp 700ms 500ms ease-out forwards;
         }
-        .slogan-rotator span {
-            position: absolute; left: 0; top: 0;
-            opacity: 0; transform: translateY(8px);
-            transition: opacity 600ms, transform 600ms;
+        .hero-lead strong { color: var(--ink); font-weight: 700; }
+        .hero-quote {
+            margin: 0 0 28px;
+            padding: 18px 22px;
+            border-left: 4px solid var(--brand);
+            background: linear-gradient(135deg, rgba(255,245,237,.92) 0%, rgba(255,255,255,.6) 100%);
+            backdrop-filter: blur(4px);
+            border-radius: 0 14px 14px 0;
+            color: var(--ink-2);
+            font-size: clamp(14px, 1.4vw, 17px);
+            font-weight: 600;
+            line-height: 1.75;
+            max-width: 560px;
+            box-shadow: 0 8px 24px rgba(200, 54, 44, .08);
+            opacity: 0; transform: translateY(12px);
+            animation: fadeUp 700ms 580ms ease-out forwards;
         }
-        .slogan-rotator span.is-active { opacity: 1; transform: translateY(0); }
+        .hero-quote-em {
+            display: inline-block;
+            font-weight: 800;
+            background: linear-gradient(135deg, #c8362c 0%, #ff7a5c 100%);
+            -webkit-background-clip: text; background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .br-md { display: none; }
         .hero-cta-row {
             display: flex; flex-wrap: wrap; gap: 12px;
             opacity: 0; transform: translateY(12px);
@@ -135,7 +154,7 @@
         .cta svg { transition: transform 220ms; }
         .cta:hover svg { transform: translateX(3px); }
 
-        /* hero 일러스트 — 회전 궤도 */
+        /* hero 일러스트 */
         .hero-stage-art {
             position: relative;
             aspect-ratio: 1;
@@ -145,33 +164,9 @@
             opacity: 0; transform: translateY(20px) scale(.96);
             animation: fadeUp 900ms 450ms cubic-bezier(.22,.61,.36,1) forwards;
         }
-        .hero-orbit-circle {
-            position: absolute; inset: 6%;
-            border: 2px dashed rgba(200, 54, 44, .15);
-            border-radius: 50%;
-            animation: orbit 30s linear infinite;
-        }
-        .hero-orbit-circle:nth-child(2) { inset: 18%; animation-duration: 22s; animation-direction: reverse; border-color: rgba(20,14,8,.06); }
-        .hero-orbit-circle:nth-child(3) { inset: 30%; animation-duration: 16s; border-color: rgba(200, 54, 44, .25); }
-        .hero-orbit-circle::before {
-            content: ''; position: absolute; top: -7px; left: 50%;
-            width: 14px; height: 14px; border-radius: 50%;
-            background: var(--brand);
-            box-shadow: 0 0 16px rgba(200, 54, 44, .5);
-        }
-        .hero-orbit-circle:nth-child(2)::before { background: var(--ink); box-shadow: 0 0 14px rgba(20,14,8,.3); width: 10px; height: 10px; top: -5px; }
-        .hero-orbit-circle:nth-child(3)::before { background: #ff9970; width: 12px; height: 12px; top: -6px; }
-        .hero-center {
-            position: absolute; inset: 38%;
-            background: linear-gradient(135deg, #fff 0%, #fff5ed 100%);
-            border-radius: 50%;
-            box-shadow: 0 20px 50px rgba(200, 54, 44, .22), inset 0 0 0 1px rgba(20,14,8,.06);
-            display: flex; align-items: center; justify-content: center;
-            animation: floater 4s ease-in-out infinite;
-        }
-        .hero-center img {
-            width: 60%; height: auto;
-            filter: drop-shadow(0 4px 12px rgba(200,54,44,.18));
+        .hero-stage-art svg {
+            width: 100%; height: 100%;
+            animation: floater 5s ease-in-out infinite;
         }
 
         @keyframes fadeUp { to { opacity: 1; transform: translateY(0) scale(1); } }
@@ -180,7 +175,6 @@
             70% { box-shadow: 0 0 0 10px rgba(200,54,44,0); }
             100% { box-shadow: 0 0 0 0 rgba(200,54,44,0); }
         }
-        @keyframes orbit { to { transform: rotate(360deg); } }
         @keyframes floater {
             0%, 100% { transform: translateY(0); }
             50% { transform: translateY(-8px); }
@@ -342,20 +336,24 @@
 
     <main id="app-dashboard" class="dashboard">
 
-        <!-- ================== HERO ================== -->
-        <section class="hero">
+        <!-- ================== HERO (1단락 — AI 고객관리) ================== -->
+        <section class="hero" id="features">
             <div class="hero-inner">
                 <div class="hero-copy">
-                    <span class="hero-eyebrow">YOUNGMAN · AI 영업 플랫폼</span>
+                    <span class="hero-eyebrow">YOUNGMAN · AI 고객관리 플랫폼</span>
                     <h1 class="hero-title">
-                        영업은 <span class="accent">더 스마트하게</span>,<br>
-                        관리는 더 편하게.
+                        고객관리, 이제<br>
+                        <span class="accent">전화만 하세요.</span>
                     </h1>
-                    <div class="slogan-rotator" aria-live="polite">
-                        <span class="is-active">세상의 모든 영업을 더 편하게.</span>
-                        <span>영업의 모든 순간을 AI와 함께.</span>
-                        <span>감으로 하는 영업은 끝. 데이터로 일하세요.</span>
-                    </div>
+                    <p class="hero-lead">
+                        통화 후 <strong>AI 가 고객과의 대화내용을 사람보다 더 꼼꼼하게</strong> 정리해드립니다.<br>
+                        중요한 상담내용, 메모, 고객 성향, 요청사항까지 영맨 고객관리대장에 <strong>자동 저장</strong>.
+                        깜빡하고 놓친 내용까지 AI 가 놓치지 않습니다.
+                    </p>
+                    <blockquote class="hero-quote">
+                        고객관리가 귀찮아도 괜찮습니다.<br>
+                        <span class="hero-quote-em">영맨이 당신의 든든한 비서가 되어<br class="br-md">강제로라도 체계적인 고객관리를 만들어드립니다.</span>
+                    </blockquote>
                     <div class="hero-cta-row">
                         <a class="cta cta-primary" href="customers.html">
                             지금 시작하기
@@ -363,73 +361,70 @@
                                 <path d="M5 12h14M13 5l7 7-7 7"/>
                             </svg>
                         </a>
-                        <a class="cta cta-ghost" href="#features">기능 살펴보기</a>
+                        <a class="cta cta-ghost" href="#more">기능 더 보기</a>
                     </div>
                 </div>
                 <div class="hero-stage-art" aria-hidden="true">
-                    <div class="hero-orbit-circle"></div>
-                    <div class="hero-orbit-circle"></div>
-                    <div class="hero-orbit-circle"></div>
-                    <div class="hero-center">
-                        <img src="logo_main.png" alt="YOUNGMAN">
-                    </div>
-                </div>
-            </div>
-        </section>
-
-        <!-- ============ Section 1 — AI 고객관리 ============ -->
-        <section class="feature" id="features">
-            <div class="feature-inner">
-                <div class="feature-copy reveal">
-                    <span class="feature-tag">AI 고객관리</span>
-                    <h2 class="feature-title">고객관리, 이제 <span style="color:var(--brand);">전화만 하세요.</span></h2>
-                    <p class="feature-lead">
-                        통화 후 <strong>AI 가 고객과의 대화내용을 사람보다 더 꼼꼼하게</strong> 정리해드립니다.
-                        중요한 상담내용, 메모, 고객 성향, 요청사항까지 영맨 고객관리대장에 자동 저장.
-                        깜빡하고 놓친 내용까지 AI 가 놓치지 않습니다.
-                    </p>
-                    <div class="feature-quote">
-                        고객관리가 귀찮아도 괜찮습니다.<br>
-                        영맨이 당신의 든든한 비서가 되어 강제로라도 체계적인 고객관리를 만들어드립니다.
-                    </div>
-                </div>
-                <div class="feature-art reveal reveal-delay-1">
-                    <div class="feature-art-bg"></div>
-                    <svg viewBox="0 0 320 280" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                    <!-- 1단락 일러스트: 전화 + AI 두뇌 + 자동 저장 카드 -->
+                    <svg viewBox="0 0 360 360" xmlns="http://www.w3.org/2000/svg">
                         <defs>
-                            <linearGradient id="g1" x1="0" y1="0" x2="1" y2="1">
+                            <linearGradient id="hgAi" x1="0" y1="0" x2="1" y2="1">
                                 <stop offset="0" stop-color="#c8362c"/><stop offset="1" stop-color="#ff7a5c"/>
                             </linearGradient>
+                            <radialGradient id="hgGlow" cx="50%" cy="50%" r="50%">
+                                <stop offset="0" stop-color="rgba(255,200,170,.6)"/>
+                                <stop offset="1" stop-color="rgba(255,200,170,0)"/>
+                            </radialGradient>
                         </defs>
-                        <rect x="56" y="48" width="120" height="184" rx="20" fill="#fff" stroke="#0e0d0c" stroke-width="2.5"/>
-                        <rect x="64" y="58" width="104" height="148" rx="6" fill="#fbf7ef"/>
-                        <circle cx="116" cy="220" r="6" fill="#0e0d0c"/>
-                        <circle cx="116" cy="120" r="32" fill="url(#g1)"/>
-                        <path d="M104 116c0 8 6 18 12 18s12-10 12-18-6-12-12-12-12 4-12 12z" fill="#fff"/>
-                        <circle cx="116" cy="120" r="48" fill="none" stroke="#c8362c" stroke-width="2" opacity=".3"/>
-                        <circle cx="116" cy="120" r="60" fill="none" stroke="#c8362c" stroke-width="2" opacity=".15"/>
-                        <g transform="translate(196,80)">
-                            <path d="M40 0c-22 0-40 18-40 40 0 18 12 33 28 38v18c0 4 4 6 8 4l16-10c20-2 36-20 36-40C88 18 70 0 48 0H40z" fill="#0e0d0c"/>
-                            <text x="44" y="48" text-anchor="middle" fill="#fff" font-size="22" font-weight="800" font-family="Pretendard, sans-serif">AI</text>
-                            <circle cx="78" cy="22" r="6" fill="#c8362c"/>
-                            <circle cx="14" cy="58" r="4" fill="#ff7a5c"/>
+                        <!-- 배경 빛 -->
+                        <circle cx="180" cy="180" r="160" fill="url(#hgGlow)"/>
+                        <!-- 흐림 큰 원 -->
+                        <circle cx="180" cy="180" r="140" fill="none" stroke="rgba(200,54,44,.18)" stroke-dasharray="3 6"/>
+                        <!-- 전화 -->
+                        <g transform="translate(50,70)" filter="drop-shadow(0 18px 40px rgba(20,14,8,.18))">
+                            <rect width="140" height="220" rx="22" fill="#fff" stroke="#0e0d0c" stroke-width="2.5"/>
+                            <rect x="10" y="14" width="120" height="174" rx="8" fill="#fbf7ef"/>
+                            <circle cx="70" cy="206" r="7" fill="#0e0d0c"/>
+                            <!-- 통화 표시 -->
+                            <circle cx="70" cy="100" r="36" fill="url(#hgAi)"/>
+                            <path d="M56 94c0 9 6 22 14 22s14-13 14-22-6-14-14-14-14 5-14 14z" fill="#fff"/>
+                            <circle cx="70" cy="100" r="52" fill="none" stroke="#c8362c" stroke-width="2" opacity=".35"/>
+                            <circle cx="70" cy="100" r="66" fill="none" stroke="#c8362c" stroke-width="2" opacity=".18"/>
+                            <!-- 화면 텍스트 -->
+                            <rect x="22" y="146" width="96" height="6" rx="3" fill="#e9e2d6"/>
+                            <rect x="22" y="158" width="72" height="6" rx="3" fill="#e9e2d6"/>
+                            <rect x="22" y="170" width="84" height="6" rx="3" fill="#e9e2d6"/>
                         </g>
-                        <path d="M180 120 Q210 100 240 105" stroke="#c8362c" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-dasharray="4 5"/>
-                        <path d="M236 100l8 6-8 4z" fill="#c8362c"/>
-                        <g transform="translate(196,180)">
-                            <rect width="96" height="58" rx="10" fill="#fff" stroke="#0e0d0c" stroke-width="2"/>
-                            <rect x="10" y="12" width="40" height="6" rx="3" fill="#c8362c"/>
-                            <rect x="10" y="24" width="76" height="4" rx="2" fill="#e9e2d6"/>
-                            <rect x="10" y="34" width="60" height="4" rx="2" fill="#e9e2d6"/>
-                            <rect x="10" y="44" width="50" height="4" rx="2" fill="#e9e2d6"/>
+                        <!-- AI 두뇌 -->
+                        <g transform="translate(210,82)" filter="drop-shadow(0 14px 30px rgba(20,14,8,.22))">
+                            <path d="M50 0c-28 0-50 22-50 50 0 24 16 42 36 48v22c0 5 5 8 10 5l22-12c24-2 44-24 44-48C112 22 90 0 60 0H50z" fill="#0e0d0c"/>
+                            <text x="56" y="62" text-anchor="middle" fill="#fff" font-size="28" font-weight="800" font-family="Pretendard, sans-serif">AI</text>
+                            <circle cx="100" cy="28" r="7" fill="#c8362c"/>
+                            <circle cx="14" cy="76" r="5" fill="#ff7a5c"/>
                         </g>
+                        <!-- 흐름 화살표 -->
+                        <path d="M196 102 Q224 84 252 92" stroke="#c8362c" stroke-width="3" fill="none" stroke-linecap="round" stroke-dasharray="5 6"/>
+                        <path d="M248 86l10 7-10 5z" fill="#c8362c"/>
+                        <!-- 자동 저장 카드 -->
+                        <g transform="translate(196,228)" filter="drop-shadow(0 14px 30px rgba(20,14,8,.18))">
+                            <rect width="130" height="80" rx="14" fill="#fff" stroke="#0e0d0c" stroke-width="2"/>
+                            <rect x="14" y="16" width="56" height="8" rx="4" fill="#c8362c"/>
+                            <rect x="14" y="32" width="100" height="5" rx="2.5" fill="#e9e2d6"/>
+                            <rect x="14" y="44" width="80" height="5" rx="2.5" fill="#e9e2d6"/>
+                            <rect x="14" y="56" width="70" height="5" rx="2.5" fill="#e9e2d6"/>
+                            <!-- 체크 -->
+                            <circle cx="112" cy="62" r="11" fill="#34a853"/>
+                            <path d="M108 62l3 3 6-6" stroke="#fff" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+                        </g>
+                        <!-- 흐름 화살표 2 -->
+                        <path d="M226 196 Q236 220 244 226" stroke="#c8362c" stroke-width="3" fill="none" stroke-linecap="round" stroke-dasharray="5 6"/>
                     </svg>
                 </div>
             </div>
         </section>
 
         <!-- ============ Section 2 — 단체문자 ============ -->
-        <section class="feature alt reverse">
+        <section class="feature alt reverse" id="more">
             <div class="feature-inner">
                 <div class="feature-copy reveal">
                     <span class="feature-tag">단체 문자 발송</span>
@@ -692,21 +687,10 @@
     </main>
 
     <script type="module">
-        import { mountAppHeader, mountAppFooter, initSupabase } from './auth-shared.js?v=20260516-new-landing';
+        import { mountAppHeader, mountAppFooter, initSupabase } from './auth-shared.js?v=20260516-hero-section1';
         mountAppHeader();
         mountAppFooter();
         initSupabase();
-
-        // 슬로건 회전
-        const slogans = document.querySelectorAll('.slogan-rotator span');
-        if (slogans.length > 1) {
-            let idx = 0;
-            setInterval(() => {
-                slogans[idx].classList.remove('is-active');
-                idx = (idx + 1) % slogans.length;
-                slogans[idx].classList.add('is-active');
-            }, 4200);
-        }
 
         // 스크롤 reveal
         const observer = new IntersectionObserver((entries) => {
