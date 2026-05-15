@@ -6,12 +6,12 @@
  * Phase 3 의 계약자 관리대장이 이 그룹의 settings.commissions 를 읽어 정산.
  */
 
-import { initSupabase, apiRequest, getSession } from './auth-shared.js?v=20260515-nav-persist';
+import { initSupabase, apiRequest, getSession } from './auth-shared.js?v=20260515-formula-excel';
 import { attachColumnFilters, applyColumnFilters, openRowAddModal, attachPhoneAutoFormat, attachThousandFormat, formatThousand, unformatThousand, getEffectiveFields, mountFieldManager,
          exportRecordsToExcel, pickExcelFile, parseExcelFile, suggestFieldMapping, openImportPreviewModal,
          saveImportSession, loadImportSession, clearImportSession,
          findBlankRecordIds, showSweepToast,
-         isLedgerMobile, onLedgerViewportChange } from './ledger-shared.js?v=20260515-nav-persist';
+         isLedgerMobile, onLedgerViewportChange } from './ledger-shared.js?v=20260515-formula-excel';
 
 const PAGE_TYPE = 'org';
 

@@ -9,12 +9,12 @@
  *  - client_idempotency_key 로 같은 통화의 중복 전송 차단
  */
 
-import { initSupabase, apiRequest, getSession } from './auth-shared.js?v=20260515-nav-persist';
+import { initSupabase, apiRequest, getSession } from './auth-shared.js?v=20260515-formula-excel';
 import { attachColumnFilters, applyColumnFilters, openRowAddModal, attachPhoneAutoFormat, getEffectiveFields, mountFieldManager,
          exportRecordsToExcel, pickExcelFile, parseExcelFile, suggestFieldMapping, openImportPreviewModal,
          saveImportSession, loadImportSession, clearImportSession,
          findBlankRecordIds, showSweepToast,
-         isLedgerMobile, onLedgerViewportChange } from './ledger-shared.js?v=20260515-nav-persist';
+         isLedgerMobile, onLedgerViewportChange } from './ledger-shared.js?v=20260515-formula-excel';
 
 const MOBILE_PRIMARY_KEYS = ['customer', 'phone', 'date'];
 

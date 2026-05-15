@@ -6,7 +6,7 @@
 <title>내 양식 · YOUNGMAN</title>
 <link rel="icon" type="image/png" href="logo_main.png">
 <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
-<link rel="stylesheet" href="style.css?v=20260515-nav-persist">
+<link rel="stylesheet" href="style.css?v=20260515-formula-excel">
 <style>
 :root{
     --ledger-line:rgba(20,14,8,.09); --ledger-line-strong:rgba(20,14,8,.16);
@@ -170,16 +170,17 @@ table.ledger-tbl{width:100%;border-collapse:collapse;font-size:13.5px}
 .settings-add input:focus{border-color:#0e0d0c}
 .settings-add .tiny-btn{flex:0 0 auto;white-space:nowrap}
 
-/* 수식 UI 빌더 */
-.formula-builder{display:flex;flex-direction:column;gap:10px;width:100%;margin-top:10px;padding:12px;background:#fff;border:1px solid var(--ledger-line);border-radius:10px}
-.formula-toolbar{display:flex;gap:8px;flex-wrap:wrap}
-.formula-toolbar select{flex:1 1 140px;padding:8px 10px;border:1px solid var(--ledger-line);border-radius:8px;font-size:13.5px;font-weight:600;background:#fbf7ef;color:#0e0d0c;cursor:pointer;font-family:inherit}
-.formula-toolbar select:hover{background:#fff;border-color:var(--ledger-line-strong)}
-.formula-ops{display:flex;gap:6px;flex-wrap:wrap}
-.formula-ops button{padding:8px 14px;border:1px solid var(--ledger-line);background:#fbf7ef;color:#0e0d0c;font-size:15px;font-weight:700;border-radius:8px;cursor:pointer;font-family:inherit;min-width:42px}
-.formula-ops button:hover{background:#fff;border-color:var(--ledger-line-strong)}
-.formula-ops .formula-clear{margin-left:auto;color:var(--ledger-accent);border-color:rgba(200,54,44,.25);min-width:auto;padding:8px 12px;font-size:13px}
-.formula-ops .formula-clear:hover{background:#fff8f7}
+/* 수식 입력 — 엑셀 스타일 평문 + 다른 항목 캐스케이드 picker */
+.formula-hint{margin:0 0 4px;font-size:13.5px;color:#4f4943;line-height:1.55}
+.formula-hint code{background:#fbf7ef;padding:1px 6px;border-radius:5px;font-size:13px;color:#7a1812;font-family:'SF Mono',Menlo,Consolas,monospace}
+.field-add-row .extra-row[data-extra-formula] textarea{font-family:'SF Mono',Menlo,Consolas,'Pretendard',sans-serif;font-size:15px;line-height:1.6;background:#fff}
+.formula-ref-picker{display:flex;flex-direction:column;gap:6px;width:100%;margin-top:8px;padding:12px;background:#fff;border:1px solid var(--ledger-line);border-radius:10px}
+.formula-ref-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.formula-ref-row select{flex:1 1 140px;padding:8px 10px;border:1px solid var(--ledger-line);border-radius:8px;font-size:13.5px;font-weight:600;background:#fbf7ef;color:#0e0d0c;cursor:pointer;font-family:inherit}
+.formula-ref-row select:hover:not(:disabled){background:#fff;border-color:var(--ledger-line-strong)}
+.formula-ref-row select:disabled{opacity:.45;cursor:not-allowed}
+.formula-ref-row .tiny-btn{flex:0 0 auto;white-space:nowrap}
+.formula-ref-row .tiny-btn:disabled{opacity:.45;cursor:not-allowed}
 
 /* 모바일에서 form-grid 1열 / 패딩 줄임 + 빌더 모달 정리 */
 @media (max-width:640px){
@@ -260,46 +261,17 @@ table.ledger-tbl{width:100%;border-collapse:collapse;font-size:13.5px}
                     <textarea data-add-options placeholder="옵션을 한 줄에 하나씩 입력&#10;예:&#10;진행중&#10;완료&#10;보류" rows="3"></textarea>
                 </div>
                 <div class="extra-row hidden" data-extra-formula>
-                    <input type="text" data-add-formula placeholder="아래 버튼으로 수식 조립 — 예: {수량} * {단가}">
-                    <!-- UI 빌더 — 클릭으로 수식 조립 -->
-                    <div class="formula-builder">
-                        <div class="formula-toolbar">
-                            <select data-formula-insert-field><option value="">+ 항목 삽입</option></select>
-                            <select data-formula-insert-ref><option value="">+ 다른 양식 셀</option></select>
-                            <select data-formula-insert-setting><option value="">+ 다른 양식 설정값</option></select>
-                            <select data-formula-insert-fn>
-                                <option value="">+ 함수 삽입</option>
-                                <option value="IF(__c,__a,__b)">IF (조건)</option>
-                                <option value="DAYS(__a,__b)">DAYS (날짜차)</option>
-                                <option value="TODAY()">TODAY (오늘)</option>
-                                <option value="CONCAT(__a,__b)">CONCAT (연결)</option>
-                                <option value="SUM(__a,__b)">SUM (합계)</option>
-                                <option value="AVG(__a,__b)">AVG (평균)</option>
-                                <option value="MIN(__a,__b)">MIN</option>
-                                <option value="MAX(__a,__b)">MAX</option>
-                                <option value="COUNT(__a)">COUNT (개수)</option>
-                            </select>
+                    <p class="form-help formula-hint">엑셀과 똑같은 방식으로 수식을 입력해주세요. 등호(=)로 시작합니다. 예: <code>=500*25</code>, <code>=(3+5)/2</code></p>
+                    <textarea data-add-formula rows="2" placeholder="=500*25 또는 =조직도&gt;설정기능&gt;팀원수수료*3.3"></textarea>
+                    <div class="formula-ref-picker">
+                        <label class="form-help" style="margin:0 0 4px;font-weight:700">다른 항목 가져오기</label>
+                        <div class="formula-ref-row">
+                            <select data-ref-form><option value="">양식 선택…</option></select>
+                            <select data-ref-cat disabled><option value="">카테고리…</option></select>
+                            <select data-ref-key disabled><option value="">항목…</option></select>
+                            <button type="button" class="tiny-btn" data-ref-insert disabled>+ 수식에 추가</button>
                         </div>
-                        <div class="formula-ops">
-                            <button type="button" data-formula-op="+">+</button>
-                            <button type="button" data-formula-op="-">−</button>
-                            <button type="button" data-formula-op="*">×</button>
-                            <button type="button" data-formula-op="/">÷</button>
-                            <button type="button" data-formula-op="(">(</button>
-                            <button type="button" data-formula-op=")">)</button>
-                            <button type="button" data-formula-op="*0.01" title="× 1%">×1%</button>
-                            <button type="button" data-formula-clear class="formula-clear">지우기</button>
-                        </div>
-                        <details class="formula-help" style="margin:0">
-                            <summary style="font-size:13px;color:#4f4943;cursor:pointer;font-weight:700">함수 설명 보기</summary>
-                            <div style="font-size:13px;color:#0e0d0c;line-height:1.7;padding:10px 12px;background:#fff;border:1px solid var(--ledger-line);border-radius:8px;margin-top:8px">
-                                <div><b>IF(조건, 참값, 거짓값)</b> — 비교는 =, !=, &lt;, &gt;</div>
-                                <div><b>DAYS(A, B)</b> — 두 날짜 차이 (일수)</div>
-                                <div><b>TODAY()</b> — 오늘 (YYYY-MM-DD)</div>
-                                <div><b>CONCAT(a, b, …)</b> — 문자열 연결</div>
-                                <div><b>SUM/AVG/MIN/MAX/COUNT("양식", "필드")</b> — 다른 양식 집계</div>
-                            </div>
-                        </details>
+                        <p class="form-help" style="margin:6px 0 0;font-size:12px;color:#7a716a">선택하면 <code>양식&gt;카테고리&gt;항목</code> 형태로 커서 위치에 삽입됩니다.</p>
                     </div>
                 </div>
                 <div class="extra-row hidden" data-extra-ref>
@@ -332,10 +304,10 @@ table.ledger-tbl{width:100%;border-collapse:collapse;font-size:13.5px}
 </div>
 
 <script type="module">
-    import { mountAppHeader } from './auth-shared.js?v=20260515-nav-persist';
+    import { mountAppHeader } from './auth-shared.js?v=20260515-formula-excel';
     mountAppHeader();
 </script>
-<script type="module" src="forms.js?v=20260515-nav-persist"></script>
+<script type="module" src="forms.js?v=20260515-formula-excel"></script>
 
 </body>
 </html>

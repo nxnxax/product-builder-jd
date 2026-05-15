@@ -14,13 +14,13 @@
  * 토글 필드는 settings.customFields[i] = { key, label, type:'toggle', onLabel, offLabel, custom:true }
  */
 
-import { initSupabase, apiRequest, getSession, refreshNavForms } from './auth-shared.js?v=20260515-nav-persist';
+import { initSupabase, apiRequest, getSession, refreshNavForms } from './auth-shared.js?v=20260515-formula-excel';
 import {
     isLedgerMobile, onLedgerViewportChange, openRowAddModal,
     attachColumnFilters, applyColumnFilters,
     exportRecordsToExcel, pickExcelFile, parseExcelFile,
     suggestFieldMapping, openImportPreviewModal,
-} from './ledger-shared.js?v=20260515-nav-persist';
+} from './ledger-shared.js?v=20260515-formula-excel';
 
 const PAGE_TYPE = 'custom';
 
@@ -58,8 +58,21 @@ const API_URL = 'records.php';
 function evalFormula(formula, data, fields, ctx) {
     if (!formula) return '';
     let expr = String(formula);
+    // 엑셀 스타일: 선두의 = 는 제거 (사용자가 평문 입력 시 = 로 시작).
+    expr = expr.replace(/^\s*=\s*/, '');
     const refCache = (ctx && ctx.refCache) || {};
     const aggCache = (ctx && ctx.aggCache) || {};
+
+    // 0) "양식>카테고리>항목" path 표기 → 내부 함수 변환 (longest match 로 치환).
+    //    카테고리: 설정기능 / 합계 / 평균 / 최댓값 / 최솟값 / 개수
+    //    예: 조직도>설정기능>팀원수수료 → SETTING("조직도","팀원수수료")
+    //        계약자관리대장>합계>수수료 → SUM("계약자관리대장","수수료")
+    const paths = (ctx && ctx.allPaths) || [];
+    // 긴 path 먼저 처리해야 짧은 path 가 긴 path 의 일부를 부분 치환하는 사고를 방지.
+    for (const p of paths) {
+        if (expr.indexOf(p.path) === -1) continue;
+        expr = expr.split(p.path).join(p.replace);
+    }
 
     // 1) {ref필드.속성} — ref 필드의 참조 행에서 속성 값 가져오기
     expr = expr.replace(/\{([^.}]+)\.([^}]+)\}/g, (_, refLabel, subLabel) => {
@@ -387,7 +400,7 @@ async function enterForm(formId) {
    - 현재 양식의 수식들이 참조하는 양식 (SUM/AVG/...) → aggCache[양식이름]
    - 집계 함수의 필드 라벨 → 필드 key 매핑 */
 async function buildFormulaCtx(formId) {
-    formulaCtx = { refCache: {}, aggCache: {}, aggFieldMap: {}, settingsCache: {} };
+    formulaCtx = { refCache: {}, aggCache: {}, aggFieldMap: {}, settingsCache: {}, allPaths: [] };
     const form = forms.find(f => f.id === formId);
     if (!form) return;
     const fields = (form.settings?.customFields) || [];
@@ -399,6 +412,46 @@ async function buildFormulaCtx(formId) {
             formulaCtx.settingsCache[g.name] = cs;
         }
     });
+
+    // 엑셀식 path 표기 ("양식>카테고리>항목") → 내부 함수 매핑 구축.
+    // 평가 직전에 longest-match 로 SUM/AVG/.../SETTING 으로 치환됨.
+    (allRefGroups || []).forEach(g => {
+        const cs = g.settings?.customSettings;
+        if (cs) {
+            Object.keys(cs).forEach(k => {
+                if (k.startsWith('__')) return;   // __navSlot 같은 메타 키 제외
+                formulaCtx.allPaths.push({
+                    path: `${g.name}>설정기능>${k}`,
+                    replace: `SETTING("${g.name}","${k}")`,
+                });
+            });
+        }
+        const cf = g.settings?.customFields || [];
+        cf.forEach(f => {
+            // 숫자/수식 필드만 집계 의미가 있음
+            if (!['number', 'formula'].includes(f.type)) return;
+            const cats = [
+                { name: '합계', fn: 'SUM' },
+                { name: '평균', fn: 'AVG' },
+                { name: '최댓값', fn: 'MAX' },
+                { name: '최솟값', fn: 'MIN' },
+            ];
+            cats.forEach(c => {
+                formulaCtx.allPaths.push({
+                    path: `${g.name}>${c.name}>${f.label}`,
+                    replace: `${c.fn}("${g.name}","${f.label}")`,
+                });
+            });
+        });
+        // 전체 행 개수 — 양식>개수
+        formulaCtx.allPaths.push({
+            path: `${g.name}>개수`,
+            replace: `COUNT("${g.name}")`,
+        });
+    });
+    // longest-match 우선 — 긴 path 를 먼저 처리하지 않으면
+    // "A>B" 가 "A>B>C" 안의 부분 문자열로 들어가버림.
+    formulaCtx.allPaths.sort((a, b) => b.path.length - a.path.length);
 
     // (1) ref 필드 → 참조 양식 records 로드 (page_type 무관)
     for (const f of fields) {
@@ -414,12 +467,20 @@ async function buildFormulaCtx(formId) {
         } catch {}
     }
 
-    // (2) 수식에서 SUM/AVG/MIN/MAX/COUNT 참조하는 양식 이름 추출 → 그 양식 records 로드
+    // (2) 수식에서 SUM/AVG/MIN/MAX/COUNT 또는 path 표기로 참조하는 양식 이름 추출 → records 로드
     const aggRefs = new Set();
     fields.forEach(f => {
         if (f.type !== 'formula' || !f.formula) return;
-        const matches = String(f.formula).matchAll(/\b(?:SUM|AVG|MIN|MAX|COUNT)\s*\(\s*["']?([^,"')]+)["']?/g);
+        const formula = String(f.formula);
+        // 기존 직접 함수 호출 표기
+        const matches = formula.matchAll(/\b(?:SUM|AVG|MIN|MAX|COUNT)\s*\(\s*["']?([^,"')]+)["']?/g);
         for (const m of matches) aggRefs.add(m[1].trim());
+        // 새 path 표기 — formulaCtx.allPaths 중 수식에 포함된 것의 양식 이름 추출
+        for (const p of formulaCtx.allPaths) {
+            if (formula.indexOf(p.path) >= 0) {
+                aggRefs.add(p.path.split('>')[0]);
+            }
+        }
     });
     for (const formName of aggRefs) {
         const target = forms.find(x => x.name === formName);
@@ -1373,102 +1434,135 @@ function bindBuilderModal() {
 
     typeSelect.addEventListener('change', syncExtraRows);
 
-    // ===== 수식 UI 빌더 =====
-    const formulaInsertField = modal.querySelector('[data-formula-insert-field]');
-    const formulaInsertRef = modal.querySelector('[data-formula-insert-ref]');
-    const formulaInsertSetting = modal.querySelector('[data-formula-insert-setting]');
-    const formulaInsertFn = modal.querySelector('[data-formula-insert-fn]');
-    const formulaOps = modal.querySelectorAll('[data-formula-op]');
-    const formulaClear = modal.querySelector('[data-formula-clear]');
+    // ===== 엑셀 스타일 수식 입력 + 다른 항목 캐스케이드 picker =====
+    const refFormPick = modal.querySelector('[data-ref-form]');
+    const refCatPick  = modal.querySelector('[data-ref-cat]');
+    const refKeyPick  = modal.querySelector('[data-ref-key]');
+    const refInsertBtn = modal.querySelector('[data-ref-insert]');
 
     function insertAtCursor(text) {
         const input = formulaInput;
         const start = input.selectionStart ?? input.value.length;
         const end = input.selectionEnd ?? input.value.length;
         const v = input.value;
-        input.value = v.slice(0, start) + text + v.slice(end);
-        const newPos = start + text.length;
+        // 빈 칸이면 = 자동 prepend, 아니면 그냥 삽입
+        const prefix = (v.trim() === '') ? '=' : '';
+        input.value = v.slice(0, start) + prefix + text + v.slice(end);
+        const newPos = start + prefix.length + text.length;
         try { input.setSelectionRange(newPos, newPos); } catch {}
         input.focus();
+        // input 이벤트 발화 → 라이브 미리보기 갱신 (있다면)
+        input.dispatchEvent(new Event('input', { bubbles: true }));
     }
 
     function refreshFormulaTools() {
-        // 같은 양식의 필드 (builderDraft + BASE_FIELDS 의 created_at)
-        const sameFields = [
-            ...BASE_FIELDS.filter(f => f.type !== 'auto_number'),
-            ...builderDraft.filter((_, i) => i !== editingFieldIndex && builderDraft[i].type !== 'formula'),
-        ];
-        formulaInsertField.innerHTML = `<option value="">+ 항목 삽입</option>` +
-            sameFields.map(f => `<option value="{${escapeAttr(f.label)}}">${escapeHtml(f.label)}</option>`).join('');
-
-        // 다른 양식 참조 (allRefGroups 의 그룹 + 사용자 정의 필드)
-        const refOpts = [];
-        for (const g of allRefGroups) {
-            if (g.id === editingFormId) continue;
-            const pageLabel = { customer: '고객', org: '조직도', contract: '계약자', custom: g.name };
-            const cf = g.settings?.customFields || [];
-            if (cf.length > 0) {
-                cf.forEach(f => {
-                    refOpts.push({
-                        value: `SUM("${g.name}","${f.label}")`,
-                        label: `[${pageLabel[g.pageType] || g.name}] ${g.name} · ${f.label} 합계`,
-                    });
-                });
-            }
-        }
-        formulaInsertRef.innerHTML = `<option value="">+ 다른 양식 셀</option>` +
-            refOpts.map(o => `<option value="${escapeAttr(o.value)}">${escapeHtml(o.label)}</option>`).join('');
-
-        // 다른 양식 설정값 (customSettings)
-        if (formulaInsertSetting) {
-            const settingOpts = [];
-            const pageLabel = { customer: '고객', org: '조직도', contract: '계약자', custom: '내 양식' };
-            for (const g of allRefGroups) {
-                const cs = g.settings?.customSettings;
-                if (!cs) continue;
-                Object.keys(cs).forEach(k => {
-                    settingOpts.push({
-                        value: `SETTING("${g.name}","${k}")`,
-                        label: `[${pageLabel[g.pageType] || g.pageType}] ${g.name} · ${k} (${cs[k]})`,
-                    });
-                });
-            }
-            formulaInsertSetting.innerHTML = `<option value="">+ 다른 양식 설정값</option>` +
-                settingOpts.map(o => `<option value="${escapeAttr(o.value)}">${escapeHtml(o.label)}</option>`).join('');
-        }
+        // 양식 dropdown — 자기 자신 제외, 그룹별 정렬
+        const pageLabel = { customer: '고객', org: '조직도', contract: '계약자', custom: '' };
+        const ordered = [...(allRefGroups || [])]
+            .filter(g => g.id !== editingFormId)
+            .sort((a, b) => {
+                const order = { custom: 0, customer: 1, org: 2, contract: 3 };
+                return (order[a.pageType] ?? 9) - (order[b.pageType] ?? 9);
+            });
+        refFormPick.innerHTML = `<option value="">양식 선택…</option>` + ordered.map(g => {
+            const tag = pageLabel[g.pageType] !== '' ? `[${pageLabel[g.pageType]}] ` : '';
+            return `<option value="${g.id}">${tag}${escapeHtml(g.name)}</option>`;
+        }).join('');
+        // 캐스케이드 초기화
+        refCatPick.innerHTML = `<option value="">카테고리…</option>`;
+        refCatPick.disabled = true;
+        refKeyPick.innerHTML = `<option value="">항목…</option>`;
+        refKeyPick.disabled = true;
+        refInsertBtn.disabled = true;
     }
 
-    formulaInsertField.addEventListener('change', () => {
-        const v = formulaInsertField.value;
-        if (v) insertAtCursor(v);
-        formulaInsertField.value = '';
+    // 1단계: 양식 선택 → 카테고리 옵션 채우기
+    refFormPick.addEventListener('change', () => {
+        const gid = parseInt(refFormPick.value, 10);
+        refCatPick.innerHTML = `<option value="">카테고리…</option>`;
+        refKeyPick.innerHTML = `<option value="">항목…</option>`;
+        refKeyPick.disabled = true;
+        refInsertBtn.disabled = true;
+        if (!gid) { refCatPick.disabled = true; return; }
+        const g = (allRefGroups || []).find(x => x.id === gid);
+        if (!g) { refCatPick.disabled = true; return; }
+        const cats = [];
+        const cs = g.settings?.customSettings;
+        const csKeys = cs ? Object.keys(cs).filter(k => !k.startsWith('__')) : [];
+        if (csKeys.length) cats.push('설정기능');
+        const cf = (g.settings?.customFields || []).filter(f => ['number', 'formula'].includes(f.type));
+        if (cf.length) cats.push('합계', '평균', '최댓값', '최솟값');
+        cats.push('개수');   // 항상 가능 (행 수)
+        refCatPick.innerHTML = `<option value="">카테고리…</option>` +
+            cats.map(c => `<option value="${c}">${c}</option>`).join('');
+        refCatPick.disabled = false;
     });
-    formulaInsertRef.addEventListener('change', () => {
-        const v = formulaInsertRef.value;
-        if (v) insertAtCursor(v);
-        formulaInsertRef.value = '';
+
+    // 2단계: 카테고리 선택 → 항목 옵션 채우기 (또는 '개수'는 항목 없이 바로 활성)
+    refCatPick.addEventListener('change', () => {
+        const gid = parseInt(refFormPick.value, 10);
+        const cat = refCatPick.value;
+        refKeyPick.innerHTML = `<option value="">항목…</option>`;
+        refInsertBtn.disabled = true;
+        if (!gid || !cat) { refKeyPick.disabled = true; return; }
+        const g = (allRefGroups || []).find(x => x.id === gid);
+        if (!g) return;
+        if (cat === '개수') {
+            refKeyPick.innerHTML = `<option value="__count__" selected>(양식 전체 행 수)</option>`;
+            refKeyPick.disabled = true;
+            refInsertBtn.disabled = false;
+            return;
+        }
+        let items = [];
+        if (cat === '설정기능') {
+            const cs = g.settings?.customSettings || {};
+            items = Object.keys(cs)
+                .filter(k => !k.startsWith('__'))
+                .map(k => ({ value: k, label: `${k}  (${cs[k]})` }));
+        } else {
+            // 합계/평균/최댓값/최솟값 → 숫자/수식 필드 라벨
+            items = (g.settings?.customFields || [])
+                .filter(f => ['number', 'formula'].includes(f.type))
+                .map(f => ({ value: f.label, label: f.label }));
+        }
+        if (items.length === 0) {
+            refKeyPick.innerHTML = `<option value="">(가능한 항목 없음)</option>`;
+            refKeyPick.disabled = true;
+            return;
+        }
+        refKeyPick.innerHTML = `<option value="">항목…</option>` +
+            items.map(i => `<option value="${escapeAttr(i.value)}">${escapeHtml(i.label)}</option>`).join('');
+        refKeyPick.disabled = false;
     });
-    formulaInsertSetting?.addEventListener('change', () => {
-        const v = formulaInsertSetting.value;
-        if (v) insertAtCursor(v);
-        formulaInsertSetting.value = '';
+
+    // 3단계: 항목 선택 → 삽입 버튼 활성
+    refKeyPick.addEventListener('change', () => {
+        refInsertBtn.disabled = !refKeyPick.value;
     });
-    formulaInsertFn.addEventListener('change', () => {
-        const v = formulaInsertFn.value;
-        if (!v) return;
-        // __c __a __b 자리표시자를 빈 공간으로 치환 (사용자가 채워 넣기)
-        const text = v.replace(/__c/g, '').replace(/__a/g, '').replace(/__b/g, '');
-        insertAtCursor(text);
-        formulaInsertFn.value = '';
-    });
-    formulaOps.forEach(btn => {
-        btn.addEventListener('click', () => {
-            insertAtCursor(btn.dataset.formulaOp);
-        });
-    });
-    formulaClear?.addEventListener('click', () => {
-        formulaInput.value = '';
-        formulaInput.focus();
+
+    // 삽입 버튼: 선택된 path 를 textarea 의 cursor 위치에 삽입
+    refInsertBtn.addEventListener('click', () => {
+        const gid = parseInt(refFormPick.value, 10);
+        const cat = refCatPick.value;
+        const keyVal = refKeyPick.value;
+        if (!gid || !cat) return;
+        const g = (allRefGroups || []).find(x => x.id === gid);
+        if (!g) return;
+        let path;
+        if (cat === '개수') {
+            path = `${g.name}>개수`;
+        } else {
+            if (!keyVal) return;
+            path = `${g.name}>${cat}>${keyVal}`;
+        }
+        insertAtCursor(path);
+        // 같은 항목 또 넣을 수도 있으니 카테고리/항목만 reset
+        refCatPick.value = '';
+        refKeyPick.value = '';
+        refKeyPick.disabled = true;
+        refInsertBtn.disabled = true;
+        refFormPick.dispatchEvent(new Event('change'));   // 카테고리 다시 채우기
+        refFormPick.value = String(gid);                  // 양식 선택은 유지
     });
 
     // type 변경 시 수식 옵션 갱신 (formula 모드 진입 시점에 한 번 더)
@@ -1519,7 +1613,7 @@ function bindBuilderModal() {
             newField.options = lines;
         } else if (type === 'formula') {
             const f = (formulaInput.value || '').trim();
-            if (!f) { alert('수식을 입력해주세요. 예: {수량} * {단가}'); return; }
+            if (!f) { alert('수식을 입력해주세요. 예: =500*25, =조직도>설정기능>팀원수수료*3.3'); return; }
             newField.formula = f;
         } else if (type === 'ref') {
             if (!refFormSelect.value) { alert('참조할 양식을 선택해주세요.'); return; }
