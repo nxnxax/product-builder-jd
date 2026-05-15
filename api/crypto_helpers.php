@@ -18,17 +18,20 @@ function youngman_master_key(): ?string {
 
     $raw = getenv('YOUNGMAN_CRYPTO_KEY') ?: '';
 
-    // .env 폴백 (FTP 배포 환경에서 deploy/.env 에 있음)
+    // .env 폴백: 배포 레이아웃에 따라 __DIR__ 또는 그 부모에 있을 수 있음.
+    // cafe24: webroot/.env + webroot/crypto_helpers.php → __DIR__/.env
+    // 로컬 dev: api/crypto_helpers.php + 루트/.env → dirname(__DIR__)/.env
     if ($raw === '') {
-        $envPath = __DIR__ . '/../.env';
-        if (file_exists($envPath)) {
+        $candidates = [__DIR__ . '/.env', dirname(__DIR__) . '/.env'];
+        foreach ($candidates as $envPath) {
+            if (!file_exists($envPath)) continue;
             $lines = @file($envPath, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
-            if (is_array($lines)) {
-                foreach ($lines as $line) {
-                    if (strpos($line, 'YOUNGMAN_CRYPTO_KEY=') === 0) {
-                        $raw = trim(substr($line, strlen('YOUNGMAN_CRYPTO_KEY=')));
-                        break;
-                    }
+            if (!is_array($lines)) continue;
+            foreach ($lines as $line) {
+                // 양쪽 따옴표/공백/export 접두사도 허용 (records.php 의 .env 파서와 동일).
+                if (preg_match('/^\s*(?:export\s+)?YOUNGMAN_CRYPTO_KEY\s*=\s*(.*)$/i', $line, $m)) {
+                    $raw = trim($m[1], "\"' ");
+                    break 2;
                 }
             }
         }
