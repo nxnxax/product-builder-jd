@@ -14,13 +14,14 @@
  * 토글 필드는 settings.customFields[i] = { key, label, type:'toggle', onLabel, offLabel, custom:true }
  */
 
-import { initSupabase, apiRequest, getSession, refreshNavForms } from './auth-shared.js?v=20260515-forms-static';
+import { initSupabase, apiRequest, getSession, refreshNavForms } from './auth-shared.js?v=20260515-cell-toggle';
 import {
     isLedgerMobile, onLedgerViewportChange, openRowAddModal,
     attachColumnFilters, applyColumnFilters,
     exportRecordsToExcel, pickExcelFile, parseExcelFile,
     suggestFieldMapping, openImportPreviewModal,
-} from './ledger-shared.js?v=20260515-forms-static';
+    attachCellClickHandlers,
+} from './ledger-shared.js?v=20260515-cell-toggle';
 
 const PAGE_TYPE = 'custom';
 
@@ -763,7 +764,7 @@ function renderTable(form, rows, fields) {
                             <tr data-id="${r.id}" class="${selectedIds.has(r.id) ? 'selected' : ''}">
                                 <td class="col-check"><input type="checkbox" data-select="${r.id}" ${selectedIds.has(r.id) ? 'checked' : ''}></td>
                                 <td class="col-no">${i + 1}</td>
-                                ${cells.map(f => `<td>${renderCellInner(f, r.data?.[f.key], r.data || {}, fields)}</td>`).join('')}
+                                ${cells.map(f => `<td>${renderCellInner(f, r.data?.[f.key], r.data || {}, fields, r.id)}</td>`).join('')}
                                 <td class="col-action">
                                     <button class="row-action-btn" data-edit-row="${r.id}" title="수정"><span class="ico">✎</span><span class="lbl">수정</span></button>
                                     <button class="row-action-btn danger" data-delete-row="${r.id}" title="삭제"><span class="ico">×</span><span class="lbl">삭제</span></button>
@@ -799,7 +800,7 @@ function renderMobileCards(form, rows, fields) {
         const detailHtml = detailFields.map(f => `
             <div class="ledger-card-field">
                 <span class="ledger-card-label">${escapeHtml(f.label)}</span>
-                <span class="ledger-card-value">${renderCellInner(f, d[f.key], d, fields)}</span>
+                <span class="ledger-card-value">${renderCellInner(f, d[f.key], d, fields, r.id)}</span>
             </div>`).join('');
         return `
             <div class="ledger-card" data-id="${r.id}">
@@ -822,18 +823,20 @@ function renderMobileCards(form, rows, fields) {
     }).join('')}</div>`;
 }
 
-function renderCellInner(f, v, fullData, allFields) {
+function renderCellInner(f, v, fullData, allFields, rowId) {
     if (f.type === 'toggle') {
         const on = !!v;
         const onLabel = f.onLabel || 'ON';
         const offLabel = f.offLabel || 'OFF';
-        return `<span class="toggle-cell ${on ? 'on' : 'off'}">${escapeHtml(on ? onLabel : offLabel)}</span>`;
+        const idAttr = rowId ? ` data-cell-toggle data-id="${rowId}" data-field="${escapeAttr(f.key)}" data-value="${on ? '1' : '0'}" title="클릭하여 토글"` : '';
+        return `<span class="toggle-cell ${on ? 'on' : 'off'}"${idAttr}>${escapeHtml(on ? onLabel : offLabel)}</span>`;
     }
     if (f.type === 'switch') {
         const on = !!v;
         const onLabel = f.onLabel || 'ON';
         const offLabel = f.offLabel || 'OFF';
-        return `<span class="switch-cell ${on ? 'on' : 'off'}" aria-label="${escapeAttr(on ? onLabel : offLabel)}">
+        const idAttr = rowId ? ` data-cell-switch data-id="${rowId}" data-field="${escapeAttr(f.key)}" data-value="${on ? '1' : '0'}" title="클릭하여 토글"` : '';
+        return `<span class="switch-cell ${on ? 'on' : 'off'}" aria-label="${escapeAttr(on ? onLabel : offLabel)}"${idAttr}>
             <span class="switch-track"><span class="switch-thumb"></span></span>
             <span class="switch-label">${escapeHtml(on ? onLabel : offLabel)}</span>
         </span>`;
@@ -887,6 +890,21 @@ function bindRowEvents(form, fields) {
             const row = records.find(r => r.id === id);
             if (row) openRowEntry(form, fields, row);
         });
+    });
+    // 사용자 정의 toggle/switch 셀 클릭 즉시 토글 (양식 사용 모드)
+    attachCellClickHandlers({
+        root: document,
+        onToggle: async ({ id, fieldKey, nextValue }) => {
+            const row = records.find(r => r.id === id);
+            const merged = { ...(row?.data || {}), [fieldKey]: nextValue };
+            try {
+                await api('ledger-records', { method: 'PATCH', body: { id, data: { [fieldKey]: nextValue } } });
+                if (row) row.data = merged;
+                render();
+            } catch (err) {
+                alert('저장 실패: ' + (err?.message || err));
+            }
+        },
     });
     document.querySelectorAll('[data-delete-row]').forEach(b => {
         b.addEventListener('click', async (e) => {

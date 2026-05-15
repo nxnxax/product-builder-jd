@@ -6,12 +6,13 @@
  * Phase 3 의 계약자 관리대장이 이 그룹의 settings.commissions 를 읽어 정산.
  */
 
-import { initSupabase, apiRequest, getSession } from './auth-shared.js?v=20260515-forms-static';
+import { initSupabase, apiRequest, getSession } from './auth-shared.js?v=20260515-cell-toggle';
 import { attachColumnFilters, applyColumnFilters, openRowAddModal, attachPhoneAutoFormat, attachThousandFormat, formatThousand, unformatThousand, getEffectiveFields, mountFieldManager,
          exportRecordsToExcel, pickExcelFile, parseExcelFile, suggestFieldMapping, openImportPreviewModal,
          saveImportSession, loadImportSession, clearImportSession,
          findBlankRecordIds, showSweepToast,
-         isLedgerMobile, onLedgerViewportChange } from './ledger-shared.js?v=20260515-forms-static';
+         attachCellClickHandlers,
+         isLedgerMobile, onLedgerViewportChange } from './ledger-shared.js?v=20260515-cell-toggle';
 
 const PAGE_TYPE = 'org';
 
@@ -666,12 +667,12 @@ function renderRow(r, displayNo, allowedTitles, fields) {
         }
         if (f.type === 'toggle') {
             const on = !!v;
-            return `<td${clsAttr}${labelAttr}><span class="toggle-cell ${on ? 'on' : 'off'}">${escapeHtml(on ? (f.onLabel || 'ON') : (f.offLabel || 'OFF'))}</span></td>`;
+            return `<td${clsAttr}${labelAttr}><span class="toggle-cell ${on ? 'on' : 'off'}" data-cell-toggle data-id="${r.id}" data-field="${escapeAttr(f.key)}" data-value="${on ? '1' : '0'}" title="클릭하여 토글">${escapeHtml(on ? (f.onLabel || 'ON') : (f.offLabel || 'OFF'))}</span></td>`;
         }
         if (f.type === 'switch') {
             const on = !!v;
             const lbl = on ? (f.onLabel || 'ON') : (f.offLabel || 'OFF');
-            return `<td${clsAttr}${labelAttr}><span class="switch-cell ${on ? 'on' : 'off'}" aria-label="${escapeAttr(lbl)}"><span class="switch-track"><span class="switch-thumb"></span></span><span class="switch-label">${escapeHtml(lbl)}</span></span></td>`;
+            return `<td${clsAttr}${labelAttr}><span class="switch-cell ${on ? 'on' : 'off'}" data-cell-switch data-id="${r.id}" data-field="${escapeAttr(f.key)}" data-value="${on ? '1' : '0'}" aria-label="${escapeAttr(lbl)}" title="클릭하여 토글"><span class="switch-track"><span class="switch-thumb"></span></span><span class="switch-label">${escapeHtml(lbl)}</span></span></td>`;
         }
         // resident_id 포함 — 모두 read-only span (편집은 ✎ 버튼 → 모달)
         return v ? `<td${clsAttr}${labelAttr}><span class="cell-text">${escapeHtml(v)}</span></td>` : `<td${clsAttr}${labelAttr}><span class="cell-empty">-</span></td>`;
@@ -714,6 +715,14 @@ function bindTableEvents() {
     // 개별 삭제
     document.querySelectorAll('[data-delete-row]').forEach(b => {
         b.addEventListener('click', () => deleteRow(parseInt(b.dataset.deleteRow, 10)));
+    });
+    // 사용자 정의 toggle/switch 셀 클릭 즉시 토글
+    attachCellClickHandlers({
+        root: document,
+        onToggle: async ({ id, fieldKey, nextValue }) => {
+            await updateRowField(id, fieldKey, nextValue);
+            renderRecords();
+        },
     });
     // 체크박스
     document.querySelectorAll('[data-select]').forEach(cb => {

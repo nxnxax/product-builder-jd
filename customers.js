@@ -9,12 +9,13 @@
  *  - client_idempotency_key 로 같은 통화의 중복 전송 차단
  */
 
-import { initSupabase, apiRequest, getSession } from './auth-shared.js?v=20260515-forms-static';
+import { initSupabase, apiRequest, getSession } from './auth-shared.js?v=20260515-cell-toggle';
 import { attachColumnFilters, applyColumnFilters, openRowAddModal, attachPhoneAutoFormat, getEffectiveFields, mountFieldManager,
          exportRecordsToExcel, pickExcelFile, parseExcelFile, suggestFieldMapping, openImportPreviewModal,
          saveImportSession, loadImportSession, clearImportSession,
          findBlankRecordIds, showSweepToast,
-         isLedgerMobile, onLedgerViewportChange } from './ledger-shared.js?v=20260515-forms-static';
+         attachCellClickHandlers,
+         isLedgerMobile, onLedgerViewportChange } from './ledger-shared.js?v=20260515-cell-toggle';
 
 const MOBILE_PRIMARY_KEYS = ['customer', 'phone', 'date'];
 
@@ -520,8 +521,10 @@ function renderCell(f, r, d, displayNo) {
             </label>`;
     }
     if (f.type === 'level_select') {
-        const text = v || '';
-        return text ? `<span class="cell-text level-pill">${escapeHtml(text)}</span>` : `<span class="cell-empty">-</span>`;
+        const text = v || '계약예정';
+        // 셀 클릭 → LEVEL_OPTIONS 순환 ('계약예정' → '관심도 상' → '중' → '하' → '계약예정').
+        const opts = escapeAttr(JSON.stringify(LEVEL_OPTIONS));
+        return `<span class="cell-text level-pill" data-cell-cycle data-id="${id}" data-field="level" data-value="${escapeAttr(text)}" data-cycle-options='${opts}' title="클릭하여 다음 레벨로">${escapeHtml(text)}</span>`;
     }
     if (f.type === 'textarea') {
         return v ? `<span class="cell-text cell-multiline">${escapeHtml(v)}</span>` : `<span class="cell-empty">-</span>`;
@@ -531,12 +534,12 @@ function renderCell(f, r, d, displayNo) {
     }
     if (f.type === 'toggle') {
         const on = !!v;
-        return `<span class="toggle-cell ${on ? 'on' : 'off'}">${escapeHtml(on ? (f.onLabel || 'ON') : (f.offLabel || 'OFF'))}</span>`;
+        return `<span class="toggle-cell ${on ? 'on' : 'off'}" data-cell-toggle data-id="${id}" data-field="${escapeAttr(f.key)}" data-value="${on ? '1' : '0'}" data-on-label="${escapeAttr(f.onLabel || 'ON')}" data-off-label="${escapeAttr(f.offLabel || 'OFF')}" title="클릭하여 토글">${escapeHtml(on ? (f.onLabel || 'ON') : (f.offLabel || 'OFF'))}</span>`;
     }
     if (f.type === 'switch') {
         const on = !!v;
         const lbl = on ? (f.onLabel || 'ON') : (f.offLabel || 'OFF');
-        return `<span class="switch-cell ${on ? 'on' : 'off'}" aria-label="${escapeAttr(lbl)}"><span class="switch-track"><span class="switch-thumb"></span></span><span class="switch-label">${escapeHtml(lbl)}</span></span>`;
+        return `<span class="switch-cell ${on ? 'on' : 'off'}" data-cell-switch data-id="${id}" data-field="${escapeAttr(f.key)}" data-value="${on ? '1' : '0'}" aria-label="${escapeAttr(lbl)}" title="클릭하여 토글"><span class="switch-track"><span class="switch-thumb"></span></span><span class="switch-label">${escapeHtml(lbl)}</span></span>`;
     }
     // tel / text / number / resident_id / 기타: 모두 read-only span (편집은 ✎ 수정 버튼 → 모달)
     return v ? `<span class="cell-text">${escapeHtml(v)}</span>` : `<span class="cell-empty">-</span>`;
@@ -573,6 +576,18 @@ function bindTableEvents() {
     });
     document.querySelectorAll('[data-manage-switch]').forEach(b => {
         b.addEventListener('click', (e) => { e.preventDefault(); toggleManaged(parseInt(b.dataset.id, 10)); });
+    });
+    // 사용자 정의 toggle/switch + 레벨 pill 셀 클릭 즉시 토글/순환 (desktop 표 + mobile 카드 둘 다 커버)
+    attachCellClickHandlers({
+        root: document,
+        onToggle: async ({ id, fieldKey, nextValue }) => {
+            await updateRowField(id, fieldKey, nextValue);
+            renderRecords();
+        },
+        onCycle: async ({ id, fieldKey, nextValue }) => {
+            await updateRowField(id, fieldKey, nextValue);
+            renderRecords();
+        },
     });
     document.querySelectorAll('[data-delete-row]').forEach(b => {
         b.addEventListener('click', () => deleteRow(parseInt(b.dataset.deleteRow, 10)));

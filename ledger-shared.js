@@ -244,6 +244,68 @@ export function attachRrnAutoFormat(root) {
     });
 }
 
+/** 표 셀에 박힌 사용자 정의 toggle / switch 클릭 즉시 토글 핸들러.
+ *  onToggle({ id, fieldKey, nextValue }) — 페이지가 API patch + UI 갱신.
+ *  onCycle({ id, fieldKey, nextValue })  — level_select 같이 옵션 순환 (선택사항).
+ *  마커: data-cell-toggle / data-cell-switch / data-cell-cycle
+ *  공통 속성: data-id, data-field, data-value (현재 값 — toggle/switch 는 '1'/'0', cycle 은 현재 텍스트)
+ *  data-cycle-options (cycle 전용, JSON 배열) */
+export function attachCellClickHandlers({ root, onToggle, onCycle }) {
+    const scope = root || document;
+    const handleToggle = async (el, e) => {
+        e.preventDefault();
+        if (el.dataset.busy === '1') return;
+        el.dataset.busy = '1';
+        try {
+            const id = parseInt(el.dataset.id, 10);
+            const fieldKey = el.dataset.field;
+            const curVal = el.dataset.value === '1';
+            if (typeof onToggle === 'function') {
+                await onToggle({ id, fieldKey, nextValue: !curVal });
+            }
+        } finally {
+            el.dataset.busy = '0';
+        }
+    };
+    scope.querySelectorAll('[data-cell-toggle]').forEach(el => {
+        if (el.dataset.cellBound === '1') return;
+        el.dataset.cellBound = '1';
+        el.style.cursor = 'pointer';
+        el.addEventListener('click', (e) => handleToggle(el, e));
+    });
+    scope.querySelectorAll('[data-cell-switch]').forEach(el => {
+        if (el.dataset.cellBound === '1') return;
+        el.dataset.cellBound = '1';
+        el.style.cursor = 'pointer';
+        el.addEventListener('click', (e) => handleToggle(el, e));
+    });
+    scope.querySelectorAll('[data-cell-cycle]').forEach(el => {
+        if (el.dataset.cellBound === '1') return;
+        el.dataset.cellBound = '1';
+        el.style.cursor = 'pointer';
+        el.addEventListener('click', async (e) => {
+            e.preventDefault();
+            if (el.dataset.busy === '1') return;
+            el.dataset.busy = '1';
+            try {
+                const id = parseInt(el.dataset.id, 10);
+                const fieldKey = el.dataset.field;
+                const cur = el.dataset.value || '';
+                let opts = [];
+                try { opts = JSON.parse(el.dataset.cycleOptions || '[]'); } catch {}
+                if (!Array.isArray(opts) || opts.length === 0) return;
+                const idx = opts.indexOf(cur);
+                const next = opts[(idx + 1) % opts.length];
+                if (typeof onCycle === 'function') {
+                    await onCycle({ id, fieldKey, nextValue: next });
+                }
+            } finally {
+                el.dataset.busy = '0';
+            }
+        });
+    });
+}
+
 /** 모달 안의 toggle / switch 컨트롤에 click 핸들러 자동 등록. */
 export function attachToggleSwitchHandlers(root) {
     const scope = root || document;

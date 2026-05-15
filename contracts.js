@@ -10,12 +10,13 @@
  *  - 본부장 계약 → 본부장(=팀원+팀장+본부장 셋 다 받음)
  */
 
-import { initSupabase, apiRequest, getSession } from './auth-shared.js?v=20260515-forms-static';
+import { initSupabase, apiRequest, getSession } from './auth-shared.js?v=20260515-cell-toggle';
 import { attachColumnFilters, applyColumnFilters, openRowAddModal, attachPhoneAutoFormat, attachThousandFormat, formatThousand, unformatThousand, getEffectiveFields, mountFieldManager,
          exportRecordsToExcel, pickExcelFile, parseExcelFile, suggestFieldMapping, openImportPreviewModal,
          saveImportSession, loadImportSession, clearImportSession,
          findBlankRecordIds, showSweepToast,
-         isLedgerMobile, onLedgerViewportChange } from './ledger-shared.js?v=20260515-forms-static';
+         attachCellClickHandlers,
+         isLedgerMobile, onLedgerViewportChange } from './ledger-shared.js?v=20260515-cell-toggle';
 
 const PAGE_TYPE = 'contract';
 const TAX_RATE = 0.033;   // 실수령액 = commission * (1 - TAX_RATE)
@@ -739,12 +740,12 @@ function renderCell(f, r, d, displayNo, group) {
     }
     if (f.type === 'toggle') {
         const on = !!d[f.key];
-        return `<span class="toggle-cell ${on ? 'on' : 'off'}">${escapeHtml(on ? (f.onLabel || 'ON') : (f.offLabel || 'OFF'))}</span>`;
+        return `<span class="toggle-cell ${on ? 'on' : 'off'}" data-cell-toggle data-id="${id}" data-field="${escapeAttr(f.key)}" data-value="${on ? '1' : '0'}" title="클릭하여 토글">${escapeHtml(on ? (f.onLabel || 'ON') : (f.offLabel || 'OFF'))}</span>`;
     }
     if (f.type === 'switch') {
         const on = !!d[f.key];
         const lbl = on ? (f.onLabel || 'ON') : (f.offLabel || 'OFF');
-        return `<span class="switch-cell ${on ? 'on' : 'off'}" aria-label="${escapeAttr(lbl)}"><span class="switch-track"><span class="switch-thumb"></span></span><span class="switch-label">${escapeHtml(lbl)}</span></span>`;
+        return `<span class="switch-cell ${on ? 'on' : 'off'}" data-cell-switch data-id="${id}" data-field="${escapeAttr(f.key)}" data-value="${on ? '1' : '0'}" aria-label="${escapeAttr(lbl)}" title="클릭하여 토글"><span class="switch-track"><span class="switch-thumb"></span></span><span class="switch-label">${escapeHtml(lbl)}</span></span>`;
     }
     // tel / text / number / resident_id / 기타 모두 read-only span
     return d[f.key] ? `<span class="cell-text">${escapeHtml(d[f.key])}</span>` : `<span class="cell-empty">-</span>`;
@@ -797,6 +798,14 @@ function bindTableEvents() {
     });
     document.querySelectorAll('[data-status-switch]').forEach(b => {
         b.addEventListener('click', () => cycleStatus(parseInt(b.dataset.id, 10)));
+    });
+    // 사용자 정의 toggle/switch 셀 클릭 즉시 토글
+    attachCellClickHandlers({
+        root: document,
+        onToggle: async ({ id, fieldKey, nextValue }) => {
+            await updateRowField(id, fieldKey, nextValue);
+            renderRecords();
+        },
     });
     document.querySelectorAll('[data-delete-row]').forEach(b => {
         b.addEventListener('click', () => deleteRow(parseInt(b.dataset.deleteRow, 10)));
