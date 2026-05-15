@@ -252,6 +252,16 @@ small { color: var(--fg-tertiary); font-size: 13px; }
     display: inline-flex;
     align-items: center;
     gap: 6px;
+    /* caret 을 우측 끝으로 밀어내기 위해 라벨이 남은 폭을 채우고 caret 은 자동 마진 */
+    min-width: 200px;
+    justify-content: flex-start;
+}
+.nav-pill-slot .nav-label {
+    flex: 1;
+    text-align: left;
+}
+.nav-pill-slot .nav-pill-caret {
+    margin-left: auto;
 }
 .nav-pill-slot .nav-pill-prefix {
     font-size: 11px;
@@ -453,8 +463,11 @@ small { color: var(--fg-tertiary); font-size: 13px; }
     pointer-events: auto;   /* 호버 가능하지만 시각적으론 보이지 않음 */
 }
 
-.nav-dropdown:hover > .nav-dropdown-menu,
-.nav-dropdown:focus-within > .nav-dropdown-menu { display: block; }
+/* 일반 nav-dropdown (커뮤니티 등) 은 전체 영역 hover 로 열림.
+   슬롯 pill (.nav-pill-dropdown) 은 caret 영역만으로 열려야 해서 제외.
+   슬롯 dropdown 은 JS 가 caret/menu mouseenter 시 .open 을 토글함. */
+.nav-dropdown:not(.nav-pill-dropdown):hover > .nav-dropdown-menu,
+.nav-dropdown:not(.nav-pill-dropdown):focus-within > .nav-dropdown-menu { display: block; }
 
 .nav-dropdown-item {
     display: flex;

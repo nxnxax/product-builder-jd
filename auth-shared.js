@@ -583,6 +583,26 @@ export function mountAppHeader(opts) {
         document.querySelectorAll('.nav-pill-dropdown.open').forEach(d => d.classList.remove('open'));
     });
 
+    // 슬롯 dropdown hover 정책: caret 아이콘 또는 펼쳐진 메뉴에 hover 했을 때만 열림.
+    // 라벨(텍스트)에 hover 해도 메뉴가 열리지 않도록 .nav-dropdown:hover CSS 룰은
+    // .nav-pill-dropdown 제외. caret↔menu 이동 중 끊김 방지를 위해 closeTimer 사용.
+    document.querySelectorAll('.nav-pill-dropdown').forEach(dd => {
+        if (dd.closest('.mobile-drawer')) return;   // 모바일 drawer 는 클릭 토글 그대로
+        const caret = dd.querySelector('.nav-pill-caret');
+        const menu = dd.querySelector('.nav-dropdown-menu');
+        if (!caret || !menu) return;
+        let closeTimer = null;
+        const openNow = () => { clearTimeout(closeTimer); dd.classList.add('open'); };
+        const scheduleClose = () => {
+            clearTimeout(closeTimer);
+            closeTimer = setTimeout(() => dd.classList.remove('open'), 140);
+        };
+        caret.addEventListener('mouseenter', openNow);
+        caret.addEventListener('mouseleave', scheduleClose);
+        menu.addEventListener('mouseenter', openNow);
+        menu.addEventListener('mouseleave', scheduleClose);
+    });
+
     // 백그라운드로 사용자 정의 양식 목록 갱신 — 다음 페이지 진입 시 dropdown 에 반영
     refreshNavFormsCache();
 
