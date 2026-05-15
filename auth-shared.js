@@ -671,6 +671,28 @@ export function mountAppHeader(opts) {
     const drawerLogoutBtn = drawerEl?.querySelector('#drawer-logout-btn');
     if (drawerLogoutBtn) drawerLogoutBtn.addEventListener('click', performLogout);
 
+    // 로그인 버튼 — 메인 페이지가 아니면 메인 페이지의 #auth-screen 모달이 없어서
+    // 'index.html#login' 으로 이동하던 기존 동작 대신 현재 페이지에서 모달 띄우기.
+    // 메인 페이지 (#auth-screen 존재) 에서는 기존 main.js 흐름 그대로.
+    const openLoginBtn = root.querySelector('#open-login-btn');
+    if (openLoginBtn) {
+        openLoginBtn.addEventListener('click', (e) => {
+            // 메인 페이지: #auth-screen 이 이미 있고 main.js 가 hash 핸들러로 모달 열기 — 기본 동작 유지.
+            if (document.getElementById('auth-screen')) return;
+            e.preventDefault();
+            openSharedLoginModal();
+        });
+    }
+    // 모바일 드로어 안의 로그인 링크도 같은 처리
+    const drawerLoginBtn = drawerEl?.querySelector('a[href="index.html#login"]');
+    if (drawerLoginBtn) {
+        drawerLoginBtn.addEventListener('click', (e) => {
+            if (document.getElementById('auth-screen')) return;
+            e.preventDefault();
+            openSharedLoginModal();
+        });
+    }
+
     // 모바일 사이드 드로어 — 햄버거 토글 / 아코디언 서브메뉴
     const hamburger = root.querySelector('.mobile-menu-toggle');
     const drawer = drawerEl;   // body 로 이동된 드로어 참조
@@ -756,6 +778,129 @@ export async function bootApp(opts) {
 
 function escapeHtmlSafe(s) {
     return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+/* =========================================================================
+   서브 페이지용 가벼운 로그인 모달 — 메인 페이지(#auth-screen) 가 없는
+   페이지에서 로그인 버튼 클릭 시 인덱스로 이동하지 않고 그 자리에서 모달.
+   기능: 이메일/비번 로그인 + Google OAuth. 회원가입은 메인 페이지로 안내.
+   ========================================================================= */
+function openSharedLoginModal() {
+    // 중복 mount 방지
+    document.querySelectorAll('[data-shared-auth]').forEach(el => el.remove());
+
+    const md = document.createElement('div');
+    md.dataset.sharedAuth = '1';
+    md.innerHTML = `
+        <div class="shared-auth-backdrop" style="position:fixed;inset:0;background:rgba(20,14,8,.5);z-index:1000;display:flex;align-items:center;justify-content:center;padding:20px;backdrop-filter:blur(4px);">
+            <div class="shared-auth-panel" role="dialog" aria-modal="true"
+                 style="background:#fff;border-radius:16px;max-width:400px;width:100%;padding:28px 26px;box-shadow:0 24px 60px rgba(20,14,8,.3);position:relative;">
+                <button type="button" class="shared-auth-close" aria-label="닫기"
+                        style="position:absolute;top:12px;right:14px;width:32px;height:32px;border:0;background:transparent;color:#8a847e;font-size:22px;cursor:pointer;border-radius:6px;line-height:1;">&times;</button>
+                <div style="text-align:center;margin-bottom:18px;">
+                    <img src="logo_main.png" alt="YOUNGMAN" style="height:32px;width:auto;">
+                </div>
+                <h2 style="margin:0 0 6px;font-size:20px;font-weight:700;letter-spacing:-.02em;text-align:center;color:#0e0d0c;">로그인</h2>
+                <p style="margin:0 0 18px;font-size:13px;color:#8a847e;text-align:center;">이메일 또는 Google 계정으로 로그인합니다.</p>
+
+                <button type="button" class="shared-auth-google"
+                        style="display:flex;align-items:center;justify-content:center;gap:10px;width:100%;padding:11px 16px;border:1px solid rgba(20,14,8,.16);background:#fff;color:#0e0d0c;border-radius:99px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;transition:all 160ms;">
+                    <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
+                        <path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84a4.14 4.14 0 0 1-1.8 2.72v2.26h2.9c1.7-1.56 2.7-3.86 2.7-6.62z"/>
+                        <path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.9-2.26c-.8.54-1.83.86-3.06.86-2.35 0-4.34-1.58-5.05-3.72H.96v2.33A9 9 0 0 0 9 18z"/>
+                        <path fill="#FBBC05" d="M3.95 10.7A5.41 5.41 0 0 1 3.67 9c0-.59.1-1.16.28-1.7V4.97H.96A9 9 0 0 0 0 9c0 1.45.35 2.82.96 4.03l2.99-2.33z"/>
+                        <path fill="#EA4335" d="M9 3.58c1.32 0 2.5.45 3.44 1.35l2.58-2.58C13.46.9 11.43 0 9 0A9 9 0 0 0 .96 4.97L3.95 7.3C4.66 5.16 6.65 3.58 9 3.58z"/>
+                    </svg>
+                    Google 로 로그인
+                </button>
+
+                <div style="display:flex;align-items:center;gap:10px;margin:18px 0;color:#a3a39a;font-size:12px;">
+                    <div style="flex:1;height:1px;background:rgba(20,14,8,.1);"></div>
+                    <span>또는 이메일로</span>
+                    <div style="flex:1;height:1px;background:rgba(20,14,8,.1);"></div>
+                </div>
+
+                <form class="shared-auth-form" style="display:flex;flex-direction:column;gap:12px;">
+                    <label style="display:flex;flex-direction:column;gap:5px;font-size:12.5px;font-weight:600;color:#4f4943;">
+                        이메일
+                        <input type="email" name="email" autocomplete="email" required placeholder="name@example.com"
+                               style="padding:10px 13px;border:1px solid rgba(20,14,8,.16);border-radius:8px;font-size:14px;font-family:inherit;background:#fff;color:#0e0d0c;outline:none;">
+                    </label>
+                    <label style="display:flex;flex-direction:column;gap:5px;font-size:12.5px;font-weight:600;color:#4f4943;">
+                        비밀번호
+                        <input type="password" name="password" autocomplete="current-password" required minlength="6" placeholder="6자 이상"
+                               style="padding:10px 13px;border:1px solid rgba(20,14,8,.16);border-radius:8px;font-size:14px;font-family:inherit;background:#fff;color:#0e0d0c;outline:none;">
+                    </label>
+                    <p class="shared-auth-message" aria-live="polite" style="margin:0;font-size:12.5px;color:#c8362c;min-height:18px;"></p>
+                    <button type="submit" class="shared-auth-submit"
+                            style="padding:11px 18px;background:#0e0d0c;color:#fff;border:0;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;transition:all 160ms;">
+                        로그인
+                    </button>
+                </form>
+
+                <p style="margin:18px 0 0;font-size:12.5px;color:#8a847e;text-align:center;">
+                    아직 회원이 아니신가요? <a href="index.html#login" style="color:#c8362c;font-weight:600;text-decoration:none;">메인에서 회원가입</a>
+                </p>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(md);
+
+    const backdrop = md.querySelector('.shared-auth-backdrop');
+    const closeBtn = md.querySelector('.shared-auth-close');
+    const form = md.querySelector('.shared-auth-form');
+    const googleBtn = md.querySelector('.shared-auth-google');
+    const msgEl = md.querySelector('.shared-auth-message');
+    const submitBtn = md.querySelector('.shared-auth-submit');
+
+    const close = () => md.remove();
+    closeBtn.addEventListener('click', close);
+    backdrop.addEventListener('click', (e) => { if (e.target === backdrop) close(); });
+    const escHandler = (e) => { if (e.key === 'Escape') { close(); document.removeEventListener('keydown', escHandler); } };
+    document.addEventListener('keydown', escHandler);
+
+    // 첫 input 포커스
+    setTimeout(() => md.querySelector('input[name="email"]')?.focus(), 50);
+
+    form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const email = form.email.value.trim();
+        const password = form.password.value;
+        if (!email || !password) { msgEl.textContent = '이메일과 비밀번호를 입력해주세요.'; return; }
+        submitBtn.disabled = true; submitBtn.textContent = '로그인 중…'; msgEl.textContent = '';
+        try {
+            if (!supabaseClient) { await initSupabase(); }
+            if (!supabaseClient) throw new Error('인증 클라이언트 초기화 실패');
+            const { error } = await supabaseClient.auth.signInWithPassword({ email, password });
+            if (error) throw error;
+            // 성공: onAuthStateChange 가 자동으로 nav 재렌더 + refreshNavFormsCache.
+            // 추가로 페이지 새로고침해서 데이터 로드 보장.
+            close();
+            window.location.reload();
+        } catch (err) {
+            msgEl.textContent = err?.message || '로그인 실패';
+            submitBtn.disabled = false;
+            submitBtn.textContent = '로그인';
+        }
+    });
+
+    googleBtn.addEventListener('click', async () => {
+        msgEl.textContent = '';
+        googleBtn.disabled = true;
+        try {
+            if (!supabaseClient) { await initSupabase(); }
+            if (!supabaseClient) throw new Error('인증 클라이언트 초기화 실패');
+            const { error } = await supabaseClient.auth.signInWithOAuth({
+                provider: 'google',
+                options: { redirectTo: window.location.href },
+            });
+            if (error) throw error;
+            // OAuth 리다이렉트 진행 — 모달 닫기는 자동
+        } catch (err) {
+            msgEl.textContent = err?.message || 'Google 로그인 실패';
+            googleBtn.disabled = false;
+        }
+    });
 }
 
 /* =========================================================================
