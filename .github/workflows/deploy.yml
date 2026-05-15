@@ -41,7 +41,7 @@ jobs:
           test -f board.html
           test -f board.js
           test -f logo_main.png
-          grep -q 'main.js?v=' index.html
+          grep -q 'auth-shared.js?v=' index.html   # 새 랜딩은 main.js 대신 auth-shared 만 import
           grep -q 'profile.js?v=' profile.html
           grep -q 'admin.js?v=' admin.html
           php -l api/analyze.php

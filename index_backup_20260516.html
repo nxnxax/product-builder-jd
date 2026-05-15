@@ -1,0 +1,911 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YOUNGMAN · 분양 영업의 모든 흐름을 한 화면에</title>
+    <meta name="description" content="현장·계약·정산·고객 관리부터 마케팅 분석까지 — YOUNGMAN 이 분양 영업의 모든 흐름을 한곳에서 처리합니다.">
+    <link rel="icon" type="image/png" href="logo_main.png">
+    <link rel="apple-touch-icon" href="logo_main.png">
+    <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+    <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
+    <link rel="stylesheet" href="style.css?v=20260516-new-landing">
+    <style>
+        /* ========== 사이트 메인 (랜딩) ========== */
+        /* main.dashboard 의 padding/max-width 를 메인에서만 풀어서 hero 풀폭 보장 */
+        #app-dashboard.dashboard { padding: 0 !important; margin: 0 !important; max-width: none !important; }
+        .landing-shell { max-width: 1240px; margin: 0 auto; padding: 0 28px 100px; }
+
+        /* ========== Hero Stage — 3:2 비율 풀폭 광고 영상 ========== */
+        .hero-stage {
+            position: relative; width: 100%;
+            aspect-ratio: 10/3;
+            overflow: hidden;
+            background: linear-gradient(180deg, #fff5ed 0%, #ffe8d8 70%, #f4d8c8 100%);
+            margin: 0 0 60px;
+        }
+        /* 배경 city silhouette */
+        .stage-bg-svg { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 0; }
+        /* 떠다니는 구름 */
+        .cloud {
+            position: absolute; background: rgba(255, 255, 255, 0.7);
+            border-radius: 50%; filter: blur(2px);
+        }
+        .cloud-1 { top: 12%; left: 8%; width: 14%; height: 5%; animation: cloudDrift 22s linear infinite; }
+        .cloud-2 { top: 18%; right: 12%; width: 18%; height: 6%; animation: cloudDrift 28s linear infinite reverse; animation-delay: -10s; }
+        @keyframes cloudDrift {
+            0% { transform: translateX(0); }
+            100% { transform: translateX(40px); }
+        }
+
+        /* 카피 overlay (상단) */
+        .stage-copy {
+            position: absolute; top: 8%; left: 50%; transform: translateX(-50%);
+            text-align: center; z-index: 6; width: 92%; max-width: 920px;
+            pointer-events: none;
+        }
+        .stage-copy > * { pointer-events: auto; }
+        .stage-copy .eyebrow {
+            display: inline-flex; align-items: center; gap: 8px;
+            padding: 6px 14px;
+            background: rgba(255, 255, 255, 0.85);
+            backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+            color: var(--ledger-accent-deep, #8a2620);
+            border: 1px solid rgba(200, 54, 44, 0.22);
+            border-radius: 99px; font-size: 12.5px; font-weight: 600;
+            letter-spacing: 0.02em; margin-bottom: 14px;
+            opacity: 0; transform: translateY(8px);
+            animation: fadeUp 700ms 200ms ease-out forwards;
+        }
+        .stage-copy .eyebrow::before {
+            content: ''; width: 6px; height: 6px; border-radius: 50%;
+            background: var(--ledger-accent, #c8362c);
+            animation: pulse 1.8s ease-out infinite;
+        }
+        @keyframes pulse {
+            0% { box-shadow: 0 0 0 0 rgba(200, 54, 44, 0.5); }
+            70% { box-shadow: 0 0 0 8px rgba(200, 54, 44, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(200, 54, 44, 0); }
+        }
+        .stage-copy h1 {
+            margin: 0 0 12px; font-size: clamp(28px, 4.6vw, 56px);
+            font-weight: 800; letter-spacing: -0.028em; line-height: 1.15;
+            color: #0e0d0c;
+            opacity: 0; transform: translateY(14px);
+            animation: fadeUp 700ms 350ms ease-out forwards;
+            text-shadow: 0 1px 0 rgba(255,255,255,0.6);
+        }
+        .stage-copy h1 .accent {
+            background: linear-gradient(135deg, #c8362c 0%, #ff7a5c 100%);
+            -webkit-background-clip: text; background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .stage-copy .tagline {
+            font-size: clamp(14px, 1.35vw, 18px); font-weight: 700;
+            color: var(--ledger-accent-deep, #8a2620); margin: 0 0 10px;
+            opacity: 0; transform: translateY(12px);
+            animation: fadeUp 700ms 500ms ease-out forwards;
+        }
+        .stage-copy .sub {
+            max-width: 660px; margin: 0 auto 22px;
+            font-size: clamp(13px, 1.15vw, 15.5px); line-height: 1.7;
+            color: #4f4943;
+            opacity: 0; transform: translateY(12px);
+            animation: fadeUp 700ms 650ms ease-out forwards;
+        }
+        .stage-copy .cta-primary {
+            display: inline-flex; align-items: center; gap: 8px;
+            padding: 14px 28px;
+            background: linear-gradient(135deg, #0e0d0c 0%, #2a2520 100%);
+            color: #fff; border-radius: 999px; font-size: 15px; font-weight: 700;
+            text-decoration: none; transition: all 220ms;
+            box-shadow: 0 8px 22px rgba(20, 14, 8, 0.22);
+            position: relative; overflow: hidden;
+            opacity: 0; animation: fadeUp 700ms 800ms ease-out forwards;
+        }
+        .stage-copy .cta-primary::before {
+            content: ''; position: absolute; inset: 0;
+            background: linear-gradient(135deg, #c8362c 0%, #8a2620 100%);
+            opacity: 0; transition: opacity 220ms; border-radius: inherit;
+        }
+        .stage-copy .cta-primary > * { position: relative; z-index: 1; }
+        .stage-copy .cta-primary:hover { transform: translateY(-3px); box-shadow: 0 14px 28px rgba(200, 54, 44, 0.34); }
+        .stage-copy .cta-primary:hover::before { opacity: 1; }
+
+        @keyframes fadeUp { to { opacity: 1; transform: translateY(0); } }
+
+        /* ========== 캐릭터들 (하단 1/3 영역) ========== */
+        .stage-actor {
+            position: absolute; bottom: 4%; height: 56%;
+            z-index: 4; will-change: transform, left, right;
+        }
+        .stage-actor svg { height: 100%; width: auto; display: block; }
+        /* 그림자 */
+        .stage-actor::after {
+            content: ''; position: absolute;
+            bottom: -2%; left: 50%; transform: translateX(-50%);
+            width: 70%; height: 4%; background: rgba(20, 14, 8, 0.18);
+            border-radius: 50%; filter: blur(6px); z-index: -1;
+        }
+
+        /* 고객 — 좌측, 살짝 흔들림 (걱정), 영맨 도착 후 안정 */
+        .actor-customer {
+            left: 16%;
+            animation: customerWorry 8s ease-in-out infinite;
+        }
+        @keyframes customerWorry {
+            0%, 60% { transform: rotate(-1.5deg) translateY(0); }
+            15% { transform: rotate(1.5deg) translateY(-3px); }
+            30% { transform: rotate(-1.5deg) translateY(0); }
+            45% { transform: rotate(1.5deg) translateY(-3px); }
+            65%, 100% { transform: rotate(0deg) translateY(0); }
+        }
+
+        /* 영맨 — 슈퍼맨처럼 화면 위에서 슉 내려와 한 무릎 착지 */
+        .actor-youngman {
+            right: 24%; height: 46%;          /* 한 무릎 자세는 짧고 가로로 넓음 */
+            transform: translateY(-160%) rotate(-8deg);
+            opacity: 0;
+            animation: youngmanDive 8s cubic-bezier(0.22, 0.61, 0.36, 1) infinite;
+            filter: drop-shadow(0 0 0 transparent);
+        }
+        @keyframes youngmanDive {
+            0%, 28% { transform: translateY(-160%) rotate(-8deg); opacity: 0; filter: drop-shadow(0 0 0 transparent); }
+            32% { opacity: 1; filter: drop-shadow(0 6px 22px rgba(255, 200, 130, 0.55)); }
+            46% { transform: translateY(0) rotate(0); opacity: 1;
+                  filter: drop-shadow(0 8px 28px rgba(200, 54, 44, 0.45)); }
+            52% { transform: translateY(-4px) rotate(0); }
+            58% { transform: translateY(0) rotate(0); }
+            100% { transform: translateY(0) rotate(0); opacity: 1; filter: drop-shadow(0 4px 14px rgba(20, 14, 8, 0.18)); }
+        }
+        /* 망토 휘날림 — 떨어질 때 길게 펴짐, 착지 후 평소 모양 */
+        .cape { transform-origin: 100px 88px; transform-box: fill-box; }
+        .actor-youngman .cape {
+            animation: capeFly 8s ease-in-out infinite;
+        }
+        @keyframes capeFly {
+            0%, 28% { transform: scaleY(1.3) translateY(-10px) skewX(8deg); }
+            38% { transform: scaleY(1.5) translateY(-8px) skewX(-4deg); }
+            48% { transform: scaleY(1) translateY(0) skewX(0); }
+            100% { transform: scaleY(1) translateY(0) skewX(0); }
+        }
+        /* 착지 임팩트 — 흰 빛 동심원 한 번 폭발 */
+        .stage-impact {
+            position: absolute; bottom: 0; right: 26%;
+            width: 30%; aspect-ratio: 1;
+            border-radius: 50%;
+            background: radial-gradient(circle, rgba(255,255,255,0.85) 0%, rgba(255,200,150,0.5) 30%, transparent 65%);
+            opacity: 0; transform: translate(50%, 50%) scale(0.2);
+            pointer-events: none; z-index: 3;
+            animation: impactBurst 8s ease-out infinite;
+        }
+        @keyframes impactBurst {
+            0%, 44% { opacity: 0; transform: translate(50%, 50%) scale(0.2); }
+            46% { opacity: 1; transform: translate(50%, 50%) scale(0.6); }
+            55% { opacity: 0; transform: translate(50%, 50%) scale(2); }
+            100% { opacity: 0; transform: translate(50%, 50%) scale(2); }
+        }
+        /* 다리 / 가방 / body bounce — 슈퍼맨 모드는 정적이라 비활성 */
+        .leg-left, .leg-right, .briefcase, .body-bounce { animation: none !important; }
+
+        /* 말풍선 */
+        .bubble {
+            position: absolute; padding: 10px 16px;
+            background: #fff; border: 2.5px solid var(--ledger-accent, #c8362c);
+            border-radius: 18px; font-weight: 700;
+            color: var(--ledger-accent-deep, #8a2620);
+            font-size: clamp(13px, 1.5vw, 19px);
+            box-shadow: 0 6px 16px rgba(200, 54, 44, 0.2);
+            white-space: nowrap;
+            opacity: 0; transform: scale(0.7);
+            z-index: 5;
+        }
+        .bubble::after {
+            content: ''; position: absolute;
+            width: 14px; height: 14px;
+            background: #fff;
+            border-right: 2.5px solid var(--ledger-accent, #c8362c);
+            border-bottom: 2.5px solid var(--ledger-accent, #c8362c);
+        }
+
+        .bubble-customer {
+            bottom: 50%; left: 26%;
+            animation: bubbleCustomer 8s ease-in-out infinite;
+        }
+        .bubble-customer::after { bottom: -8px; left: 18px; transform: rotate(45deg); }
+        @keyframes bubbleCustomer {
+            0%, 12% { opacity: 0; transform: scale(0.7); }
+            18%, 55% { opacity: 1; transform: scale(1); }
+            60%, 100% { opacity: 0; transform: scale(0.7); }
+        }
+
+        /* 영맨 말풍선: 영맨 머리 바로 우측 옆 (영맨 캐릭터 right 26% + 캐릭터 폭 약 12% → 우측 right 14% 부근) */
+        .bubble-youngman {
+            bottom: 38%; right: 16%;
+            animation: bubbleYoungman 8s ease-in-out infinite;
+        }
+        .bubble-youngman::after { bottom: 8px; left: -10px; transform: rotate(135deg); }
+        @keyframes bubbleYoungman {
+            0%, 60% { opacity: 0; transform: scale(0.7); }
+            66%, 92% { opacity: 1; transform: scale(1); }
+            96%, 100% { opacity: 0; transform: scale(0.7); }
+        }
+
+        /* 모바일에서는 stage 비율 조정 + 카피/캐릭터 크기 */
+        @media (max-width: 760px) {
+            .hero-stage { aspect-ratio: 64/81; }
+            .stage-copy { top: 6%; width: min(88%, 420px); }
+            .stage-copy .eyebrow { margin-bottom: 10px; }
+            .stage-copy h1 { font-size: clamp(27px, 8.6vw, 38px); line-height: 1.18; }
+            .stage-copy .tagline { font-size: 15px; margin-bottom: 8px; }
+            .stage-copy .sub { font-size: 13px; line-height: 1.58; margin-bottom: 18px; }
+            .stage-copy .cta-primary { padding: 12px 22px; font-size: 14px; }
+            .stage-actor { bottom: 5%; height: 32%; }
+            .actor-customer { left: 6%; }
+            .actor-youngman { right: 7%; height: 29%; }
+            .stage-impact { right: 16%; width: 54%; }
+            @keyframes youngmanRunIn {
+                0%, 22% { right: -40%; opacity: 0; }
+                27% { opacity: 1; }
+                58% { right: 12%; }
+                65%, 100% { right: 12%; }
+            }
+            .bubble {
+                padding: 8px 12px;
+                border-radius: 15px;
+                font-size: 13px;
+            }
+            .bubble-customer { bottom: 36%; left: 20%; }
+            .bubble-youngman { bottom: 28%; right: 7%; }
+        }
+        .cta-primary {
+            display: inline-flex; align-items: center; gap: 8px;
+            padding: 14px 26px;
+            background: linear-gradient(135deg, #0e0d0c 0%, #2a2520 100%);
+            color: #fff;
+            border-radius: 999px; font-size: 15px; font-weight: 700;
+            text-decoration: none; transition: all 220ms;
+            box-shadow: 0 6px 18px rgba(20, 14, 8, 0.18);
+            position: relative; overflow: hidden;
+        }
+        .cta-primary::before {
+            content: ''; position: absolute; inset: 0;
+            background: linear-gradient(135deg, #c8362c 0%, #8a2620 100%);
+            opacity: 0; transition: opacity 220ms;
+            border-radius: inherit;
+        }
+        .cta-primary > * { position: relative; z-index: 1; }
+        .cta-primary:hover { transform: translateY(-3px); box-shadow: 0 14px 28px rgba(200, 54, 44, 0.32); }
+        .cta-primary:hover::before { opacity: 1; }
+        .cta-link {
+            color: #4f4943; font-size: 14px; text-decoration: none;
+            padding: 8px 14px; border-radius: 99px; transition: background 160ms;
+        }
+        .cta-link:hover { background: rgba(20, 14, 8, 0.04); color: #0e0d0c; }
+
+        /* Section */
+        .land-section { margin-top: 64px; }
+        .land-section-head { margin-bottom: 22px; }
+        .land-section-head h2 {
+            margin: 0 0 4px; font-size: 24px; font-weight: 700;
+            letter-spacing: -0.015em; color: #0e0d0c;
+        }
+        .land-section-head p { margin: 0; font-size: 14px; color: #6e655c; }
+
+        /* Card 공통 */
+        .lcard {
+            position: relative; display: flex; flex-direction: column;
+            background: #fff; border: 1px solid rgba(20, 14, 8, 0.08);
+            border-radius: 18px; padding: 28px;
+            text-decoration: none; color: inherit;
+            transition: transform 280ms cubic-bezier(0.34, 1.56, 0.64, 1),
+                        box-shadow 280ms, border-color 280ms;
+            overflow: hidden;
+            opacity: 0; transform: translateY(20px);
+        }
+        .lcard.in-view {
+            opacity: 1; transform: translateY(0);
+        }
+        .lcard:hover {
+            transform: translateY(-6px) scale(1.01);
+            box-shadow: 0 22px 48px rgba(20, 14, 8, 0.12);
+            border-color: var(--ledger-accent-deep, #8a2620);
+        }
+        .lcard::after {
+            content: ''; position: absolute; inset: 0; border-radius: 18px;
+            pointer-events: none; opacity: 0; transition: opacity 280ms;
+            box-shadow: inset 0 0 0 2px var(--ledger-accent, #c8362c);
+        }
+        .lcard:hover::after { opacity: 0.22; }
+        /* 떠다니는 작은 sparkle (큰 카드만) */
+        .lcard.big::before {
+            content: ''; position: absolute;
+            top: -40px; right: -40px; width: 200px; height: 200px;
+            background: radial-gradient(circle, rgba(200, 54, 44, 0.18), transparent 70%);
+            border-radius: 50%; pointer-events: none;
+            animation: floatBlob 9s ease-in-out infinite;
+        }
+        .lcard-tag {
+            position: absolute; top: 18px; right: 18px;
+            font-size: 11px; font-weight: 700; letter-spacing: 0.05em;
+            color: var(--ledger-accent, #c8362c);
+            background: rgba(200, 54, 44, 0.08);
+            padding: 4px 10px; border-radius: 99px;
+        }
+        .lcard-icon {
+            font-size: 36px; line-height: 1;
+            margin-bottom: 14px;
+            filter: saturate(1.1);
+        }
+        .lcard h3 {
+            margin: 0 0 8px; font-size: 19px; font-weight: 700;
+            letter-spacing: -0.012em; color: #0e0d0c;
+        }
+        .lcard-catch {
+            margin: 0 0 14px; font-size: 14.5px; font-weight: 500;
+            color: var(--ledger-accent-deep, #8a2620);
+            line-height: 1.5;
+        }
+        .lcard-desc {
+            margin: 0 0 22px; font-size: 13.5px; line-height: 1.7;
+            color: #4f4943; flex: 1;
+        }
+        .lcard-cta {
+            display: inline-flex; align-items: center; gap: 6px;
+            font-size: 13.5px; font-weight: 700;
+            color: var(--ledger-accent, #c8362c);
+            margin-top: auto;
+        }
+        .lcard:hover .lcard-cta { gap: 10px; }
+
+        /* Big card */
+        .lcard.big {
+            background: linear-gradient(135deg, #fff8f7 0%, #fff 55%);
+            border-color: rgba(200, 54, 44, 0.22);
+        }
+        .lcard.big h3 { font-size: 28px; letter-spacing: -0.02em; }
+        .lcard.big .lcard-catch { font-size: 16px; }
+        .lcard.big .lcard-icon { font-size: 48px; margin-bottom: 18px; }
+        .lcard.big .lcard-cta { font-size: 15px; }
+
+        /* Ledger grid: 큰 카드 + 우측 2 (세로 누적) */
+        .ledger-grid {
+            display: grid;
+            grid-template-columns: 1.6fr 1fr;
+            grid-template-rows: minmax(150px, auto) minmax(150px, auto);
+            gap: 18px;
+        }
+        .ledger-grid .lcard.big { grid-row: span 2; min-height: 380px; }
+
+        /* Tools grid: 큰 카드 좌측 + 우측 2 (세로 누적) */
+        .tools-grid {
+            display: grid;
+            grid-template-columns: 1.6fr 1fr;
+            grid-template-rows: minmax(150px, auto) minmax(150px, auto);
+            gap: 18px;
+        }
+        .tools-grid .lcard.big { grid-row: span 2; min-height: 360px; }
+
+        /* Board row */
+        .board-row {
+            display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px;
+        }
+        .board-chip {
+            display: flex; align-items: center; gap: 14px;
+            padding: 18px 20px; background: #fff;
+            border: 1px solid rgba(20, 14, 8, 0.08);
+            border-radius: 14px; text-decoration: none; color: inherit;
+            transition: transform 280ms cubic-bezier(0.34, 1.56, 0.64, 1),
+                        box-shadow 280ms, border-color 280ms,
+                        opacity 280ms ease-out;
+            opacity: 0; transform: translateY(16px);
+        }
+        .board-chip.in-view { opacity: 1; transform: translateY(0); }
+        .board-chip:hover {
+            transform: translateY(-3px);
+            border-color: var(--ledger-accent-deep, #8a2620);
+            box-shadow: 0 10px 22px rgba(20, 14, 8, 0.08);
+        }
+        .board-chip-icon {
+            width: 44px; height: 44px; border-radius: 12px;
+            background: rgba(200, 54, 44, 0.08);
+            display: flex; align-items: center; justify-content: center;
+            font-size: 22px; flex-shrink: 0;
+        }
+        .board-chip-text { display: flex; flex-direction: column; gap: 2px; flex: 1; }
+        .board-chip-text b { font-size: 15px; color: #0e0d0c; font-weight: 600; letter-spacing: -0.005em; }
+        .board-chip-text span { font-size: 12.5px; color: #6e655c; }
+        .board-chip-go {
+            font-size: 18px; color: #a3a39a; transition: all 200ms;
+        }
+        .board-chip:hover .board-chip-go {
+            color: var(--ledger-accent, #c8362c); transform: translateX(3px);
+        }
+
+        /* Footer block */
+        .land-foot {
+            margin-top: 80px; padding: 28px 0;
+            text-align: center; color: #8a847e; font-size: 12.5px;
+            border-top: 1px solid rgba(20, 14, 8, 0.06);
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .hero-bg .blob, .mascot, .mascot::after, .lcard.big::before,
+            .hero-eyebrow, .hero-eyebrow::before,
+            .hero-title, .hero-tagline, .hero-sub, .hero-cta { animation: none !important; }
+            .lcard, .board-chip { opacity: 1 !important; transform: none !important; transition: none !important; }
+        }
+
+        @media (max-width: 880px) {
+            .ledger-grid, .tools-grid {
+                grid-template-columns: 1fr;
+                grid-template-rows: auto;
+            }
+            .ledger-grid .lcard.big, .tools-grid .lcard.big { grid-row: span 1; min-height: auto; }
+            .board-row { grid-template-columns: 1fr; }
+            .lcard { padding: 22px; }
+            .lcard.big h3 { font-size: 22px; }
+        }
+    </style>
+</head>
+<body>
+    <!-- 로그인 모달 (auth-screen) — main.js 가 #login hash 로 띄움. 형태 보존. -->
+    <section id="auth-screen" class="auth-screen hidden" aria-modal="true" role="dialog">
+        <div class="auth-panel">
+            <button type="button" id="close-auth-btn" class="auth-close-btn" aria-label="로그인 창 닫기">&times;</button>
+            <div class="auth-brand" style="display:flex;justify-content:center;margin-bottom:20px;">
+                <img src="logo_main.png" alt="YOUNGMAN" style="height:36px;width:auto;">
+            </div>
+            <div class="auth-copy">
+                <h1>계정으로 접속</h1>
+                <p>이메일 또는 Google 계정으로 로그인합니다.</p>
+            </div>
+            <form id="auth-form" class="auth-form">
+                <button type="button" id="google-login-btn" class="google-btn google-btn-pill">
+                    <svg class="google-mark" aria-hidden="true" viewBox="0 0 18 18">
+                        <path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84a4.14 4.14 0 0 1-1.8 2.72v2.26h2.9c1.7-1.56 2.7-3.86 2.7-6.62z"/>
+                        <path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.9-2.26c-.8.54-1.83.86-3.06.86-2.35 0-4.34-1.58-5.05-3.72H.96v2.33A9 9 0 0 0 9 18z"/>
+                        <path fill="#FBBC05" d="M3.95 10.7A5.41 5.41 0 0 1 3.67 9c0-.59.1-1.16.28-1.7V4.97H.96A9 9 0 0 0 0 9c0 1.45.35 2.82.96 4.03l2.99-2.33z"/>
+                        <path fill="#EA4335" d="M9 3.58c1.32 0 2.5.45 3.44 1.35l2.58-2.58C13.46.9 11.43 0 9 0A9 9 0 0 0 .96 4.97L3.95 7.3C4.66 5.16 6.65 3.58 9 3.58z"/>
+                    </svg>
+                    <span id="google-login-label">Google로 로그인</span>
+                </button>
+                <div class="auth-divider"><span>또는 이메일로</span></div>
+                <div id="signup-fields" class="signup-fields hidden">
+                    <div class="form-group">
+                        <label for="auth-name">이름</label>
+                        <input type="text" id="auth-name" autocomplete="name" placeholder="실명을 입력하세요">
+                    </div>
+                    <div class="form-group">
+                        <label for="auth-phone">휴대폰 번호</label>
+                        <div class="verify-row">
+                            <input type="tel" id="auth-phone" autocomplete="tel" placeholder="010-0000-0000">
+                            <button type="button" id="identity-verify-btn" class="secondary-btn">실명인증</button>
+                        </div>
+                        <p id="identity-status" class="identity-status">PASS / NICE / KCB 본인확인 연동 후 인증 완료 처리됩니다.</p>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="auth-email">이메일</label>
+                    <input type="email" id="auth-email" autocomplete="email" required placeholder="name@example.com">
+                    <p id="auth-email-status" class="availability-status" aria-live="polite"></p>
+                </div>
+                <div id="nickname-field" class="form-group hidden">
+                    <label for="auth-nickname">닉네임</label>
+                    <div class="verify-row">
+                        <input type="text" id="auth-nickname" autocomplete="username" placeholder="영맨 사이트에서 사용하실 닉네임을 입력해주세요" minlength="2" maxlength="20">
+                        <button type="button" id="nickname-check-btn" class="secondary-btn">중복확인</button>
+                    </div>
+                    <p id="auth-nickname-status" class="availability-status" aria-live="polite"></p>
+                </div>
+                <div class="form-group">
+                    <label for="auth-password">비밀번호</label>
+                    <input type="password" id="auth-password" autocomplete="current-password" required minlength="6" placeholder="6자 이상">
+                </div>
+                <div id="confirm-password-field" class="form-group hidden">
+                    <label for="auth-password-confirm">비밀번호 확인</label>
+                    <input type="password" id="auth-password-confirm" autocomplete="new-password" minlength="6" placeholder="비밀번호 재입력">
+                </div>
+                <div id="signup-agreements" class="signup-agreements hidden" aria-label="동의 항목">
+                    <div class="agreement-row signup-agreements-all">
+                        <input type="checkbox" id="agree-all">
+                        <label for="agree-all">전체 동의</label>
+                    </div>
+                    <div class="agreement-row">
+                        <input type="checkbox" id="agree-terms" data-agreement="required">
+                        <label for="agree-terms"><span class="agreement-tag req">필수</span><a href="terms.html" target="_blank" rel="noopener">이용약관</a>에 동의합니다.</label>
+                    </div>
+                    <div class="agreement-row">
+                        <input type="checkbox" id="agree-privacy" data-agreement="required">
+                        <label for="agree-privacy"><span class="agreement-tag req">필수</span><a href="privacy.html" target="_blank" rel="noopener">개인정보처리방침</a>에 동의합니다.</label>
+                    </div>
+                    <div class="agreement-row">
+                        <input type="checkbox" id="agree-marketing" data-agreement="optional">
+                        <label for="agree-marketing"><span class="agreement-tag opt">선택</span>마케팅 정보 수신에 동의합니다.</label>
+                    </div>
+                </div>
+                <button type="submit" id="auth-submit" class="primary-btn">로그인</button>
+                <p id="auth-message" class="auth-message" aria-live="polite"></p>
+                <div id="auth-notice" class="auth-notice hidden" role="alertdialog" aria-live="assertive">
+                    <p id="auth-notice-text"></p>
+                    <div class="auth-notice-actions">
+                        <button type="button" id="auth-notice-accept" class="primary-btn">네</button>
+                        <button type="button" id="auth-notice-cancel" class="secondary-btn">아니오</button>
+                    </div>
+                </div>
+                <div class="auth-switch">
+                    <span id="auth-switch-text">아직 회원이 아니신가요?</span>
+                    <button type="button" id="signup-tab">회원가입</button>
+                    <button type="button" id="login-tab" class="hidden">로그인</button>
+                </div>
+            </form>
+        </div>
+    </section>
+
+    <header id="app-header" class="app-header"></header>
+    <script type="module">
+        import { mountAppHeader, initSupabase } from './auth-shared.js?v=20260516-new-landing';
+        mountAppHeader();
+        // auth-shared 의 currentSession 동기화 — 안 하면 refreshNavFormsCache 가
+        // 영원히 early return 해서 사용자 양식이 슬롯 dropdown 에 안 나옴.
+        // main.js 가 자체 supabase 인스턴스를 따로 만들기 때문에 필요.
+        initSupabase();
+    </script>
+
+    <main id="app-dashboard" class="dashboard">
+        <!-- ========== Hero Stage — 3:2 풀폭 광고 영상 ========== -->
+        <section class="hero-stage" aria-label="영맨 소개 애니메이션">
+            <!-- 배경 (구름 + 도시 실루엣) -->
+            <svg class="stage-bg-svg" viewBox="0 0 1200 800" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+                <defs>
+                    <linearGradient id="floorGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stop-color="#f4d8c8"/>
+                        <stop offset="100%" stop-color="#e0b890"/>
+                    </linearGradient>
+                </defs>
+                <!-- 도시 실루엣 (먼 배경) -->
+                <g opacity="0.16" fill="#3a2820">
+                    <rect x="40" y="430" width="60" height="220"/>
+                    <rect x="110" y="380" width="80" height="270"/>
+                    <rect x="200" y="450" width="55" height="200"/>
+                    <rect x="900" y="410" width="70" height="240"/>
+                    <rect x="980" y="360" width="90" height="290"/>
+                    <rect x="1080" y="430" width="60" height="220"/>
+                </g>
+                <!-- 바닥 -->
+                <rect x="0" y="640" width="1200" height="160" fill="url(#floorGrad)"/>
+                <!-- 바닥 라인 -->
+                <line x1="0" y1="640" x2="1200" y2="640" stroke="rgba(58,40,32,0.18)" stroke-width="2"/>
+            </svg>
+            <!-- 구름 -->
+            <span class="cloud cloud-1" aria-hidden="true"></span>
+            <span class="cloud cloud-2" aria-hidden="true"></span>
+
+            <!-- 카피 overlay -->
+            <div class="stage-copy">
+                <div class="eyebrow">당신의 든든한 영업 비서, 영맨</div>
+                <h1>고객관리, 이제 <span class="accent">영맨</span>에게 맡기세요</h1>
+                <p class="tagline">소실률 0%의 든든한 비서!</p>
+                <p class="sub">이제 영업·문서 관리도 AI 가 똑똑하게.<br>죽을 때까지 지워지지 않는 확실한 비서가 되어 드립니다.</p>
+                <a class="cta-primary" href="contracts.html"><span>지금 시작하기 →</span></a>
+            </div>
+
+            <!-- 고객 (왼쪽, 걱정) -->
+            <div class="stage-actor actor-customer" aria-hidden="true">
+                <svg viewBox="0 0 200 300">
+                    <!-- 다리 (청바지) -->
+                    <rect x="80" y="180" width="18" height="92" rx="6" fill="#3b6ea8"/>
+                    <rect x="102" y="180" width="18" height="92" rx="6" fill="#3b6ea8"/>
+                    <!-- 구두 -->
+                    <ellipse cx="89" cy="280" rx="13" ry="4.5" fill="#5a3520"/>
+                    <ellipse cx="111" cy="280" rx="13" ry="4.5" fill="#5a3520"/>
+                    <!-- 셔츠 (밝은 파스텔) -->
+                    <path d="M65,90 L65,200 Q100,210 135,200 L135,90 Q115,80 100,80 Q85,80 65,90 Z" fill="#a4c5ec"/>
+                    <!-- 팔 -->
+                    <rect x="58" y="92" width="13" height="75" rx="5" fill="#a4c5ec"/>
+                    <rect x="129" y="92" width="13" height="75" rx="5" fill="#a4c5ec"/>
+                    <!-- 손 -->
+                    <circle cx="64" cy="170" r="7" fill="#ffe0c8"/>
+                    <circle cx="136" cy="170" r="7" fill="#ffe0c8"/>
+                    <!-- 종이 들고 있음 (왼손) -->
+                    <rect x="48" y="155" width="22" height="30" rx="2" fill="#fff" stroke="#a8a8a8" stroke-width="1.5"/>
+                    <line x1="52" y1="162" x2="66" y2="162" stroke="#bbb" stroke-width="1"/>
+                    <line x1="52" y1="167" x2="66" y2="167" stroke="#bbb" stroke-width="1"/>
+                    <line x1="52" y1="172" x2="66" y2="172" stroke="#bbb" stroke-width="1"/>
+                    <line x1="52" y1="177" x2="60" y2="177" stroke="#bbb" stroke-width="1"/>
+                    <!-- 머리 -->
+                    <ellipse cx="100" cy="55" rx="26" ry="30" fill="#ffe0c8"/>
+                    <!-- 머리카락 (단정한, 갈색) -->
+                    <path d="M75,45 Q82,25 100,24 Q118,25 125,45 Q120,32 100,30 Q80,32 75,45 Z" fill="#5a3520"/>
+                    <!-- 눈썹 (걱정 V) -->
+                    <path d="M84,46 L93,50" stroke="#5a3520" stroke-width="2.2" stroke-linecap="round"/>
+                    <path d="M116,46 L107,50" stroke="#5a3520" stroke-width="2.2" stroke-linecap="round"/>
+                    <!-- 눈 -->
+                    <ellipse cx="89" cy="56" rx="2.2" ry="3.2" fill="#1a1a1a"/>
+                    <ellipse cx="111" cy="56" rx="2.2" ry="3.2" fill="#1a1a1a"/>
+                    <!-- 입 (걱정 - 살짝 곡선) -->
+                    <path d="M93,68 Q100,64 107,68" stroke="#5a3520" stroke-width="2" fill="none" stroke-linecap="round"/>
+                    <!-- 땀방울 (이마) -->
+                    <ellipse cx="123" cy="40" rx="3" ry="5" fill="#7ec0f4" opacity="0.85"/>
+                </svg>
+            </div>
+
+            <!-- 고객 말풍선 -->
+            <div class="bubble bubble-customer" aria-hidden="true">도와줘 영맨!</div>
+
+            <!-- 영맨 착지 임팩트 (빛 폭발) -->
+            <div class="stage-impact" aria-hidden="true"></div>
+
+            <!-- 영맨 (위에서 강하 → 슈퍼히어로 한 무릎 착지 자세) -->
+            <div class="stage-actor actor-youngman" aria-hidden="true">
+                <svg viewBox="0 0 320 280" overflow="visible">
+                    <!-- 빨간 망토 (등 뒤로 펴짐) -->
+                    <path class="cape" d="
+                        M 110,80
+                        Q 50,130 60,210
+                        L 100,250
+                        Q 130,260 160,260
+                        Q 195,260 230,250
+                        L 270,210
+                        Q 280,130 220,80
+                        Q 195,72 160,72
+                        Q 130,72 110,80 Z"
+                        fill="#c8362c"/>
+                    <path class="cape-inside" d="M 130,90 Q 145,180 160,250 Q 175,180 190,90 Z"
+                        fill="#8a2620" opacity="0.55"/>
+                    <g class="body-bounce">
+                        <!-- 오른 다리 (뒤로 펼침) -->
+                        <g transform="translate(160 200) rotate(60)">
+                            <rect x="0" y="-12" width="84" height="24" rx="8" fill="#1a1a1a"/>
+                            <ellipse cx="80" cy="0" rx="18" ry="6" fill="#0a0a0a"/>
+                        </g>
+                        <!-- 왼 허벅지 (수직, 무릎 굽힘) -->
+                        <rect x="148" y="180" width="24" height="46" rx="8" fill="#1a1a1a"/>
+                        <!-- 왼 정강이 (앞으로 90도) -->
+                        <rect x="92" y="222" width="68" height="24" rx="8" fill="#1a1a1a"/>
+                        <!-- 무릎 -->
+                        <circle cx="160" cy="234" r="14" fill="#1a1a1a"/>
+                        <!-- 왼 발 (앞쪽 구두) -->
+                        <ellipse cx="92" cy="240" rx="18" ry="7" fill="#0a0a0a"/>
+
+                        <!-- 자켓 (몸통, 살짝 앞으로 숙임) -->
+                        <path d="M 102,98 L 96,200 Q 160,212 224,200 L 218,98 Q 192,86 160,86 Q 128,86 102,98 Z"
+                            fill="#1a1a1a"/>
+                        <!-- 라펠 -->
+                        <path d="M 134,98 L 130,168 L 160,180 L 190,168 L 186,98 Z" fill="#0a0a0a"/>
+                        <!-- 셔츠 V -->
+                        <path d="M 138,98 L 160,180 L 182,98 Z" fill="#fff"/>
+                        <!-- 넥타이 -->
+                        <path d="M 152,98 L 160,108 L 168,98 L 166,124 L 160,194 L 154,124 Z" fill="#c8362c"/>
+                        <!-- 넥타이 매듭 -->
+                        <path d="M 152,98 L 160,106 L 168,98 L 160,90 Z" fill="#a8281e"/>
+                        <!-- 행커치프 -->
+                        <rect x="200" y="118" width="10" height="9" fill="#c8362c" opacity="0.85"/>
+
+                        <!-- 왼팔 (바닥에 짚음) -->
+                        <g transform="translate(102 110) rotate(40)">
+                            <rect x="-9" y="0" width="18" height="84" rx="6" fill="#1a1a1a"/>
+                            <rect x="-9" y="80" width="18" height="6" fill="#fff"/>
+                            <circle cx="0" cy="92" r="11" fill="#ffe0c8"/>
+                        </g>
+
+                        <!-- 오른팔 (옆으로, 가방 든 손) -->
+                        <g transform="translate(218 110) rotate(8)">
+                            <rect x="-9" y="0" width="18" height="68" rx="6" fill="#1a1a1a"/>
+                            <rect x="-9" y="64" width="18" height="6" fill="#fff"/>
+                            <circle cx="0" cy="78" r="9" fill="#ffe0c8"/>
+                            <!-- 007 가방 (살짝 흔들리듯) -->
+                            <g class="briefcase" transform="translate(0 90)">
+                                <rect x="-10" y="0" width="50" height="36" rx="3" fill="#3a2820" stroke="#1a1009" stroke-width="2"/>
+                                <line x1="-10" y1="18" x2="40" y2="18" stroke="#1a1009" stroke-width="1.5"/>
+                                <rect x="6" y="-9" width="14" height="9" rx="2" fill="none" stroke="#1a1009" stroke-width="2"/>
+                                <rect x="-7" y="13" width="6" height="4" fill="#d4a960"/>
+                                <rect x="31" y="13" width="6" height="4" fill="#d4a960"/>
+                            </g>
+                        </g>
+
+                        <!-- 머리 (살짝 앞으로 숙임) -->
+                        <g transform="translate(160 70) rotate(-6)">
+                            <ellipse cx="0" cy="0" rx="30" ry="34" fill="#ffe0c8"/>
+                            <path d="M-27,-12 Q-20,-32 0,-34 Q20,-32 27,-12 Q30,-26 17,-30 Q10,-24 0,-26 Q-10,-24 -17,-30 Q-30,-26 -27,-12 Z" fill="#1a1a1a"/>
+                            <!-- 눈썹 (자신감 V) -->
+                            <path d="M-15,-6 L-7,-4" stroke="#1a1a1a" stroke-width="2.6" stroke-linecap="round"/>
+                            <path d="M15,-6 L7,-4" stroke="#1a1a1a" stroke-width="2.6" stroke-linecap="round"/>
+                            <!-- 눈 (날카롭게) -->
+                            <ellipse cx="-11" cy="2" rx="2.5" ry="3.5" fill="#1a1a1a"/>
+                            <ellipse cx="11" cy="2" rx="2.5" ry="3.5" fill="#1a1a1a"/>
+                            <ellipse cx="-10" cy="0" rx="1" ry="1.4" fill="#fff"/>
+                            <ellipse cx="12" cy="0" rx="1" ry="1.4" fill="#fff"/>
+                            <!-- 입 (자신감 미소) -->
+                            <path d="M-10,16 Q0,22 10,16" stroke="#1a1a1a" stroke-width="2.6" fill="none" stroke-linecap="round"/>
+                        </g>
+
+                        <!-- 명찰 (가슴) -->
+                        <rect x="170" y="138" width="26" height="13" rx="2" fill="#fff" stroke="#c8362c" stroke-width="1.2"/>
+                        <text x="183" y="148" text-anchor="middle" font-family="Pretendard, sans-serif" font-size="7.5" font-weight="800" fill="#c8362c">영맨</text>
+                    </g>
+                </svg>
+            </div>
+
+            <!-- 영맨 말풍선 -->
+            <div class="bubble bubble-youngman" aria-hidden="true">맡겨주세요!</div>
+        </section>
+
+        <!-- 사이트 간판 (랜딩) -->
+        <div class="landing-shell">
+
+            <!-- 핵심 관리대장 3종 -->
+            <section class="land-section" id="tour">
+                <div class="land-section-head">
+                    <h2>핵심 관리대장</h2>
+                    <p>현장별로, 사용자별로, 흐름 그대로 — 분양 영업의 핵심 데이터를 한 묶음으로.</p>
+                </div>
+                <div class="ledger-grid">
+                    <a class="lcard big" href="contracts.html">
+                        <span class="lcard-tag">메인</span>
+                        <div class="lcard-icon">📋</div>
+                        <h3>계약자 관리대장</h3>
+                        <p class="lcard-catch">청약 → 정계약 → 수수료 정산까지, 한 흐름으로</p>
+                        <p class="lcard-desc">현장별로 가계약·정계약·해지를 깔끔하게 추적하세요. 담당자 직급에 맞춰 수수료가 자동 계산되고, 지급 완료 처리하면 정산 내역이 그룹별로 보관됩니다. 엑셀 가져오기·다운로드, 직급 위계 자동 분배까지 모두 한 화면에서.</p>
+                        <span class="lcard-cta">바로가기 →</span>
+                    </a>
+                    <a class="lcard" href="customers.html">
+                        <div class="lcard-icon">🗂</div>
+                        <h3>고객 관리대장</h3>
+                        <p class="lcard-catch">상담 한 줄도 놓치지 않게</p>
+                        <p class="lcard-desc">현장별 상담·통화 이력을 그룹화해 추적. 모바일 통화 자동 입력 준비 완료.</p>
+                        <span class="lcard-cta">바로가기 →</span>
+                    </a>
+                    <a class="lcard" href="org.html">
+                        <div class="lcard-icon">🏢</div>
+                        <h3>조직도</h3>
+                        <p class="lcard-catch">팀과 직급, 그리고 수수료 단가</p>
+                        <p class="lcard-desc">본부장·팀장·팀원 위계와 팀별 분류, 정산에 그대로 연결됩니다.</p>
+                        <span class="lcard-cta">바로가기 →</span>
+                    </a>
+                </div>
+            </section>
+
+            <!-- 커뮤니티 게시판 -->
+            <section class="land-section">
+                <div class="land-section-head">
+                    <h2>커뮤니티 게시판</h2>
+                    <p>공지·문의·자유게시판 한눈에 바로가기.</p>
+                </div>
+                <div class="board-row">
+                    <a class="board-chip" href="board.html?cat=notice">
+                        <span class="board-chip-icon">📢</span>
+                        <span class="board-chip-text">
+                            <b>공지사항</b>
+                            <span>운영팀 업데이트 / 안내</span>
+                        </span>
+                        <span class="board-chip-go">→</span>
+                    </a>
+                    <a class="board-chip" href="board.html?cat=free">
+                        <span class="board-chip-icon">💬</span>
+                        <span class="board-chip-text">
+                            <b>자유게시판</b>
+                            <span>일상 / 후기 / 의견 공유</span>
+                        </span>
+                        <span class="board-chip-go">→</span>
+                    </a>
+                    <a class="board-chip" href="board.html?cat=qna">
+                        <span class="board-chip-icon">❓</span>
+                        <span class="board-chip-text">
+                            <b>문의게시판</b>
+                            <span>궁금한 점 / 요청사항</span>
+                        </span>
+                        <span class="board-chip-go">→</span>
+                    </a>
+                </div>
+            </section>
+
+            <!-- 부가 도구 -->
+            <section class="land-section">
+                <div class="land-section-head">
+                    <h2>업무 도구</h2>
+                    <p>분석, 즐거움, 그리고 안전한 자료 보관까지.</p>
+                </div>
+                <div class="tools-grid">
+                    <a class="lcard big" href="kapp_premium.php">
+                        <div class="lcard-icon">📊</div>
+                        <h3>N키워드 분석</h3>
+                        <p class="lcard-catch">네이버 키워드 트렌드와 채널 효율을 한눈에</p>
+                        <p class="lcard-desc">어떤 키워드가 잘 팔리고 있는지, 경쟁률은 어떤지, 어디에 광고를 집중해야 하는지 — 마케팅 의사결정에 필요한 데이터를 정리해서 보여드립니다.</p>
+                        <span class="lcard-cta">바로가기 →</span>
+                    </a>
+                    <a class="lcard" href="lotto2233.html">
+                        <div class="lcard-icon">✨</div>
+                        <h3>사주 로또 추천</h3>
+                        <p class="lcard-catch">점쟁이보다 용한 사주 기반 행운 번호</p>
+                        <p class="lcard-desc">재미로 보는 점쟁이보다 용한 사주 + 로또 번호 추천.</p>
+                        <span class="lcard-cta">바로가기 →</span>
+                    </a>
+                    <a class="lcard" href="upload.html">
+                        <div class="lcard-icon">📁</div>
+                        <h3>개인자료함</h3>
+                        <p class="lcard-catch">내 자료를 안전하게, 외부 공유는 깔끔하게</p>
+                        <p class="lcard-desc">이미지·동영상·문서를 사용자별 격리 보관. 외부 공유 링크도 깔끔한 다운로드 페이지로.</p>
+                        <span class="lcard-cta">바로가기 →</span>
+                    </a>
+                </div>
+            </section>
+
+            <div class="land-foot">© YOUNGMAN · 분양 영업 통합 관리 시스템</div>
+        </div>
+
+        <!-- 옛 섹션 (main.js 의존성 — DOM 만 유지, 화면에는 표시 안 함) -->
+        <section id="customer-section" class="content-section" style="display:none !important;">
+            <div class="section-header">
+                <div class="title-group"><h2>고객</h2></div>
+                <div class="controls">
+                    <div class="search-box"><input type="search" id="customer-search"></div>
+                    <button id="add-customer-btn" class="primary-btn">새 고객</button>
+                </div>
+            </div>
+            <div class="table-wrapper">
+                <table class="data-table"><tbody id="customer-list"></tbody></table>
+                <div id="customer-empty" class="empty-state hidden"></div>
+            </div>
+        </section>
+        <section id="employee-section" class="content-section hidden" style="display:none !important;">
+            <div class="section-header">
+                <div class="title-group"><h2>직원</h2></div>
+                <div class="controls">
+                    <div class="search-box"><input type="search" id="employee-search"></div>
+                    <button id="add-employee-btn" class="primary-btn">새 직원</button>
+                </div>
+            </div>
+            <div class="table-wrapper">
+                <table class="data-table"><tbody id="employee-list"></tbody></table>
+                <div id="employee-empty" class="empty-state hidden"></div>
+            </div>
+        </section>
+        <section id="marketing-section" class="content-section hidden" style="display:none !important;">
+            <div class="marketing-frame-container"></div>
+        </section>
+    </main>
+
+    <div id="app-modal" class="modal-backdrop hidden">
+        <form id="app-form" class="modal-panel">
+            <header class="modal-header">
+                <h2 id="modal-title">데이터 관리</h2>
+                <button id="close-modal" type="button" class="close-btn" aria-label="닫기">&times;</button>
+            </header>
+            <div class="modal-body">
+                <input type="hidden" id="item-id">
+                <input type="hidden" id="item-type">
+                <div id="form-fields"></div>
+            </div>
+            <footer class="modal-footer">
+                <button type="button" id="cancel-btn" class="secondary-btn">취소</button>
+                <button type="submit" id="save-btn" class="primary-btn">저장</button>
+            </footer>
+        </form>
+    </div>
+
+    <script src="main.js?v=20260516-new-landing" type="module"></script>
+    <script>
+        // 카드 등장 애니메이션 — viewport 에 들어오면 fade-up.
+        (function () {
+            if (!('IntersectionObserver' in window)) {
+                document.querySelectorAll('.lcard, .board-chip').forEach(el => el.classList.add('in-view'));
+                return;
+            }
+            const io = new IntersectionObserver((entries) => {
+                entries.forEach(e => {
+                    if (e.isIntersecting) {
+                        e.target.classList.add('in-view');
+                        io.unobserve(e.target);
+                    }
+                });
+            }, { threshold: 0.12, rootMargin: '0px 0px -8% 0px' });
+            // 카드들에 staggered delay 부여.
+            document.querySelectorAll('.lcard, .board-chip').forEach((el, i) => {
+                el.style.transitionDelay = (i % 4) * 80 + 'ms';
+                io.observe(el);
+            });
+        })();
+    </script>
+</body>
+</html>
