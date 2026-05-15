@@ -45,8 +45,15 @@ export function getClient() { return supabaseClient; }
 
 function cacheUserEmail(email) {
     try {
-        if (email) sessionStorage.setItem('erp.userEmail', String(email).toLowerCase());
-        else sessionStorage.removeItem('erp.userEmail');
+        if (email) {
+            const v = String(email).toLowerCase();
+            sessionStorage.setItem('erp.userEmail', v);
+            // 재접속 시 첫 렌더에서 사용자별 nav slot 라벨(localStorage yman_nav_*)
+            // 을 즉시 읽을 수 있도록 마지막 사용자 이메일을 localStorage 에도 백업.
+            localStorage.setItem('erp.userEmail.last', v);
+        } else {
+            sessionStorage.removeItem('erp.userEmail');
+        }
     } catch {}
 }
 
@@ -173,7 +180,13 @@ function resolveSlotLabel(key) {
 }
 function renderBottomNav(activeKey) {
     const path = (activeKey || (location.pathname.split('/').pop() || 'index.html')).toLowerCase();
-    const email = (() => { try { return (sessionStorage.getItem('erp.userEmail') || '').toLowerCase(); } catch { return ''; } })();
+    const email = (() => {
+        try {
+            return (sessionStorage.getItem('erp.userEmail')
+                 || localStorage.getItem('erp.userEmail.last')
+                 || '').toLowerCase();
+        } catch { return ''; }
+    })();
     const slotKey = (s) => `yman_nav_${s}:${email || 'anon'}`;
     const slot1Key = (() => { try { return localStorage.getItem(slotKey('slot1')) || 'org.html'; } catch { return 'org.html'; } })();
     const slot2Key = (() => { try { return localStorage.getItem(slotKey('slot2')) || 'contracts.html'; } catch { return 'contracts.html'; } })();
@@ -358,8 +371,11 @@ export function mountAppHeader(opts) {
     // 주 기능 — 고객 관리대장 (메인 강조) + 양식 선택 슬롯 2개 (드롭다운).
     // 각 슬롯의 선택값은 localStorage 에 사용자 이메일별로 저장됨.
     const userEmail = (() => {
-        try { return (sessionStorage.getItem('erp.userEmail') || '').toLowerCase(); }
-        catch { return ''; }
+        try {
+            return (sessionStorage.getItem('erp.userEmail')
+                 || localStorage.getItem('erp.userEmail.last')
+                 || '').toLowerCase();
+        } catch { return ''; }
     })();
     const slotKey = (slot) => `yman_nav_${slot}:${userEmail || 'anon'}`;
     const getSlot = (slot, fallback) => {
