@@ -6,7 +6,7 @@
 <title>고객 관리대장 · YOUNGMAN</title>
 <link rel="icon" type="image/png" href="logo_main.png">
 <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
-<link rel="stylesheet" href="style.css?v=20260516-bulk-bar-pos">
+<link rel="stylesheet" href="style.css?v=20260516-bulk-top">
 <style>
 :root{
     --ledger-line:rgba(20,14,8,.09); --ledger-line-strong:rgba(20,14,8,.16);
@@ -67,15 +67,15 @@ table.ledger-tbl{width:100%;border-collapse:collapse;font-size:13.5px;min-width:
 .ledger-tbl tbody tr.row-dead td textarea{color:#7a756e}
 .ledger-tbl tbody tr.row-dead.selected{opacity:.78}
 
-/* bulk-bar — 행 목록 바로 아래(content 다음)에 위치, 화면 하단 sticky.
+/* bulk-bar — 그룹 목록(group-bar) 다음, 행 목록(#content) 바로 위에 위치.
    버튼은 좌측 정렬, "문자 발송" 을 가장 왼쪽에 두고 강조색. */
 .bulk-bar{
-    position:sticky;bottom:14px;background:#fff;
+    position:sticky;top:64px;background:#fff;
     border:1px solid var(--ledger-line-strong);
     padding:12px 16px;display:none;
     align-items:center;justify-content:flex-start;gap:16px;flex-wrap:wrap;
-    border-radius:12px;box-shadow:0 12px 28px rgba(20,14,8,.14);
-    z-index:60;margin:14px 0 18px
+    border-radius:12px;box-shadow:0 8px 24px rgba(20,14,8,.08);
+    z-index:60;margin-bottom:14px
 }
 .bulk-bar.active{display:flex}
 .bulk-bar .info{font-size:13px;color:#4f4943;margin-left:auto}
@@ -173,8 +173,6 @@ table.ledger-tbl{width:100%;border-collapse:collapse;font-size:13.5px;min-width:
         <button class="tiny-btn primary" id="newGroupBtn" type="button">+ 새 그룹</button>
     </div>
 
-    <div id="content"></div>
-
     <div class="bulk-bar" id="bulkBar">
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
             <button class="tiny-btn bulk-sms-btn" id="bulkSmsBtn" type="button">📨 문자 발송</button>
@@ -183,6 +181,8 @@ table.ledger-tbl{width:100%;border-collapse:collapse;font-size:13.5px;min-width:
         </div>
         <div class="info"><b id="bulkCount">0</b>건 선택됨</div>
     </div>
+
+    <div id="content"></div>
 
     <div class="app-note">
         📱 <b>모바일 앱 연동 준비 완료</b> — 통화 후 AI 가 요약한 내용을 앱에서 "전송" 누르면 자동으로 이 대장의 새 행으로 들어옵니다. 네트워크가 끊겼다 다시 보내도 같은 통화가 중복 입력되지 않도록 멱등성 키가 적용됩니다.
@@ -246,9 +246,9 @@ table.ledger-tbl{width:100%;border-collapse:collapse;font-size:13.5px;min-width:
     </div>
 </div>
 
-<script type="module" src="customers.js?v=20260516-bulk-bar-pos"></script>
+<script type="module" src="customers.js?v=20260516-bulk-top"></script>
 <script type="module">
-    import { bootApp } from './auth-shared.js?v=20260516-bulk-bar-pos';
+    import { bootApp } from './auth-shared.js?v=20260516-bulk-top';
     bootApp();
 </script>
 </body>
