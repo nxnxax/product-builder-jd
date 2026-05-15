@@ -10,13 +10,13 @@
  *  - 본부장 계약 → 본부장(=팀원+팀장+본부장 셋 다 받음)
  */
 
-import { initSupabase, apiRequest, getSession } from './auth-shared.js?v=20260516-bulk-in-content';
+import { initSupabase, apiRequest, getSession } from './auth-shared.js?v=20260516-card-search';
 import { attachColumnFilters, applyColumnFilters, openRowAddModal, attachPhoneAutoFormat, attachThousandFormat, formatThousand, unformatThousand, getEffectiveFields, mountFieldManager,
          exportRecordsToExcel, pickExcelFile, parseExcelFile, suggestFieldMapping, openImportPreviewModal,
          saveImportSession, loadImportSession, clearImportSession,
          findBlankRecordIds, showSweepToast,
          attachCellClickHandlers,
-         isLedgerMobile, onLedgerViewportChange } from './ledger-shared.js?v=20260516-bulk-in-content';
+         isLedgerMobile, onLedgerViewportChange } from './ledger-shared.js?v=20260516-card-search';
 
 const PAGE_TYPE = 'contract';
 const TAX_RATE = 0.033;   // 실수령액 = commission * (1 - TAX_RATE)
@@ -78,6 +78,7 @@ let editingGroupId = null;
 let settingsGroupId = null;
 let filterState = { filters: {} };
 let selectedIds = new Set();
+let searchByGroup = {};   // groupId → 그룹 카드 내부 검색어
 
 let orgGroups = [];                  // page_type=org 의 그룹들 (설정에서 연동 선택용)
 const orgEmployeesByGroup = new Map(); // gid → employees[]
@@ -495,8 +496,8 @@ async function createContractFromOrg(orgGroupId) {
     }
 }
 
-function applyFilters(rows) {
-    return applyColumnFilters(filterState.filters, rows, (r, k) => {
+function applyFilters(rows, groupId) {
+    let out = applyColumnFilters(filterState.filters, rows, (r, k) => {
         if (k === 'paid') return r.data?.paid_unpaid;
         if (k === 'managerTitle') {
             const mgr = r.data?.manager;
@@ -508,12 +509,26 @@ function applyFilters(rows) {
         }
         return r.data?.[k];
     });
+    // 그룹별 텍스트 검색 — 행 안의 모든 값을 부분 매칭
+    if (groupId != null) {
+        const q = (searchByGroup[groupId] || '').trim().toLowerCase();
+        if (q !== '') {
+            out = out.filter(r => {
+                const d = r.data || {};
+                return Object.values(d).some(v => {
+                    if (v == null || v === '') return false;
+                    return String(v).toLowerCase().includes(q);
+                });
+            });
+        }
+    }
+    return out;
 }
 
 function renderGroupCard(group) {
     const grpRecs = records.filter(r => r.groupId === group.id);
     const open = expandedGroupIds.has(group.id);
-    const bodyHtml = open ? renderTable(group, applyFilters(grpRecs)) : '';
+    const bodyHtml = open ? renderTable(group, applyFilters(grpRecs, group.id)) : '';
     return `
         <div class="accordion-card ${open ? 'open' : ''}" data-gid="${group.id}">
             <div class="accordion-head">
@@ -541,8 +556,13 @@ const MOBILE_PRIMARY_KEYS_CONTRACTS = ['customer', 'mainDate', 'phone'];
 function renderTable(group, rows) {
     if (isLedgerMobile()) return renderMobileCards(group, rows);
     const fields = getEffectiveFields(group, DEFAULT_FIELDS);
+    const q = escapeAttr(searchByGroup[group.id] || '');
     return `
-        <div style="display:flex;justify-content:flex-end;padding:10px 18px;border-bottom:1px solid var(--ledger-line);background:#fbfaf5;">
+        <div class="ledger-card-toolbar">
+            <div class="ledger-search-wrap">
+                <input type="search" class="ledger-search-input" data-search-gid="${group.id}" value="${q}" placeholder="🔍 행 안에서 검색…" autocomplete="off">
+                ${q ? `<button type="button" class="ledger-search-clear" data-search-clear-gid="${group.id}" aria-label="검색 지우기">×</button>` : ''}
+            </div>
             <button class="tiny-btn primary" type="button" data-add-row data-gid="${group.id}">+ 계약 추가</button>
         </div>
         <div class="tbl-wrap">
@@ -568,8 +588,13 @@ function renderMobileCards(group, rows) {
     const cardsHtml = rows.length === 0
         ? `<div class="ledger-cards-empty">표시할 계약이 없습니다.</div>`
         : rows.map((r, i) => renderMobileCard(r, i + 1, group, fields)).join('');
+    const q = escapeAttr(searchByGroup[group.id] || '');
     return `
         <div class="ledger-cards-toolbar">
+            <div class="ledger-search-wrap">
+                <input type="search" class="ledger-search-input" data-search-gid="${group.id}" value="${q}" placeholder="🔍 행 안에서 검색…" autocomplete="off">
+                ${q ? `<button type="button" class="ledger-search-clear" data-search-clear-gid="${group.id}" aria-label="검색 지우기">×</button>` : ''}
+            </div>
             <button class="tiny-btn primary" type="button" data-add-row data-gid="${group.id}">+ 계약 추가</button>
         </div>
         <div class="ledger-cards">${cardsHtml}</div>`;
@@ -809,6 +834,28 @@ function bindTableEvents() {
     document.querySelectorAll('[data-status-switch]').forEach(b => {
         b.addEventListener('click', () => cycleStatus(parseInt(b.dataset.id, 10)));
     });
+    // 그룹별 검색
+    document.querySelectorAll('[data-search-gid]').forEach(input => {
+        input.addEventListener('input', () => {
+            const gid = parseInt(input.dataset.searchGid, 10);
+            searchByGroup[gid] = input.value;
+            const caret = input.selectionStart;
+            renderRecords();
+            const restored = document.querySelector(`[data-search-gid="${gid}"]`);
+            if (restored) {
+                restored.focus();
+                try { restored.setSelectionRange(caret, caret); } catch {}
+            }
+        });
+    });
+    document.querySelectorAll('[data-search-clear-gid]').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            const gid = parseInt(btn.dataset.searchClearGid, 10);
+            delete searchByGroup[gid];
+            renderRecords();
+        });
+    });
     // 사용자 정의 toggle/switch 셀 클릭 즉시 토글
     attachCellClickHandlers({
         root: document,
@@ -831,7 +878,7 @@ function bindTableEvents() {
     document.querySelectorAll('[data-select-all]').forEach(cb => {
         cb.addEventListener('change', () => {
             const gid = parseInt(cb.dataset.selectAll, 10);
-            const targets = applyFilters(records.filter(r => r.groupId === gid));
+            const targets = applyFilters(records.filter(r => r.groupId === gid), gid);
             targets.forEach(r => cb.checked ? selectedIds.add(r.id) : selectedIds.delete(r.id));
             renderRecords();
         });
@@ -1272,7 +1319,7 @@ function openSettleModal() {
         const group = groups.find(g => g.id === gid);
         if (!group) return;
         const grpRecs = records.filter(r => r.groupId === gid && r.data?.paid_unpaid && r.data?.status === 'active');
-        applyFilters(grpRecs).forEach(r => all.push({ row: r, group }));
+        applyFilters(grpRecs, group.id).forEach(r => all.push({ row: r, group }));
     });
 
     if (all.length === 0) {

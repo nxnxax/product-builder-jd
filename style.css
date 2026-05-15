@@ -2541,6 +2541,46 @@ select:focus {
 .sms-modal-body .sms-result-tbl tbody tr:last-child td{border-bottom:0}
 .sms-modal-body .sms-result-tbl td:first-child{font-family:'SF Mono',Menlo,Consolas,monospace;color:#0e0d0c}
 
+/* 그룹 카드 내부 행 검색창 — customers/contracts/org/forms 공통.
+   .ledger-card-toolbar: desktop 표 카드 / .ledger-cards-toolbar: 모바일 카드 */
+.ledger-card-toolbar{
+    display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+    padding:10px 18px;border-bottom:1px solid var(--ledger-line,rgba(20,14,8,.09));
+    background:#fbfaf5
+}
+.ledger-card-toolbar > .tiny-btn,
+.ledger-card-toolbar > .primary{margin-left:auto}
+.ledger-search-wrap{
+    position:relative;flex:1 1 220px;max-width:340px;
+    display:flex;align-items:center
+}
+.ledger-search-input{
+    width:100%;height:34px;padding:0 32px 0 14px;
+    border:1px solid var(--ledger-line,rgba(20,14,8,.09));border-radius:8px;
+    font-size:13.5px;font-family:inherit;background:#fff;color:#0e0d0c;
+    outline:none;transition:border-color 160ms, box-shadow 160ms
+}
+.ledger-search-input:focus{
+    border-color:#0e0d0c;
+    box-shadow:0 0 0 3px rgba(20,14,8,.06)
+}
+.ledger-search-input::placeholder{color:#a3a39a}
+.ledger-search-clear{
+    position:absolute;right:6px;width:24px;height:24px;
+    border:0;background:transparent;color:#8a847e;font-size:18px;
+    cursor:pointer;border-radius:5px;line-height:1;padding:0;
+    display:inline-flex;align-items:center;justify-content:center
+}
+.ledger-search-clear:hover{background:#fbf7ef;color:#0e0d0c}
+
+/* 모바일에서는 검색창이 전체 폭, 행 추가 버튼은 다음 줄 */
+@media (max-width:640px){
+    .ledger-card-toolbar{padding:10px 12px;gap:8px}
+    .ledger-search-wrap{flex:1 1 100%;max-width:none}
+    .ledger-card-toolbar > .tiny-btn,
+    .ledger-card-toolbar > .primary{margin-left:0;width:100%}
+}
+
 /* 컬럼 헤더 클릭 필터 popup — 모든 ledger 페이지(customers/contracts/org/forms) 공통.
    기존엔 각 페이지 HTML 안에 inline 으로 있어 forms.html 에서 누락됐었음. */
 .filter-pop{position:fixed;z-index:200;background:#fff;border:1px solid var(--ledger-line-strong,rgba(20,14,8,.16));border-radius:8px;box-shadow:0 12px 32px rgba(20,14,8,.18);width:240px;max-width:92vw;padding:10px 10px 8px;font-family:inherit}

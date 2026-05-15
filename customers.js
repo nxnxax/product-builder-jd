@@ -9,13 +9,13 @@
  *  - client_idempotency_key 로 같은 통화의 중복 전송 차단
  */
 
-import { initSupabase, apiRequest, getSession } from './auth-shared.js?v=20260516-bulk-in-content';
+import { initSupabase, apiRequest, getSession } from './auth-shared.js?v=20260516-card-search';
 import { attachColumnFilters, applyColumnFilters, openRowAddModal, attachPhoneAutoFormat, getEffectiveFields, mountFieldManager,
          exportRecordsToExcel, pickExcelFile, parseExcelFile, suggestFieldMapping, openImportPreviewModal,
          saveImportSession, loadImportSession, clearImportSession,
          findBlankRecordIds, showSweepToast,
          attachCellClickHandlers,
-         isLedgerMobile, onLedgerViewportChange } from './ledger-shared.js?v=20260516-bulk-in-content';
+         isLedgerMobile, onLedgerViewportChange } from './ledger-shared.js?v=20260516-card-search';
 
 const MOBILE_PRIMARY_KEYS = ['customer', 'phone', 'date'];
 
@@ -58,6 +58,7 @@ let records = [];
 let editingGroupId = null;
 let filterState = { filters: {} };
 let selectedIds = new Set();
+let searchByGroup = {};   // groupId → 검색어 (그룹 카드 내부 검색창)
 
 /* ============== Boot ============== */
 (async function boot() {
@@ -257,8 +258,19 @@ async function loadRecords() {
     renderRecords();
 }
 
-function applyFilters(rows) {
-    return applyColumnFilters(filterState.filters, rows, (r, k) => r.data?.[k]);
+function applyFilters(rows, groupId) {
+    let out = applyColumnFilters(filterState.filters, rows, (r, k) => r.data?.[k]);
+    const q = (searchByGroup[groupId] || '').trim().toLowerCase();
+    if (q !== '') {
+        out = out.filter(r => {
+            const d = r.data || {};
+            return Object.values(d).some(v => {
+                if (v == null || v === '') return false;
+                return String(v).toLowerCase().includes(q);
+            });
+        });
+    }
+    return out;
 }
 
 function renderRecords() {
@@ -336,7 +348,7 @@ function bindExtraPickerEvents() {
 function renderGroupCard(group) {
     const grpRecs = records.filter(r => r.groupId === group.id);
     const open = expandedGroupIds.has(group.id);
-    const bodyHtml = open ? renderTable(group, applyFilters(grpRecs)) : '';
+    const bodyHtml = open ? renderTable(group, applyFilters(grpRecs, group.id)) : '';
     return `
         <div class="accordion-card ${open ? 'open' : ''}" data-gid="${group.id}">
             <div class="accordion-head">
@@ -361,8 +373,13 @@ function renderGroupCard(group) {
 function renderTable(group, rows) {
     if (isLedgerMobile()) return renderMobileCards(group, rows);
     const fields = getEffectiveFields(group, DEFAULT_FIELDS);
+    const q = escapeAttr(searchByGroup[group.id] || '');
     return `
-        <div style="display:flex;justify-content:flex-end;padding:10px 18px;border-bottom:1px solid var(--ledger-line);background:#fbfaf5;">
+        <div class="ledger-card-toolbar">
+            <div class="ledger-search-wrap">
+                <input type="search" class="ledger-search-input" data-search-gid="${group.id}" value="${q}" placeholder="🔍 행 안에서 검색…" autocomplete="off">
+                ${q ? `<button type="button" class="ledger-search-clear" data-search-clear-gid="${group.id}" aria-label="검색 지우기">×</button>` : ''}
+            </div>
             <button class="tiny-btn primary" type="button" data-add-row data-gid="${group.id}">+ 행 추가</button>
         </div>
         <div class="tbl-wrap">
@@ -388,8 +405,13 @@ function renderMobileCards(group, rows) {
     const cardsHtml = rows.length === 0
         ? `<div class="ledger-cards-empty">표시할 항목이 없습니다.</div>`
         : rows.map((r, i) => renderMobileCard(r, i + 1, group, fields)).join('');
+    const q = escapeAttr(searchByGroup[group.id] || '');
     return `
         <div class="ledger-cards-toolbar">
+            <div class="ledger-search-wrap">
+                <input type="search" class="ledger-search-input" data-search-gid="${group.id}" value="${q}" placeholder="🔍 행 안에서 검색…" autocomplete="off">
+                ${q ? `<button type="button" class="ledger-search-clear" data-search-clear-gid="${group.id}" aria-label="검색 지우기">×</button>` : ''}
+            </div>
             <button class="tiny-btn primary" type="button" data-add-row data-gid="${group.id}">+ 행 추가</button>
         </div>
         <div class="ledger-cards">${cardsHtml}</div>`;
@@ -590,6 +612,29 @@ function bindTableEvents() {
     document.querySelectorAll('[data-manage-switch]').forEach(b => {
         b.addEventListener('click', (e) => { e.preventDefault(); toggleManaged(parseInt(b.dataset.id, 10)); });
     });
+    // 그룹별 검색 입력 — input 시 그 그룹만 필터링 후 재렌더 + 같은 input 포커스 복원.
+    document.querySelectorAll('[data-search-gid]').forEach(input => {
+        input.addEventListener('input', () => {
+            const gid = parseInt(input.dataset.searchGid, 10);
+            searchByGroup[gid] = input.value;
+            const caret = input.selectionStart;
+            renderRecords();
+            const restored = document.querySelector(`[data-search-gid="${gid}"]`);
+            if (restored) {
+                restored.focus();
+                try { restored.setSelectionRange(caret, caret); } catch {}
+            }
+        });
+    });
+    document.querySelectorAll('[data-search-clear-gid]').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            const gid = parseInt(btn.dataset.searchClearGid, 10);
+            delete searchByGroup[gid];
+            renderRecords();
+        });
+    });
+
     // 사용자 정의 toggle/switch + 레벨 pill 셀 클릭 즉시 토글/순환 (desktop 표 + mobile 카드 둘 다 커버)
     attachCellClickHandlers({
         root: document,
@@ -616,7 +661,7 @@ function bindTableEvents() {
     document.querySelectorAll('[data-select-all]').forEach(cb => {
         cb.addEventListener('change', () => {
             const gid = parseInt(cb.dataset.selectAll, 10);
-            const targets = applyFilters(records.filter(r => r.groupId === gid));
+            const targets = applyFilters(records.filter(r => r.groupId === gid), gid);
             targets.forEach(r => cb.checked ? selectedIds.add(r.id) : selectedIds.delete(r.id));
             renderRecords();
         });
@@ -951,7 +996,7 @@ async function openSmsModal() {
 }
 
 async function getAccessTokenForSms() {
-    const { getAccessToken } = await import('./auth-shared.js?v=20260516-bulk-in-content');
+    const { getAccessToken } = await import('./auth-shared.js?v=20260516-card-search');
     return await getAccessToken();
 }
 

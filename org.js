@@ -6,13 +6,13 @@
  * Phase 3 의 계약자 관리대장이 이 그룹의 settings.commissions 를 읽어 정산.
  */
 
-import { initSupabase, apiRequest, getSession } from './auth-shared.js?v=20260516-bulk-in-content';
+import { initSupabase, apiRequest, getSession } from './auth-shared.js?v=20260516-card-search';
 import { attachColumnFilters, applyColumnFilters, openRowAddModal, attachPhoneAutoFormat, attachThousandFormat, formatThousand, unformatThousand, getEffectiveFields, mountFieldManager,
          exportRecordsToExcel, pickExcelFile, parseExcelFile, suggestFieldMapping, openImportPreviewModal,
          saveImportSession, loadImportSession, clearImportSession,
          findBlankRecordIds, showSweepToast,
          attachCellClickHandlers,
-         isLedgerMobile, onLedgerViewportChange } from './ledger-shared.js?v=20260516-bulk-in-content';
+         isLedgerMobile, onLedgerViewportChange } from './ledger-shared.js?v=20260516-card-search';
 
 const PAGE_TYPE = 'org';
 
@@ -72,6 +72,7 @@ let editingGroupId = null;        // group being edited in modal
 let settingsGroupId = null;       // settings 모달이 열려있는 그룹
 let filterState = { filters: {} };// { [key]: Set<value> }
 let selectedIds = new Set();
+let searchByGroup = {};   // groupId → 그룹 카드 내부 검색어
 let typeCommissionRows = [];      // working copy in settings modal
 let settingsFieldDraft = [];      // working copy of custom fields
 
@@ -419,8 +420,18 @@ function renderGroupCard(group) {
     const isLeadMode = ownerRoleOf(group) === 'lead';
     const activeTeams = new Set(s.active_teams && s.active_teams.length > 0 ? s.active_teams : [1, 2, 3]);
 
-    // 필터는 모든 그룹에 동일 적용
-    const filtered = applyColumnFilters(filterState.filters, groupRecs, (r, k) => r.data?.[k]);
+    // 컬럼 헤더 필터 + 그룹별 텍스트 검색 (input data-search-gid)
+    let filtered = applyColumnFilters(filterState.filters, groupRecs, (r, k) => r.data?.[k]);
+    const q = (searchByGroup[group.id] || '').trim().toLowerCase();
+    if (q !== '') {
+        filtered = filtered.filter(r => {
+            const d = r.data || {};
+            return Object.values(d).some(v => {
+                if (v == null || v === '') return false;
+                return String(v).toLowerCase().includes(q);
+            });
+        });
+    }
 
     // 본부장은 어느 팀에도 속하지 않는 별도 셀.
     const heads = filtered.filter(r => r.data?.title === '본부장');
@@ -470,6 +481,12 @@ function renderGroupCard(group) {
                 </div>
             </div>
             <div class="accordion-body">
+                ${open ? `<div class="ledger-card-toolbar">
+                    <div class="ledger-search-wrap">
+                        <input type="search" class="ledger-search-input" data-search-gid="${group.id}" value="${escapeAttr(searchByGroup[group.id] || '')}" placeholder="🔍 행 안에서 검색…" autocomplete="off">
+                        ${(searchByGroup[group.id] || '') ? `<button type="button" class="ledger-search-clear" data-search-clear-gid="${group.id}" aria-label="검색 지우기">×</button>` : ''}
+                    </div>
+                </div>` : ''}
                 ${bodyHtml || '<div style="padding:30px 24px;text-align:center;color:#8a847e;font-size:13px;">등록된 인원이 없습니다.</div>'}
             </div>
         </div>`;
@@ -715,6 +732,28 @@ function bindTableEvents() {
     // 개별 삭제
     document.querySelectorAll('[data-delete-row]').forEach(b => {
         b.addEventListener('click', () => deleteRow(parseInt(b.dataset.deleteRow, 10)));
+    });
+    // 그룹별 검색 input
+    document.querySelectorAll('[data-search-gid]').forEach(input => {
+        input.addEventListener('input', () => {
+            const gid = parseInt(input.dataset.searchGid, 10);
+            searchByGroup[gid] = input.value;
+            const caret = input.selectionStart;
+            renderRecords();
+            const restored = document.querySelector(`[data-search-gid="${gid}"]`);
+            if (restored) {
+                restored.focus();
+                try { restored.setSelectionRange(caret, caret); } catch {}
+            }
+        });
+    });
+    document.querySelectorAll('[data-search-clear-gid]').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            const gid = parseInt(btn.dataset.searchClearGid, 10);
+            delete searchByGroup[gid];
+            renderRecords();
+        });
     });
     // 사용자 정의 toggle/switch 셀 클릭 즉시 토글
     attachCellClickHandlers({
