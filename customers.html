@@ -6,7 +6,7 @@
 <title>고객 관리대장 · YOUNGMAN</title>
 <link rel="icon" type="image/png" href="logo_main.png">
 <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
-<link rel="stylesheet" href="style.css?v=20260515-anon-slot">
+<link rel="stylesheet" href="style.css?v=20260516-sms-bulk">
 <style>
 :root{
     --ledger-line:rgba(20,14,8,.09); --ledger-line-strong:rgba(20,14,8,.16);
@@ -154,6 +154,7 @@ table.ledger-tbl{width:100%;border-collapse:collapse;font-size:13.5px;min-width:
         <div class="info"><b id="bulkCount">0</b>건 선택됨</div>
         <div style="display:flex;gap:8px;">
             <button class="tiny-btn" id="bulkClearBtn" type="button">선택 해제</button>
+            <button class="tiny-btn" id="bulkSmsBtn" type="button">📨 문자 발송</button>
             <button class="tiny-btn danger" id="bulkDeleteBtn" type="button">선택 삭제</button>
         </div>
     </div>
@@ -222,9 +223,9 @@ table.ledger-tbl{width:100%;border-collapse:collapse;font-size:13.5px;min-width:
     </div>
 </div>
 
-<script type="module" src="customers.js?v=20260515-anon-slot"></script>
+<script type="module" src="customers.js?v=20260516-sms-bulk"></script>
 <script type="module">
-    import { bootApp } from './auth-shared.js?v=20260515-anon-slot';
+    import { bootApp } from './auth-shared.js?v=20260516-sms-bulk';
     bootApp();
 </script>
 </body>

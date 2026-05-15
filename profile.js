@@ -6,7 +6,7 @@ import {
     mountAppHeader,
     refreshAppHeader,
     getInitial,
-} from './auth-shared.js?v=20260515-anon-slot';
+} from './auth-shared.js?v=20260516-sms-bulk';
 
 const tabButtons = document.querySelectorAll('.side-nav button[data-tab]');
 const tabSections = document.querySelectorAll('.profile-tab');
@@ -65,6 +65,7 @@ function showTab(tab) {
     });
     if (tab !== 'mobile') hideFreshToken();
     if (tab === 'mobile') loadTokens();
+    if (tab === 'sms') loadSmsCredentials();
 }
 
 tabButtons.forEach(btn => {
@@ -104,7 +105,11 @@ async function loadProfile() {
         fillProfile(payload.profile || {});
         loadingState.classList.add('hidden');
         document.querySelectorAll('.profile-tab').forEach(s => s.classList.remove('hidden'));
-        showTab('overview');
+        // URL ?tab=sms 같이 직접 진입 지원 — 고객관리대장에서 redirect 시 사용.
+        const params = new URLSearchParams(location.search);
+        const initial = params.get('tab') || 'overview';
+        const allowed = ['overview', 'basic', 'security', 'mobile', 'sms', 'account'];
+        showTab(allowed.includes(initial) ? initial : 'overview');
     } catch (error) {
         loadingState.innerHTML = `<p style="color:var(--danger);font-size:14px;margin:0;">${error.message || '프로필을 불러오지 못했습니다.'}</p>`;
     }
@@ -375,3 +380,99 @@ tokenFreshCopy?.addEventListener('click', async () => {
     await refreshAppHeader();
     await loadProfile();
 })();
+
+/* ============== SMS provider 자격증명 (회원별 Solapi/Aligo) ============== */
+const smsProviderSel = document.getElementById('sms-provider');
+const smsApiKeyInput = document.getElementById('sms-api-key');
+const smsApiSecretInput = document.getElementById('sms-api-secret');
+const smsSenderInput = document.getElementById('sms-sender');
+const smsSaveBtn = document.getElementById('sms-save');
+const smsDisconnectBtn = document.getElementById('sms-disconnect');
+const smsCredForm = document.getElementById('sms-cred-form');
+const smsStatusEl = document.getElementById('sms-status');
+const smsMessageEl = document.getElementById('sms-message');
+
+let smsCredConfigured = false;
+
+function setSmsMessage(text, type) {
+    if (!smsMessageEl) return;
+    smsMessageEl.textContent = text || '';
+    smsMessageEl.classList.remove('error', 'success');
+    if (type) smsMessageEl.classList.add(type);
+}
+
+async function loadSmsCredentials() {
+    if (!smsStatusEl) return;
+    smsStatusEl.textContent = '불러오는 중…';
+    smsStatusEl.classList.remove('error', 'success');
+    try {
+        const payload = await apiRequest('sms-credentials');
+        smsCredConfigured = !!payload.configured;
+        if (smsProviderSel) smsProviderSel.value = payload.provider || 'solapi';
+        if (smsApiKeyInput) smsApiKeyInput.value = '';
+        if (smsApiSecretInput) smsApiSecretInput.value = '';
+        if (smsSenderInput) smsSenderInput.value = payload.senderPhone || '';
+        if (smsDisconnectBtn) smsDisconnectBtn.style.display = smsCredConfigured ? '' : 'none';
+        if (smsCredConfigured) {
+            smsStatusEl.innerHTML = `현재 등록됨 — <code style="background:#fbf7ef;padding:2px 6px;border-radius:5px;font-size:13px;">${escapeHtmlLocal(payload.apiKeyMasked || '')}</code> · 발신번호 <b>${escapeHtmlLocal(payload.senderPhone || '미등록')}</b>`;
+            smsStatusEl.classList.add('success');
+        } else {
+            smsStatusEl.textContent = '아직 연동되지 않았습니다. 아래 값을 입력하고 저장하세요.';
+        }
+    } catch (e) {
+        smsStatusEl.textContent = '불러오지 못했습니다: ' + (e.message || e);
+        smsStatusEl.classList.add('error');
+    }
+}
+
+function escapeHtmlLocal(s) {
+    return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+smsCredForm?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    setSmsMessage('저장 중…', null);
+    if (smsSaveBtn) smsSaveBtn.disabled = true;
+    try {
+        const provider = smsProviderSel?.value || 'solapi';
+        const apiKey = (smsApiKeyInput?.value || '').trim();
+        const apiSecret = (smsApiSecretInput?.value || '').trim();
+        const senderPhone = (smsSenderInput?.value || '').replace(/[^\d]/g, '');
+        // 신규 등록일 때만 API Key/Secret 모두 필수. 수정일 땐 빈 칸은 기존값 유지.
+        if (!smsCredConfigured && (apiKey === '' || apiSecret === '')) {
+            setSmsMessage('API Key 와 Secret 을 모두 입력해주세요.', 'error');
+            if (smsSaveBtn) smsSaveBtn.disabled = false;
+            return;
+        }
+        if (senderPhone === '') {
+            setSmsMessage('발신번호를 입력해주세요.', 'error');
+            if (smsSaveBtn) smsSaveBtn.disabled = false;
+            return;
+        }
+        await apiRequest('sms-credentials', {
+            method: 'POST',
+            body: JSON.stringify({
+                resource: 'sms-credentials',
+                data: { provider, apiKey, apiSecret, senderPhone },
+            }),
+        });
+        setSmsMessage('저장되었습니다.', 'success');
+        await loadSmsCredentials();
+    } catch (e) {
+        setSmsMessage(e.message || '저장 실패', 'error');
+    } finally {
+        if (smsSaveBtn) smsSaveBtn.disabled = false;
+    }
+});
+
+smsDisconnectBtn?.addEventListener('click', async () => {
+    if (!confirm('Solapi 연결을 해제하시겠습니까? 저장된 API Key / Secret 이 삭제됩니다.')) return;
+    setSmsMessage('해제 중…', null);
+    try {
+        await apiRequest('sms-credentials', { method: 'DELETE' });
+        setSmsMessage('연결이 해제되었습니다.', 'success');
+        await loadSmsCredentials();
+    } catch (e) {
+        setSmsMessage(e.message || '해제 실패', 'error');
+    }
+});

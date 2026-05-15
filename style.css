@@ -2496,6 +2496,51 @@ select:focus {
 .modal-backdrop .switch-control .switch-track.on .switch-thumb{left:27px}
 .modal-backdrop .switch-control .switch-label-text{font-size:15px;font-weight:600;color:#0e0d0c}
 
+/* ===== SMS 단체 발송 모달 (customers 에서 호출) — 영맨 톤 ===== */
+.sms-modal .modal-panel{max-width:560px}
+.sms-modal-body{padding:14px 18px 4px}
+.sms-modal-body .sms-notice{
+    background:#fff8f7;border:1px solid rgba(200,54,44,.18);border-left:3px solid var(--accent,#c8362c);
+    border-radius:10px;padding:12px 14px;font-size:13.2px;line-height:1.7;color:#4f4943;margin-bottom:14px
+}
+.sms-modal-body .sms-notice b{color:#0e0d0c}
+.sms-modal-body .sms-notice code{background:#fbf7ef;padding:1px 7px;border-radius:5px;font-size:12.5px;color:#7a1812;font-family:'SF Mono',Menlo,Consolas,monospace}
+.sms-modal-body .sms-label{display:block;font-size:13px;font-weight:700;color:#4f4943;margin:0 0 6px}
+.sms-modal-body textarea{
+    width:100%;padding:12px 14px;font-size:14.5px;line-height:1.6;
+    border:1px solid var(--ledger-line-strong,rgba(20,14,8,.16));border-radius:10px;
+    font-family:'Pretendard',-apple-system,sans-serif;background:#fff;color:#0e0d0c;
+    outline:none;resize:vertical;min-height:140px
+}
+.sms-modal-body textarea:focus{border-color:#0e0d0c}
+.sms-modal-body .sms-meta{
+    display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px;
+    font-size:12.5px;color:#8a847e;margin-top:8px
+}
+.sms-modal-body .sms-meta b{color:#0e0d0c;font-variant-numeric:tabular-nums}
+.sms-modal-body .sms-result-summary{
+    display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:10px;margin-bottom:14px
+}
+.sms-modal-body .sms-result-summary > div{
+    background:#fbf7ef;border:1px solid var(--ledger-line,rgba(20,14,8,.09));
+    border-radius:9px;padding:10px 12px;font-size:13px;color:#4f4943;text-align:center
+}
+.sms-modal-body .sms-result-summary > div b{display:block;font-size:18px;color:#0e0d0c;margin-top:2px;font-variant-numeric:tabular-nums}
+.sms-modal-body .sms-result-summary > div.ok{background:#e6f4ea;border-color:#a5d6a7;color:#1b5e20}
+.sms-modal-body .sms-result-summary > div.ok b{color:#1b5e20}
+.sms-modal-body .sms-result-summary > div.ng{background:#fce8e6;border-color:#f1c4c1;color:#8a2620}
+.sms-modal-body .sms-result-summary > div.ng b{color:#8a2620}
+.sms-modal-body .sms-table-head{font-size:13.5px;font-weight:700;color:#4f4943;margin:16px 0 6px}
+.sms-modal-body .sms-result-tbl{
+    width:100%;border-collapse:collapse;font-size:12.5px;
+    border:1px solid var(--ledger-line,rgba(20,14,8,.09));border-radius:8px;overflow:hidden
+}
+.sms-modal-body .sms-result-tbl th,
+.sms-modal-body .sms-result-tbl td{padding:7px 10px;text-align:left;border-bottom:1px solid var(--ledger-line,rgba(20,14,8,.09))}
+.sms-modal-body .sms-result-tbl th{background:#fbf7ef;font-weight:700;color:#4f4943}
+.sms-modal-body .sms-result-tbl tbody tr:last-child td{border-bottom:0}
+.sms-modal-body .sms-result-tbl td:first-child{font-family:'SF Mono',Menlo,Consolas,monospace;color:#0e0d0c}
+
 /* 컬럼 헤더 클릭 필터 popup — 모든 ledger 페이지(customers/contracts/org/forms) 공통.
    기존엔 각 페이지 HTML 안에 inline 으로 있어 forms.html 에서 누락됐었음. */
 .filter-pop{position:fixed;z-index:200;background:#fff;border:1px solid var(--ledger-line-strong,rgba(20,14,8,.16));border-radius:8px;box-shadow:0 12px 32px rgba(20,14,8,.18);width:240px;max-width:92vw;padding:10px 10px 8px;font-family:inherit}

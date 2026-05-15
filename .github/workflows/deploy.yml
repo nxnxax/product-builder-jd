@@ -52,6 +52,10 @@ jobs:
           php -l api/lotto-recommend.php
           php -l api/ledger-mobile.php
           php -l api/crypto_helpers.php
+          php -l api/sms/send-bulk.php
+          php -l api/sms/providers/SmsProvider.php
+          php -l api/sms/providers/SolapiProvider.php
+          php -l api/sms/providers/AligoProvider.php
           php -l lotto_offline_json_import.php
           php -l lotto_db_import.php
           php -l lotto_db_config.php
@@ -92,6 +96,12 @@ jobs:
           cp api/lotto-recommend.php deploy/lotto-recommend.php
           cp api/ledger-mobile.php deploy/ledger-mobile.php
           cp api/crypto_helpers.php deploy/crypto_helpers.php   # PII AES-256-GCM 헬퍼 — records/ledger-mobile 이 require
+          # SMS 단체 발송 — 디렉토리 구조 유지 (sms/send-bulk.php + sms/providers/*)
+          mkdir -p deploy/sms/providers
+          cp api/sms/send-bulk.php deploy/sms/send-bulk.php
+          cp api/sms/providers/SmsProvider.php deploy/sms/providers/SmsProvider.php
+          cp api/sms/providers/SolapiProvider.php deploy/sms/providers/SolapiProvider.php
+          cp api/sms/providers/AligoProvider.php deploy/sms/providers/AligoProvider.php
           cp lotto_offline_json_import.php deploy/lotto_offline_json_import.php
           cp lotto_numbers_all.json deploy/lotto_numbers_all.json
           cp lotto_db_import.php deploy/lotto_db_import.php  # 폐기 페이지 — 옛 북마크용 301 리디렉트

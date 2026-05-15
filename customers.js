@@ -9,13 +9,13 @@
  *  - client_idempotency_key 로 같은 통화의 중복 전송 차단
  */
 
-import { initSupabase, apiRequest, getSession } from './auth-shared.js?v=20260515-anon-slot';
+import { initSupabase, apiRequest, getSession } from './auth-shared.js?v=20260516-sms-bulk';
 import { attachColumnFilters, applyColumnFilters, openRowAddModal, attachPhoneAutoFormat, getEffectiveFields, mountFieldManager,
          exportRecordsToExcel, pickExcelFile, parseExcelFile, suggestFieldMapping, openImportPreviewModal,
          saveImportSession, loadImportSession, clearImportSession,
          findBlankRecordIds, showSweepToast,
          attachCellClickHandlers,
-         isLedgerMobile, onLedgerViewportChange } from './ledger-shared.js?v=20260515-anon-slot';
+         isLedgerMobile, onLedgerViewportChange } from './ledger-shared.js?v=20260516-sms-bulk';
 
 const MOBILE_PRIMARY_KEYS = ['customer', 'phone', 'date'];
 
@@ -120,6 +120,7 @@ function bindUI() {
 
     document.getElementById('bulkClearBtn').addEventListener('click', () => { selectedIds.clear(); renderRecords(); });
     document.getElementById('bulkDeleteBtn').addEventListener('click', bulkDelete);
+    document.getElementById('bulkSmsBtn')?.addEventListener('click', openSmsModal);
 
     document.getElementById('exportAllBtn')?.addEventListener('click', exportAllGroups);
 }
@@ -829,4 +830,161 @@ function showError(msg) {
     console.error(msg);
     const c = document.getElementById('content');
     if (c) c.insertAdjacentHTML('afterbegin', `<div style="background:#fef2f2;color:#b91c1c;border:1px solid #fecaca;padding:10px 14px;border-radius:8px;margin-bottom:12px;font-size:13px;">${escapeHtml(msg)}</div>`);
+}
+
+/* ============== SMS 단체 발송 모달 (선택 고객들에게) ============== */
+async function openSmsModal() {
+    if (selectedIds.size === 0) { alert('먼저 보낼 고객을 체크해 주세요.'); return; }
+
+    // 1) 자격증명 확인 — 미연동이면 안내 + 설정 페이지로 이동
+    let cred;
+    try { cred = await apiRequest('sms-credentials'); }
+    catch (e) { alert('문자 설정을 불러오지 못했습니다: ' + (e.message || e)); return; }
+    if (!cred?.configured) {
+        if (confirm('Solapi 가 연동되어 있지 않습니다.\n\n본인의 Solapi 계정 + 발신번호를 등록해야 문자 발송이 가능합니다.\n지금 문자 설정 페이지로 이동할까요?')) {
+            window.location.href = 'profile.html?tab=sms';
+        }
+        return;
+    }
+
+    const ids = [...selectedIds];
+    const md = document.createElement('div');
+    md.className = 'modal-backdrop sms-modal';
+    md.style.zIndex = '300';
+    md.innerHTML = `
+        <div class="modal-panel">
+            <header class="modal-header">
+                <div>
+                    <h2>📨 문자 단체 발송</h2>
+                    <p class="modal-subtitle">선택한 ${ids.length}명의 고객에게 문자를 보냅니다.</p>
+                </div>
+            </header>
+            <div class="modal-body sms-modal-body">
+                <div class="sms-notice">
+                    <b>안내</b><br>
+                    · 문자 요금은 본인의 <b>Solapi 계정 잔액</b>에서 차감됩니다.<br>
+                    · 발신번호: <code>${escapeHtml(cred.senderPhone || '미등록')}</code><br>
+                    · 광고성 문자는 <b>수신동의 고객에게만</b> 발송해야 하며, 본문에 <b>[수신거부]</b> 문구가 필요합니다.
+                </div>
+                <label class="sms-label">문자 내용</label>
+                <textarea id="smsText" rows="6" maxlength="2000" placeholder="안녕하세요. ○○분양 담당자입니다 …&#10;&#10;(광고성일 경우 마지막 줄에 '[수신거부] 080-XXX-XXXX' 같이 거부 방법을 명시해 주세요.)"></textarea>
+                <div class="sms-meta">
+                    <span><b id="smsLen">0</b> 자 · 90바이트 초과 시 LMS 로 자동 전환</span>
+                    <span>선택 고객 <b>${ids.length}</b>명 · 발송 건수는 동의/번호 확인 후 결정</span>
+                </div>
+                <p class="form-help error" data-error style="margin:8px 0 0;display:none;"></p>
+            </div>
+            <footer class="modal-footer">
+                <button class="tiny-btn" type="button" data-cancel>취소</button>
+                <button class="tiny-btn primary" type="button" data-send>발송하기</button>
+            </footer>
+        </div>
+    `;
+    document.body.appendChild(md);
+
+    const textarea = md.querySelector('#smsText');
+    const lenEl    = md.querySelector('#smsLen');
+    const errEl    = md.querySelector('[data-error]');
+    const sendBtn  = md.querySelector('[data-send]');
+    const cancelBtn = md.querySelector('[data-cancel]');
+
+    const close = () => md.remove();
+    cancelBtn.addEventListener('click', close);
+    md.addEventListener('click', (e) => { if (e.target === md) close(); });
+
+    textarea.addEventListener('input', () => {
+        lenEl.textContent = textarea.value.length;
+    });
+    textarea.focus();
+
+    sendBtn.addEventListener('click', async () => {
+        const text = textarea.value.trim();
+        if (text === '') { errEl.textContent = '문자 내용을 입력해주세요.'; errEl.style.display = ''; return; }
+        if (!confirm('광고성 문자는 수신동의 고객에게만 발송해야 하며, 수신거부 문구가 필요합니다.\n\n계속 진행할까요?')) return;
+
+        sendBtn.disabled = true;
+        sendBtn.textContent = '발송 중…';
+        errEl.style.display = 'none';
+        try {
+            const res = await apiRequest('sms-credentials');   // 한 번 더 확인 (방어적)
+            if (!res?.configured) throw new Error('Solapi 가 해제되었습니다. 설정에서 다시 등록해 주세요.');
+            const resp = await fetch('sms/send-bulk.php', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': 'Bearer ' + (await getAccessTokenForSms()),
+                },
+                body: JSON.stringify({ customer_ids: ids, message: text }),
+            });
+            const data = await resp.json().catch(() => ({}));
+            if (!resp.ok || !data.ok) {
+                const msg = data?.error || ('HTTP ' + resp.status);
+                if (data?.action === 'open_settings') {
+                    if (confirm(msg + '\n\n문자 설정 페이지로 이동할까요?')) {
+                        window.location.href = 'profile.html?tab=sms';
+                    }
+                    return;
+                }
+                throw new Error(msg);
+            }
+            close();
+            showSmsResultModal(data);
+        } catch (e) {
+            sendBtn.disabled = false;
+            sendBtn.textContent = '발송하기';
+            errEl.textContent = '발송 실패: ' + (e.message || e);
+            errEl.style.display = '';
+        }
+    });
+}
+
+async function getAccessTokenForSms() {
+    const { getAccessToken } = await import('./auth-shared.js?v=20260516-sms-bulk');
+    return await getAccessToken();
+}
+
+function showSmsResultModal(data) {
+    const md = document.createElement('div');
+    md.className = 'modal-backdrop sms-modal';
+    md.style.zIndex = '300';
+    const failedRows = (data.failed || []).map(f => `
+        <tr><td>${escapeHtml(f.phone || '')}</td><td>${escapeHtml(f.error || '')}</td></tr>
+    `).join('');
+    const skippedRows = (data.skipped || []).map(s => `
+        <tr><td>#${s.customer_id}</td><td>${escapeHtml(s.reason || '')}</td></tr>
+    `).join('');
+    md.innerHTML = `
+        <div class="modal-panel">
+            <header class="modal-header">
+                <div>
+                    <h2>${data.dryRun ? '🧪 dry-run 결과' : '✅ 발송 결과'}</h2>
+                    <p class="modal-subtitle">provider: ${escapeHtml(data.provider || '')}${data.dryRun ? ' · 실제 발송 안 됨' : ''}</p>
+                </div>
+            </header>
+            <div class="modal-body sms-modal-body">
+                <div class="sms-result-summary">
+                    <div><b>선택</b> ${data.totalSelected || 0}명</div>
+                    <div><b>동의 통과</b> ${data.afterConsent || 0}명</div>
+                    <div><b>고유 번호</b> ${data.uniquePhones || 0}건</div>
+                    <div class="ok"><b>성공</b> ${data.success || 0}건</div>
+                    <div class="ng"><b>실패</b> ${(data.failed || []).length}건</div>
+                </div>
+                ${failedRows ? `
+                    <h3 class="sms-table-head">실패한 번호 / 사유</h3>
+                    <table class="sms-result-tbl"><thead><tr><th>번호</th><th>사유</th></tr></thead><tbody>${failedRows}</tbody></table>
+                ` : ''}
+                ${skippedRows ? `
+                    <h3 class="sms-table-head">제외된 고객 / 사유</h3>
+                    <table class="sms-result-tbl"><thead><tr><th>고객 ID</th><th>사유</th></tr></thead><tbody>${skippedRows}</tbody></table>
+                ` : ''}
+            </div>
+            <footer class="modal-footer">
+                <button class="tiny-btn primary" type="button" data-close>확인</button>
+            </footer>
+        </div>
+    `;
+    document.body.appendChild(md);
+    const close = () => md.remove();
+    md.querySelector('[data-close]').addEventListener('click', close);
+    md.addEventListener('click', (e) => { if (e.target === md) close(); });
 }

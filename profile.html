@@ -6,7 +6,7 @@
     <title>내 정보 · YOUNGMAN</title>
     <link rel="icon" type="image/png" href="logo_main.png">
     <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
-    <link rel="stylesheet" href="style.css?v=20260515-anon-slot">
+    <link rel="stylesheet" href="style.css?v=20260516-sms-bulk">
 </head>
 <body>
     <header id="app-header" class="app-header"></header>
@@ -23,6 +23,7 @@
                 <button type="button" data-tab="basic">기본 정보</button>
                 <button type="button" data-tab="security">보안</button>
                 <button type="button" data-tab="mobile">모바일 API</button>
+                <button type="button" data-tab="sms">문자 설정</button>
                 <button type="button" data-tab="account">계정 관리</button>
             </aside>
 
@@ -164,6 +165,64 @@
                     </div>
                 </section>
 
+                <!-- SMS provider credentials (회원별 Solapi/Aligo) -->
+                <section id="tab-sms" class="card profile-tab hidden">
+                    <h3>문자 설정</h3>
+                    <p class="card-subtitle">
+                        본인의 <b>Solapi</b> 계정과 연동하면 고객관리대장에서 단체 문자를 발송할 수 있습니다.
+                        영맨은 발송 중계만 담당하며 <b>문자 요금은 사용자의 Solapi 계정 잔액에서 차감</b>됩니다.
+                    </p>
+
+                    <div style="margin-top:14px;padding:14px 16px;background:var(--bg-muted,#fbf7ef);border:1px solid var(--border,rgba(20,14,8,.1));border-radius:10px;font-size:13.5px;line-height:1.7;color:#4f4943;">
+                        <b style="color:#0e0d0c;">시작하기</b>
+                        <ol style="margin:8px 0 0;padding-left:22px;">
+                            <li><a href="https://solapi.com" target="_blank" rel="noopener" style="color:var(--accent,#c8362c);font-weight:600;">solapi.com</a> 에서 본인 계정 가입</li>
+                            <li>발신번호 사전 등록 (Solapi 사이트에서) + 잔액 충전</li>
+                            <li>API Key / API Secret 발급 후 아래 입력</li>
+                        </ol>
+                    </div>
+
+                    <div id="sms-status" class="form-help" style="margin-top:14px;"></div>
+
+                    <form id="sms-cred-form" style="margin-top:18px;">
+                        <div class="field-row">
+                            <label class="field-label" for="sms-provider">Provider</label>
+                            <div class="field-control">
+                                <select id="sms-provider" style="width:auto;min-width:160px;">
+                                    <option value="solapi" selected>Solapi (권장)</option>
+                                    <option value="aligo">Aligo</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="field-row">
+                            <label class="field-label" for="sms-api-key">API Key</label>
+                            <div class="field-control">
+                                <input type="text" id="sms-api-key" autocomplete="off" placeholder="NCS... 또는 키 일부">
+                                <span class="form-help">저장 후엔 앞4·뒤4만 표시되며 입력란이 비어 있으면 기존 값이 유지됩니다.</span>
+                            </div>
+                        </div>
+                        <div class="field-row">
+                            <label class="field-label" for="sms-api-secret">API Secret</label>
+                            <div class="field-control">
+                                <input type="password" id="sms-api-secret" autocomplete="off" placeholder="새 값을 입력할 때만 채워주세요">
+                                <span class="form-help">Aligo 사용 시 이 칸에 <b>user_id</b> 를 입력하세요.</span>
+                            </div>
+                        </div>
+                        <div class="field-row">
+                            <label class="field-label" for="sms-sender">발신번호</label>
+                            <div class="field-control">
+                                <input type="tel" id="sms-sender" autocomplete="off" placeholder="01012345678" maxlength="11">
+                                <span class="form-help">Solapi 에 사전 등록된 본인 발신번호를 입력하세요. 미등록 번호로는 발송 실패합니다.</span>
+                            </div>
+                        </div>
+                        <div class="form-actions">
+                            <span id="sms-message" class="form-help" style="margin-right:auto;"></span>
+                            <button type="button" class="secondary-btn" id="sms-disconnect" style="display:none;">연결 해제</button>
+                            <button type="submit" class="primary-btn" id="sms-save">저장</button>
+                        </div>
+                    </form>
+                </section>
+
                 <!-- Account management -->
                 <section id="tab-account" class="card profile-tab hidden">
                     <h3>계정 관리</h3>
@@ -189,6 +248,6 @@
         </div>
     </main>
 
-    <script src="profile.js?v=20260515-anon-slot" type="module"></script>
+    <script src="profile.js?v=20260516-sms-bulk" type="module"></script>
 </body>
 </html>

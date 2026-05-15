@@ -11,7 +11,7 @@
 import {
     initSupabase, getSession, apiRequest, isAdmin,
     mountAppHeader, refreshAppHeader,
-} from './auth-shared.js?v=20260515-anon-slot';
+} from './auth-shared.js?v=20260516-sms-bulk';
 
 const CATEGORIES = {
     notice: { title: '공지사항',     sub: '중요한 공지를 확인하세요.',                writeAdminOnly: true  },

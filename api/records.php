@@ -117,7 +117,7 @@ function normalize_resource($value) {
     $allowed = [
         'customers', 'employees',
         'auth-membership', 'auth-member', 'auth-availability',
-        'auth-profile', 'account-delete',
+        'auth-profile', 'account-delete', 'sms-credentials',
         'admin-members', 'admin-stats', 'admin-logs', 'admin-settings',
         'admin-bootstrap', 'admin-cleanup-orphans',
         'ledger-groups', 'ledger-records', 'ledger-records-bulk',
@@ -1414,6 +1414,104 @@ try {
         record_activity($pdo, $email, 'account.delete', json_encode($deleted, JSON_UNESCAPED_UNICODE));
 
         respond(['ok' => true, 'deleted' => $deleted]);
+    }
+
+    if ($resource === 'sms-credentials') {
+        // 회원별 SMS provider 자격증명 (Solapi/Aligo). PII 격리 — 본인만.
+        // 영맨 사이트는 발송 중계만, 충전/결제는 사용자가 provider 사이트에서 직접.
+        if (!$authUser) respond(['ok' => false, 'error' => '로그인이 필요합니다.'], 401);
+        enforce_registered_member($pdo, $authUser);
+        $email = strtolower((string)($authUser['email'] ?? ''));
+        if ($email === '') respond(['ok' => false, 'error' => '인증 사용자 이메일을 확인할 수 없습니다.'], 400);
+
+        // 자동 마이그레이션
+        try {
+            $pdo->exec("CREATE TABLE IF NOT EXISTS sms_credentials (
+                owner_email VARCHAR(255) PRIMARY KEY,
+                provider VARCHAR(20) NOT NULL DEFAULT 'solapi',
+                api_key_enc TEXT NULL,
+                api_secret_enc TEXT NULL,
+                sender_phone_enc VARCHAR(255) NULL,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+        } catch (Throwable $e) {
+            respond(['ok' => false, 'error' => 'SMS 자격증명 테이블 마이그레이션 실패'], 500);
+        }
+
+        if ($method === 'GET') {
+            $stmt = $pdo->prepare('SELECT * FROM sms_credentials WHERE owner_email = :o LIMIT 1');
+            $stmt->execute([':o' => $email]);
+            $row = $stmt->fetch();
+            if (!$row) {
+                respond(['ok' => true, 'configured' => false, 'provider' => 'solapi']);
+            }
+            $apiKey = youngman_decrypt($row['api_key_enc']);
+            $sender = youngman_decrypt($row['sender_phone_enc']);
+            // api_key 는 앞뒤만 보여주고 가운데 마스킹. secret 은 절대 노출 X.
+            $masked = '';
+            if (is_string($apiKey) && strlen($apiKey) >= 8) {
+                $masked = substr($apiKey, 0, 4) . '****' . substr($apiKey, -4);
+            } elseif (is_string($apiKey) && $apiKey !== '') {
+                $masked = str_repeat('*', strlen($apiKey));
+            }
+            respond([
+                'ok'              => true,
+                'configured'      => true,
+                'provider'        => $row['provider'] ?? 'solapi',
+                'apiKeyMasked'    => $masked,
+                'senderPhone'     => is_string($sender) ? $sender : '',
+                'updatedAt'       => $row['updated_at'] ?? null,
+            ]);
+        }
+
+        if ($method === 'POST' || $method === 'PUT' || $method === 'PATCH') {
+            $data = is_array($body['data'] ?? null) ? $body['data'] : $body;
+            $provider = strtolower(trim((string)($data['provider'] ?? 'solapi')));
+            if (!in_array($provider, ['solapi', 'aligo'], true)) {
+                respond(['ok' => false, 'error' => 'provider 는 solapi 또는 aligo 만 지원합니다.'], 400);
+            }
+            $apiKeyIn    = trim((string)($data['apiKey'] ?? ''));
+            $apiSecretIn = trim((string)($data['apiSecret'] ?? ''));
+            $senderIn    = preg_replace('/[^\d]/', '', (string)($data['senderPhone'] ?? ''));
+
+            if ($senderIn !== '' && !preg_match('/^0\d{9,10}$/', $senderIn)) {
+                respond(['ok' => false, 'error' => '발신번호는 숫자만, 0 으로 시작하는 9~10자리.'], 400);
+            }
+
+            // 기존 행 조회 — 빈 입력은 기존값 유지 (재입력 안 시킴)
+            $cur = $pdo->prepare('SELECT api_key_enc, api_secret_enc, sender_phone_enc FROM sms_credentials WHERE owner_email = :o LIMIT 1');
+            $cur->execute([':o' => $email]);
+            $existing = $cur->fetch();
+
+            $apiKeyEnc    = ($apiKeyIn    !== '') ? youngman_encrypt($apiKeyIn)    : ($existing['api_key_enc']    ?? null);
+            $apiSecretEnc = ($apiSecretIn !== '') ? youngman_encrypt($apiSecretIn) : ($existing['api_secret_enc'] ?? null);
+            $senderEnc    = ($senderIn    !== '') ? youngman_encrypt($senderIn)    : ($existing['sender_phone_enc'] ?? null);
+
+            $upsert = $pdo->prepare("
+                INSERT INTO sms_credentials (owner_email, provider, api_key_enc, api_secret_enc, sender_phone_enc)
+                VALUES (:o, :p, :k, :s, :sp)
+                ON DUPLICATE KEY UPDATE
+                    provider = VALUES(provider),
+                    api_key_enc = VALUES(api_key_enc),
+                    api_secret_enc = VALUES(api_secret_enc),
+                    sender_phone_enc = VALUES(sender_phone_enc)
+            ");
+            $upsert->execute([
+                ':o' => $email, ':p' => $provider,
+                ':k' => $apiKeyEnc, ':s' => $apiSecretEnc, ':sp' => $senderEnc,
+            ]);
+            record_activity($pdo, $email, 'sms.credentials.update', $provider);
+            respond(['ok' => true]);
+        }
+
+        if ($method === 'DELETE') {
+            $stmt = $pdo->prepare('DELETE FROM sms_credentials WHERE owner_email = :o');
+            $stmt->execute([':o' => $email]);
+            record_activity($pdo, $email, 'sms.credentials.delete');
+            respond(['ok' => true]);
+        }
+
+        respond(['ok' => false, 'error' => '지원하지 않는 요청 방식입니다.'], 405);
     }
 
     if ($resource === 'admin-members') {
