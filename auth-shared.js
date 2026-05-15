@@ -52,11 +52,15 @@ export function getClient() { return supabaseClient; }
 
 function cacheUserEmail(email) {
     try {
+        const prev = sessionStorage.getItem('erp.userEmail') || '';
         if (email) {
             const v = String(email).toLowerCase();
+            // 사용자 전환 감지 시 이전 사용자 양식 캐시 정리 (다른 사용자의 양식이
+            // 잠시 보이거나 새 사용자가 stale 캐시를 그대로 쓰는 버그 방지).
+            if (prev && prev !== v) {
+                try { sessionStorage.removeItem('erp.customForms'); } catch {}
+            }
             sessionStorage.setItem('erp.userEmail', v);
-            // 재접속 시 첫 렌더에서 사용자별 nav slot 라벨(localStorage yman_nav_*)
-            // 을 즉시 읽을 수 있도록 마지막 사용자 이메일을 localStorage 에도 백업.
             localStorage.setItem('erp.userEmail.last', v);
         } else {
             sessionStorage.removeItem('erp.userEmail');
@@ -232,9 +236,17 @@ export function mountBottomNav(opts) {
    현재 캐시와 다르면 nav 를 즉시 재렌더 — 같은 페이지에서도 dropdown 갱신됨. */
 async function refreshNavFormsCache() {
     if (!currentSession?.user) return;
+    let payload = null;
     try {
-        const payload = await apiRequest('ledger-groups?page_type=custom');
-        const list = (payload?.items || []).map(f => ({
+        payload = await apiRequest('ledger-groups?page_type=custom');
+    } catch (e) {
+        // silent fail → 디버그 가능하도록 console 출력 (사용자 양식 사라짐 진단용)
+        console.warn('[refreshNavFormsCache] fetch 실패:', e?.message || e);
+        return;
+    }
+    try {
+        const items = payload?.items || [];
+        const list = items.map(f => ({
             id: f.id,
             name: f.name,
             navSlot: f.settings?.customSettings?.__navSlot || 'slot1',
@@ -242,15 +254,17 @@ async function refreshNavFormsCache() {
         const newJson = JSON.stringify(list);
         let oldJson = '';
         try { oldJson = sessionStorage.getItem('erp.customForms') || ''; } catch {}
-        if (newJson === oldJson) return;
         try { sessionStorage.setItem('erp.customForms', newJson); } catch {}
-        // 캐시가 바뀐 경우만 nav 다시 그리기 — 같은 페이지에서도 즉시 반영
+        // 캐시 내용이 같아도 첫 mount 가 빈 캐시로 그려졌을 수 있어 항상 한 번은 재렌더 보장.
         const root = document.getElementById('app-header');
-        if (root && !root.dataset.navRefreshing) {
+        if (root && !root.dataset.navRefreshing && (newJson !== oldJson || !root.dataset.navOnceRefreshed)) {
             root.dataset.navRefreshing = '1';
+            root.dataset.navOnceRefreshed = '1';
             try { mountAppHeader(); } finally { delete root.dataset.navRefreshing; }
         }
-    } catch {}
+    } catch (e) {
+        console.warn('[refreshNavFormsCache] 처리 실패:', e?.message || e);
+    }
 }
 
 // forms.js 가 양식 생성/삭제 후 명시적으로 호출 가능 — drawer/bottom-nav 즉시 동기화

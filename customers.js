@@ -9,13 +9,13 @@
  *  - client_idempotency_key 로 같은 통화의 중복 전송 차단
  */
 
-import { initSupabase, apiRequest, getSession } from './auth-shared.js?v=20260515-nav-persist-fix';
+import { initSupabase, apiRequest, getSession } from './auth-shared.js?v=20260515-nav-debug';
 import { attachColumnFilters, applyColumnFilters, openRowAddModal, attachPhoneAutoFormat, getEffectiveFields, mountFieldManager,
          exportRecordsToExcel, pickExcelFile, parseExcelFile, suggestFieldMapping, openImportPreviewModal,
          saveImportSession, loadImportSession, clearImportSession,
          findBlankRecordIds, showSweepToast,
          attachCellClickHandlers,
-         isLedgerMobile, onLedgerViewportChange } from './ledger-shared.js?v=20260515-nav-persist-fix';
+         isLedgerMobile, onLedgerViewportChange } from './ledger-shared.js?v=20260515-nav-debug';
 
 const MOBILE_PRIMARY_KEYS = ['customer', 'phone', 'date'];
 
