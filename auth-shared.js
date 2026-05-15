@@ -31,9 +31,16 @@ export async function initSupabase() {
         const { data } = await supabaseClient.auth.getSession();
         currentSession = data?.session || null;
         cacheUserEmail(currentSession?.user?.email);
-        supabaseClient.auth.onAuthStateChange((_event, session) => {
+        supabaseClient.auth.onAuthStateChange((event, session) => {
+            const had = !!currentSession?.user;
             currentSession = session || null;
             cacheUserEmail(currentSession?.user?.email);
+            // 로그인 전환 시점에 사용자 정의 양식 목록을 서버에서 새로 가져와
+            // 슬롯 dropdown 에 즉시 반영. 같은 디바이스에서 로그아웃→재로그인
+            // 케이스의 양식 누락 문제 fix.
+            if (currentSession?.user && (event === 'SIGNED_IN' || event === 'INITIAL_SESSION' || event === 'TOKEN_REFRESHED' || !had)) {
+                try { refreshNavFormsCache(); } catch {}
+            }
         });
         return { client: supabaseClient, session: currentSession };
     })();
@@ -696,6 +703,11 @@ export async function refreshAppHeader() {
     cacheDisplayName(displayName);
     const display = document.getElementById('user-display');
     if (display) display.textContent = displayName;
+
+    // bootApp 흐름의 마지막 단계 — currentSession 가 확정된 뒤이므로 여기서
+    // 사용자 양식 목록을 서버에서 가져와 슬롯 dropdown 을 갱신. 첫 mountAppHeader
+    // 시점엔 currentSession 가 없어 refreshNavFormsCache 가 skip 됐을 수 있음.
+    try { await refreshNavFormsCache(); } catch {}
 }
 
 /** 페이지 부트스트랩 한 줄 호출 — mountAppHeader → initSupabase → refreshAppHeader. */
