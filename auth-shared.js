@@ -204,13 +204,20 @@ function renderBottomNav(activeKey) {
         } catch { return ''; }
     })();
     const slotKey = (s) => `yman_nav_${s}:${email || 'anon'}`;
-    const slot1Key = (() => { try { return localStorage.getItem(slotKey('slot1')) || 'org.html'; } catch { return 'org.html'; } })();
-    const slot2Key = (() => { try { return localStorage.getItem(slotKey('slot2')) || 'contracts.html'; } catch { return 'contracts.html'; } })();
+    // 사용자가 한 번도 슬롯 선택 안 했으면 '+ 신규 양식 신청' 으로 표시 (빈 fallback).
+    const slot1Key = (() => { try { return localStorage.getItem(slotKey('slot1')) || ''; } catch { return ''; } })();
+    const slot2Key = (() => { try { return localStorage.getItem(slotKey('slot2')) || ''; } catch { return ''; } })();
+    const slot1Item = slot1Key
+        ? { key: slot1Key, label: resolveSlotLabel(slot1Key), href: slot1Key, icon: ICON.building }
+        : { key: 'forms.html?new=1&slot=slot1', label: '+ 신규 양식', href: 'forms.html?new=1&slot=slot1', icon: ICON.building };
+    const slot2Item = slot2Key
+        ? { key: slot2Key, label: resolveSlotLabel(slot2Key), href: slot2Key, icon: ICON.fileText }
+        : { key: 'forms.html?new=1&slot=slot2', label: '+ 신규 양식', href: 'forms.html?new=1&slot=slot2', icon: ICON.fileText };
     const items = [
         { key: 'index.html',     label: '홈',             href: 'index.html',     icon: ICON.home },
         { key: 'customers.html', label: '고객관리대장',   href: 'customers.html', icon: ICON.users, main: true },
-        { key: slot1Key, label: resolveSlotLabel(slot1Key), href: slot1Key, icon: ICON.building },
-        { key: slot2Key, label: resolveSlotLabel(slot2Key), href: slot2Key, icon: ICON.fileText },
+        slot1Item,
+        slot2Item,
     ];
     const html = items.map(item => {
         const isHome = item.key === 'index.html' && (path === '' || path === 'index.html');
@@ -435,10 +442,12 @@ export function mountAppHeader(opts) {
         { key: 'contracts.html', label: '계약자 관리대장', href: 'contracts.html' },
         ...slot2Forms,
     ];
-    const slot1Sel = getSlot('slot1', 'org.html');
-    const slot2Sel = getSlot('slot2', 'contracts.html');
-    const slot1Active = SLOT1_OPTIONS.find(o => o.key === slot1Sel) || SLOT1_OPTIONS[1];
-    const slot2Active = SLOT2_OPTIONS.find(o => o.key === slot2Sel) || SLOT2_OPTIONS[1];
+    // 사용자가 한 번도 슬롯을 선택한 적 없거나 비로그인 → SLOT_OPTIONS[0] 인 "+ 신규 양식 신청"
+    // 을 기본 활성으로. 한 번 선택했다면 localStorage 의 그 키 유지.
+    const slot1Sel = getSlot('slot1', '');
+    const slot2Sel = getSlot('slot2', '');
+    const slot1Active = (slot1Sel && SLOT1_OPTIONS.find(o => o.key === slot1Sel)) || SLOT1_OPTIONS[0];
+    const slot2Active = (slot2Sel && SLOT2_OPTIONS.find(o => o.key === slot2Sel)) || SLOT2_OPTIONS[0];
 
     const secondaryItems = [
         // '내 양식' 메뉴 제거 — 양식 진입은 슬롯 dropdown(메뉴 1/2)으로만.
@@ -492,13 +501,13 @@ export function mountAppHeader(opts) {
         </a>
     `;
 
-    // 2) 양식 선택 슬롯 1 (기본: 조직도)
+    // 2) 양식 선택 슬롯 1 — 초기/비로그인: "+ 신규 양식 신청", 한 번이라도 선택했으면 그 양식 라벨
     const slot1IsActive = path === slot1Active.key.toLowerCase();
     const slot1Html = `
         <div class="nav-dropdown nav-pill-dropdown ${slot1IsActive ? 'is-active' : ''}" data-nav-slot="slot1">
             <button class="nav-pill nav-pill-slot${slot1IsActive ? ' active' : ''}" type="button" data-slot-open="slot1">
-                <span class="nav-pill-prefix">양식</span>
-                <span class="nav-label" data-slot-label="slot1">${escapeHtmlSafe(slot1Active.label.replace('+ ', ''))}</span>
+                ${slot1Active.isNew ? '' : '<span class="nav-pill-prefix">양식</span>'}
+                <span class="nav-label" data-slot-label="slot1">${escapeHtmlSafe(slot1Active.label)}</span>
                 <span class="nav-pill-caret">▾</span>
             </button>
             <div class="nav-dropdown-menu">
@@ -511,13 +520,13 @@ export function mountAppHeader(opts) {
         </div>
     `;
 
-    // 3) 양식 선택 슬롯 2 (기본: 계약자 관리대장)
+    // 3) 양식 선택 슬롯 2 — 초기/비로그인: "+ 신규 양식 신청", 한 번이라도 선택했으면 그 양식 라벨
     const slot2IsActive = path === slot2Active.key.toLowerCase();
     const slot2Html = `
         <div class="nav-dropdown nav-pill-dropdown ${slot2IsActive ? 'is-active' : ''}" data-nav-slot="slot2">
             <button class="nav-pill nav-pill-slot${slot2IsActive ? ' active' : ''}" type="button" data-slot-open="slot2">
-                <span class="nav-pill-prefix">양식</span>
-                <span class="nav-label" data-slot-label="slot2">${escapeHtmlSafe(slot2Active.label.replace('+ ', ''))}</span>
+                ${slot2Active.isNew ? '' : '<span class="nav-pill-prefix">양식</span>'}
+                <span class="nav-label" data-slot-label="slot2">${escapeHtmlSafe(slot2Active.label)}</span>
                 <span class="nav-pill-caret">▾</span>
             </button>
             <div class="nav-dropdown-menu">
