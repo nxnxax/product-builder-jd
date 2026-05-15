@@ -14,14 +14,14 @@
  * 토글 필드는 settings.customFields[i] = { key, label, type:'toggle', onLabel, offLabel, custom:true }
  */
 
-import { initSupabase, apiRequest, getSession, refreshNavForms } from './auth-shared.js?v=20260515-cell-toggle';
+import { initSupabase, apiRequest, getSession, refreshNavForms } from './auth-shared.js?v=20260515-forms-filter';
 import {
     isLedgerMobile, onLedgerViewportChange, openRowAddModal,
     attachColumnFilters, applyColumnFilters,
     exportRecordsToExcel, pickExcelFile, parseExcelFile,
     suggestFieldMapping, openImportPreviewModal,
     attachCellClickHandlers,
-} from './ledger-shared.js?v=20260515-cell-toggle';
+} from './ledger-shared.js?v=20260515-forms-filter';
 
 const PAGE_TYPE = 'custom';
 
@@ -639,14 +639,27 @@ function renderFormUse() {
     bindRowEvents(form, fields);
     bindSelectionEvents();
 
-    // 데스크탑 모드 컬럼 헤더 클릭 필터 부착
+    // 데스크탑 모드 컬럼 헤더 클릭 필터 부착.
+    // 사용자 정의 customFields 는 빌더에서 filterable 속성을 안 만들어줘서
+    // 기본 등록일만 필터되던 문제 해결 — 여기서 강제로 filterable: true 부여.
+    // file 만 제외 (파일 객체는 unique 값 추출이 의미 없음).
     if (!mobile) {
         attachColumnFilters({
             state: filterState,
             headers: document.querySelectorAll('.ledger-tbl thead th[data-col-key]'),
-            fields: fields.filter(f => f.type !== 'auto_number'),
+            fields: fields
+                .filter(f => f.type !== 'auto_number' && f.type !== 'file')
+                .map(f => ({ ...f, filterable: true })),
             getRows: () => records,
-            getValue: (r, k) => r.data?.[k],
+            getValue: (r, k) => {
+                const v = r.data?.[k];
+                // toggle/switch 는 ON/OFF 라벨로 필터 값 변환 (텍스트 매칭)
+                const fld = fields.find(x => x.key === k);
+                if (fld && (fld.type === 'toggle' || fld.type === 'switch')) {
+                    return v ? (fld.onLabel || 'ON') : (fld.offLabel || 'OFF');
+                }
+                return v;
+            },
             onChange: () => render(),
         });
     }
@@ -1583,6 +1596,7 @@ function bindBuilderModal() {
                 label, type,
                 required: isRequired,
                 custom: true,
+                filterable: true,   // 모든 사용자 정의 항목은 헤더 클릭 필터 가능
             };
         // type 변경 시 옛 type 의 옵션은 제거 (clean)
         if (existing && existing.type !== type) {
