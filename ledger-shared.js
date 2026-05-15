@@ -227,6 +227,58 @@ export function attachThousandFormat(root) {
 }
 
 /** 모든 tel input 에 자동 포맷 + '010-' 기본값 바인딩. 재렌더 후 매번 호출 가능. */
+/** 주민번호 입력칸에 자동 포맷 (6자리 뒤 -). 숫자만 허용. */
+export function attachRrnAutoFormat(root) {
+    const scope = root || document;
+    scope.querySelectorAll('input[data-rrn]').forEach(input => {
+        if (input.dataset.rrnFmtBound) return;
+        input.dataset.rrnFmtBound = '1';
+        const format = (raw) => {
+            const digits = String(raw || '').replace(/[^\d]/g, '').slice(0, 13);
+            if (digits.length <= 6) return digits;
+            return digits.slice(0, 6) + '-' + digits.slice(6);
+        };
+        input.addEventListener('input', () => { input.value = format(input.value); });
+        // 기존 값이 포맷 안 돼 있으면 한 번 정리.
+        if (input.value && /\d/.test(input.value)) input.value = format(input.value);
+    });
+}
+
+/** 모달 안의 toggle / switch 컨트롤에 click 핸들러 자동 등록. */
+export function attachToggleSwitchHandlers(root) {
+    const scope = root || document;
+    // ON/OFF 토글 버튼
+    scope.querySelectorAll('[data-toggle-field]').forEach(btn => {
+        if (btn.dataset.toggleBound) return;
+        btn.dataset.toggleBound = '1';
+        btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            const next = btn.dataset.toggleVal !== '1';
+            btn.dataset.toggleVal = next ? '1' : '0';
+            btn.textContent = next ? (btn.dataset.onLabel || 'ON') : (btn.dataset.offLabel || 'OFF');
+            btn.classList.toggle('primary', next);
+        });
+    });
+    // 좌우 스위치
+    scope.querySelectorAll('[data-switch-field]').forEach(el => {
+        if (el.dataset.switchBound) return;
+        el.dataset.switchBound = '1';
+        const toggle = () => {
+            const next = el.dataset.switchVal !== '1';
+            el.dataset.switchVal = next ? '1' : '0';
+            el.setAttribute('aria-checked', String(next));
+            const track = el.querySelector('.switch-track');
+            const txt   = el.querySelector('.switch-label-text');
+            if (track) { track.classList.toggle('on', next); track.classList.toggle('off', !next); }
+            if (txt)   txt.textContent = next ? (el.dataset.onLabel || 'ON') : (el.dataset.offLabel || 'OFF');
+        };
+        el.addEventListener('click', toggle);
+        el.addEventListener('keydown', (e) => {
+            if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); toggle(); }
+        });
+    });
+}
+
 export function attachPhoneAutoFormat(root) {
     const scope = root || document;
     scope.querySelectorAll('input[type=tel]').forEach(input => {
@@ -496,6 +548,8 @@ export function openRowAddModal(opts) {
     });
     attachPhoneAutoFormat(md);
     attachThousandFormat(md);
+    attachToggleSwitchHandlers(md);
+    attachRrnAutoFormat(md);
     if (typeof opts.afterRender === 'function') {
         try { opts.afterRender(md); } catch (e) { console.error('[openRowAddModal afterRender]', e); }
     }
@@ -521,6 +575,31 @@ function renderEntryField(f, defaults, customRender) {
     if (f.type === 'tel')      return wrap(`<input type="tel"  data-field="${f.key}" value="${escapeAttr(v)}" placeholder="010-...">`);
     if (f.type === 'textarea') return wrap(`<textarea data-field="${f.key}" rows="3" placeholder="${escapeAttr(f.label)}">${escapeHtml(v)}</textarea>`, 'style="align-items:start;"');
     if (f.type === 'number')   return wrap(`<input type="text" inputmode="numeric" data-thousand data-field="${f.key}" value="${escapeAttr(v)}" placeholder="0">`);
+    if (f.type === 'resident_id') {
+        // 주민번호 — 6자리 뒤 자동 -. data-rrn 마커로 input 핸들러가 알아봄.
+        return wrap(`<input type="text" inputmode="numeric" data-rrn data-field="${f.key}" value="${escapeAttr(v)}" placeholder="123456-1234567" maxlength="14" autocomplete="off">`);
+    }
+    if (f.type === 'toggle') {
+        // ON/OFF 토글 — 버튼 형태. data-toggle-field/val 로 click 핸들러가 잡음.
+        const on = !!v;
+        const onLbl = f.onLabel || 'ON';
+        const offLbl = f.offLabel || 'OFF';
+        return wrap(
+            `<button type="button" class="tiny-btn ${on ? 'primary' : ''}" data-toggle-field="${f.key}" data-toggle-val="${on ? '1' : '0'}" data-on-label="${escapeAttr(onLbl)}" data-off-label="${escapeAttr(offLbl)}">${escapeHtml(on ? onLbl : offLbl)}</button>`
+        );
+    }
+    if (f.type === 'switch') {
+        // 좌우 스위치 — track + thumb + label.
+        const on = !!v;
+        const onLbl = f.onLabel || 'ON';
+        const offLbl = f.offLabel || 'OFF';
+        return wrap(
+            `<div class="switch-control" data-switch-field="${f.key}" data-switch-val="${on ? '1' : '0'}" data-on-label="${escapeAttr(onLbl)}" data-off-label="${escapeAttr(offLbl)}" role="switch" aria-checked="${on}" tabindex="0">
+                <span class="switch-track ${on ? 'on' : 'off'}"><span class="switch-thumb"></span></span>
+                <span class="switch-label-text">${escapeHtml(on ? onLbl : offLbl)}</span>
+            </div>`
+        );
+    }
     if (f.type === 'title_select') return wrap(`<select data-field="${f.key}"><option value="">-</option>${['본부장','팀장','팀원'].map(t => `<option value="${t}" ${v === t ? 'selected' : ''}>${t}</option>`).join('')}</select>`);
     if (f.type === 'manager_title') {
         // 자동 도출 — 모달에서는 read-only 표시 (담당자 선택에 따라 자동)
@@ -533,6 +612,17 @@ function collectEntry(fields, defaults, md) {
     const data = { ...defaults };
     fields.forEach(f => {
         if (f.type === 'auto_number' || f.type === 'commission_view') return;
+        // toggle / switch — data-field 가 아닌 별도 marker. dataset val 을 boolean 으로.
+        if (f.type === 'toggle') {
+            const btn = md.querySelector(`[data-toggle-field="${f.key}"]`);
+            if (btn) data[f.key] = btn.dataset.toggleVal === '1';
+            return;
+        }
+        if (f.type === 'switch') {
+            const el = md.querySelector(`[data-switch-field="${f.key}"]`);
+            if (el) data[f.key] = el.dataset.switchVal === '1';
+            return;
+        }
         const el = md.querySelector(`[data-field="${f.key}"]`);
         if (!el) return;
         if (el.dataset && el.dataset.readonly !== undefined) {
@@ -545,6 +635,9 @@ function collectEntry(fields, defaults, md) {
             // 천단위 쉼표 input — 숫자만 추출
             const digits = String(el.value || '').replace(/[^\d]/g, '');
             data[f.key] = digits === '' ? '' : parseInt(digits, 10);
+        } else if (el.dataset && el.dataset.rrn !== undefined) {
+            // 주민번호 — 입력값 그대로 저장 (자동 포맷이 - 삽입 완료된 상태).
+            data[f.key] = String(el.value || '').trim();
         } else {
             const val = el.value;
             data[f.key] = val === '' ? '' : val;

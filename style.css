@@ -2476,6 +2476,25 @@ select:focus {
     color: #c4bfb8;
     font-size: 13px;
 }
+
+/* 사용자 정의 toggle / switch 셀 read-only 표시 — customers/contracts/org/forms 공통 */
+.toggle-cell{display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border-radius:99px;font-size:13px;font-weight:600;border:1px solid transparent;line-height:1.2}
+.toggle-cell.on{background:#e6f4ea;color:#1b5e20;border-color:#a5d6a7}
+.toggle-cell.off{background:#fce8e6;color:#8a2620;border-color:#f1c4c1}
+.switch-cell{display:inline-flex;align-items:center;gap:8px;font-size:13px;font-weight:500}
+.switch-cell .switch-track{display:inline-block;width:36px;height:20px;border-radius:99px;background:#d1cdc6;position:relative;transition:background 200ms;flex-shrink:0}
+.switch-cell .switch-thumb{position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.15);transition:left 200ms}
+.switch-cell.on .switch-track{background:var(--accent, #c8362c)}
+.switch-cell.on .switch-thumb{left:18px}
+.switch-cell .switch-label{color:#0e0d0c}
+
+/* 모달 안의 toggle / switch — 좀 더 크게 표시 (편집 가능 상태) */
+.modal-backdrop .switch-control{display:inline-flex;align-items:center;gap:12px;cursor:pointer;user-select:none;padding:4px 0}
+.modal-backdrop .switch-control .switch-track{display:inline-block;width:52px;height:28px;border-radius:99px;background:#d1cdc6;position:relative;transition:background 200ms;flex-shrink:0}
+.modal-backdrop .switch-control .switch-thumb{position:absolute;top:3px;left:3px;width:22px;height:22px;border-radius:50%;background:#fff;box-shadow:0 2px 6px rgba(0,0,0,.18);transition:left 200ms}
+.modal-backdrop .switch-control .switch-track.on{background:var(--accent, #c8362c)}
+.modal-backdrop .switch-control .switch-track.on .switch-thumb{left:27px}
+.modal-backdrop .switch-control .switch-label-text{font-size:15px;font-weight:600;color:#0e0d0c}
 .ledger-tbl tbody td .level-pill {
     padding: 3px 10px;
     background: rgba(200, 54, 44, 0.06);

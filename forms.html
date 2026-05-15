@@ -6,7 +6,7 @@
 <title>내 양식 · YOUNGMAN</title>
 <link rel="icon" type="image/png" href="logo_main.png">
 <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
-<link rel="stylesheet" href="style.css?v=20260515-formula-excel">
+<link rel="stylesheet" href="style.css?v=20260515-toggle-fix">
 <style>
 :root{
     --ledger-line:rgba(20,14,8,.09); --ledger-line-strong:rgba(20,14,8,.16);
@@ -243,6 +243,7 @@ table.ledger-tbl{width:100%;border-collapse:collapse;font-size:13.5px}
                     <option value="number">숫자</option>
                     <option value="date">날짜</option>
                     <option value="tel">전화번호</option>
+                    <option value="resident_id">주민번호</option>
                     <option value="textarea">긴 텍스트</option>
                     <option value="toggle">ON/OFF 토글</option>
                     <option value="switch">좌우 스위치</option>
@@ -304,10 +305,10 @@ table.ledger-tbl{width:100%;border-collapse:collapse;font-size:13.5px}
 </div>
 
 <script type="module">
-    import { mountAppHeader } from './auth-shared.js?v=20260515-formula-excel';
+    import { mountAppHeader } from './auth-shared.js?v=20260515-toggle-fix';
     mountAppHeader();
 </script>
-<script type="module" src="forms.js?v=20260515-formula-excel"></script>
+<script type="module" src="forms.js?v=20260515-toggle-fix"></script>
 
 </body>
 </html>

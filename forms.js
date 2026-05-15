@@ -14,13 +14,13 @@
  * 토글 필드는 settings.customFields[i] = { key, label, type:'toggle', onLabel, offLabel, custom:true }
  */
 
-import { initSupabase, apiRequest, getSession, refreshNavForms } from './auth-shared.js?v=20260515-formula-excel';
+import { initSupabase, apiRequest, getSession, refreshNavForms } from './auth-shared.js?v=20260515-toggle-fix';
 import {
     isLedgerMobile, onLedgerViewportChange, openRowAddModal,
     attachColumnFilters, applyColumnFilters,
     exportRecordsToExcel, pickExcelFile, parseExcelFile,
     suggestFieldMapping, openImportPreviewModal,
-} from './ledger-shared.js?v=20260515-formula-excel';
+} from './ledger-shared.js?v=20260515-toggle-fix';
 
 const PAGE_TYPE = 'custom';
 
@@ -32,7 +32,7 @@ const BASE_FIELDS = [
 
 const FIELD_TYPE_LABELS = {
     text: '텍스트', number: '숫자', date: '날짜', tel: '전화번호',
-    textarea: '긴 텍스트', toggle: 'ON/OFF 토글', switch: '좌우 스위치', auto_number: '번호',
+    textarea: '긴 텍스트', resident_id: '주민번호', toggle: 'ON/OFF 토글', switch: '좌우 스위치', auto_number: '번호',
     select: '드롭다운', file: '첨부파일', formula: '수식', ref: '다른 양식 참조',
 };
 
@@ -914,26 +914,9 @@ async function openRowEntry(form, fields, existing) {
         customRender: (field, defs) => {
             const reqMark = field.required ? '<span style="color:var(--ledger-accent);font-weight:700;margin-left:3px">*</span>' : '';
             const labelHtml = `${escapeHtml(field.label)}${reqMark}`;
-            if (field.type === 'toggle') {
-                const v = !!defs[field.key];
-                return `
-                    <div class="modal-row">
-                        <label>${labelHtml}</label>
-                        <div>
-                            <button type="button" class="tiny-btn ${v ? 'primary' : ''}" data-toggle-field="${field.key}" data-toggle-val="${v ? '1' : '0'}">${escapeHtml(v ? (field.onLabel || 'ON') : (field.offLabel || 'OFF'))}</button>
-                        </div>
-                    </div>`;
-            }
-            if (field.type === 'switch') {
-                const v = !!defs[field.key];
-                return `
-                    <div class="modal-row">
-                        <label>${labelHtml}</label>
-                        <div class="switch-control" data-switch-field="${field.key}" data-switch-val="${v ? '1' : '0'}" role="switch" aria-checked="${v}">
-                            <span class="switch-track ${v ? 'on' : 'off'}"><span class="switch-thumb"></span></span>
-                            <span class="switch-label-text">${escapeHtml(v ? (field.onLabel || 'ON') : (field.offLabel || 'OFF'))}</span>
-                        </div>
-                    </div>`;
+            // toggle/switch/resident_id — ledger-shared 의 renderEntryField + collectEntry + 자동 핸들러 가 처리.
+            if (field.type === 'toggle' || field.type === 'switch' || field.type === 'resident_id') {
+                return null;   // ledger-shared 로 fallback
             }
             if (field.type === 'select') {
                 const cur = defs[field.key] || '';
@@ -1000,30 +983,8 @@ async function openRowEntry(form, fields, existing) {
             return null;
         },
         afterRender: (md) => {
-            // 토글 버튼
-            md.querySelectorAll('[data-toggle-field]').forEach(btn => {
-                btn.addEventListener('click', () => {
-                    const cur = btn.dataset.toggleVal === '1';
-                    const next = !cur;
-                    const f = dataFields.find(x => x.key === btn.dataset.toggleField);
-                    btn.dataset.toggleVal = next ? '1' : '0';
-                    btn.textContent = next ? (f.onLabel || 'ON') : (f.offLabel || 'OFF');
-                    btn.classList.toggle('primary', next);
-                });
-            });
-            // 좌우 스위치
-            md.querySelectorAll('[data-switch-field]').forEach(el => {
-                el.addEventListener('click', () => {
-                    const cur = el.dataset.switchVal === '1';
-                    const next = !cur;
-                    const f = dataFields.find(x => x.key === el.dataset.switchField);
-                    el.dataset.switchVal = next ? '1' : '0';
-                    el.setAttribute('aria-checked', String(next));
-                    el.querySelector('.switch-track').classList.toggle('on', next);
-                    el.querySelector('.switch-track').classList.toggle('off', !next);
-                    el.querySelector('.switch-label-text').textContent = next ? (f.onLabel || 'ON') : (f.offLabel || 'OFF');
-                });
-            });
+            // toggle / switch / resident_id 핸들러는 ledger-shared 의 openRowAddModal 이
+            // 내부적으로 attachToggleSwitchHandlers / attachRrnAutoFormat 으로 자동 등록.
             // 파일 업로드
             md.querySelectorAll('[data-file-field]').forEach(input => {
                 const key = input.dataset.fileField;

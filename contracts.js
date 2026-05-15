@@ -10,12 +10,12 @@
  *  - 본부장 계약 → 본부장(=팀원+팀장+본부장 셋 다 받음)
  */
 
-import { initSupabase, apiRequest, getSession } from './auth-shared.js?v=20260515-formula-excel';
+import { initSupabase, apiRequest, getSession } from './auth-shared.js?v=20260515-toggle-fix';
 import { attachColumnFilters, applyColumnFilters, openRowAddModal, attachPhoneAutoFormat, attachThousandFormat, formatThousand, unformatThousand, getEffectiveFields, mountFieldManager,
          exportRecordsToExcel, pickExcelFile, parseExcelFile, suggestFieldMapping, openImportPreviewModal,
          saveImportSession, loadImportSession, clearImportSession,
          findBlankRecordIds, showSweepToast,
-         isLedgerMobile, onLedgerViewportChange } from './ledger-shared.js?v=20260515-formula-excel';
+         isLedgerMobile, onLedgerViewportChange } from './ledger-shared.js?v=20260515-toggle-fix';
 
 const PAGE_TYPE = 'contract';
 const TAX_RATE = 0.033;   // 실수령액 = commission * (1 - TAX_RATE)
@@ -737,7 +737,16 @@ function renderCell(f, r, d, displayNo, group) {
     if (f.type === 'date') {
         return d[f.key] ? `<span class="cell-text">${escapeHtml(String(d[f.key]).replace(/-/g, '.'))}</span>` : `<span class="cell-empty">-</span>`;
     }
-    // tel / text / number / 기타 모두 read-only span
+    if (f.type === 'toggle') {
+        const on = !!d[f.key];
+        return `<span class="toggle-cell ${on ? 'on' : 'off'}">${escapeHtml(on ? (f.onLabel || 'ON') : (f.offLabel || 'OFF'))}</span>`;
+    }
+    if (f.type === 'switch') {
+        const on = !!d[f.key];
+        const lbl = on ? (f.onLabel || 'ON') : (f.offLabel || 'OFF');
+        return `<span class="switch-cell ${on ? 'on' : 'off'}" aria-label="${escapeAttr(lbl)}"><span class="switch-track"><span class="switch-thumb"></span></span><span class="switch-label">${escapeHtml(lbl)}</span></span>`;
+    }
+    // tel / text / number / resident_id / 기타 모두 read-only span
     return d[f.key] ? `<span class="cell-text">${escapeHtml(d[f.key])}</span>` : `<span class="cell-empty">-</span>`;
 }
 

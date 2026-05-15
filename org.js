@@ -6,12 +6,12 @@
  * Phase 3 의 계약자 관리대장이 이 그룹의 settings.commissions 를 읽어 정산.
  */
 
-import { initSupabase, apiRequest, getSession } from './auth-shared.js?v=20260515-formula-excel';
+import { initSupabase, apiRequest, getSession } from './auth-shared.js?v=20260515-toggle-fix';
 import { attachColumnFilters, applyColumnFilters, openRowAddModal, attachPhoneAutoFormat, attachThousandFormat, formatThousand, unformatThousand, getEffectiveFields, mountFieldManager,
          exportRecordsToExcel, pickExcelFile, parseExcelFile, suggestFieldMapping, openImportPreviewModal,
          saveImportSession, loadImportSession, clearImportSession,
          findBlankRecordIds, showSweepToast,
-         isLedgerMobile, onLedgerViewportChange } from './ledger-shared.js?v=20260515-formula-excel';
+         isLedgerMobile, onLedgerViewportChange } from './ledger-shared.js?v=20260515-toggle-fix';
 
 const PAGE_TYPE = 'org';
 
@@ -25,7 +25,7 @@ const DEFAULT_FIELD_SCHEMA = {
         { key: 'joined',  label: '투입일', type: 'date',        filterable: true  },
         { key: 'title',   label: '직함',   type: 'title_select',filterable: true  },
         { key: 'name',    label: '이름',   type: 'text',        filterable: true  },
-        { key: 'rrn',     label: '주민번호', type: 'text',      filterable: false },
+        { key: 'rrn',     label: '주민번호', type: 'resident_id', filterable: false },
         { key: 'phone',   label: '연락처', type: 'tel',         filterable: false },
         { key: 'account', label: '계좌번호', type: 'text',      filterable: true  },
         { key: 'memo',    label: '비고',   type: 'text',        filterable: false },
@@ -664,7 +664,16 @@ function renderRow(r, displayNo, allowedTitles, fields) {
         if (f.type === 'date') {
             return v ? `<td${clsAttr}${labelAttr}><span class="cell-text">${escapeHtml(String(v).replace(/-/g, '.'))}</span></td>` : `<td${clsAttr}${labelAttr}><span class="cell-empty">-</span></td>`;
         }
-        // 모두 read-only span (편집은 ✎ 버튼 → 모달)
+        if (f.type === 'toggle') {
+            const on = !!v;
+            return `<td${clsAttr}${labelAttr}><span class="toggle-cell ${on ? 'on' : 'off'}">${escapeHtml(on ? (f.onLabel || 'ON') : (f.offLabel || 'OFF'))}</span></td>`;
+        }
+        if (f.type === 'switch') {
+            const on = !!v;
+            const lbl = on ? (f.onLabel || 'ON') : (f.offLabel || 'OFF');
+            return `<td${clsAttr}${labelAttr}><span class="switch-cell ${on ? 'on' : 'off'}" aria-label="${escapeAttr(lbl)}"><span class="switch-track"><span class="switch-thumb"></span></span><span class="switch-label">${escapeHtml(lbl)}</span></span></td>`;
+        }
+        // resident_id 포함 — 모두 read-only span (편집은 ✎ 버튼 → 모달)
         return v ? `<td${clsAttr}${labelAttr}><span class="cell-text">${escapeHtml(v)}</span></td>` : `<td${clsAttr}${labelAttr}><span class="cell-empty">-</span></td>`;
     };
     return `
