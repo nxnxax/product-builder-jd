@@ -238,7 +238,7 @@ async function refreshNavFormsCache() {
     if (!currentSession?.user) return;
     let payload = null;
     try {
-        payload = await apiRequest('ledger-groups?page_type=custom');
+        payload = await apiRequest('ledger-groups', { query: 'page_type=custom' });
     } catch (e) {
         // silent fail → 디버그 가능하도록 console 출력 (사용자 양식 사라짐 진단용)
         console.warn('[refreshNavFormsCache] fetch 실패:', e?.message || e);
