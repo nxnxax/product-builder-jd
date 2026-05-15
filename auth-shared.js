@@ -31,6 +31,11 @@ export async function initSupabase() {
         const { data } = await supabaseClient.auth.getSession();
         currentSession = data?.session || null;
         cacheUserEmail(currentSession?.user?.email);
+        // 이미 로그인된 상태로 페이지 진입 시 onAuthStateChange 가 INITIAL_SESSION
+        // 을 발화 안 할 수도 있어 명시적으로 한 번 호출 — 슬롯 dropdown 양식 표시 보장.
+        if (currentSession?.user) {
+            try { refreshNavFormsCache(); } catch {}
+        }
         supabaseClient.auth.onAuthStateChange((event, session) => {
             const had = !!currentSession?.user;
             currentSession = session || null;

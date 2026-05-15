@@ -9,7 +9,7 @@
     <link rel="apple-touch-icon" href="logo_main.png">
     <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
     <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
-    <link rel="stylesheet" href="style.css?v=20260515-stale-org-link">
+    <link rel="stylesheet" href="style.css?v=20260515-index-init">
     <style>
         /* ========== 사이트 메인 (랜딩) ========== */
         /* main.dashboard 의 padding/max-width 를 메인에서만 풀어서 hero 풀폭 보장 */
@@ -544,8 +544,12 @@
 
     <header id="app-header" class="app-header"></header>
     <script type="module">
-        import { mountAppHeader } from './auth-shared.js?v=20260515-stale-org-link';
+        import { mountAppHeader, initSupabase } from './auth-shared.js?v=20260515-index-init';
         mountAppHeader();
+        // auth-shared 의 currentSession 동기화 — 안 하면 refreshNavFormsCache 가
+        // 영원히 early return 해서 사용자 양식이 슬롯 dropdown 에 안 나옴.
+        // main.js 가 자체 supabase 인스턴스를 따로 만들기 때문에 필요.
+        initSupabase();
     </script>
 
     <main id="app-dashboard" class="dashboard">
@@ -880,7 +884,7 @@
         </form>
     </div>
 
-    <script src="main.js?v=20260515-stale-org-link" type="module"></script>
+    <script src="main.js?v=20260515-index-init" type="module"></script>
     <script>
         // 카드 등장 애니메이션 — viewport 에 들어오면 fade-up.
         (function () {
