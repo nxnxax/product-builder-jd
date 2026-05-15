@@ -51,6 +51,7 @@ jobs:
           php -l api/saju-reading.php
           php -l api/lotto-recommend.php
           php -l api/ledger-mobile.php
+          php -l api/crypto_helpers.php
           php -l lotto_offline_json_import.php
           php -l lotto_db_import.php
           php -l lotto_db_config.php
@@ -90,6 +91,7 @@ jobs:
           cp api/saju-reading.php deploy/saju-reading.php
           cp api/lotto-recommend.php deploy/lotto-recommend.php
           cp api/ledger-mobile.php deploy/ledger-mobile.php
+          cp api/crypto_helpers.php deploy/crypto_helpers.php   # PII AES-256-GCM 헬퍼 — records/ledger-mobile 이 require
           cp lotto_offline_json_import.php deploy/lotto_offline_json_import.php
           cp lotto_numbers_all.json deploy/lotto_numbers_all.json
           cp lotto_db_import.php deploy/lotto_db_import.php  # 폐기 페이지 — 옛 북마크용 301 리디렉트
@@ -126,11 +128,13 @@ jobs:
           LOTTO_DB_USER: ${{ secrets.LOTTO_DB_USER }}
           LOTTO_DB_PASS: ${{ secrets.LOTTO_DB_PASS }}
           LOTTO_CRON_TOKEN: ${{ secrets.LOTTO_CRON_TOKEN }}
+          CRYPTO_KEY: ${{ secrets.YOUNGMAN_CRYPTO_KEY }}
         run: |
           set -e
           {
             echo "VITE_SUPABASE_URL=https://xktjucyijpkopkyvxovh.supabase.co/rest/v1/"
             echo "VITE_SUPABASE_ANON_KEY=sb_publishable_Qg7NbgXvnIEchsjR18X8Mw_d8YsqVbS"
+            [ -n "$CRYPTO_KEY" ]    && echo "YOUNGMAN_CRYPTO_KEY=$CRYPTO_KEY"   || echo "::warning::YOUNGMAN_CRYPTO_KEY missing — PII 평문 폴백 (보안 약함)"
             [ -n "$OPENAI_KEY" ]    && echo "OPENAI_API_KEY=$OPENAI_KEY"       || echo "::warning::OPENAI_API_KEY missing"
             [ -n "$RECRAFT_KEY" ]   && echo "RECRAFT_API_KEY=$RECRAFT_KEY"     || true
             [ -n "$IDEOGRAM_KEY" ]  && echo "IDEOGRAM_API_KEY=$IDEOGRAM_KEY"   || echo "::warning::IDEOGRAM_API_KEY missing"
