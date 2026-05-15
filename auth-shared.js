@@ -415,7 +415,7 @@ export function mountAppHeader(opts) {
     const slot2Active = SLOT2_OPTIONS.find(o => o.key === slot2Sel) || SLOT2_OPTIONS[1];
 
     const secondaryItems = [
-        { key: 'forms.html',        label: '내 양식',       href: 'forms.html', icon: ICON.fileText },
+        // '내 양식' 메뉴 제거 — 양식 진입은 슬롯 dropdown(메뉴 1/2)으로만.
         { key: 'kapp_premium.php',  label: 'N키워드 분석', href: 'kapp_premium.php', icon: ICON.chart },
         { key: 'lotto2233.html',    label: '재미로 보는<br>사주+로또추천', href: 'lotto2233.html', extraCls: 'nav-link-multi', rawLabel: true, icon: ICON.sparkles },
         { key: 'card-builder.html', label: '명함',         href: 'card-builder.html', adminOnly: true, icon: ICON.card },

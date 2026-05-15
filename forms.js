@@ -14,13 +14,13 @@
  * 토글 필드는 settings.customFields[i] = { key, label, type:'toggle', onLabel, offLabel, custom:true }
  */
 
-import { initSupabase, apiRequest, getSession, refreshNavForms } from './auth-shared.js?v=20260515-account-delete';
+import { initSupabase, apiRequest, getSession, refreshNavForms } from './auth-shared.js?v=20260515-forms-static';
 import {
     isLedgerMobile, onLedgerViewportChange, openRowAddModal,
     attachColumnFilters, applyColumnFilters,
     exportRecordsToExcel, pickExcelFile, parseExcelFile,
     suggestFieldMapping, openImportPreviewModal,
-} from './ledger-shared.js?v=20260515-account-delete';
+} from './ledger-shared.js?v=20260515-forms-static';
 
 const PAGE_TYPE = 'custom';
 
@@ -271,10 +271,10 @@ let formulaCtx = { refCache: {}, aggCache: {}, aggFieldMap: {}, settingsCache: {
     }
     bindBuilderModal();
     await loadForms();
-    // 진입 분기:
-    //  - ?form=<id> 있으면 그 양식 사용 모드
-    //  - ?new=1 또는 양식 없으면 빌더 모달 자동 오픈 (새 양식 만들기)
-    //  - 양식 있고 파라미터 없으면 가장 최근 양식 사용 모드
+    // 진입 분기 (양식 페이지는 정적 — 양식 목록 화면 X. 슬롯 dropdown 으로만 진입):
+    //  - ?form=<id> 있으면 그 양식 사용 모드 (정상 경로)
+    //  - ?new=1 이면 빌더 자동 오픈 — 백그라운드는 latest 양식 (cancel 시 그대로 유지)
+    //  - 그 외엔 forms 있으면 latest 자동, 없으면 홈으로 (빈 양식 페이지를 보여주지 않음)
     const params = new URLSearchParams(location.search);
     const requestedId = parseInt(params.get('form'), 10);
     const wantNew = params.get('new') === '1';
@@ -282,14 +282,24 @@ let formulaCtx = { refCache: {}, aggCache: {}, aggFieldMap: {}, settingsCache: {
         activeFormId = requestedId;
         await loadRecords(requestedId);
         await buildFormulaCtx(requestedId);
-    } else if (wantNew || forms.length === 0) {
-        // 빌더 자동 오픈 — 양식 목록 페이지 대신 곧바로 새 양식 만들기
+    } else if (wantNew) {
+        // 빌더 자동 오픈. 백그라운드는 가장 최근 양식 화면 (있으면) — 빈 양식 목록 화면을 절대 안 보여줌.
+        if (forms.length > 0) {
+            const latest = forms.slice().sort((a, b) => b.id - a.id)[0];
+            activeFormId = latest.id;
+            await loadRecords(latest.id);
+            await buildFormulaCtx(latest.id);
+        }
         render();
         setTimeout(() => openBuilder(null), 100);
         onLedgerViewportChange(() => render());
         return;
+    } else if (forms.length === 0) {
+        // 양식 자체가 없고 form 파라미터도 없음 (직접 URL 진입 케이스) → 홈으로.
+        window.location.replace('index.html');
+        return;
     } else {
-        // 가장 최근 만든 양식 자동 진입 (id 내림차순)
+        // 가장 최근 만든 양식 자동 진입 (정적 페이지처럼 동작)
         const latest = forms.slice().sort((a, b) => b.id - a.id)[0];
         activeFormId = latest.id;
         await loadRecords(latest.id);
@@ -337,8 +347,12 @@ async function loadRecords(formId) {
 
 /* ============== Render ============== */
 function render() {
-    if (!activeFormId) renderFormsList();
-    else renderFormUse();
+    if (activeFormId) { renderFormUse(); return; }
+    // 정적 페이지 정책 — 양식 목록 화면(renderFormsList) 노출 X.
+    // boot 에서 forms 가 있으면 latest 로 진입, 없으면 홈으로 redirect.
+    // 이 분기는 빌더 모달이 위에 떠 있는 빈 백그라운드 상태일 때만 도달.
+    const content = document.getElementById('content');
+    if (content) content.innerHTML = '';
 }
 
 function renderFormsList() {
@@ -547,9 +561,6 @@ function renderFormUse() {
                 <h1 class="ledger-title">${escapeHtml(form.name)}</h1>
                 <p class="ledger-sub">${metaText}</p>
             </div>
-            <div style="display:flex;gap:6px;flex-wrap:wrap">
-                <button class="tiny-btn primary" type="button" id="newFormBtn">+ 새 양식 만들기</button>
-            </div>
         </div>
         <div class="accordion-card open" data-form-id="${form.id}">
             <div class="accordion-head">
@@ -578,7 +589,6 @@ function renderFormUse() {
     `;
 
     document.getElementById('editFormBtn')?.addEventListener('click', () => openBuilder(activeFormId));
-    document.getElementById('newFormBtn')?.addEventListener('click', () => { window.location.href = 'forms.html?new=1'; });
     document.getElementById('addRowBtn')?.addEventListener('click', () => openRowEntry(form, fields, null));
     document.getElementById('exportBtn')?.addEventListener('click', () => exportForm(form, fields, filteredRows));
     document.getElementById('importBtn')?.addEventListener('click', () => importToForm(form, fields));
@@ -1593,7 +1603,14 @@ function bindBuilderModal() {
         cancelFieldEdit();
     });
 
-    document.getElementById('builderCancel').addEventListener('click', closeBuilder);
+    document.getElementById('builderCancel').addEventListener('click', () => {
+        const wasCreatingNew = !editingFormId;
+        closeBuilder();
+        // 신규 양식 cancel + 활성/저장된 양식이 하나도 없으면 → 홈으로 (빈 화면 노출 방지)
+        if (wasCreatingNew && !activeFormId && forms.length === 0) {
+            window.location.replace('index.html');
+        }
+    });
     document.getElementById('builderSave').addEventListener('click', saveBuilder);
     document.getElementById('builderDelete').addEventListener('click', deleteForm);
 
