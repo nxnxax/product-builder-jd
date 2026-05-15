@@ -196,7 +196,10 @@ function resolveSlotLabel(key) {
 }
 function renderBottomNav(activeKey) {
     const path = (activeKey || (location.pathname.split('/').pop() || 'index.html')).toLowerCase();
+    // 비로그인 시 본인 잔재 키 무시 — anon 키만 사용 → '+ 신규 양식' 표시
+    const isAnonymous = !readCachedDisplayName();
     const email = (() => {
+        if (isAnonymous) return '';
         try {
             return (sessionStorage.getItem('erp.userEmail')
                  || localStorage.getItem('erp.userEmail.last')
@@ -403,7 +406,11 @@ export function mountAppHeader(opts) {
 
     // 주 기능 — 고객 관리대장 (메인 강조) + 양식 선택 슬롯 2개 (드롭다운).
     // 각 슬롯의 선택값은 localStorage 에 사용자 이메일별로 저장됨.
+    // 비로그인(cachedName 없음) 시에는 본인 키 잔재가 있어도 무시하고 'anon' 키 사용
+    // → 비로그인엔 항상 '+ 신규 양식 신청' 표시. 로그인 상태에서만 localStorage backup 사용.
+    const isAnonymous = !cachedName;
     const userEmail = (() => {
+        if (isAnonymous) return '';
         try {
             return (sessionStorage.getItem('erp.userEmail')
                  || localStorage.getItem('erp.userEmail.last')
