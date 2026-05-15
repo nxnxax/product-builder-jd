@@ -6,6 +6,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     exit;
 }
 
+// 암호화 헬퍼 (AES-256-GCM) — youngman_encrypt / youngman_decrypt / *_json / *_enabled
+require_once __DIR__ . '/crypto_helpers.php';
+
 $configPath = __DIR__ . '/db_config.php';
 if (!is_file($configPath)) {
     $configPath = dirname(__DIR__) . '/db_config.php';
@@ -323,6 +326,13 @@ function create_member_from_google(PDO $pdo, $authUser, $data) {
     // Drop null values so DB defaults (e.g. '') apply on NOT NULL columns.
     $row = array_filter($row, function ($v) { return $v !== null; });
 
+    // 개인정보 컬럼 AES-256-GCM 암호화 (회원가입 시 저장 전)
+    foreach (['name', 'phone'] as $sensitiveCol) {
+        if (isset($row[$sensitiveCol]) && is_string($row[$sensitiveCol]) && $row[$sensitiveCol] !== '') {
+            $row[$sensitiveCol] = youngman_encrypt($row[$sensitiveCol]);
+        }
+    }
+
     $fieldSql = implode(', ', array_map('quote_identifier', array_keys($row)));
     $placeholderSql = implode(', ', array_map(function ($column) {
         return ':' . $column;
@@ -375,11 +385,15 @@ function member_row_from_store($store, $row) {
     $role = $roleCol ? (string)($row[$roleCol] ?? '') : '';
     $status = $statusCol ? (string)($row[$statusCol] ?? '') : 'active';
 
+    // 개인정보 컬럼 복호화 — 평문도 호환 (lazy migration)
+    $decName  = $nameCol  ? youngman_decrypt($row[$nameCol]  ?? '') : '';
+    $decPhone = $phoneCol ? youngman_decrypt($row[$phoneCol] ?? '') : '';
+
     return [
         'email' => $row[$emailCol] ?? '',
-        'name' => $nameCol ? ($row[$nameCol] ?? '') : '',
+        'name' => $decName,
         'nickname' => $nicknameCol ? ($row[$nicknameCol] ?? '') : '',
-        'phone' => $phoneCol ? ($row[$phoneCol] ?? '') : '',
+        'phone' => $decPhone,
         'provider' => $providerCol ? ($row[$providerCol] ?? 'email') : 'email',
         'status' => $status === '' ? 'active' : strtolower($status),
         'role' => $role === '' ? 'member' : strtolower($role),
@@ -563,7 +577,7 @@ function valid_ledger_page_type(string $v): bool {
     return in_array($v, ['contract', 'org', 'customer', 'custom'], true);
 }
 
-/** 그룹 행 → 응답 형태로 변환. JSON 컬럼 디코딩. */
+/** 그룹 행 → 응답 형태로 변환. JSON 컬럼은 AES-256-GCM 복호화 (평문도 호환). */
 function ledger_group_row(array $row): array {
     return [
         'id'           => (int)$row['id'],
@@ -571,20 +585,25 @@ function ledger_group_row(array $row): array {
         'name'         => $row['name'],
         'isDefault'    => (bool)$row['is_default'],
         'sortOrder'    => (int)$row['sort_order'],
-        'fieldSchema'  => $row['field_schema_json'] ? json_decode($row['field_schema_json'], true) : null,
-        'settings'     => $row['settings_json']     ? json_decode($row['settings_json'],     true) : null,
+        'fieldSchema'  => !empty($row['field_schema_json']) ? youngman_decrypt_json($row['field_schema_json']) : null,
+        'settings'     => !empty($row['settings_json'])     ? youngman_decrypt_json($row['settings_json'])     : null,
         'createdAt'    => $row['created_at'] ?? null,
         'updatedAt'    => $row['updated_at'] ?? null,
     ];
 }
 
-/** 레코드 행 → 응답 형태. */
+/** 레코드 행 → 응답 형태. data_json 은 AES-256-GCM 복호화 (평문도 호환). */
 function ledger_record_row(array $row): array {
+    $data = new stdClass();
+    if (!empty($row['data_json'])) {
+        $decoded = youngman_decrypt_json($row['data_json']);
+        $data = ($decoded === null) ? new stdClass() : $decoded;
+    }
     return [
         'id'         => (int)$row['id'],
         'groupId'    => (int)$row['group_id'],
         'sortNo'     => (int)$row['sort_no'],
-        'data'       => $row['data_json'] ? json_decode($row['data_json'], true) : new stdClass(),
+        'data'       => $data,
         'source'     => $row['source'] ?? 'web',
         'createdAt'  => $row['created_at'] ?? null,
         'updatedAt'  => $row['updated_at'] ?? null,
@@ -685,23 +704,25 @@ function current_user_is_admin(PDO $pdo, $authUser): bool {
 }
 
 function customer_row($row) {
+    // PII (name/phone/notes) — AES-256-GCM 복호화. 평문도 호환 (lazy migration).
     return [
         'id' => $row['client_id'],
-        'name' => $row['name'],
-        'phone' => $row['phone'] ?? '',
-        'notes' => $row['notes'] ?? '',
+        'name' => youngman_decrypt($row['name'] ?? ''),
+        'phone' => youngman_decrypt($row['phone'] ?? ''),
+        'notes' => youngman_decrypt($row['notes'] ?? ''),
         'createdAt' => date('Y. m. d.', strtotime($row['created_at'])),
     ];
 }
 
 function employee_row($row) {
+    // PII (name/contact/notes) — AES-256-GCM 복호화. title/start_date 는 비PII 로 평문 유지.
     return [
         'id' => $row['client_id'],
-        'name' => $row['name'],
+        'name' => youngman_decrypt($row['name'] ?? ''),
         'title' => $row['title'],
-        'contact' => $row['contact'] ?? '',
+        'contact' => youngman_decrypt($row['contact'] ?? ''),
         'startDate' => $row['start_date'] ?? '',
-        'notes' => $row['notes'] ?? '',
+        'notes' => youngman_decrypt($row['notes'] ?? ''),
         'createdAt' => date('Y. m. d.', strtotime($row['created_at'])),
     ];
 }
@@ -1261,13 +1282,16 @@ try {
             $nameCol = first_existing_column($cols, ['name', 'full_name', 'user_name', 'username', 'mb_name']);
             if ($nameCol && isset($data['name'])) {
                 $assignments[] = quote_identifier($nameCol) . ' = :name';
-                $params[':name'] = clean($data['name']) ?? '';
+                $plain = clean($data['name']) ?? '';
+                // 개인정보 — AES-256-GCM 암호화 후 저장
+                $params[':name'] = ($plain !== '') ? youngman_encrypt($plain) : '';
             }
 
             $phoneCol = first_existing_column($cols, ['phone', 'mobile', 'tel', 'contact', 'user_phone', 'mb_hp']);
             if ($phoneCol && isset($data['phone'])) {
                 $assignments[] = quote_identifier($phoneCol) . ' = :phone';
-                $params[':phone'] = clean($data['phone']);
+                $plainPhone = clean($data['phone']);
+                $params[':phone'] = ($plainPhone !== null && $plainPhone !== '') ? youngman_encrypt($plainPhone) : $plainPhone;
             }
 
             $updatedCol = first_existing_column($cols, ['updated_at', 'modified_at']);
@@ -1647,8 +1671,9 @@ try {
 
                 $isDefault = !empty($body['isDefault']) ? 1 : 0;
                 $sortOrder = (int)($body['sortOrder'] ?? 0);
-                $fieldSchema = isset($body['fieldSchema']) ? json_encode($body['fieldSchema'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) : null;
-                $settings    = isset($body['settings'])    ? json_encode($body['settings'],    JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) : null;
+                // 사용자 정의 양식 정의는 라벨/수식에 PII 가 섞일 수 있어 AES-256-GCM 으로 암호화 저장.
+                $fieldSchema = isset($body['fieldSchema']) ? youngman_encrypt_json($body['fieldSchema']) : null;
+                $settings    = isset($body['settings'])    ? youngman_encrypt_json($body['settings'])    : null;
 
                 // is_default 가 켜진 그룹은 같은 owner+page_type 내에서 1개만 유지.
                 if ($isDefault) {
@@ -1686,11 +1711,12 @@ try {
                 }
                 if (array_key_exists('fieldSchema', $body)) {
                     $assignments[] = 'field_schema_json = :fs';
-                    $params[':fs'] = json_encode($body['fieldSchema'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                    // 양식 정의도 AES-256-GCM 으로 암호화.
+                    $params[':fs'] = youngman_encrypt_json($body['fieldSchema']);
                 }
                 if (array_key_exists('settings', $body)) {
                     $assignments[] = 'settings_json = :st';
-                    $params[':st'] = json_encode($body['settings'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                    $params[':st'] = youngman_encrypt_json($body['settings']);
                 }
                 if (array_key_exists('isDefault', $body)) {
                     $isDef = !empty($body['isDefault']) ? 1 : 0;
@@ -1781,7 +1807,8 @@ try {
                 ');
                 $stmt->execute([
                     ':g' => $groupId, ':o' => $owner, ':sn' => $sortNo,
-                    ':d' => json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+                    // 고객/계약/직원 등 모든 행 데이터를 AES-256-GCM 으로 암호화하여 저장
+                    ':d' => youngman_encrypt_json($data),
                     ':k' => $idemKey !== '' ? $idemKey : null,
                     ':s' => $source,
                 ]);
@@ -1800,11 +1827,12 @@ try {
                 $assignments = [];
                 $params = [':id' => $id];
                 if (array_key_exists('data', $body)) {
-                    // 부분 머지 — 기존 data 와 새 data 를 합쳐 저장 (덮어쓰기).
-                    $existing = $row['data_json'] ? (array)json_decode($row['data_json'], true) : [];
-                    $merged = array_replace($existing, (array)$body['data']);
+                    // 부분 머지 — 기존 data 복호화 후 새 data 와 합쳐 다시 암호화 저장.
+                    $existingDecoded = !empty($row['data_json']) ? youngman_decrypt_json($row['data_json']) : [];
+                    if (!is_array($existingDecoded)) $existingDecoded = [];
+                    $merged = array_replace($existingDecoded, (array)$body['data']);
                     $assignments[] = 'data_json = :d';
-                    $params[':d'] = json_encode($merged, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                    $params[':d'] = youngman_encrypt_json($merged);
                 }
                 if (array_key_exists('sortNo', $body)) {
                     $assignments[] = 'sort_no = :sn';
@@ -1946,9 +1974,10 @@ try {
             $stmt->execute([
                 ':client_id' => $clientId,
                 ':owner'     => $owner,
-                ':name'      => $name,
-                ':phone'     => clean($data['phone'] ?? null),
-                ':notes'     => clean($data['notes'] ?? null),
+                // PII — AES-256-GCM 암호화 후 저장.
+                ':name'      => youngman_encrypt($name),
+                ':phone'     => youngman_encrypt(clean($data['phone'] ?? null)),
+                ':notes'     => youngman_encrypt(clean($data['notes'] ?? null)),
             ]);
         } else {
             $name = clean($data['name'] ?? null);
@@ -1968,11 +1997,12 @@ try {
             $stmt->execute([
                 ':client_id'  => $clientId,
                 ':owner'      => $owner,
-                ':name'       => $name,
+                // PII — AES-256-GCM 암호화 (title/start_date 는 비PII 평문 유지).
+                ':name'       => youngman_encrypt($name),
                 ':title'      => $title,
-                ':contact'    => clean($data['contact'] ?? null),
+                ':contact'    => youngman_encrypt(clean($data['contact'] ?? null)),
                 ':start_date' => clean($data['startDate'] ?? null),
-                ':notes'      => clean($data['notes'] ?? null),
+                ':notes'      => youngman_encrypt(clean($data['notes'] ?? null)),
             ]);
         }
 
@@ -1993,9 +2023,10 @@ try {
             $stmt->execute([
                 ':id'    => $id,
                 ':owner' => $owner,
-                ':name'  => $name,
-                ':phone' => clean($data['phone'] ?? null),
-                ':notes' => clean($data['notes'] ?? null),
+                // PII — AES-256-GCM 암호화 후 저장.
+                ':name'  => youngman_encrypt($name),
+                ':phone' => youngman_encrypt(clean($data['phone'] ?? null)),
+                ':notes' => youngman_encrypt(clean($data['notes'] ?? null)),
             ]);
         } else {
             $name = clean($data['name'] ?? null);
@@ -2009,11 +2040,12 @@ try {
             $stmt->execute([
                 ':id'         => $id,
                 ':owner'      => $owner,
-                ':name'       => $name,
+                // PII — AES-256-GCM 암호화 (title/start_date 는 비PII 평문 유지).
+                ':name'       => youngman_encrypt($name),
                 ':title'      => $title,
-                ':contact'    => clean($data['contact'] ?? null),
+                ':contact'    => youngman_encrypt(clean($data['contact'] ?? null)),
                 ':start_date' => clean($data['startDate'] ?? null),
-                ':notes'      => clean($data['notes'] ?? null),
+                ':notes'      => youngman_encrypt(clean($data['notes'] ?? null)),
             ]);
         }
         if ($stmt->rowCount() === 0) {

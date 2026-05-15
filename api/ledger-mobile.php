@@ -32,6 +32,9 @@ function jout(array $payload, int $code = 200): void {
     exit;
 }
 
+/* ===== 암호화 헬퍼 (records.php 와 동일 키, 동일 포맷) ===== */
+require_once __DIR__ . '/crypto_helpers.php';
+
 /* ===== DB ===== */
 $cfg = __DIR__ . '/db_config.php';
 if (!is_file($cfg)) $cfg = dirname(__DIR__) . '/db_config.php';
@@ -165,7 +168,8 @@ try {
         ':g'  => $groupId,
         ':o'  => $owner,
         ':sn' => $sortNo,
-        ':d'  => json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+        // AES-256-GCM 암호화 — records.php 와 동일 포맷, 동일 키.
+        ':d'  => youngman_encrypt_json($data),
         ':k'  => $idemKey !== '' ? $idemKey : null,
         ':s'  => $source,
     ]);
