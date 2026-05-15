@@ -781,106 +781,208 @@ function escapeHtmlSafe(s) {
 }
 
 /* =========================================================================
-   서브 페이지용 가벼운 로그인 모달 — 메인 페이지(#auth-screen) 가 없는
-   페이지에서 로그인 버튼 클릭 시 인덱스로 이동하지 않고 그 자리에서 모달.
-   기능: 이메일/비번 로그인 + Google OAuth. 회원가입은 메인 페이지로 안내.
+   서브 페이지용 통합 인증 모달 — 로그인 + 회원가입 모두 지원.
+   메인 페이지(#auth-screen) 가 없는 페이지에서 같은 흐름으로 사용.
+   Supabase signInWithPassword / signUp / signInWithOAuth + records.php
+   auth-member POST 호출 — main.js 의 handleAuthSubmit 과 동일 로직.
    ========================================================================= */
-function openSharedLoginModal() {
-    // 중복 mount 방지
+function openSharedLoginModal(initialMode = 'login') {
     document.querySelectorAll('[data-shared-auth]').forEach(el => el.remove());
 
     const md = document.createElement('div');
     md.dataset.sharedAuth = '1';
     md.innerHTML = `
-        <div class="shared-auth-backdrop" style="position:fixed;inset:0;background:rgba(20,14,8,.5);z-index:1000;display:flex;align-items:center;justify-content:center;padding:20px;backdrop-filter:blur(4px);">
-            <div class="shared-auth-panel" role="dialog" aria-modal="true"
-                 style="background:#fff;border-radius:16px;max-width:400px;width:100%;padding:28px 26px;box-shadow:0 24px 60px rgba(20,14,8,.3);position:relative;">
-                <button type="button" class="shared-auth-close" aria-label="닫기"
-                        style="position:absolute;top:12px;right:14px;width:32px;height:32px;border:0;background:transparent;color:#8a847e;font-size:22px;cursor:pointer;border-radius:6px;line-height:1;">&times;</button>
-                <div style="text-align:center;margin-bottom:18px;">
-                    <img src="logo_main.png" alt="YOUNGMAN" style="height:32px;width:auto;">
-                </div>
-                <h2 style="margin:0 0 6px;font-size:20px;font-weight:700;letter-spacing:-.02em;text-align:center;color:#0e0d0c;">로그인</h2>
-                <p style="margin:0 0 18px;font-size:13px;color:#8a847e;text-align:center;">이메일 또는 Google 계정으로 로그인합니다.</p>
+        <div class="shared-auth-backdrop">
+            <div class="shared-auth-panel" role="dialog" aria-modal="true">
+                <button type="button" class="shared-auth-close" aria-label="닫기">&times;</button>
+                <div class="shared-auth-brand"><img src="logo_main.png" alt="YOUNGMAN"></div>
+                <h2 class="shared-auth-title" data-title>로그인</h2>
+                <p class="shared-auth-sub" data-sub>이메일 또는 Google 계정으로 로그인합니다.</p>
 
-                <button type="button" class="shared-auth-google"
-                        style="display:flex;align-items:center;justify-content:center;gap:10px;width:100%;padding:11px 16px;border:1px solid rgba(20,14,8,.16);background:#fff;color:#0e0d0c;border-radius:99px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;transition:all 160ms;">
+                <button type="button" class="shared-auth-google">
                     <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
                         <path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84a4.14 4.14 0 0 1-1.8 2.72v2.26h2.9c1.7-1.56 2.7-3.86 2.7-6.62z"/>
                         <path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.9-2.26c-.8.54-1.83.86-3.06.86-2.35 0-4.34-1.58-5.05-3.72H.96v2.33A9 9 0 0 0 9 18z"/>
                         <path fill="#FBBC05" d="M3.95 10.7A5.41 5.41 0 0 1 3.67 9c0-.59.1-1.16.28-1.7V4.97H.96A9 9 0 0 0 0 9c0 1.45.35 2.82.96 4.03l2.99-2.33z"/>
                         <path fill="#EA4335" d="M9 3.58c1.32 0 2.5.45 3.44 1.35l2.58-2.58C13.46.9 11.43 0 9 0A9 9 0 0 0 .96 4.97L3.95 7.3C4.66 5.16 6.65 3.58 9 3.58z"/>
                     </svg>
-                    Google 로 로그인
+                    <span data-google-label>Google 로 로그인</span>
                 </button>
 
-                <div style="display:flex;align-items:center;gap:10px;margin:18px 0;color:#a3a39a;font-size:12px;">
-                    <div style="flex:1;height:1px;background:rgba(20,14,8,.1);"></div>
-                    <span>또는 이메일로</span>
-                    <div style="flex:1;height:1px;background:rgba(20,14,8,.1);"></div>
-                </div>
+                <div class="shared-auth-divider"><span>또는 이메일로</span></div>
 
-                <form class="shared-auth-form" style="display:flex;flex-direction:column;gap:12px;">
-                    <label style="display:flex;flex-direction:column;gap:5px;font-size:12.5px;font-weight:600;color:#4f4943;">
-                        이메일
-                        <input type="email" name="email" autocomplete="email" required placeholder="name@example.com"
-                               style="padding:10px 13px;border:1px solid rgba(20,14,8,.16);border-radius:8px;font-size:14px;font-family:inherit;background:#fff;color:#0e0d0c;outline:none;">
-                    </label>
-                    <label style="display:flex;flex-direction:column;gap:5px;font-size:12.5px;font-weight:600;color:#4f4943;">
-                        비밀번호
-                        <input type="password" name="password" autocomplete="current-password" required minlength="6" placeholder="6자 이상"
-                               style="padding:10px 13px;border:1px solid rgba(20,14,8,.16);border-radius:8px;font-size:14px;font-family:inherit;background:#fff;color:#0e0d0c;outline:none;">
-                    </label>
-                    <p class="shared-auth-message" aria-live="polite" style="margin:0;font-size:12.5px;color:#c8362c;min-height:18px;"></p>
-                    <button type="submit" class="shared-auth-submit"
-                            style="padding:11px 18px;background:#0e0d0c;color:#fff;border:0;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;transition:all 160ms;">
-                        로그인
-                    </button>
+                <form class="shared-auth-form" novalidate>
+                    <div class="shared-auth-fields" data-signup-only hidden>
+                        <label>이름 <input type="text" name="fullName" autocomplete="name" placeholder="실명"></label>
+                        <label>휴대폰 <input type="tel" name="phone" autocomplete="tel" placeholder="010-0000-0000"></label>
+                    </div>
+                    <label>이메일 <input type="email" name="email" autocomplete="email" required placeholder="name@example.com"></label>
+                    <div class="shared-auth-fields" data-signup-only hidden>
+                        <label>닉네임 <input type="text" name="nickname" minlength="2" maxlength="20" placeholder="2~20자 한글/영문/숫자"></label>
+                    </div>
+                    <label>비밀번호 <input type="password" name="password" autocomplete="current-password" required minlength="6" placeholder="6자 이상"></label>
+                    <div class="shared-auth-fields" data-signup-only hidden>
+                        <label>비밀번호 확인 <input type="password" name="passwordConfirm" minlength="6" placeholder="다시 입력"></label>
+                        <div class="shared-auth-consents">
+                            <label><input type="checkbox" name="agreeAll"> 전체 동의</label>
+                            <label><input type="checkbox" name="agreeTerms"> <span class="req">필수</span> <a href="terms.html" target="_blank" rel="noopener">이용약관</a>에 동의</label>
+                            <label><input type="checkbox" name="agreePrivacy"> <span class="req">필수</span> <a href="privacy.html" target="_blank" rel="noopener">개인정보처리방침</a>에 동의</label>
+                            <label><input type="checkbox" name="agreeMarketing"> <span class="opt">선택</span> 마케팅 정보 수신 동의</label>
+                        </div>
+                    </div>
+                    <p class="shared-auth-message" aria-live="polite"></p>
+                    <button type="submit" class="shared-auth-submit" data-submit-label>로그인</button>
                 </form>
 
-                <p style="margin:18px 0 0;font-size:12.5px;color:#8a847e;text-align:center;">
-                    아직 회원이 아니신가요? <a href="index.html#login" style="color:#c8362c;font-weight:600;text-decoration:none;">메인에서 회원가입</a>
+                <p class="shared-auth-switch">
+                    <span data-switch-text>아직 회원이 아니신가요?</span>
+                    <button type="button" class="shared-auth-mode-btn" data-mode-btn>회원가입</button>
                 </p>
             </div>
         </div>
     `;
     document.body.appendChild(md);
 
-    const backdrop = md.querySelector('.shared-auth-backdrop');
-    const closeBtn = md.querySelector('.shared-auth-close');
-    const form = md.querySelector('.shared-auth-form');
-    const googleBtn = md.querySelector('.shared-auth-google');
-    const msgEl = md.querySelector('.shared-auth-message');
-    const submitBtn = md.querySelector('.shared-auth-submit');
+    const root        = md.querySelector('.shared-auth-panel');
+    const backdrop    = md.querySelector('.shared-auth-backdrop');
+    const closeBtn    = md.querySelector('.shared-auth-close');
+    const form        = md.querySelector('.shared-auth-form');
+    const googleBtn   = md.querySelector('.shared-auth-google');
+    const msgEl       = md.querySelector('.shared-auth-message');
+    const submitBtn   = md.querySelector('.shared-auth-submit');
+    const titleEl     = md.querySelector('[data-title]');
+    const subEl       = md.querySelector('[data-sub]');
+    const switchText  = md.querySelector('[data-switch-text]');
+    const modeBtn     = md.querySelector('[data-mode-btn]');
+    const submitLabel = md.querySelector('[data-submit-label]');
+    const googleLabel = md.querySelector('[data-google-label]');
+    const signupOnly  = md.querySelectorAll('[data-signup-only]');
+    const agreeAll    = form.agreeAll;
+    const agreeReqs   = [form.agreeTerms, form.agreePrivacy];
+    const agreeOpts   = [form.agreeMarketing];
+
+    let mode = (initialMode === 'signup') ? 'signup' : 'login';
+
+    function applyMode() {
+        const isSignup = mode === 'signup';
+        titleEl.textContent = isSignup ? '회원가입' : '로그인';
+        subEl.textContent   = isSignup ? '이메일 또는 Google 계정으로 가입합니다.' : '이메일 또는 Google 계정으로 로그인합니다.';
+        submitLabel.textContent = isSignup ? '회원가입' : '로그인';
+        googleLabel.textContent = isSignup ? 'Google 로 가입' : 'Google 로 로그인';
+        switchText.textContent  = isSignup ? '이미 회원이신가요?' : '아직 회원이 아니신가요?';
+        modeBtn.textContent     = isSignup ? '로그인' : '회원가입';
+        signupOnly.forEach(el => el.hidden = !isSignup);
+        form.password.setAttribute('autocomplete', isSignup ? 'new-password' : 'current-password');
+        msgEl.textContent = '';
+    }
+    applyMode();
+
+    modeBtn.addEventListener('click', () => { mode = (mode === 'signup') ? 'login' : 'signup'; applyMode(); });
 
     const close = () => md.remove();
     closeBtn.addEventListener('click', close);
     backdrop.addEventListener('click', (e) => { if (e.target === backdrop) close(); });
     const escHandler = (e) => { if (e.key === 'Escape') { close(); document.removeEventListener('keydown', escHandler); } };
     document.addEventListener('keydown', escHandler);
+    setTimeout(() => form.email?.focus(), 50);
 
-    // 첫 input 포커스
-    setTimeout(() => md.querySelector('input[name="email"]')?.focus(), 50);
+    // 전체동의 체크 동기화
+    agreeAll?.addEventListener('change', () => {
+        [...agreeReqs, ...agreeOpts].forEach(el => { if (el) el.checked = agreeAll.checked; });
+    });
+    [...agreeReqs, ...agreeOpts].forEach(el => el?.addEventListener('change', () => {
+        if (agreeAll) agreeAll.checked = [...agreeReqs, ...agreeOpts].every(x => x?.checked);
+    }));
+
+    function normalizePhone(v) {
+        const d = String(v || '').replace(/[^\d]/g, '');
+        if (/^01[016789]\d{7,8}$/.test(d)) return d;
+        return '';
+    }
+    function validNickname(v) {
+        return /^[가-힣A-Za-z0-9_-]{2,20}$/.test(String(v || ''));
+    }
 
     form.addEventListener('submit', async (e) => {
         e.preventDefault();
+        const isSignup = mode === 'signup';
         const email = form.email.value.trim();
         const password = form.password.value;
+
         if (!email || !password) { msgEl.textContent = '이메일과 비밀번호를 입력해주세요.'; return; }
-        submitBtn.disabled = true; submitBtn.textContent = '로그인 중…'; msgEl.textContent = '';
-        try {
-            if (!supabaseClient) { await initSupabase(); }
-            if (!supabaseClient) throw new Error('인증 클라이언트 초기화 실패');
-            const { error } = await supabaseClient.auth.signInWithPassword({ email, password });
-            if (error) throw error;
-            // 성공: onAuthStateChange 가 자동으로 nav 재렌더 + refreshNavFormsCache.
-            // 추가로 페이지 새로고침해서 데이터 로드 보장.
-            close();
-            window.location.reload();
-        } catch (err) {
-            msgEl.textContent = err?.message || '로그인 실패';
-            submitBtn.disabled = false;
-            submitBtn.textContent = '로그인';
+
+        if (isSignup) {
+            const fullName  = form.fullName.value.trim();
+            const phone     = normalizePhone(form.phone.value);
+            const nickname  = form.nickname.value.trim();
+            const passwordConfirm = form.passwordConfirm.value;
+
+            if (!fullName)                              { msgEl.textContent = '이름을 입력해주세요.'; return; }
+            if (!phone)                                 { msgEl.textContent = '올바른 휴대폰 번호를 입력해주세요 (010-...).'; return; }
+            if (!validNickname(nickname))               { msgEl.textContent = '닉네임은 2~20자, 한글/영문/숫자/_/- 만 가능합니다.'; return; }
+            if (password !== passwordConfirm)           { msgEl.textContent = '비밀번호와 확인이 일치하지 않습니다.'; return; }
+            if (!form.agreeTerms.checked || !form.agreePrivacy.checked) {
+                msgEl.textContent = '필수 약관에 동의해주세요.'; return;
+            }
+
+            submitBtn.disabled = true; submitBtn.textContent = '가입 중…'; msgEl.textContent = '';
+            try {
+                if (!supabaseClient) { await initSupabase(); }
+                const consentMeta = {
+                    terms_agreed: true,
+                    privacy_agreed: true,
+                    marketing_opt_in: !!form.agreeMarketing.checked,
+                    consent_at: new Date().toISOString(),
+                };
+                const { data, error } = await supabaseClient.auth.signUp({
+                    email, password,
+                    options: { data: {
+                        full_name: fullName, phone, nickname,
+                        phone_verified: false, identity_verified: false,
+                        app_registered: true, signup_method: 'email',
+                        ...consentMeta,
+                    }},
+                });
+                if (error) throw error;
+                if (!data.session) {
+                    msgEl.style.color = '#1b5e20';
+                    msgEl.textContent = '가입 확인 메일을 보냈습니다. 메일 인증 후 로그인하세요.';
+                    submitBtn.disabled = false; submitBtn.textContent = '회원가입';
+                    return;
+                }
+                // member 행 저장 (records.php auth-member POST)
+                try {
+                    const token = data.session.access_token;
+                    await fetch('records.php?resource=auth-member', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                        body: JSON.stringify({
+                            resource: 'auth-member',
+                            email, fullName, phone, nickname, provider: 'email',
+                            ...consentMeta,
+                        }),
+                    });
+                } catch {}
+                close();
+                window.location.reload();
+            } catch (err) {
+                msgEl.style.color = '#c8362c';
+                msgEl.textContent = err?.message || '가입 처리에 실패했습니다.';
+                submitBtn.disabled = false; submitBtn.textContent = '회원가입';
+            }
+        } else {
+            submitBtn.disabled = true; submitBtn.textContent = '로그인 중…'; msgEl.textContent = '';
+            try {
+                if (!supabaseClient) { await initSupabase(); }
+                const { error } = await supabaseClient.auth.signInWithPassword({ email, password });
+                if (error) throw error;
+                close();
+                window.location.reload();
+            } catch (err) {
+                msgEl.style.color = '#c8362c';
+                msgEl.textContent = err?.message || '로그인 실패';
+                submitBtn.disabled = false; submitBtn.textContent = '로그인';
+            }
         }
     });
 
@@ -889,14 +991,13 @@ function openSharedLoginModal() {
         googleBtn.disabled = true;
         try {
             if (!supabaseClient) { await initSupabase(); }
-            if (!supabaseClient) throw new Error('인증 클라이언트 초기화 실패');
             const { error } = await supabaseClient.auth.signInWithOAuth({
                 provider: 'google',
                 options: { redirectTo: window.location.href },
             });
             if (error) throw error;
-            // OAuth 리다이렉트 진행 — 모달 닫기는 자동
         } catch (err) {
+            msgEl.style.color = '#c8362c';
             msgEl.textContent = err?.message || 'Google 로그인 실패';
             googleBtn.disabled = false;
         }
