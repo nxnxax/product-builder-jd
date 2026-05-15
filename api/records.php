@@ -7,7 +7,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 }
 
 // 암호화 헬퍼 (AES-256-GCM) — youngman_encrypt / youngman_decrypt / *_json / *_enabled
-require_once __DIR__ . '/crypto_helpers.php';
+// 헬퍼 파일이 아직 배포 안 됐을 수 있어 가드로 감싸고 stub 정의 (서비스 중단 방지).
+$__cryptoFile = __DIR__ . '/crypto_helpers.php';
+if (is_file($__cryptoFile)) {
+    require_once $__cryptoFile;
+}
+if (!function_exists('youngman_encrypt')) {
+    function youngman_encrypt($v) { return $v; }
+    function youngman_decrypt($v) { return $v; }
+    function youngman_encrypt_json($v) {
+        if ($v === null) return null;
+        return is_string($v) ? $v : json_encode($v, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    }
+    function youngman_decrypt_json($v) {
+        if ($v === null || $v === '') return null;
+        if (!is_string($v)) return $v;
+        $d = json_decode($v, true);
+        return ($d === null && json_last_error() !== JSON_ERROR_NONE) ? $v : $d;
+    }
+    function youngman_crypto_enabled(): bool { return false; }
+}
 
 $configPath = __DIR__ . '/db_config.php';
 if (!is_file($configPath)) {

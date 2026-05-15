@@ -33,7 +33,15 @@ function jout(array $payload, int $code = 200): void {
 }
 
 /* ===== 암호화 헬퍼 (records.php 와 동일 키, 동일 포맷) ===== */
-require_once __DIR__ . '/crypto_helpers.php';
+// 헬퍼 파일 미배포 시에도 동작하도록 가드 + stub.
+$__cryptoFile = __DIR__ . '/crypto_helpers.php';
+if (is_file($__cryptoFile)) require_once $__cryptoFile;
+if (!function_exists('youngman_encrypt_json')) {
+    function youngman_encrypt_json($v) {
+        if ($v === null) return null;
+        return is_string($v) ? $v : json_encode($v, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    }
+}
 
 /* ===== DB ===== */
 $cfg = __DIR__ . '/db_config.php';
