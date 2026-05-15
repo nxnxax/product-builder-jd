@@ -117,7 +117,7 @@ function normalize_resource($value) {
     $allowed = [
         'customers', 'employees',
         'auth-membership', 'auth-member', 'auth-availability',
-        'auth-profile',
+        'auth-profile', 'account-delete',
         'admin-members', 'admin-stats', 'admin-logs', 'admin-settings',
         'admin-bootstrap', 'admin-cleanup-orphans',
         'ledger-groups', 'ledger-records', 'ledger-records-bulk',
@@ -1332,6 +1332,88 @@ try {
         }
 
         respond(['ok' => false, 'error' => '지원하지 않는 요청 방식입니다.'], 405);
+    }
+
+    if ($resource === 'account-delete') {
+        // 본인 계정 + 본인 데이터 일괄 삭제 (회원 탈퇴).
+        // 인증된 사용자만 자기 자신을 삭제 가능. admin 우회 없음.
+        if (!$authUser) respond(['ok' => false, 'error' => '로그인이 필요합니다.'], 401);
+        if ($method !== 'POST' && $method !== 'DELETE') {
+            respond(['ok' => false, 'error' => 'POST 또는 DELETE 만 허용됩니다.'], 405);
+        }
+
+        $email = strtolower((string)($authUser['email'] ?? ''));
+        if ($email === '') respond(['ok' => false, 'error' => '인증 사용자 이메일을 확인할 수 없습니다.'], 400);
+
+        // 안전망: 요청 body 에 confirm_email 이 있으면 토큰 이메일과 일치해야 함.
+        $confirm = strtolower((string)($body['confirm_email'] ?? ''));
+        if ($confirm !== '' && $confirm !== $email) {
+            respond(['ok' => false, 'error' => '확인용 이메일이 일치하지 않습니다.'], 400);
+        }
+
+        $store = find_member_store($pdo);
+        $emailCol = $store ? quote_identifier($store['email_column']) : null;
+        $tableQ   = $store ? quote_identifier($store['table']) : null;
+
+        $deleted = [
+            'ledger_records' => 0, 'ledger_groups' => 0,
+            'customers' => 0, 'employees' => 0,
+            'mobile_api_tokens' => 0, 'member' => 0,
+        ];
+
+        try {
+            $pdo->beginTransaction();
+
+            // 1) ledger_records — 사용자 행 모두
+            try {
+                $s = $pdo->prepare('DELETE FROM ledger_records WHERE owner_email = :o');
+                $s->execute([':o' => $email]);
+                $deleted['ledger_records'] = $s->rowCount();
+            } catch (Throwable $e) { /* 테이블 미존재 등 무시 */ }
+
+            // 2) ledger_groups
+            try {
+                $s = $pdo->prepare('DELETE FROM ledger_groups WHERE owner_email = :o');
+                $s->execute([':o' => $email]);
+                $deleted['ledger_groups'] = $s->rowCount();
+            } catch (Throwable $e) {}
+
+            // 3) legacy customers / employees (owner_email 컬럼이 있는 경우만)
+            foreach (['customers', 'employees'] as $legacy) {
+                try {
+                    $cols = table_columns($pdo, $legacy);
+                    if (in_array('owner_email', $cols, true)) {
+                        $s = $pdo->prepare('DELETE FROM ' . quote_identifier($legacy) . ' WHERE owner_email = :o');
+                        $s->execute([':o' => $email]);
+                        $deleted[$legacy] = $s->rowCount();
+                    }
+                } catch (Throwable $e) {}
+            }
+
+            // 4) mobile_api_tokens
+            try {
+                $s = $pdo->prepare('DELETE FROM mobile_api_tokens WHERE owner_email = :o');
+                $s->execute([':o' => $email]);
+                $deleted['mobile_api_tokens'] = $s->rowCount();
+            } catch (Throwable $e) {}
+
+            // 5) 마지막으로 member 행 — 이게 삭제되면 records.php 가 가입된 회원이 아니라고 판정.
+            if ($store && $emailCol && $tableQ) {
+                $s = $pdo->prepare("DELETE FROM {$tableQ} WHERE LOWER({$emailCol}) = :email");
+                $s->execute([':email' => $email]);
+                $deleted['member'] = $s->rowCount();
+            }
+
+            $pdo->commit();
+        } catch (Throwable $e) {
+            try { $pdo->rollBack(); } catch (Throwable $e2) {}
+            respond(['ok' => false, 'error' => '탈퇴 처리 중 오류: ' . $e->getMessage()], 500);
+        }
+
+        // 활동 로그 — 트랜잭션 밖에서 (실패해도 탈퇴 자체엔 영향 없음)
+        record_activity($pdo, $email, 'account.delete', json_encode($deleted, JSON_UNESCAPED_UNICODE));
+
+        respond(['ok' => true, 'deleted' => $deleted]);
     }
 
     if ($resource === 'admin-members') {

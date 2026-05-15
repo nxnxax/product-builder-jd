@@ -6,7 +6,7 @@ import {
     mountAppHeader,
     refreshAppHeader,
     getInitial,
-} from './auth-shared.js?v=20260515-toggle-fix';
+} from './auth-shared.js?v=20260515-account-delete';
 
 const tabButtons = document.querySelectorAll('.side-nav button[data-tab]');
 const tabSections = document.querySelectorAll('.profile-tab');
@@ -180,8 +180,66 @@ accountSignout?.addEventListener('click', async () => {
     window.location.href = 'index.html';
 });
 
-accountDelete?.addEventListener('click', () => {
-    alert('계정 삭제는 보안상 별도 확인이 필요합니다. 관리자에게 문의해 주세요.');
+accountDelete?.addEventListener('click', async () => {
+    // 1단계: 강한 경고 + 동의 확인
+    const ok1 = confirm(
+        '⚠️ 회원 탈퇴 안내\n\n' +
+        '탈퇴 시 다음 데이터가 즉시 영구 삭제되며 복구할 수 없습니다:\n' +
+        '  • 내가 만든 모든 양식과 행 (조직도/계약자/고객/사용자 양식)\n' +
+        '  • 모바일 API 토큰\n' +
+        '  • 회원 정보\n\n' +
+        '정말 진행하시겠습니까?'
+    );
+    if (!ok1) return;
+
+    // 2단계: 본인 이메일 재입력 (오타/오인 클릭 방지)
+    let myEmail = '';
+    try { myEmail = (sessionStorage.getItem('erp.userEmail') || '').toLowerCase(); } catch {}
+    if (!myEmail) {
+        try {
+            const me = await apiRequest('auth-member');
+            myEmail = String(me?.member?.email || '').toLowerCase();
+        } catch {}
+    }
+    const typed = prompt(`마지막 확인입니다. 본인 이메일을 정확히 입력해주세요:\n${myEmail}`);
+    if (typed === null) return;
+    if (typed.trim().toLowerCase() !== myEmail) {
+        alert('이메일이 일치하지 않아 탈퇴를 진행하지 않았습니다.');
+        return;
+    }
+
+    accountDelete.disabled = true;
+    const prevText = accountDelete.textContent;
+    accountDelete.textContent = '탈퇴 처리 중...';
+
+    try {
+        await apiRequest('account-delete', {
+            method: 'POST',
+            body: JSON.stringify({ confirm_email: myEmail }),
+        });
+        // 서버 데이터 삭제 성공 → Supabase 로그아웃 + 로컬 정리 + 홈 이동
+        try {
+            const client = getClient();
+            if (client && client.auth) await client.auth.signOut();
+        } catch {}
+        try {
+            // 사용자별 localStorage / sessionStorage 잔여 정리
+            const keys = [];
+            for (let i = 0; i < localStorage.length; i++) keys.push(localStorage.key(i));
+            keys.forEach(k => {
+                if (k && (k.startsWith('erp') || k.startsWith('yman_nav_') || k.startsWith('sb-') || k.startsWith('supabase'))) {
+                    try { localStorage.removeItem(k); } catch {}
+                }
+            });
+            sessionStorage.clear();
+        } catch {}
+        alert('회원 탈퇴가 완료되었습니다. 그동안 이용해주셔서 감사합니다.');
+        window.location.replace('index.html');
+    } catch (err) {
+        accountDelete.disabled = false;
+        accountDelete.textContent = prevText;
+        alert('탈퇴 처리 중 오류가 발생했습니다: ' + (err?.message || err));
+    }
 });
 
 function hideFreshToken() {
