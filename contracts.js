@@ -10,13 +10,13 @@
  *  - 본부장 계약 → 본부장(=팀원+팀장+본부장 셋 다 받음)
  */
 
-import { initSupabase, apiRequest, getSession } from './auth-shared.js?v=20260515-nav-query-fix';
+import { initSupabase, apiRequest, getSession } from './auth-shared.js?v=20260515-stale-org-link';
 import { attachColumnFilters, applyColumnFilters, openRowAddModal, attachPhoneAutoFormat, attachThousandFormat, formatThousand, unformatThousand, getEffectiveFields, mountFieldManager,
          exportRecordsToExcel, pickExcelFile, parseExcelFile, suggestFieldMapping, openImportPreviewModal,
          saveImportSession, loadImportSession, clearImportSession,
          findBlankRecordIds, showSweepToast,
          attachCellClickHandlers,
-         isLedgerMobile, onLedgerViewportChange } from './ledger-shared.js?v=20260515-nav-query-fix';
+         isLedgerMobile, onLedgerViewportChange } from './ledger-shared.js?v=20260515-stale-org-link';
 
 const PAGE_TYPE = 'contract';
 const TAX_RATE = 0.033;   // 실수령액 = commission * (1 - TAX_RATE)
@@ -124,6 +124,13 @@ async function loadOrgIndex() {
 async function loadOrgEmployeesForGroup(orgGroupId) {
     if (!orgGroupId) return;
     if (orgEmployeesByGroup.has(orgGroupId)) return; // cached
+    // 참조된 org 그룹이 더 이상 존재하지 않으면 (사용자가 그 조직도 그룹을
+    // 삭제한 케이스) fetch 안 하고 빈 배열로 캐시 — 콘솔 404 노출 차단.
+    if (!orgGroups.find(g => g.id === orgGroupId)) {
+        orgEmployeesByGroup.set(orgGroupId, []);
+        orgSettingsByGroup.set(orgGroupId, null);
+        return;
+    }
     try {
         const data = await api('ledger-records', { query: 'group_id=' + orgGroupId });
         orgEmployeesByGroup.set(orgGroupId, data.items || []);
@@ -135,6 +142,9 @@ async function loadOrgEmployeesForGroup(orgGroupId) {
 /** 계약 그룹의 연동 org group id 결정 (없으면 사용자 default org). */
 function linkedOrgIdFor(group) {
     let id = group?.settings?.linkedOrgGroupId || null;
+    // settings 에 저장된 linkedOrgGroupId 가 실제로는 삭제된 그룹을 가리킬 수 있음.
+    // 그 경우 default org 로 fallback.
+    if (id && !orgGroups.find(g => g.id === id)) id = null;
     if (!id && orgGroups.length > 0) {
         id = (orgGroups.find(o => o.isDefault) || orgGroups[0]).id;
     }
