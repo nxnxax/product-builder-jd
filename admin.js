@@ -5,7 +5,7 @@ import {
     refreshAppHeader,
     isAdmin,
     getInitial,
-} from './auth-shared.js?v=20260515-forms-filter';
+} from './auth-shared.js?v=20260515-forms-filter-css';
 
 const STATUS_LABEL = { active: '활성', suspended: '정지', banned: '차단' };
 const ROLE_LABEL = { admin: '관리자', owner: '운영자', member: '일반회원' };
