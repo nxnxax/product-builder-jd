@@ -9,13 +9,13 @@
  *  - client_idempotency_key 로 같은 통화의 중복 전송 차단
  */
 
-import { initSupabase, apiRequest, getSession } from './auth-shared.js?v=20260516-bulk-top';
+import { initSupabase, apiRequest, getSession } from './auth-shared.js?v=20260516-bulk-in-content';
 import { attachColumnFilters, applyColumnFilters, openRowAddModal, attachPhoneAutoFormat, getEffectiveFields, mountFieldManager,
          exportRecordsToExcel, pickExcelFile, parseExcelFile, suggestFieldMapping, openImportPreviewModal,
          saveImportSession, loadImportSession, clearImportSession,
          findBlankRecordIds, showSweepToast,
          attachCellClickHandlers,
-         isLedgerMobile, onLedgerViewportChange } from './ledger-shared.js?v=20260516-bulk-top';
+         isLedgerMobile, onLedgerViewportChange } from './ledger-shared.js?v=20260516-bulk-in-content';
 
 const MOBILE_PRIMARY_KEYS = ['customer', 'phone', 'date'];
 
@@ -268,6 +268,12 @@ function renderRecords() {
     const mainGroup = groups.find(g => g.isDefault) || groups[0];
     const others = groups.filter(g => g.id !== mainGroup.id);
 
+    // bulk-bar 가 #content 자식이면 innerHTML 갱신 시 같이 삭제되므로 잠시 body 로 옮김.
+    const bulkBar = document.getElementById('bulkBar');
+    if (bulkBar && bulkBar.parentElement === content) {
+        document.body.appendChild(bulkBar);
+    }
+
     let html = '';
     html += renderGroupPicker(groups, mainGroup.id);
     html += renderGroupCard(mainGroup);
@@ -275,6 +281,12 @@ function renderRecords() {
         html += renderGroupCard(g);
     });
     content.innerHTML = html;
+
+    // 사용자 요청 배치: [그룹목록(extra-groups)] → [bulk-bar] → [오산롯데 등 그룹 카드]
+    const picker = content.querySelector('.extra-groups');
+    if (bulkBar && picker) {
+        picker.insertAdjacentElement('afterend', bulkBar);
+    }
 
     bindAccordionEvents();
     bindExtraPickerEvents();
@@ -939,7 +951,7 @@ async function openSmsModal() {
 }
 
 async function getAccessTokenForSms() {
-    const { getAccessToken } = await import('./auth-shared.js?v=20260516-bulk-top');
+    const { getAccessToken } = await import('./auth-shared.js?v=20260516-bulk-in-content');
     return await getAccessToken();
 }
 
