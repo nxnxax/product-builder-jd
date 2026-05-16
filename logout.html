@@ -102,7 +102,7 @@
         // 1) Supabase signOut — scope: 'global' 로 서버의 모든 refresh token revoke.
         //    다른 브라우저/디바이스에서 silent refresh 로 살아나는 시나리오 차단.
         try {
-            const mod = await import('./auth-shared.js?v=20260516-auth-errors-ko');
+            const mod = await import('./auth-shared.js?v=20260516-remember-find');
             const result = await mod.initSupabase().catch(() => null);
             const client = result?.client;
             if (client?.auth?.signOut) {

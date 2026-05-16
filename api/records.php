@@ -1199,7 +1199,7 @@ function verify_auth_token($auth) {
 
 try {
     // Public resources (no auth) — keep narrow.
-    $publicResources = ['auth-availability'];
+    $publicResources = ['auth-availability', 'find-email'];
     $peekedResource = strtolower(trim((string)($_GET['resource'] ?? '')));
     $authUser = in_array($peekedResource, $publicResources, true) ? null : verify_auth_token($auth);
 
@@ -1244,6 +1244,60 @@ try {
     if ($resource === 'auth-member') {
         if ($method !== 'POST') respond(['ok' => false, 'error' => '지원하지 않는 요청 방식입니다.'], 405);
         create_member_from_google($pdo, $authUser, $body);
+    }
+
+    if ($resource === 'find-email') {
+        // 이름 + 휴대폰 → 마스킹된 이메일 반환 (아이디 찾기).
+        // 무차별 lookup 방지 위해 둘 다 정확히 일치해야 함.
+        if ($method !== 'POST') respond(['ok' => false, 'error' => '지원하지 않는 요청 방식입니다.'], 405);
+        $name  = clean($body['name'] ?? null);
+        $phone = clean($body['phone'] ?? null);
+        if (!$name || !$phone) {
+            respond(['ok' => false, 'error' => '이름과 휴대폰 번호를 모두 입력해주세요.'], 400);
+        }
+        $phoneDigits = preg_replace('/\D/', '', $phone);
+        if (strlen($phoneDigits) < 10) {
+            respond(['ok' => false, 'error' => '올바른 휴대폰 번호 형식이 아닙니다.'], 400);
+        }
+        $store = find_member_store($pdo);
+        if (!$store) respond(['ok' => false, 'error' => '회원 테이블을 찾을 수 없습니다.'], 500);
+        $cols = $store['columns'];
+        $nameCol = first_existing_column($cols, ['name', 'full_name', 'user_name', 'username', 'mb_name']);
+        $phoneCol = first_existing_column($cols, ['phone', 'mobile', 'tel', 'contact', 'user_phone', 'mb_hp']);
+        $emailCol = $store['email_column'];
+        if (!$nameCol || !$phoneCol || !$emailCol) {
+            respond(['ok' => false, 'error' => '이름/휴대폰 컬럼이 없는 회원 테이블입니다.'], 500);
+        }
+        // 암호화된 PII 와 매칭 위해 전체 fetch + PHP 단에서 decrypt 비교
+        // (members 행 수가 적다는 가정 — 대규모면 별도 hash column 필요)
+        try {
+            $stmt = $pdo->query("SELECT " . quote_identifier($nameCol) . " AS nm, "
+                              . quote_identifier($phoneCol) . " AS ph, "
+                              . quote_identifier($emailCol) . " AS em FROM " . quote_identifier($store['table']));
+            $rows = $stmt->fetchAll();
+        } catch (Throwable $e) {
+            respond(['ok' => false, 'error' => '회원 조회 실패: ' . $e->getMessage()], 500);
+        }
+        $matchedEmail = null;
+        foreach ($rows as $r) {
+            $rNm = function_exists('youngman_decrypt') ? youngman_decrypt((string)$r['nm']) : (string)$r['nm'];
+            $rPh = function_exists('youngman_decrypt') ? youngman_decrypt((string)$r['ph']) : (string)$r['ph'];
+            if (trim((string)$rNm) !== trim($name)) continue;
+            $rPhDigits = preg_replace('/\D/', '', (string)$rPh);
+            if ($rPhDigits === $phoneDigits) {
+                $matchedEmail = (string)$r['em'];
+                break;
+            }
+        }
+        if (!$matchedEmail) {
+            respond(['ok' => false, 'error' => '입력하신 이름/휴대폰으로 가입된 계정을 찾을 수 없습니다.'], 404);
+        }
+        // 마스킹 — local-part 의 첫 2자만 + 나머지는 ***
+        $parts = explode('@', $matchedEmail, 2);
+        $local = $parts[0] ?? '';
+        $domain = $parts[1] ?? '';
+        $maskedLocal = mb_substr($local, 0, 2) . str_repeat('*', max(0, mb_strlen($local) - 2));
+        respond(['ok' => true, 'email' => $maskedLocal . '@' . $domain]);
     }
 
     if ($resource === 'auth-availability') {

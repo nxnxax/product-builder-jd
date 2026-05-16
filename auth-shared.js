@@ -424,6 +424,28 @@ if (typeof window !== 'undefined' && !window.__ymanPageshowBound) {
     });
 }
 
+// "로그인 유지" 체크박스 해제 케이스 — 브라우저/탭 종료 시 supabase 토큰 제거.
+// pagehide 가 모바일에서도 안정적. beforeunload 는 데스크탑 fallback.
+if (typeof window !== 'undefined' && !window.__ymanEndSessionBound) {
+    window.__ymanEndSessionBound = true;
+    const handleEndSession = () => {
+        try {
+            if (sessionStorage.getItem('erp.endSessionOnClose') !== '1') return;
+            const keys = [];
+            for (let i = 0; i < localStorage.length; i++) keys.push(localStorage.key(i));
+            keys.forEach(k => {
+                if (!k) return;
+                const low = k.toLowerCase();
+                if (low.startsWith('sb-') || low.includes('supabase')) {
+                    try { localStorage.removeItem(k); } catch {}
+                }
+            });
+        } catch {}
+    };
+    window.addEventListener('pagehide', handleEndSession);
+    window.addEventListener('beforeunload', handleEndSession);
+}
+
 // document 레벨 backup 클릭 위임 — 브라우저 navigation 을 절대 막지 않음 (가장 reliable).
 //
 // 중요: click 처리 중에 body.is-anon 같은 클래스를 즉시 추가하면 안 된다.
@@ -881,6 +903,140 @@ function escapeHtmlSafe(s) {
     return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
+/* =========================================================================
+   아이디(이메일) 찾기 모달 — 이름 + 휴대폰 → 마스킹된 이메일 반환.
+   records.php?resource=find-email (public) POST.
+   ========================================================================= */
+function openFindIdModal() {
+    document.querySelectorAll('[data-shared-auth]').forEach(el => el.remove());
+    const md = document.createElement('div');
+    md.dataset.sharedAuth = '1';
+    md.innerHTML = `
+        <div class="shared-auth-backdrop">
+            <div class="shared-auth-panel" role="dialog" aria-modal="true">
+                <button type="button" class="shared-auth-close" aria-label="닫기">&times;</button>
+                <div class="shared-auth-brand"><img src="logo_main.png" alt="YOUNGMAN"></div>
+                <h2 class="shared-auth-title">아이디 찾기</h2>
+                <p class="shared-auth-sub">가입 시 입력한 이름과 휴대폰 번호를 입력해주세요.</p>
+                <form class="shared-auth-form" novalidate>
+                    <label>이름 <input type="text" name="name" required autocomplete="name" placeholder="실명"></label>
+                    <label>휴대폰 <input type="tel" name="phone" required autocomplete="tel" placeholder="010-0000-0000"></label>
+                    <p class="shared-auth-message" aria-live="polite"></p>
+                    <button type="submit" class="shared-auth-submit">아이디 찾기</button>
+                </form>
+                <p class="shared-auth-switch">
+                    <button type="button" class="shared-auth-mode-btn" data-back>← 로그인으로 돌아가기</button>
+                </p>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(md);
+    const close = () => md.remove();
+    md.querySelector('.shared-auth-close').addEventListener('click', close);
+    md.querySelector('.shared-auth-backdrop').addEventListener('click', (e) => {
+        if (e.target.classList.contains('shared-auth-backdrop')) close();
+    });
+    md.querySelector('[data-back]').addEventListener('click', () => { close(); openSharedLoginModal('login'); });
+    const form = md.querySelector('.shared-auth-form');
+    const msgEl = md.querySelector('.shared-auth-message');
+    const submitBtn = md.querySelector('.shared-auth-submit');
+    setTimeout(() => form.name?.focus(), 50);
+    form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const name  = form.name.value.trim();
+        const phone = form.phone.value.trim();
+        if (!name || !phone) { msgEl.style.color = '#c8362c'; msgEl.textContent = '이름과 휴대폰 번호를 모두 입력해주세요.'; return; }
+        submitBtn.disabled = true; submitBtn.textContent = '조회 중…'; msgEl.textContent = '';
+        try {
+            const resp = await fetch('records.php?resource=find-email', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ resource: 'find-email', name, phone }),
+            });
+            const data = await resp.json().catch(() => ({}));
+            if (!resp.ok || !data.ok) {
+                msgEl.style.color = '#c8362c';
+                msgEl.textContent = data?.error || '아이디를 찾지 못했습니다.';
+                submitBtn.disabled = false; submitBtn.textContent = '아이디 찾기';
+                return;
+            }
+            msgEl.style.color = '#1b5e20';
+            msgEl.innerHTML = '<b>가입된 아이디(이메일):</b><br>'
+                + '<code style="display:inline-block;margin-top:4px;padding:6px 10px;background:#fbf7ef;border-radius:6px;font-size:14px;color:#0e0d0c;font-family:\'SF Mono\',Menlo,monospace;">' + escapeHtmlSafe(data.email) + '</code>'
+                + '<br><small style="color:#4f4943;font-size:11.5px;display:block;margin-top:6px;">전체 이메일은 가입 시 사용한 메일함을 확인해 주세요.</small>';
+            submitBtn.disabled = false; submitBtn.textContent = '확인';
+            submitBtn.addEventListener('click', () => { close(); openSharedLoginModal('login'); }, { once: true });
+            submitBtn.type = 'button';
+        } catch (err) {
+            msgEl.style.color = '#c8362c';
+            msgEl.textContent = translateAuthError(err?.message, '조회 실패');
+            submitBtn.disabled = false; submitBtn.textContent = '아이디 찾기';
+        }
+    });
+}
+
+/* =========================================================================
+   비밀번호 찾기 모달 — 이메일 입력 → supabase resetPasswordForEmail.
+   ========================================================================= */
+function openFindPasswordModal(prefillEmail = '') {
+    document.querySelectorAll('[data-shared-auth]').forEach(el => el.remove());
+    const md = document.createElement('div');
+    md.dataset.sharedAuth = '1';
+    md.innerHTML = `
+        <div class="shared-auth-backdrop">
+            <div class="shared-auth-panel" role="dialog" aria-modal="true">
+                <button type="button" class="shared-auth-close" aria-label="닫기">&times;</button>
+                <div class="shared-auth-brand"><img src="logo_main.png" alt="YOUNGMAN"></div>
+                <h2 class="shared-auth-title">비밀번호 재설정</h2>
+                <p class="shared-auth-sub">가입한 이메일로 비밀번호 재설정 링크를 보내드립니다.</p>
+                <form class="shared-auth-form" novalidate>
+                    <label>이메일 <input type="email" name="email" required autocomplete="email" placeholder="name@example.com" value="${escapeHtmlSafe(prefillEmail)}"></label>
+                    <p class="shared-auth-message" aria-live="polite"></p>
+                    <button type="submit" class="shared-auth-submit">재설정 메일 보내기</button>
+                </form>
+                <p class="shared-auth-switch">
+                    <button type="button" class="shared-auth-mode-btn" data-back>← 로그인으로 돌아가기</button>
+                </p>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(md);
+    const close = () => md.remove();
+    md.querySelector('.shared-auth-close').addEventListener('click', close);
+    md.querySelector('.shared-auth-backdrop').addEventListener('click', (e) => {
+        if (e.target.classList.contains('shared-auth-backdrop')) close();
+    });
+    md.querySelector('[data-back]').addEventListener('click', () => { close(); openSharedLoginModal('login'); });
+    const form = md.querySelector('.shared-auth-form');
+    const msgEl = md.querySelector('.shared-auth-message');
+    const submitBtn = md.querySelector('.shared-auth-submit');
+    setTimeout(() => form.email?.focus(), 50);
+    form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const email = form.email.value.trim();
+        if (!email) { msgEl.style.color = '#c8362c'; msgEl.textContent = '이메일을 입력해주세요.'; return; }
+        submitBtn.disabled = true; submitBtn.textContent = '메일 보내는 중…'; msgEl.textContent = '';
+        try {
+            if (!supabaseClient) await initSupabase();
+            const { error } = await supabaseClient.auth.resetPasswordForEmail(email, {
+                redirectTo: window.location.origin + '/index.html',
+            });
+            if (error) throw error;
+            msgEl.style.color = '#1b5e20';
+            msgEl.innerHTML = '<b>📧 ' + escapeHtmlSafe(email) + ' 으로 재설정 메일을 보냈습니다.</b><br>'
+                + '<small style="color:#4f4943;font-size:11.5px;display:block;margin-top:6px;">메일함을 확인하고 링크를 클릭한 뒤 새 비밀번호를 설정해 주세요.</small>';
+            submitBtn.textContent = '닫기';
+            submitBtn.disabled = false;
+            submitBtn.type = 'button';
+            submitBtn.addEventListener('click', () => { close(); openSharedLoginModal('login'); }, { once: true });
+        } catch (err) {
+            msgEl.style.color = '#c8362c';
+            msgEl.textContent = translateAuthError(err?.message, '메일 전송 실패');
+            submitBtn.disabled = false; submitBtn.textContent = '재설정 메일 보내기';
+        }
+    });
+}
+
 /**
  * Supabase / OAuth 영문 에러를 한국어 친화 메시지로 변환.
  * 매칭 안 된 케이스는 원본 그대로 (디버깅 용) 또는 fallback 반환.
@@ -951,6 +1107,16 @@ function openSharedLoginModal(initialMode = 'login') {
                         <label>닉네임 <input type="text" name="nickname" minlength="2" maxlength="20" placeholder="2~20자 한글/영문/숫자"></label>
                     </div>
                     <label>비밀번호 <input type="password" name="password" autocomplete="current-password" required minlength="6" placeholder="6자 이상"></label>
+                    <div class="shared-auth-fields" data-login-only style="flex-direction:row;align-items:center;justify-content:space-between;gap:8px;font-size:12.5px;">
+                        <label style="flex-direction:row;align-items:center;gap:6px;font-weight:500;color:#4f4943;cursor:pointer;">
+                            <input type="checkbox" name="rememberMe" checked style="width:14px;height:14px;accent-color:#c8362c;margin:0;"> 로그인 유지
+                        </label>
+                        <span style="display:flex;gap:10px;">
+                            <button type="button" data-find-id style="background:none;border:0;color:#4f4943;font-size:12px;cursor:pointer;text-decoration:underline;font-family:inherit;padding:0;">아이디 찾기</button>
+                            <span style="color:#d4cfc7;">|</span>
+                            <button type="button" data-find-pwd style="background:none;border:0;color:#4f4943;font-size:12px;cursor:pointer;text-decoration:underline;font-family:inherit;padding:0;">비밀번호 찾기</button>
+                        </span>
+                    </div>
                     <div class="shared-auth-fields" data-signup-only hidden>
                         <label>비밀번호 확인 <input type="password" name="passwordConfirm" minlength="6" placeholder="다시 입력"></label>
                         <div class="shared-auth-consents">
@@ -987,6 +1153,7 @@ function openSharedLoginModal(initialMode = 'login') {
     const submitLabel = md.querySelector('[data-submit-label]');
     const googleLabel = md.querySelector('[data-google-label]');
     const signupOnly  = md.querySelectorAll('[data-signup-only]');
+    const loginOnly   = md.querySelectorAll('[data-login-only]');
     const agreeAll    = form.agreeAll;
     const agreeReqs   = [form.agreeTerms, form.agreePrivacy];
     const agreeOpts   = [form.agreeMarketing];
@@ -1002,10 +1169,21 @@ function openSharedLoginModal(initialMode = 'login') {
         switchText.textContent  = isSignup ? '이미 회원이신가요?' : '아직 회원이 아니신가요?';
         modeBtn.textContent     = isSignup ? '로그인' : '회원가입';
         signupOnly.forEach(el => el.hidden = !isSignup);
+        loginOnly.forEach(el => el.hidden = isSignup);
         form.password.setAttribute('autocomplete', isSignup ? 'new-password' : 'current-password');
         msgEl.textContent = '';
     }
     applyMode();
+
+    // 아이디 / 비밀번호 찾기 링크 — 로그인 모달 닫고 별도 모달 open
+    md.querySelector('[data-find-id]')?.addEventListener('click', () => {
+        close();
+        openFindIdModal();
+    });
+    md.querySelector('[data-find-pwd]')?.addEventListener('click', () => {
+        close();
+        openFindPasswordModal(form.email?.value?.trim() || '');
+    });
 
     modeBtn.addEventListener('click', () => { mode = (mode === 'signup') ? 'login' : 'signup'; applyMode(); });
 
@@ -1171,6 +1349,17 @@ function openSharedLoginModal(initialMode = 'login') {
                 const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
                 console.log('[signIn] result', { error, hasSession: !!data?.session });
                 if (error) throw error;
+                // 로그인 유지 체크박스 처리:
+                // 체크: localStorage (supabase default — 영구)
+                // 해제: sessionStorage.erp.endSessionOnClose='1' set + 브라우저 unload 시 sb-* 토큰 제거
+                const remember = form.rememberMe?.checked !== false;
+                try {
+                    if (!remember) {
+                        sessionStorage.setItem('erp.endSessionOnClose', '1');
+                    } else {
+                        sessionStorage.removeItem('erp.endSessionOnClose');
+                    }
+                } catch {}
                 close();
                 await navigateAfterAuth();
             } catch (err) {
