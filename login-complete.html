@@ -32,6 +32,7 @@
     .signup-extra .nick-result { font-size:11.5px; font-weight:600; margin:-6px 0 12px; }
     .signup-extra .nick-result.ok { color:#1b5e20; }
     .signup-extra .nick-result.ng { color:#c8362c; }
+    .signup-extra .phone-row { margin-bottom:12px; }
     .signup-extra .consents { display:flex; flex-direction:column; gap:8px; padding:12px; background:#fbf7ef; border-radius:8px; margin-bottom:12px; }
     .signup-extra .consents label { display:flex; align-items:center; gap:8px; font-size:13px; font-weight:500; color:#4f4943; cursor:pointer; }
     .signup-extra .consents input[type=checkbox] { width:14px; height:14px; accent-color:#c8362c; margin:0; }
@@ -60,6 +61,7 @@
                 <button type="button" class="check-btn" id="extraCheckNick">중복확인</button>
             </div>
             <div class="nick-result" id="extraNickResult" hidden></div>
+            <label class="field phone-row">휴대폰 번호 <input type="tel" id="extraPhone" autocomplete="tel" placeholder="010-0000-0000" required></label>
             <div class="consents">
                 <label><input type="checkbox" id="extraAgreeAll"> 전체 동의</label>
                 <label><input type="checkbox" id="extraAgreeTerms" data-req> <span class="req">필수</span> <a href="terms.html" target="_blank" rel="noopener">이용약관</a>에 동의</label>
@@ -203,6 +205,7 @@
         function setupExtraForm(session, target) {
             const form = document.getElementById('extraForm');
             const nickEl = document.getElementById('extraNickname');
+            const phoneEl = document.getElementById('extraPhone');
             const checkBtn = document.getElementById('extraCheckNick');
             const resultEl = document.getElementById('extraNickResult');
             const errEl = document.getElementById('extraErr');
@@ -258,17 +261,21 @@
                 e.preventDefault();
                 errEl.textContent = '';
                 const nickname = nickEl.value.trim();
+                const phoneRaw = phoneEl.value.trim();
+                const phoneDigits = phoneRaw.replace(/\D/g, '');
                 if (!nickname) { errEl.textContent = '닉네임을 입력해주세요.'; return; }
                 if (!nickChecked) { errEl.textContent = '닉네임 중복확인 후 진행해주세요.'; return; }
+                if (!phoneDigits) { errEl.textContent = '휴대폰 번호를 입력해주세요.'; return; }
+                if (!/^01[016789]\d{7,8}$/.test(phoneDigits)) { errEl.textContent = '올바른 휴대폰 번호를 입력해주세요 (010-0000-0000).'; return; }
                 if (!agreeTerms.checked || !agreePrivacy.checked) { errEl.textContent = '필수 약관에 동의해주세요.'; return; }
 
                 submitBtn.disabled = true; submitBtn.textContent = '저장 중…';
                 try {
-                    // 1) members 행 update (nickname)
+                    // 1) members 행 update (nickname + phone)
                     const updateResp = await fetch('records.php?resource=auth-profile', {
                         method: 'PUT',
                         headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + session.access_token },
-                        body: JSON.stringify({ resource: 'auth-profile', data: { nickname } }),
+                        body: JSON.stringify({ resource: 'auth-profile', data: { nickname, phone: phoneDigits } }),
                     });
                     const updateData = await updateResp.json().catch(() => ({}));
                     if (!updateResp.ok || !updateData?.ok) throw new Error(updateData?.error || ('HTTP ' + updateResp.status));
@@ -282,6 +289,7 @@
                             await client.auth.updateUser({
                                 data: {
                                     nickname,
+                                    phone: phoneDigits,
                                     terms_agreed: true,
                                     privacy_agreed: true,
                                     marketing_opt_in: !!agreeMarketing.checked,
