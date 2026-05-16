@@ -48,6 +48,7 @@ class SolapiProvider extends SmsProvider
 
         $endpoint = 'https://api.solapi.com/messages/v4/send-many/detail';
         $rawResponse = null;
+        $http = null;
         try {
             $auth = $this->buildAuthHeader();
             $ch = curl_init($endpoint);
@@ -86,6 +87,11 @@ class SolapiProvider extends SmsProvider
             $d = preg_replace('/\D/', '', (string)$v);
             return $d === '' ? '' : substr($d, -11);
         };
+
+        // raw response 가 null/문자열이면 markAllFailed — 새 로직 진입 전 안전 가드
+        if (!is_array($rawResponse)) {
+            return $this->markAllFailed($messages, '응답을 파싱할 수 없습니다 (HTTP ' . ($http ?? '?') . ')');
+        }
 
         // 1) failedMessageList 의 to 추출
         $failedSet = [];

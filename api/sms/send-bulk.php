@@ -37,6 +37,39 @@ header('Access-Control-Allow-Headers: Content-Type, Authorization');
 header('Access-Control-Allow-Methods: POST, OPTIONS');
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') { http_response_code(204); exit; }
 
+// cafe24 PHP default timeout(30s) 이 Solapi 25s curl + 기타 처리로 초과되면 502.
+// 외부 API 호출 포함이라 명시적으로 120s 확보.
+@set_time_limit(120);
+@ini_set('max_execution_time', '120');
+
+// fatal / uncaught exception 도 client 에 JSON 으로 반환 → 502 대신 의미있는 에러.
+set_exception_handler(function ($e) {
+    if (!headers_sent()) {
+        http_response_code(500);
+        header('Content-Type: application/json; charset=utf-8');
+    }
+    echo json_encode([
+        'ok' => false,
+        'error' => '서버 오류: ' . $e->getMessage(),
+        'where' => basename($e->getFile()) . ':' . $e->getLine(),
+    ], JSON_UNESCAPED_UNICODE);
+    exit;
+});
+register_shutdown_function(function () {
+    $err = error_get_last();
+    if ($err && in_array($err['type'] ?? 0, [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR, E_USER_ERROR], true)) {
+        if (!headers_sent()) {
+            http_response_code(500);
+            header('Content-Type: application/json; charset=utf-8');
+        }
+        echo json_encode([
+            'ok' => false,
+            'error' => '서버 fatal: ' . ($err['message'] ?? '알 수 없음'),
+            'where' => basename($err['file'] ?? '') . ':' . ($err['line'] ?? '?'),
+        ], JSON_UNESCAPED_UNICODE);
+    }
+});
+
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     http_response_code(405);
     echo json_encode(['ok' => false, 'error' => 'POST 만 허용됩니다.'], JSON_UNESCAPED_UNICODE);
