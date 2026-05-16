@@ -596,40 +596,30 @@ function renderFormUse() {
     document.getElementById('clearSelBtn')?.addEventListener('click', () => { selectedIds.clear(); render(); });
     document.getElementById('bulkDelBtn')?.addEventListener('click', () => bulkDeleteSelected(form));
 
-    // 텍스트 검색 — debounce + IME(한글) 조합 중 render skip
+    // 텍스트 검색 — DOM 재생성 없이 기존 행만 hide/show. 한글 IME 조합 보존.
     const searchInput = document.getElementById('searchInput');
     if (searchInput) {
         let timer = null;
-        let composing = false;
-        const fire = (v) => {
-            clearTimeout(timer);
-            timer = setTimeout(() => {
-                searchQuery = v;
-                render();
-                requestAnimationFrame(() => {
-                    const newInput = document.getElementById('searchInput');
-                    if (newInput) {
-                        newInput.focus();
-                        try { newInput.setSelectionRange(v.length, v.length); } catch {}
-                    }
-                });
-            }, 350);
+        const apply = (q) => {
+            const lower = (q || '').trim().toLowerCase();
+            // 양식 사용 모드의 행 (.ledger-card / table tbody tr) 만 대상
+            document.querySelectorAll('.accordion-card .ledger-cards > .ledger-card, .accordion-card .ledger-tbl tbody tr').forEach(el => {
+                if (el.querySelector('td[colspan]')) return;
+                const matched = !lower || el.textContent.toLowerCase().includes(lower);
+                el.style.display = matched ? '' : 'none';
+            });
+            searchQuery = q;
         };
-        searchInput.addEventListener('compositionstart', () => { composing = true; });
-        searchInput.addEventListener('compositionend',   (e) => { composing = false; fire(e.target.value); });
-        searchInput.addEventListener('input', (e) => { if (!composing) fire(e.target.value); });
-        // 엔터 키는 즉시 적용
+        searchInput.addEventListener('input', (e) => {
+            const v = e.target.value;
+            clearTimeout(timer);
+            timer = setTimeout(() => apply(v), 80);
+        });
         searchInput.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                clearTimeout(timer);
-                searchQuery = e.target.value;
-                render();
-            }
             if (e.key === 'Escape') {
                 e.preventDefault();
-                searchQuery = '';
-                render();
+                e.target.value = '';
+                apply('');
             }
         });
     }

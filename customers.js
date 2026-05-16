@@ -258,6 +258,22 @@ async function loadRecords() {
     renderRecords();
 }
 
+/* 검색 입력 → 기존 DOM 행을 hide/show. renderRecords() 호출 안 함 → input 요소 보존
+   → 한글 IME 조합 안 깨짐 (모바일 keyboard 가 jamo 별 compositionend 발화하는 케이스 대응). */
+function filterDOMRowsBySearch(gid, query) {
+    const card = document.querySelector(`.accordion-card[data-gid="${gid}"]`);
+    if (!card) return;
+    const q = (query || '').trim().toLowerCase();
+    // Desktop 표 행 + Mobile 카드 모두 대상.
+    const rows = card.querySelectorAll('.ledger-cards > .ledger-card, .ledger-tbl tbody tr');
+    rows.forEach(el => {
+        // 빈 상태 / colspan placeholder row 는 건드리지 않음.
+        if (el.querySelector('td[colspan]')) return;
+        const matched = !q || el.textContent.toLowerCase().includes(q);
+        el.style.display = matched ? '' : 'none';
+    });
+}
+
 function applyFilters(rows, groupId) {
     let out = applyColumnFilters(filterState.filters, rows, (r, k) => r.data?.[k]);
     const q = (searchByGroup[groupId] || '').trim().toLowerCase();
@@ -612,27 +628,19 @@ function bindTableEvents() {
     document.querySelectorAll('[data-manage-switch]').forEach(b => {
         b.addEventListener('click', (e) => { e.preventDefault(); toggleManaged(parseInt(b.dataset.id, 10)); });
     });
-    // 그룹별 검색 입력 — IME(한글) 조합 중에는 render skip. 조합 완료 또는 일반 입력 시 debounce 후 재렌더.
+    // 그룹별 검색 입력 — DOM 재생성 없이 기존 행만 hide/show. IME(한글) 조합 보존 핵심.
     document.querySelectorAll('[data-search-gid]').forEach(input => {
         const gid = parseInt(input.dataset.searchGid, 10);
         let timer = null;
-        let composing = false;
         const trigger = () => {
             clearTimeout(timer);
             timer = setTimeout(() => {
                 searchByGroup[gid] = input.value;
-                const caret = input.selectionStart;
-                renderRecords();
-                const restored = document.querySelector(`[data-search-gid="${gid}"]`);
-                if (restored) {
-                    restored.focus();
-                    try { restored.setSelectionRange(caret, caret); } catch {}
-                }
-            }, 220);
+                filterDOMRowsBySearch(gid, input.value);
+            }, 80);
         };
-        input.addEventListener('compositionstart', () => { composing = true; });
-        input.addEventListener('compositionend',   () => { composing = false; trigger(); });
-        input.addEventListener('input', () => { if (!composing) trigger(); });
+        // input 이벤트만 — composition 도중에도 안전 (DOM 재생성 안 함).
+        input.addEventListener('input', trigger);
     });
     document.querySelectorAll('[data-search-clear-gid]').forEach(btn => {
         btn.addEventListener('click', (e) => {
