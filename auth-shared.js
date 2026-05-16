@@ -300,14 +300,13 @@ export function refreshNavForms() { return refreshNavFormsCache(); }
      - cache-bust replace 로 bfcache 회피.
    ========================================================================= */
 async function navigateAfterAuth() {
-    // 원래 가려던 페이지 (현재 URL) 을 next 로 인코딩 — login-complete 가 redirect.
-    let next = '';
+    // 원래 로그인 시도한 페이지를 그대로 next 로 — login-complete 가 같은 페이지로 돌려보냄.
+    // 메인(index.html)에서 로그인하면 메인에, 서브 페이지에서 로그인하면 그 서브 페이지로.
+    let next = 'index.html';
     try {
         const path = window.location.pathname.replace(/^\//, '');
-        next = (path || 'customers.html') + window.location.search;
-        // index.html 에서 로그인 했으면 customers.html 로 (메인 대신 작업 페이지로).
-        if (!path || /^index\.html/i.test(path)) next = 'customers.html';
-    } catch { next = 'customers.html'; }
+        next = (path || 'index.html') + window.location.search;
+    } catch {}
 
     const target = 'login-complete.html?next=' + encodeURIComponent(next);
     try { window.location.replace(target); }
@@ -1048,10 +1047,11 @@ function openSharedLoginModal(initialMode = 'login') {
         }
 
         // OAuth callback 도 login-complete.html 을 거치게 해서 일관된 transition 흐름.
+        // 사용자가 로그인 시도한 페이지로 그대로 돌려보냄 — 메인이면 메인, 서브면 서브.
         const origin = window.location.origin;
-        const path   = window.location.pathname.replace(/^\//, '') || 'customers.html';
+        const path   = window.location.pathname.replace(/^\//, '') || 'index.html';
         const search = window.location.search || '';
-        const nextRaw = /^index\.html/i.test(path) ? 'customers.html' : (path + search);
+        const nextRaw = path + search;
         const redirectTo = origin + '/login-complete.html?next=' + encodeURIComponent(nextRaw);
 
         // signInWithOAuth 는 sync 으로 OAuth URL 생성 + location.assign 시도 → 같은 user gesture 안에 실행.
