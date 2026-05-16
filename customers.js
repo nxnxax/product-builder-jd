@@ -951,6 +951,11 @@ function showSolapiSetupGuide() {
                         <b>영맨 사이트 [내 정보 &gt; 문자설정] 으로 돌아와서 붙여넣기 → 저장</b>
                     </li>
                 </ol>
+                <div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:12px 14px;margin:6px 0 14px;font-size:14px;line-height:1.7;color:#7c2d12;">
+                    💡 <b>요금 안내</b><br>
+                    문자 요금은 <b>사용자의 Solapi 계정 잔액</b>에서 차감됩니다.<br>
+                    솔라피에서 <b>문자 요금 충전 후</b> 사용하실 수 있습니다.
+                </div>
             </div>
             <footer class="modal-footer" style="display:flex;gap:8px;padding:16px 22px 18px;">
                 <button type="button" class="tiny-btn" data-cancel
