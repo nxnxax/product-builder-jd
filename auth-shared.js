@@ -347,6 +347,26 @@ export function performLogout(e) {
     }
 }
 
+// =========================================================================
+// bfcache 복원 시 강제 reload — auth 상태 stale 차단.
+//
+// 브라우저 (특히 Safari, Chrome 모바일) 는 페이지를 메모리에 보관해서 back/forward
+// 시 즉시 복원함. JS module 재실행 없이 옛 DOM + 옛 state 그대로. logout 후
+// 옛 페이지로 돌아가면 옛 데이터 보이는 분리 현상 (헤더는 anon 인식, 본문은 옛
+// fetched 결과) 발생.
+//
+// pageshow event 의 persisted=true 가 bfcache 복원 신호. 이때 강제 reload 하면
+// module 재실행 + fresh fetch → 현재 auth 상태와 일관된 화면.
+// =========================================================================
+if (typeof window !== 'undefined' && !window.__ymanPageshowBound) {
+    window.__ymanPageshowBound = true;
+    window.addEventListener('pageshow', (e) => {
+        if (e.persisted) {
+            try { window.location.reload(); } catch {}
+        }
+    });
+}
+
 // document 레벨 backup 클릭 위임 — 브라우저 navigation 을 절대 막지 않음 (가장 reliable).
 //
 // 중요: click 처리 중에 body.is-anon 같은 클래스를 즉시 추가하면 안 된다.

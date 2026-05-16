@@ -39,45 +39,41 @@
 
         const TARGET = 'index.html?_a=' + Date.now();
 
-        // 광범위 storage cleanup — 미래의 supabase key prefix 변화 대비 broad 패턴.
+        // 가장 강력한 cleanup — localStorage / sessionStorage 전체 wipe.
+        // 사용자의 양식 슬롯 선택 같은 prefs 도 사라지지만, 로그아웃 후엔 어차피 anon 상태라 무관.
+        // 부분 cleanup 패턴이 prefix 변화 / 미지 key 로 인해 일부 잔재 남는 경우 차단.
         function clearStorage() {
-            for (const store of [sessionStorage, localStorage]) {
-                try {
-                    const keys = [];
-                    for (let i = 0; i < store.length; i++) keys.push(store.key(i));
-                    keys.forEach(k => {
-                        if (!k) return;
-                        const low = k.toLowerCase();
-                        if (low.startsWith('erp')
-                            || low.startsWith('sb-')
-                            || low.includes('supabase')
-                            || low.includes('auth-token')
-                            || low.includes('access_token')
-                            || low.includes('refresh_token')) {
-                            try { store.removeItem(k); } catch {}
-                        }
-                    });
-                } catch {}
-            }
+            try { sessionStorage.clear(); } catch {}
+            try { localStorage.clear(); } catch {}
             // 혹시 cookie 잔재 — supabase 는 쿠키 안 쓰지만 안전망.
             try {
                 document.cookie.split(';').forEach(c => {
                     const eq = c.indexOf('=');
                     const name = (eq > -1 ? c.substr(0, eq) : c).trim();
                     if (!name) return;
-                    const low = name.toLowerCase();
-                    if (low.startsWith('sb-') || low.includes('supabase') || low.includes('auth')) {
-                        document.cookie = name + '=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/;';
-                        document.cookie = name + '=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/; domain=' + location.hostname + ';';
-                    }
+                    // 모든 쿠키 clear (이 사이트는 쿠키 거의 안 씀)
+                    document.cookie = name + '=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/;';
+                    document.cookie = name + '=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/; domain=' + location.hostname + ';';
                 });
+            } catch {}
+            // IndexedDB 도 가능성 있음 — supabase v2 는 기본적으로 안 쓰지만 안전망.
+            try {
+                if (typeof indexedDB !== 'undefined' && indexedDB.databases) {
+                    indexedDB.databases().then(dbs => {
+                        dbs.forEach(db => {
+                            if (db?.name && /supabase|auth|sb-/.test(db.name.toLowerCase())) {
+                                try { indexedDB.deleteDatabase(db.name); } catch {}
+                            }
+                        });
+                    }).catch(() => {});
+                }
             } catch {}
         }
 
         // 1) Supabase signOut — scope: 'global' 로 서버의 모든 refresh token revoke.
         //    다른 브라우저/디바이스에서 silent refresh 로 살아나는 시나리오 차단.
         try {
-            const mod = await import('./auth-shared.js?v=20260516-global-signout');
+            const mod = await import('./auth-shared.js?v=20260516-bfcache-fix');
             const result = await mod.initSupabase().catch(() => null);
             const client = result?.client;
             if (client?.auth?.signOut) {
