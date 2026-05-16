@@ -158,15 +158,21 @@ function is_valid_nickname($value) {
     return (bool)preg_match('/^[A-Za-z0-9_\-가-힣]+$/u', $v);
 }
 
-function nickname_taken(PDO $pdo, $store, $nickname) {
+function nickname_taken(PDO $pdo, $store, $nickname, $excludeEmail = null) {
     $columns = $store['columns'];
     $col = first_existing_column($columns, ['nickname', 'nick', 'display_name']);
     if (!$col) return false; // no column = nothing to dedupe on
-    $stmt = $pdo->prepare(
-        "SELECT 1 FROM " . quote_identifier($store['table']) .
-        " WHERE LOWER(" . quote_identifier($col) . ") = :nick LIMIT 1"
-    );
-    $stmt->execute([':nick' => mb_strtolower(trim((string)$nickname), 'UTF-8')]);
+    $emailCol = $store['email_column'];
+    $sql = "SELECT 1 FROM " . quote_identifier($store['table'])
+         . " WHERE LOWER(" . quote_identifier($col) . ") = :nick";
+    $params = [':nick' => mb_strtolower(trim((string)$nickname), 'UTF-8')];
+    if ($excludeEmail !== null && $excludeEmail !== '' && $emailCol) {
+        $sql .= " AND LOWER(" . quote_identifier($emailCol) . ") <> :excl";
+        $params[':excl'] = strtolower(trim((string)$excludeEmail));
+    }
+    $sql .= " LIMIT 1";
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute($params);
     return (bool)$stmt->fetchColumn();
 }
 
@@ -1828,6 +1834,20 @@ try {
                 $assignments[] = quote_identifier($phoneCol) . ' = :phone';
                 $plainPhone = clean($data['phone']);
                 $params[':phone'] = ($plainPhone !== null && $plainPhone !== '') ? youngman_encrypt($plainPhone) : $plainPhone;
+            }
+
+            // 닉네임 update — Google 가입 후 추가 입력 받은 nickname 또는 사용자 변경
+            $nickCol = first_existing_column($cols, ['nickname', 'nick', 'display_name']);
+            if ($nickCol && isset($data['nickname'])) {
+                $nick = clean($data['nickname']);
+                if ($nick !== null && !is_valid_nickname($nick)) {
+                    respond(['ok' => false, 'error' => '닉네임은 2~20자, 한글/영문/숫자/_/- 만 가능합니다.'], 400);
+                }
+                if ($nick !== null && nickname_taken($pdo, $store, $nick, $email)) {
+                    respond(['ok' => false, 'error' => '이미 사용 중인 닉네임입니다.'], 409);
+                }
+                $assignments[] = quote_identifier($nickCol) . ' = :nickname';
+                $params[':nickname'] = $nick;
             }
 
             $updatedCol = first_existing_column($cols, ['updated_at', 'modified_at']);

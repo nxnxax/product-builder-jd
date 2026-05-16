@@ -17,14 +17,58 @@
     small { display:block; color:#8a847e; font-size:12px; margin-top:6px }
     a { color:#0e0d0c; font-weight:600 }
     .err { color:#c8362c; font-weight:700 }
+
+    /* Google 신규 가입자 추가 정보 입력 form */
+    .signup-extra { max-width:420px; margin:0 auto; padding:28px 26px; background:#fff; border-radius:16px; box-shadow:0 24px 60px rgba(20,14,8,.18); }
+    .signup-extra h2 { margin:0 0 8px; font-size:22px; font-weight:800; color:#0e0d0c; text-align:center; }
+    .signup-extra .sub { margin:0 0 18px; color:#8a847e; font-size:13px; text-align:center; }
+    .signup-extra .field { display:flex; flex-direction:column; gap:5px; font-size:12.5px; font-weight:600; color:#4f4943; }
+    .signup-extra .field input { padding:10px 13px; border:1px solid rgba(20,14,8,.16); border-radius:8px; font-size:14px; font-family:inherit; outline:none; }
+    .signup-extra .field input:focus { border-color:#0e0d0c; }
+    .signup-extra .nick-row { display:flex; gap:6px; align-items:flex-end; margin-bottom:12px; }
+    .signup-extra .nick-row .field { flex:1; }
+    .signup-extra .check-btn { padding:9px 12px; background:#0e0d0c; color:#fff; border:0; border-radius:8px; font-size:12px; font-weight:700; cursor:pointer; white-space:nowrap; font-family:inherit; }
+    .signup-extra .check-btn:disabled { opacity:.5; cursor:wait; }
+    .signup-extra .nick-result { font-size:11.5px; font-weight:600; margin:-6px 0 12px; }
+    .signup-extra .nick-result.ok { color:#1b5e20; }
+    .signup-extra .nick-result.ng { color:#c8362c; }
+    .signup-extra .consents { display:flex; flex-direction:column; gap:8px; padding:12px; background:#fbf7ef; border-radius:8px; margin-bottom:12px; }
+    .signup-extra .consents label { display:flex; align-items:center; gap:8px; font-size:13px; font-weight:500; color:#4f4943; cursor:pointer; }
+    .signup-extra .consents input[type=checkbox] { width:14px; height:14px; accent-color:#c8362c; margin:0; }
+    .signup-extra .consents .req { font-size:10.5px; font-weight:700; color:#c8362c; background:rgba(200,54,44,.1); padding:2px 6px; border-radius:4px; }
+    .signup-extra .consents .opt { font-size:10.5px; font-weight:700; color:#4f4943; background:rgba(20,14,8,.08); padding:2px 6px; border-radius:4px; }
+    .signup-extra .consents a { color:#0e0d0c; text-decoration:underline; font-weight:600; }
+    .signup-extra .err-msg { color:#c8362c; font-size:12.5px; font-weight:600; min-height:18px; margin:0 0 8px; }
+    .signup-extra .submit { width:100%; padding:12px 18px; background:#0e0d0c; color:#fff; border:0; border-radius:8px; font-size:14px; font-weight:700; cursor:pointer; font-family:inherit; }
+    .signup-extra .submit:disabled { opacity:.55; cursor:wait; }
 </style>
 </head>
 <body>
-    <div class="wrap" role="status" aria-live="polite">
+    <div class="wrap" role="status" aria-live="polite" id="loadingState">
         <img src="logo_main.png" alt="YOUNGMAN">
         <div class="ring" aria-hidden="true"></div>
         <p id="msg">로그인 처리 중…<small>잠시 후 이전 페이지로 돌아갑니다.</small></p>
         <small>이동되지 않으면 <a href="customers.html">고객관리대장으로 이동</a>하세요.</small>
+    </div>
+
+    <div class="wrap" id="extraWrap" style="display:none;">
+        <form class="signup-extra" id="extraForm">
+            <h2>가입을 완료해 주세요</h2>
+            <p class="sub">YOUNGMAN 에 처음 오셨네요. 닉네임 설정과 약관 동의가 필요합니다.</p>
+            <div class="nick-row">
+                <label class="field">닉네임 <input type="text" id="extraNickname" minlength="2" maxlength="20" placeholder="2~20자 한글/영문/숫자" required></label>
+                <button type="button" class="check-btn" id="extraCheckNick">중복확인</button>
+            </div>
+            <div class="nick-result" id="extraNickResult" hidden></div>
+            <div class="consents">
+                <label><input type="checkbox" id="extraAgreeAll"> 전체 동의</label>
+                <label><input type="checkbox" id="extraAgreeTerms" data-req> <span class="req">필수</span> <a href="terms.html" target="_blank" rel="noopener">이용약관</a>에 동의</label>
+                <label><input type="checkbox" id="extraAgreePrivacy" data-req> <span class="req">필수</span> <a href="privacy.html" target="_blank" rel="noopener">개인정보처리방침</a>에 동의</label>
+                <label><input type="checkbox" id="extraAgreeMarketing"> <span class="opt">선택</span> 마케팅 정보 수신 동의</label>
+            </div>
+            <p class="err-msg" id="extraErr"></p>
+            <button type="submit" class="submit" id="extraSubmit">가입 완료</button>
+        </form>
     </div>
     <script type="module">
         /* =========================================================================
@@ -61,7 +105,7 @@
 
         let session = null;
         try {
-            const mod = await import('./auth-shared.js?v=20260516-modal-dup-check');
+            const mod = await import('./auth-shared.js?v=20260516-google-extra');
             const result = await mod.initSupabase().catch(() => null);
             const client = result?.client;
             if (client?.auth?.getSession) {
@@ -74,7 +118,7 @@
         if (!session) {
             await new Promise(r => setTimeout(r, 120));
             try {
-                const mod = await import('./auth-shared.js?v=20260516-modal-dup-check');
+                const mod = await import('./auth-shared.js?v=20260516-google-extra');
                 const result = await mod.initSupabase().catch(() => null);
                 if (result?.client?.auth?.getSession) {
                     const { data } = await result.client.auth.getSession();
@@ -90,8 +134,12 @@
         } else {
             // session 확정 → members 행 자동 보강 (idempotent ensure mode).
             // supabase auth 에는 있는데 public.members 에 없는 '고아 user' 케이스 자동 복구.
+            const meta = session.user?.user_metadata || {};
+            const provider = session.user?.app_metadata?.provider || '';
+            const isGoogle = provider === 'google';
+            let isNewUser = false;
+            let ensureSucceeded = false;
             try {
-                const meta = session.user?.user_metadata || {};
                 const ensureResp = await fetch('records.php?resource=auth-member&ensure=1', {
                     method: 'POST',
                     headers: {
@@ -102,7 +150,6 @@
                         resource: 'auth-member',
                         ensure: true,
                         email: session.user?.email || '',
-                        // metadata 의 user 정보도 함께 보냄 → records.php 가 우선 사용
                         fullName: meta.full_name || meta.name || '',
                         phone:    meta.phone || '',
                         nickname: meta.nickname || '',
@@ -110,8 +157,10 @@
                 });
                 const ensureData = await ensureResp.json().catch(() => ({}));
                 console.log('[ensure member]', ensureResp.status, ensureData);
-                // 실패 시 sessionStorage 에 기록 — 다음 페이지에서 확인 가능
-                if (!ensureResp.ok && !ensureData?.ok) {
+                ensureSucceeded = ensureResp.ok && (ensureData?.ok || ensureData?.already);
+                // 새로 INSERT 된 경우 (already=false) — Google 가입자라면 닉네임/약관 입력 필요
+                isNewUser = ensureSucceeded && !ensureData?.already;
+                if (!ensureSucceeded) {
                     try {
                         sessionStorage.setItem('erp.ensureError', JSON.stringify({
                             status: ensureResp.status,
@@ -123,6 +172,15 @@
             } catch (e) {
                 console.error('[ensure member] fetch error', e);
                 try { sessionStorage.setItem('erp.ensureError', JSON.stringify({ error: String(e?.message || e), at: new Date().toISOString() })); } catch {}
+            }
+
+            // Google 가입자 + 닉네임 미설정 → 추가 정보 입력 form 표시 후 그 단계에서 redirect.
+            const needsExtra = isGoogle && isNewUser && !(meta.nickname || '').trim();
+            if (needsExtra) {
+                document.getElementById('loadingState').style.display = 'none';
+                document.getElementById('extraWrap').style.display = 'flex';
+                setupExtraForm(session, target);
+                return;   // redirect skip — submit 후에 진행
             }
 
             // 원래 가려던 페이지로 cache-bust replace.
@@ -138,6 +196,114 @@
                     setTimeout(() => { try { window.location.reload(); } catch {} }, 800);
                 }
             }, 1800);
+        }
+
+        // Google 신규 가입자 — 닉네임 + 약관 입력 form 처리.
+        function setupExtraForm(session, target) {
+            const form = document.getElementById('extraForm');
+            const nickEl = document.getElementById('extraNickname');
+            const checkBtn = document.getElementById('extraCheckNick');
+            const resultEl = document.getElementById('extraNickResult');
+            const errEl = document.getElementById('extraErr');
+            const submitBtn = document.getElementById('extraSubmit');
+            const agreeAll = document.getElementById('extraAgreeAll');
+            const agreeTerms = document.getElementById('extraAgreeTerms');
+            const agreePrivacy = document.getElementById('extraAgreePrivacy');
+            const agreeMarketing = document.getElementById('extraAgreeMarketing');
+            let nickChecked = false;
+
+            // 전체동의 체크 동기화
+            agreeAll.addEventListener('change', () => {
+                [agreeTerms, agreePrivacy, agreeMarketing].forEach(el => { el.checked = agreeAll.checked; });
+            });
+            [agreeTerms, agreePrivacy, agreeMarketing].forEach(el => el.addEventListener('change', () => {
+                agreeAll.checked = agreeTerms.checked && agreePrivacy.checked && agreeMarketing.checked;
+            }));
+
+            nickEl.addEventListener('input', () => {
+                resultEl.hidden = true;
+                nickChecked = false;
+            });
+
+            // 닉네임 중복확인
+            checkBtn.addEventListener('click', async () => {
+                const v = nickEl.value.trim();
+                if (!v) { resultEl.hidden=false; resultEl.className='nick-result ng'; resultEl.textContent='닉네임을 입력해주세요.'; return; }
+                checkBtn.disabled = true; checkBtn.textContent = '확인 중…';
+                try {
+                    const resp = await fetch('records.php?resource=auth-availability&nickname=' + encodeURIComponent(v), { method: 'GET' });
+                    const data = await resp.json().catch(() => ({}));
+                    if (data?.nickname_invalid) {
+                        resultEl.hidden=false; resultEl.className='nick-result ng';
+                        resultEl.textContent = '닉네임은 2~20자, 한글/영문/숫자/_/- 만 가능합니다.';
+                    } else if (data?.nickname_taken === true) {
+                        resultEl.hidden=false; resultEl.className='nick-result ng';
+                        resultEl.textContent = '이미 사용 중인 닉네임입니다.';
+                    } else {
+                        resultEl.hidden=false; resultEl.className='nick-result ok';
+                        resultEl.textContent = '✅ 사용 가능한 닉네임입니다.';
+                        nickChecked = true;
+                    }
+                } catch (e) {
+                    resultEl.hidden=false; resultEl.className='nick-result ng';
+                    resultEl.textContent = '확인 실패: ' + (e?.message || e);
+                } finally {
+                    checkBtn.disabled = false; checkBtn.textContent = '중복확인';
+                }
+            });
+
+            // submit
+            form.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                errEl.textContent = '';
+                const nickname = nickEl.value.trim();
+                if (!nickname) { errEl.textContent = '닉네임을 입력해주세요.'; return; }
+                if (!nickChecked) { errEl.textContent = '닉네임 중복확인 후 진행해주세요.'; return; }
+                if (!agreeTerms.checked || !agreePrivacy.checked) { errEl.textContent = '필수 약관에 동의해주세요.'; return; }
+
+                submitBtn.disabled = true; submitBtn.textContent = '저장 중…';
+                try {
+                    // 1) members 행 update (nickname)
+                    const updateResp = await fetch('records.php?resource=auth-profile', {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + session.access_token },
+                        body: JSON.stringify({ resource: 'auth-profile', data: { nickname } }),
+                    });
+                    const updateData = await updateResp.json().catch(() => ({}));
+                    if (!updateResp.ok || !updateData?.ok) throw new Error(updateData?.error || ('HTTP ' + updateResp.status));
+
+                    // 2) supabase user_metadata 업데이트 (nickname + 약관 동의 기록)
+                    try {
+                        const mod = await import('./auth-shared.js?v=20260516-google-extra');
+                        const result = await mod.initSupabase().catch(() => null);
+                        const client = result?.client;
+                        if (client?.auth?.updateUser) {
+                            await client.auth.updateUser({
+                                data: {
+                                    nickname,
+                                    terms_agreed: true,
+                                    privacy_agreed: true,
+                                    marketing_opt_in: !!agreeMarketing.checked,
+                                    consent_at: new Date().toISOString(),
+                                    app_registered: true,
+                                },
+                            });
+                        }
+                    } catch {}
+
+                    // 3) 원래 가려던 페이지로 이동
+                    const sep = target.includes('?') ? '&' : '?';
+                    const url = target + sep + '_a=' + Date.now();
+                    try { window.location.replace(url); }
+                    catch { try { window.location.href = url; } catch {} }
+                } catch (err) {
+                    errEl.textContent = '저장 실패: ' + (err?.message || err);
+                    submitBtn.disabled = false; submitBtn.textContent = '가입 완료';
+                }
+            });
+
+            // 닉네임 input 자동 focus
+            setTimeout(() => nickEl?.focus(), 100);
         }
     </script>
 </body>
