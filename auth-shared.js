@@ -82,7 +82,9 @@ async function ensureMemberRowOnce() {
                 }),
             });
             const data = await resp.json().catch(() => ({}));
-            console.log('[ensure member auto]', resp.status, data);
+            // 명시 string 으로 출력 — Object 펼쳐야 보이는 문제 차단
+            console.log('[ensure member auto] STATUS=' + resp.status + ' ERROR=' + (data?.error || '(none)') + ' COLUMNS=' + JSON.stringify(data?.columns || []) + ' TABLE=' + (data?.table || '(none)'));
+            console.log('[ensure member auto] FULL', data);
             if (resp.ok && (data?.ok || data?.already)) {
                 try { sessionStorage.setItem('erp.memberEnsured', '1'); } catch {}
             } else {
@@ -90,9 +92,14 @@ async function ensureMemberRowOnce() {
                     sessionStorage.setItem('erp.ensureError', JSON.stringify({
                         status: resp.status,
                         error: data?.error || 'unknown',
+                        columns: data?.columns,
+                        table: data?.table,
+                        sqlState: data?.sql_state,
                         at: new Date().toISOString(),
                     }));
                 } catch {}
+                // 사용자가 즉시 확인 가능하도록 console.error 로 강조
+                console.error('[ensure member auto] 멤버 행 생성 실패: ' + (data?.error || 'HTTP ' + resp.status));
             }
         } catch (e) {
             console.error('[ensure member auto] fetch error', e);

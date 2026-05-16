@@ -6,7 +6,7 @@ import {
     mountAppHeader,
     refreshAppHeader,
     getInitial,
-} from './auth-shared.js?v=20260516-auto-ensure';
+} from './auth-shared.js?v=20260516-ensure-loud-log';
 
 const tabButtons = document.querySelectorAll('.side-nav button[data-tab]');
 const tabSections = document.querySelectorAll('.profile-tab');
