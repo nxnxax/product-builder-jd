@@ -29,14 +29,19 @@ class SolapiProvider extends SmsProvider
             return $this->makeDryRunResponse($messages);
         }
 
+        $imageId = $options['imageId'] ?? null;   // 사전 업로드된 이미지 ID (MMS 첨부)
         $payload = [
-            'messages' => array_map(function ($m) use ($from) {
+            'messages' => array_map(function ($m) use ($from, $imageId) {
                 $row = [
                     'to'   => $m['to'],
                     'from' => $from,
                     'text' => $m['text'],
                 ];
-                // 90 byte 초과 시 자동 LMS 로 전환 (Solapi 가 type 추론)
+                if ($imageId) {
+                    $row['imageId'] = $imageId;
+                    $row['type']    = 'MMS';
+                }
+                // 이미지 없으면 Solapi 가 90byte 기준으로 SMS/LMS 자동 판정.
                 return $row;
             }, $messages),
         ];
@@ -104,6 +109,55 @@ class SolapiProvider extends SmsProvider
             'dryRun'      => false,
             'rawResponse' => $rawResponse,
         ];
+    }
+
+    /**
+     * Solapi storage 에 이미지 업로드 → fileId 반환.
+     * 문서: https://developers.solapi.com/references/storage/uploadFile
+     * @param string $base64  base64 인코딩된 raw 이미지 (data: prefix 없이)
+     * @param string $name    원본 파일명 (옵션)
+     * @return string|null    성공 시 fileId, 실패 시 null
+     */
+    public function uploadImage(string $base64, string $name = 'attachment.jpg'): ?string
+    {
+        if (!$this->isConfigured()) return null;
+        if ($base64 === '') return null;
+
+        $endpoint = 'https://api.solapi.com/storage/v1/files';
+        $payload  = json_encode([
+            'file' => $base64,
+            'type' => 'MMS',
+            'name' => $name,
+        ], JSON_UNESCAPED_UNICODE);
+
+        try {
+            $auth = $this->buildAuthHeader();
+            $ch = curl_init($endpoint);
+            curl_setopt_array($ch, [
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_POST => true,
+                CURLOPT_POSTFIELDS => $payload,
+                CURLOPT_HTTPHEADER => [
+                    'Content-Type: application/json',
+                    'Authorization: ' . $auth,
+                ],
+                CURLOPT_TIMEOUT => 20,
+                CURLOPT_SSL_VERIFYPEER => true,
+            ]);
+            $body = curl_exec($ch);
+            $http = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            curl_close($ch);
+            if (!is_string($body) || $body === '') return null;
+            $resp = json_decode($body, true);
+            if (!is_array($resp)) return null;
+            // 응답: { fileId, type, name, ... }  실패: { errorCode, errorMessage }
+            if (!empty($resp['fileId']) && $http < 400) {
+                return (string)$resp['fileId'];
+            }
+            return null;
+        } catch (Throwable $e) {
+            return null;
+        }
     }
 
     /** Solapi HMAC 인증 헤더 생성. */

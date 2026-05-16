@@ -104,15 +104,22 @@ if (!is_array($body)) jout(['ok' => false, 'error' => '요청 본문이 JSON 이
 $customerIds = $body['customer_ids'] ?? [];
 $message     = trim((string)($body['message'] ?? ''));
 $skipConsent = !empty($body['skip_consent_check']);
+$imageBase64 = isset($body['image_base64']) ? trim((string)$body['image_base64']) : '';
+$imageName   = isset($body['image_name'])   ? trim((string)$body['image_name'])   : 'attachment.jpg';
 
 if (!is_array($customerIds) || empty($customerIds)) {
     jout(['ok' => false, 'error' => '대상 고객을 선택해주세요.'], 400);
 }
-if ($message === '') {
-    jout(['ok' => false, 'error' => '문자 내용을 입력해주세요.'], 400);
+// 텍스트 비어 있어도 이미지가 있으면 OK (MMS 사진만 발송)
+if ($message === '' && $imageBase64 === '') {
+    jout(['ok' => false, 'error' => '문자 내용 또는 이미지를 입력해주세요.'], 400);
 }
 if (mb_strlen($message) > 2000) {
     jout(['ok' => false, 'error' => '문자 내용이 너무 깁니다 (2000자 이하).'], 400);
+}
+// 이미지 base64 사이즈 제한 (raw 200KB → base64 ~272KB)
+if ($imageBase64 !== '' && strlen($imageBase64) > 300 * 1024) {
+    jout(['ok' => false, 'error' => '이미지가 너무 큽니다 (200KB 이하만 가능).'], 400);
 }
 
 // id 정수만, 최대 1000명 제한
@@ -280,7 +287,25 @@ if ($providerName === 'aligo') {
 
 // 명시적 dry-run 토글 (요청 body 의 dry_run=true) — 테스트용
 $dryRun = !empty($body['dry_run']);
-$result = $provider->sendBulk($messagesToSend, $senderFrom, ['dryRun' => $dryRun]);
+
+// 이미지 첨부: Solapi 만 storage upload 지원. Aligo 는 무시 (SMS/LMS 만 가능).
+$imageId = null;
+if ($imageBase64 !== '' && $providerName !== 'aligo' && !$dryRun) {
+    if (method_exists($provider, 'uploadImage')) {
+        $imageId = $provider->uploadImage($imageBase64, $imageName);
+        if (!$imageId) {
+            jout([
+                'ok'    => false,
+                'error' => '이미지 업로드 실패 — Solapi storage 에 파일을 올리지 못했습니다. 다시 시도하거나 다른 이미지를 사용해 주세요.',
+                'reason' => 'image_upload_failed',
+            ], 502);
+        }
+    }
+}
+$sendOpts = ['dryRun' => $dryRun];
+if ($imageId) $sendOpts['imageId'] = $imageId;
+
+$result = $provider->sendBulk($messagesToSend, $senderFrom, $sendOpts);
 
 // 실패 사유 사용자 친화 메시지로 매핑
 $result['failed'] = array_map(function ($f) {

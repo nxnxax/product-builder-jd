@@ -9,13 +9,13 @@
  *  - client_idempotency_key 로 같은 통화의 중복 전송 차단
  */
 
-import { initSupabase, apiRequest, getSession } from './auth-shared.js?v=20260516-auth-fix';
+import { initSupabase, apiRequest, getSession } from './auth-shared.js?v=20260516-mms';
 import { attachColumnFilters, applyColumnFilters, openRowAddModal, attachPhoneAutoFormat, getEffectiveFields, mountFieldManager,
          exportRecordsToExcel, pickExcelFile, parseExcelFile, suggestFieldMapping, openImportPreviewModal,
          saveImportSession, loadImportSession, clearImportSession,
          findBlankRecordIds, showSweepToast,
          attachCellClickHandlers,
-         isLedgerMobile, onLedgerViewportChange } from './ledger-shared.js?v=20260516-auth-fix';
+         isLedgerMobile, onLedgerViewportChange } from './ledger-shared.js?v=20260516-mms';
 
 const MOBILE_PRIMARY_KEYS = ['customer', 'phone', 'date'];
 
@@ -932,6 +932,7 @@ async function openSmsModal() {
     const extraRcpt   = recipients.slice(5);
     const senderPhoneFmt = formatPhoneDisplay(cred.senderPhone || '');
 
+    // 폰 헤더 chip (위쪽 5개 + more)
     const chipsHtml = visibleRcpt.map(r => `
         <span class="sms-recipient-chip" title="${escapeAttr(r.name)} · ${escapeAttr(r.phone)}">
             <span class="chip-name">${escapeHtml(truncateName(r.name))}</span>${escapeHtml(r.phone || '번호없음')}
@@ -952,6 +953,16 @@ async function openSmsModal() {
         </span>
     ` : '';
 
+    // 좌측 풀 리스트
+    const rpListHtml = recipients.map(r => `
+        <li>
+            <span class="rp-nm" title="${escapeAttr(r.name)}">${escapeHtml(r.name)}</span>
+            <span class="rp-ph ${r.rawPhone ? '' : 'muted'}" title="${escapeAttr(r.phone || '번호없음')}">
+                ${escapeHtml(r.phone || '번호없음')}
+            </span>
+        </li>
+    `).join('');
+
     const md = document.createElement('div');
     md.className = 'modal-backdrop sms-modal';
     md.style.zIndex = '300';
@@ -971,48 +982,92 @@ async function openSmsModal() {
                     · 광고성 문자는 <b>수신동의 고객에게만</b> 발송해야 하며, 본문에 <b>[수신거부]</b> 문구가 필요합니다.
                 </div>
 
-                <!-- 스마트폰 미리보기 + 입력 -->
-                <div class="sms-phone" aria-label="문자 미리보기">
-                    <div class="sms-phone-screen">
-                        <div class="sms-phone-statusbar">
-                            <span>${nowHHMM()}</span>
-                            <span class="status-r">
-                                <svg width="16" height="10" viewBox="0 0 16 10" aria-hidden="true">
-                                    <path d="M2 8.5l1.5-1.5 M5 7l2-2 M8.5 5.5L11 3 M12 4l2.5-2.5" stroke="#0e0d0c" stroke-width="1.4" fill="none" stroke-linecap="round"/>
-                                </svg>
-                                <svg width="22" height="10" viewBox="0 0 22 10" aria-hidden="true">
-                                    <rect x="1" y="1" width="17" height="8" rx="2" fill="none" stroke="#0e0d0c" stroke-width="1.2" opacity=".75"/>
-                                    <rect x="19" y="3.5" width="2" height="3" rx=".6" fill="#0e0d0c" opacity=".75"/>
-                                    <rect x="2.5" y="2.5" width="13" height="5" rx="1" fill="#34a853"/>
-                                </svg>
-                            </span>
-                        </div>
-                        <div class="sms-phone-header">
-                            <h3>새 메시지</h3>
-                        </div>
-                        <div class="sms-phone-recipients">
-                            <span class="sms-phone-recipients-label">받는사람</span>
-                            ${chipsHtml}
-                            ${moreHtml}
-                        </div>
-                        <div class="sms-phone-thread" id="smsThread">
-                            <div class="sms-phone-time">방금</div>
-                            <div class="sms-phone-bubble placeholder" id="smsBubble">메시지를 입력하면 여기에 미리보기가 표시됩니다.</div>
-                        </div>
-                        <div class="sms-phone-inputbar">
-                            <textarea id="smsText" class="sms-phone-input" rows="1" maxlength="2000"
-                                placeholder="메시지 작성..."></textarea>
-                            <button type="button" class="sms-phone-send" disabled title="미리보기 갱신" aria-label="미리보기">
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                                    <path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/>
-                                </svg>
-                            </button>
+                <!-- 메시지 타입 배지 (SMS / LMS / MMS) — 큰 글씨로 뚜렷하게 -->
+                <div class="sms-type-bar">
+                    <span class="sms-type-pill" data-type="SMS" id="smsTypePill">SMS · 단문</span>
+                    <span class="sms-type-detail">
+                        본문 <b id="smsBytes">0</b> / 90 바이트
+                        <span id="smsTypeReason"></span>
+                    </span>
+                </div>
+
+                <!-- 좌측: 수신자 풀 리스트  /  우측: 스마트폰 -->
+                <div class="sms-layout">
+                    <aside class="sms-recipient-panel" aria-label="받는사람 목록">
+                        <header class="sms-rp-head">
+                            <span>📞 받는사람</span>
+                            <b class="rp-count">${recipients.length}명</b>
+                        </header>
+                        <ul class="sms-rp-list">${rpListHtml}</ul>
+                    </aside>
+
+                    <div class="sms-phone" aria-label="문자 미리보기">
+                        <div class="sms-phone-screen">
+                            <div class="sms-phone-statusbar">
+                                <span>${nowHHMM()}</span>
+                                <span class="status-r">
+                                    <svg width="16" height="10" viewBox="0 0 16 10" aria-hidden="true">
+                                        <path d="M2 8.5l1.5-1.5 M5 7l2-2 M8.5 5.5L11 3 M12 4l2.5-2.5" stroke="#0e0d0c" stroke-width="1.4" fill="none" stroke-linecap="round"/>
+                                    </svg>
+                                    <svg width="22" height="10" viewBox="0 0 22 10" aria-hidden="true">
+                                        <rect x="1" y="1" width="17" height="8" rx="2" fill="none" stroke="#0e0d0c" stroke-width="1.2" opacity=".75"/>
+                                        <rect x="19" y="3.5" width="2" height="3" rx=".6" fill="#0e0d0c" opacity=".75"/>
+                                        <rect x="2.5" y="2.5" width="13" height="5" rx="1" fill="#34a853"/>
+                                    </svg>
+                                </span>
+                            </div>
+                            <div class="sms-phone-header">
+                                <h3>새 메시지</h3>
+                                <span class="sms-phone-type-mini" data-type="SMS" id="smsPhoneTypeMini">SMS</span>
+                            </div>
+                            <div class="sms-phone-recipients">
+                                <span class="sms-phone-recipients-label">받는사람</span>
+                                ${chipsHtml}
+                                ${moreHtml}
+                            </div>
+                            <div class="sms-phone-thread" id="smsThread">
+                                <div class="sms-phone-time">방금</div>
+                                <div class="sms-phone-bubble placeholder" id="smsBubble">메시지를 입력하면 여기에 미리보기가 표시됩니다.</div>
+                            </div>
+                            <div class="sms-phone-inputbar">
+                                <textarea id="smsText" class="sms-phone-input" rows="1" maxlength="2000"
+                                    placeholder="메시지 작성..."></textarea>
+                                <button type="button" class="sms-phone-send" disabled title="미리보기 갱신" aria-label="미리보기">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                        <path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/>
+                                    </svg>
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
 
+                <!-- 사진 첨부 (drag & drop) -->
+                <div class="sms-attach-zone" id="smsAttachZone" role="button" tabindex="0" aria-label="이미지 첨부 (클릭 또는 드래그)">
+                    <input type="file" id="smsAttachInput" accept="image/jpeg,image/png,image/gif" hidden>
+                    <div class="sms-attach-empty" data-empty>
+                        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <rect x="3" y="3" width="18" height="18" rx="3"/>
+                            <circle cx="8.5" cy="8.5" r="1.5" fill="currentColor"/>
+                            <path d="M21 15l-5-5-5 5-3-3-5 5"/>
+                        </svg>
+                        <div>
+                            <p>이미지를 끌어다 놓거나 클릭해서 첨부 (MMS)</p>
+                            <small>JPG / PNG / GIF · 최대 200KB · 이미지 첨부 시 MMS 로 전환</small>
+                        </div>
+                    </div>
+                    <div class="sms-attach-preview" data-preview hidden>
+                        <img id="smsAttachImg" alt="첨부 이미지">
+                        <div class="sms-attach-info">
+                            <b id="smsAttachName">파일명</b>
+                            <small id="smsAttachSize">0 KB</small>
+                        </div>
+                        <button type="button" class="sms-attach-remove" data-attach-remove>제거</button>
+                    </div>
+                </div>
+
                 <div class="sms-phone-helper">
-                    <span><b id="smsLen">0</b> 자 · 90바이트 초과 시 LMS 로 자동 전환</span>
+                    <span><b id="smsLen">0</b> 자 · <b id="smsBytes2">0</b> 바이트 (한글 2 / 영문 1)</span>
                     <span>선택 고객 <b>${ids.length}</b>명 · 발송 건수는 동의/번호 확인 후 결정</span>
                 </div>
                 <p class="form-help error" data-error style="margin:10px 0 0;display:none;"></p>
@@ -1027,6 +1082,11 @@ async function openSmsModal() {
 
     const textarea = md.querySelector('#smsText');
     const lenEl    = md.querySelector('#smsLen');
+    const bytesEl  = md.querySelector('#smsBytes');
+    const bytes2El = md.querySelector('#smsBytes2');
+    const typePill = md.querySelector('#smsTypePill');
+    const typeMini = md.querySelector('#smsPhoneTypeMini');
+    const typeReasonEl = md.querySelector('#smsTypeReason');
     const errEl    = md.querySelector('[data-error]');
     const sendBtn  = md.querySelector('[data-send]');
     const cancelBtn = md.querySelector('[data-cancel]');
@@ -1034,6 +1094,16 @@ async function openSmsModal() {
     const previewSendBtn = md.querySelector('.sms-phone-send');
     const moreBtn   = md.querySelector('[data-more]');
     const moreList  = md.querySelector('[data-more-list]');
+    const attachZone = md.querySelector('#smsAttachZone');
+    const attachInput = md.querySelector('#smsAttachInput');
+    const attachEmpty = md.querySelector('[data-empty]');
+    const attachPreview = md.querySelector('[data-preview]');
+    const attachImg   = md.querySelector('#smsAttachImg');
+    const attachName  = md.querySelector('#smsAttachName');
+    const attachSize  = md.querySelector('#smsAttachSize');
+    const attachRemove = md.querySelector('[data-attach-remove]');
+
+    let attachedImage = null;   // { name, base64, sizeKB, dataUrl }
 
     const close = () => md.remove();
     cancelBtn.addEventListener('click', close);
@@ -1053,15 +1123,59 @@ async function openSmsModal() {
         });
     }
 
+    // ===== 메시지 타입 + bytes 계산 =====
+    const computeMessageType = () => {
+        // 한글 2바이트 (EUC-KR 기준), 영문/숫자/공백 1바이트
+        const text = textarea.value;
+        let bytes = 0;
+        for (const ch of text) {
+            bytes += ch.charCodeAt(0) > 0x7F ? 2 : 1;
+        }
+        bytesEl.textContent = bytes;
+        bytes2El.textContent = bytes;
+        lenEl.textContent = text.length;
+
+        let type = 'SMS';
+        let reason = '';
+        if (attachedImage) {
+            type = 'MMS';
+            reason = ' · 이미지 첨부됨';
+        } else if (bytes > 90) {
+            type = 'LMS';
+            reason = ` · 90바이트 초과 (${bytes - 90}바이트 초과)`;
+        }
+        const labels = {
+            SMS: 'SMS · 단문',
+            LMS: 'LMS · 장문',
+            MMS: 'MMS · 사진+장문',
+        };
+        typePill.textContent = labels[type];
+        typePill.setAttribute('data-type', type);
+        typeMini.textContent = type;
+        typeMini.setAttribute('data-type', type);
+        typeReasonEl.innerHTML = reason
+            ? `<span class="${type === 'MMS' ? 'bytes-mms' : 'bytes-warn'}">${escapeHtml(reason)}</span>`
+            : '';
+    };
+
     const updatePreview = () => {
         const v = textarea.value;
-        lenEl.textContent = v.length;
         // textarea auto-grow
         textarea.style.height = 'auto';
-        textarea.style.height = Math.min(textarea.scrollHeight, 120) + 'px';
-        // bubble
-        if (v.trim()) {
-            bubbleEl.classList.remove('placeholder');
+        textarea.style.height = Math.min(textarea.scrollHeight, 140) + 'px';
+        // bubble — 이미지 + 텍스트 둘 다 반영
+        const hasText  = !!v.trim();
+        const hasImage = !!attachedImage;
+        bubbleEl.classList.remove('placeholder', 'with-image');
+        if (hasImage && hasText) {
+            bubbleEl.classList.add('with-image');
+            bubbleEl.innerHTML = `<img src="${escapeAttr(attachedImage.dataUrl)}" alt=""><div class="bubble-text">${escapeHtml(v)}</div>`;
+            previewSendBtn.disabled = false;
+        } else if (hasImage) {
+            bubbleEl.classList.add('with-image');
+            bubbleEl.innerHTML = `<img src="${escapeAttr(attachedImage.dataUrl)}" alt="">`;
+            previewSendBtn.disabled = false;
+        } else if (hasText) {
             bubbleEl.textContent = v;
             previewSendBtn.disabled = false;
         } else {
@@ -1069,28 +1183,111 @@ async function openSmsModal() {
             bubbleEl.textContent = '메시지를 입력하면 여기에 미리보기가 표시됩니다.';
             previewSendBtn.disabled = true;
         }
+        computeMessageType();
     };
     textarea.addEventListener('input', updatePreview);
     textarea.focus();
 
+    // ===== 이미지 첨부 =====
+    const MAX_IMAGE_BYTES = 200 * 1024;   // Solapi MMS 200KB
+
+    const setAttachedImage = async (file) => {
+        if (!file) return;
+        if (!/^image\/(jpe?g|png|gif)$/i.test(file.type)) {
+            errEl.textContent = '이미지 형식이 지원되지 않습니다. JPG/PNG/GIF 만 가능합니다.';
+            errEl.style.display = ''; return;
+        }
+        if (file.size > MAX_IMAGE_BYTES) {
+            errEl.textContent = `이미지 크기가 너무 큽니다 (${(file.size/1024).toFixed(0)} KB). 200KB 이하만 가능합니다.`;
+            errEl.style.display = ''; return;
+        }
+        errEl.style.display = 'none';
+        const dataUrl = await new Promise((resolve, reject) => {
+            const fr = new FileReader();
+            fr.onload  = () => resolve(fr.result);
+            fr.onerror = () => reject(fr.error);
+            fr.readAsDataURL(file);
+        }).catch(() => null);
+        if (!dataUrl) return;
+        const base64 = String(dataUrl).split(',')[1] || '';
+        attachedImage = { name: file.name, sizeKB: file.size / 1024, dataUrl, base64, mime: file.type };
+        attachEmpty.hidden = true;
+        attachPreview.hidden = false;
+        attachImg.src = dataUrl;
+        attachName.textContent = file.name;
+        attachSize.textContent = `${attachedImage.sizeKB.toFixed(1)} KB · ${file.type}`;
+        updatePreview();
+    };
+
+    attachZone.addEventListener('click', (e) => {
+        if (e.target.closest('[data-attach-remove]')) return;
+        attachInput.click();
+    });
+    attachZone.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); attachInput.click(); }
+    });
+    attachInput.addEventListener('change', (e) => {
+        const f = e.target.files?.[0];
+        if (f) setAttachedImage(f);
+    });
+    // drag & drop
+    ['dragenter','dragover'].forEach(ev => attachZone.addEventListener(ev, (e) => {
+        e.preventDefault(); e.stopPropagation();
+        attachZone.classList.add('dragover');
+    }));
+    ['dragleave','drop'].forEach(ev => attachZone.addEventListener(ev, (e) => {
+        e.preventDefault(); e.stopPropagation();
+        if (ev !== 'drop') attachZone.classList.remove('dragover');
+    }));
+    attachZone.addEventListener('drop', (e) => {
+        attachZone.classList.remove('dragover');
+        const f = e.dataTransfer?.files?.[0];
+        if (f) setAttachedImage(f);
+    });
+    // 페이지 전체 drag&drop 차단 (모달 밖에 떨어뜨려도 브라우저가 그림 열지 않도록 모달 떠 있는 동안)
+    const blockOutside = (e) => { if (!attachZone.contains(e.target)) { e.preventDefault(); } };
+    md.addEventListener('dragover', blockOutside);
+    md.addEventListener('drop', blockOutside);
+
+    attachRemove.addEventListener('click', (e) => {
+        e.stopPropagation();
+        attachedImage = null;
+        attachInput.value = '';
+        attachEmpty.hidden = false;
+        attachPreview.hidden = true;
+        attachImg.src = '';
+        updatePreview();
+    });
+
+    computeMessageType();   // 초기 표시
+
     sendBtn.addEventListener('click', async () => {
         const text = textarea.value.trim();
-        if (text === '') { errEl.textContent = '문자 내용을 입력해주세요.'; errEl.style.display = ''; return; }
+        if (text === '' && !attachedImage) {
+            errEl.textContent = '문자 내용 또는 이미지를 입력해주세요.';
+            errEl.style.display = ''; return;
+        }
         if (!confirm('광고성 문자는 수신동의 고객에게만 발송해야 하며, 수신거부 문구가 필요합니다.\n\n계속 진행할까요?')) return;
 
         sendBtn.disabled = true;
         sendBtn.textContent = '발송 중…';
         errEl.style.display = 'none';
         try {
-            const res = await apiRequest('sms-credentials');   // 한 번 더 확인 (방어적)
+            const res = await apiRequest('sms-credentials');   // 방어적
             if (!res?.configured) throw new Error('Solapi 가 해제되었습니다. 설정에서 다시 등록해 주세요.');
+            const payload = { customer_ids: ids, message: text };
+            if (attachedImage) {
+                payload.image_base64 = attachedImage.base64;
+                payload.image_name   = attachedImage.name;
+                payload.image_mime   = attachedImage.mime;
+            }
             const resp = await fetch('sms/send-bulk.php', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                     'Authorization': 'Bearer ' + (await getAccessTokenForSms()),
                 },
-                body: JSON.stringify({ customer_ids: ids, message: text }),
+                body: JSON.stringify(payload),
             });
             const data = await resp.json().catch(() => ({}));
             if (!resp.ok || !data.ok) {
@@ -1107,7 +1304,7 @@ async function openSmsModal() {
             showSmsResultModal(data);
         } catch (e) {
             sendBtn.disabled = false;
-            sendBtn.textContent = '발송하기';
+            sendBtn.textContent = '📨 발송하기';
             errEl.textContent = '발송 실패: ' + (e.message || e);
             errEl.style.display = '';
         }
@@ -1115,7 +1312,7 @@ async function openSmsModal() {
 }
 
 async function getAccessTokenForSms() {
-    const { getAccessToken } = await import('./auth-shared.js?v=20260516-auth-fix');
+    const { getAccessToken } = await import('./auth-shared.js?v=20260516-mms');
     return await getAccessToken();
 }
 
