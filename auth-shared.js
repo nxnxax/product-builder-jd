@@ -1004,19 +1004,37 @@ function openSharedLoginModal(initialMode = 'login') {
                     submitBtn.disabled = false; submitBtn.textContent = '회원가입';
                     return;
                 }
-                // member 행 저장 (records.php auth-member POST)
+                // member 행 저장 (records.php auth-member POST) — 실패 시 사용자에게 명시 알림.
                 try {
                     const token = data.session.access_token;
-                    await fetch('records.php?resource=auth-member', {
+                    const memberResp = await fetch('records.php?resource=auth-member&ensure=1', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
                         body: JSON.stringify({
                             resource: 'auth-member',
+                            ensure: true,   // idempotent — 이미 있어도 OK
                             email, fullName, phone, nickname, provider: 'email',
                             ...consentMeta,
                         }),
                     });
-                } catch {}
+                    const memberData = await memberResp.json().catch(() => ({}));
+                    console.log('[members POST]', memberResp.status, memberData);
+                    if (!memberResp.ok && !memberData?.ok) {
+                        const failMsg = memberData?.error || ('HTTP ' + memberResp.status);
+                        msgEl.style.color = '#c8362c';
+                        msgEl.innerHTML = '<b>회원 정보 등록 실패</b><br>'
+                            + '<small style="display:block;margin-top:4px;color:#4f4943;">' + escapeHtmlSafe(failMsg) + '</small>'
+                            + '<small style="display:block;margin-top:4px;font-size:11px;color:#8a847e;">Supabase 인증은 완료됐지만 사이트 회원 정보 저장 실패. 관리자에게 위 메시지를 알려주세요.</small>';
+                        submitBtn.disabled = false; submitBtn.textContent = '회원가입';
+                        return;
+                    }
+                } catch (memberErr) {
+                    console.error('[members POST] error', memberErr);
+                    msgEl.style.color = '#c8362c';
+                    msgEl.textContent = '회원 정보 등록 네트워크 오류: ' + (memberErr?.message || memberErr);
+                    submitBtn.disabled = false; submitBtn.textContent = '회원가입';
+                    return;
+                }
                 close();
                 await navigateAfterAuth();
             } catch (err) {
