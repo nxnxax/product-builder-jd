@@ -334,14 +334,9 @@ async function navigateAfterAuth() {
      - cleanup 은 새 페이지 컨텍스트에서 진행 → race condition 원천 차단.
    ========================================================================= */
 export function performLogout(e) {
-    try { e?.preventDefault?.(); e?.stopPropagation?.(); } catch {}
-
-    // 시각적 즉시 반영 (사용자 피드백 — navigation 사이 짧은 순간)
-    try {
-        document.body.classList.add('is-anon');
-        document.body.classList.remove('is-admin');
-    } catch {}
-
+    // preventDefault/stopPropagation 호출하지 않음 — <a> click 의 native navigation 까지 보존.
+    // body class 변경도 X — 클릭 target 의 부모 컨테이너가 display:none 되면 일부 브라우저가 navigation cancel.
+    // 오직 navigation 만 시도. cleanup 은 logout.html 에서 책임.
     const target = 'logout.html?_t=' + Date.now();
     try {
         window.location.replace(target);
@@ -352,26 +347,26 @@ export function performLogout(e) {
     }
 }
 
-// document 레벨 backup 클릭 위임 — 브라우저 navigation 을 막지 않음 (가장 reliable).
-// <a href="logout.html"> 인 경우: fresh timestamp 만 attach → 브라우저가 native navigation.
-// <button> 인 경우 (예: profile.html 의 #account-signout): performLogout 호출 (location.replace).
+// document 레벨 backup 클릭 위임 — 브라우저 navigation 을 절대 막지 않음 (가장 reliable).
+//
+// 중요: click 처리 중에 body.is-anon 같은 클래스를 즉시 추가하면 안 된다.
+// 클릭된 <a> 가 #user-menu 안에 있고 body.is-anon 이 #user-menu 를 display:none
+// 으로 만들면, click target 이 click 처리 중 detach 되어 일부 모바일 브라우저
+// (iOS Safari, 안드로이드 webview 등) 가 native <a> navigation 을 cancel 한다.
+// → 시각 피드백은 navigation 이 시작된 후 (logout.html 페이지) 에서 처리.
 if (typeof document !== 'undefined' && typeof window !== 'undefined' && !window.__ymanLogoutBound) {
     document.addEventListener('click', (e) => {
         const btn = e.target?.closest?.('#logout-btn, #drawer-logout-btn, #account-signout, [data-logout]');
         if (!btn) return;
-        // 시각 보조 (즉시 anon 상태 표시)
-        try {
-            document.body.classList.add('is-anon');
-            document.body.classList.remove('is-admin');
-        } catch {}
         // a 태그면 href 만 fresh 하게 — preventDefault 호출 X, 브라우저 navigation 진행.
+        // body class 변경/storage cleanup 같은 부수 작업 절대 X (navigation 막을 수 있음).
         if (btn.tagName === 'A') {
             try { btn.setAttribute('href', 'logout.html?_t=' + Date.now()); } catch {}
-            return;   // 브라우저가 a href 로 navigate 함
+            return;   // 브라우저가 a href 로 navigate
         }
-        // button 류는 명시적 navigation.
+        // button 류는 명시적 navigation. performLogout 도 부수작업 없이 navigate 만.
         performLogout(e);
-    }, true);   // capture phase — 다른 핸들러보다 먼저
+    }, true);
     window.__ymanLogoutBound = true;
 }
 

@@ -71,7 +71,7 @@
         //    실패해도 무방 — storage 직접 정리로 보강.
         let signOutDone = false;
         try {
-            const mod = await import('./auth-shared.js?v=20260516-logout-a-href');
+            const mod = await import('./auth-shared.js?v=20260516-no-anon-flash');
             const result = await mod.initSupabase().catch(() => null);
             const client = result?.client;
             if (client && client.auth && typeof client.auth.signOut === 'function') {
