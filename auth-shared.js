@@ -440,8 +440,11 @@ export function mountAppHeader(opts) {
     const cachedAdmin = readCachedAdminFlag();
 
     // body 클래스로 가시성 제어 — CSS 가 admin-only / user-menu / login-btn 조정.
-    document.body.classList.toggle('is-admin', cachedAdmin);
-    document.body.classList.toggle('is-anon', !cachedName);
+    // 로그인 직후엔 cachedName 이 비어있을 수 있음 (특히 logout localStorage.clear 직후).
+    // currentSession 가 동기적으로 set 되어 있으면 그것도 신호로 사용 → anon 으로 잘못 그려지는 시간 차 차단.
+    const loggedInHint = !!cachedName || !!currentSession?.user;
+    document.body.classList.toggle('is-admin', cachedAdmin || (loggedInHint && isAdmin(currentSession)));
+    document.body.classList.toggle('is-anon', !loggedInHint);
 
     // 주 기능 — 고객 관리대장 (메인 강조) + 양식 선택 슬롯 2개 (드롭다운).
     // 각 슬롯의 선택값은 localStorage 에 사용자 이메일별로 저장됨.
@@ -796,6 +799,11 @@ export async function refreshAppHeader() {
     cacheDisplayName(displayName);
     const display = document.getElementById('user-display');
     if (display) display.textContent = displayName;
+
+    // 첫 mountAppHeader 가 logout 직후의 빈 cachedName 으로 anon 헤더를 그렸다면,
+    // 여기서 새 cachedName 으로 헤더 DOM 을 한 번 더 그려서 visual 동기화.
+    // (로그인 직후 헤더에 로그인 버튼이 남아있다가 페이지 이동해야만 정상화되던 문제 fix)
+    try { mountAppHeader(); } catch {}
 
     // bootApp 흐름의 마지막 단계 — currentSession 가 확정된 뒤이므로 여기서
     // 사용자 양식 목록을 서버에서 가져와 슬롯 dropdown 을 갱신. 첫 mountAppHeader
