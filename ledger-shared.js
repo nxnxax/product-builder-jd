@@ -25,7 +25,20 @@ let docClickBound = false;
 /* =========================================================================
    모바일 카드 펼치기/접기 토글 — head 영역 클릭 시 expanded 토글.
    체크박스/액션 버튼 클릭은 토글에서 제외.
+   추가: row id 별 expanded 상태를 module-level Set 에 보존 → re-render 후 복원.
    ========================================================================= */
+const _expandedRowIds = new Set();
+/** 카드 펼침 상태 — render 시 호출해서 expanded class 적용 여부 결정. */
+export function isRowExpanded(id) {
+    return _expandedRowIds.has(Number(id)) || _expandedRowIds.has(String(id));
+}
+function _setRowExpanded(id, expanded) {
+    const n = Number(id);
+    const key = isNaN(n) ? String(id) : n;
+    if (expanded) _expandedRowIds.add(key);
+    else _expandedRowIds.delete(key);
+}
+
 if (typeof document !== 'undefined' && typeof window !== 'undefined' && !window.__ledgerCardToggleBound) {
     document.addEventListener('click', (e) => {
         const card = e.target.closest('.ledger-card');
@@ -36,12 +49,31 @@ if (typeof document !== 'undefined' && typeof window !== 'undefined' && !window.
         if (e.target.closest('input, button, select, textarea, a, label, [data-no-toggle], [data-cell-toggle], [data-cell-switch], [data-cell-cycle]')) {
             // 단, 카드 자체의 toggle 버튼은 토글 동작
             if (e.target.closest('.ledger-card-toggle')) {
-                card.classList.toggle('expanded');
+                const nextExpanded = !card.classList.contains('expanded');
+                card.classList.toggle('expanded', nextExpanded);
+                _setRowExpanded(card.dataset.id, nextExpanded);
             }
             return;
         }
-        card.classList.toggle('expanded');
+        const nextExpanded = !card.classList.contains('expanded');
+        card.classList.toggle('expanded', nextExpanded);
+        _setRowExpanded(card.dataset.id, nextExpanded);
     });
+    // re-render 후 카드 expanded 상태 복원 — DOM 새로 그려지면 호출하지 않아도 자동 (각 페이지가 isRowExpanded 사용해 class 직접 추가).
+    // 추가 안전망: MutationObserver 로 새 .ledger-card 가 추가될 때 자동 복원.
+    const restoreOnAdd = (root) => {
+        try {
+            root.querySelectorAll?.('.ledger-card[data-id]')?.forEach(card => {
+                if (isRowExpanded(card.dataset.id)) card.classList.add('expanded');
+            });
+        } catch {}
+    };
+    const mo = new MutationObserver((mutations) => {
+        mutations.forEach(m => m.addedNodes && m.addedNodes.forEach(n => {
+            if (n.nodeType === 1) restoreOnAdd(n);
+        }));
+    });
+    try { mo.observe(document.body, { childList: true, subtree: true }); } catch {}
     window.__ledgerCardToggleBound = true;
 }
 
