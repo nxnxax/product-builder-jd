@@ -1147,7 +1147,21 @@ function openSharedLoginModal(initialMode = 'login') {
             } catch (err) {
                 console.error('[signIn] error', err);
                 msgEl.style.color = '#c8362c';
-                msgEl.textContent = err?.message || '로그인 실패';
+                const raw = String(err?.message || '');
+                // 자주 나오는 supabase 영문 에러 → 한국어 친화 메시지
+                let friendly = raw;
+                if (/invalid\s*login\s*credentials/i.test(raw)) {
+                    friendly = '비밀번호가 일치하지 않습니다.';
+                } else if (/email\s*not\s*confirmed/i.test(raw)) {
+                    friendly = '이메일 인증이 완료되지 않았습니다. 가입 시 받은 메일을 확인해 주세요.';
+                } else if (/user\s*not\s*found/i.test(raw)) {
+                    friendly = '가입되지 않은 이메일입니다.';
+                } else if (/network\s*error|fetch.*failed/i.test(raw)) {
+                    friendly = '네트워크 오류 — 인터넷 연결을 확인하고 다시 시도해 주세요.';
+                } else if (!raw) {
+                    friendly = '로그인에 실패했습니다.';
+                }
+                msgEl.textContent = friendly;
                 submitBtn.disabled = false; submitBtn.textContent = '로그인';
             }
         }
