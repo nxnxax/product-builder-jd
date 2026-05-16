@@ -2638,11 +2638,16 @@ select:focus {
 .sms-type-detail .bytes-warn{color:#c77700;font-weight:700}
 .sms-type-detail .bytes-mms{color:#c8362c;font-weight:700}
 
-/* 좌우 분할 레이아웃 — 좌측 수신자 패널, 우측 폰 */
+/* 좌우 분할 레이아웃 — 좌측 수신자 패널, 우측 [잔액 카드 + 폰] */
 .sms-layout{
     display:grid;grid-template-columns:240px 1fr;gap:16px;
     margin:0 0 14px
 }
+.sms-phone-side{
+    display:flex;flex-direction:column;align-items:center;gap:10px;
+    min-width:0   /* grid 안에서 자식 overflow 방지 */
+}
+.sms-phone-side .sms-balance-card{margin:0;width:100%;max-width:360px}
 .sms-recipient-panel{
     background:#fff;
     border:1px solid var(--ledger-line-strong,rgba(20,14,8,.14));

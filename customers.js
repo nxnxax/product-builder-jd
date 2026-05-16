@@ -9,13 +9,13 @@
  *  - client_idempotency_key 로 같은 통화의 중복 전송 차단
  */
 
-import { initSupabase, apiRequest, getSession } from './auth-shared.js?v=20260516-balance-detail';
+import { initSupabase, apiRequest, getSession } from './auth-shared.js?v=20260516-balance-near-phone';
 import { attachColumnFilters, applyColumnFilters, openRowAddModal, attachPhoneAutoFormat, getEffectiveFields, mountFieldManager,
          exportRecordsToExcel, pickExcelFile, parseExcelFile, suggestFieldMapping, openImportPreviewModal,
          saveImportSession, loadImportSession, clearImportSession,
          findBlankRecordIds, showSweepToast,
          attachCellClickHandlers,
-         isLedgerMobile, onLedgerViewportChange } from './ledger-shared.js?v=20260516-balance-detail';
+         isLedgerMobile, onLedgerViewportChange } from './ledger-shared.js?v=20260516-balance-near-phone';
 
 const MOBILE_PRIMARY_KEYS = ['customer', 'phone', 'date'];
 
@@ -1007,16 +1007,6 @@ async function openSmsModal() {
                 </div>
             </header>
             <div class="modal-body sms-modal-body">
-                <!-- Solapi 충전 잔액 카드 — fetch 후 채워짐 -->
-                <div class="sms-balance-card loading" data-balance-card>
-                    <div>
-                        <div class="label">💰 Solapi 충전 잔액</div>
-                        <div class="value"><span data-balance-value>—</span><small>원</small></div>
-                    </div>
-                    <div class="sub" data-balance-sub>잔액을 불러오는 중…</div>
-                    <a href="https://console.solapi.com/dashboard" target="_blank" rel="noopener" class="recharge">Solapi 대시보드 →</a>
-                </div>
-
                 <div class="sms-notice">
                     <b>안내</b><br>
                     · 문자 요금은 본인의 <b>Solapi 계정 잔액</b>에서 차감됩니다.<br>
@@ -1042,6 +1032,17 @@ async function openSmsModal() {
                         </header>
                         <ul class="sms-rp-list">${rpListHtml}</ul>
                     </aside>
+
+                    <div class="sms-phone-side">
+                    <!-- Solapi 충전 잔액 카드 — 폰 미리보기 바로 위 -->
+                    <div class="sms-balance-card loading" data-balance-card>
+                        <div>
+                            <div class="label">💰 Solapi 충전 잔액</div>
+                            <div class="value"><span data-balance-value>—</span><small>원</small></div>
+                        </div>
+                        <div class="sub" data-balance-sub>잔액을 불러오는 중…</div>
+                        <a href="https://console.solapi.com/dashboard" target="_blank" rel="noopener" class="recharge">Solapi 대시보드 →</a>
+                    </div>
 
                     <div class="sms-phone" aria-label="문자 미리보기">
                         <div class="sms-phone-screen">
@@ -1081,6 +1082,7 @@ async function openSmsModal() {
                                 </button>
                             </div>
                         </div>
+                    </div>
                     </div>
                 </div>
 
@@ -1448,7 +1450,7 @@ async function openSmsModal() {
 }
 
 async function getAccessTokenForSms() {
-    const { getAccessToken } = await import('./auth-shared.js?v=20260516-balance-detail');
+    const { getAccessToken } = await import('./auth-shared.js?v=20260516-balance-near-phone');
     return await getAccessToken();
 }
 
