@@ -352,12 +352,24 @@ export function performLogout(e) {
     }
 }
 
-// document 레벨 backup 클릭 위임 — mountAppHeader 가 어떤 이유로 핸들러를 부착 못 했어도 작동.
-// 모든 #logout-btn / #drawer-logout-btn 클릭이 항상 performLogout 트리거.
+// document 레벨 backup 클릭 위임 — 브라우저 navigation 을 막지 않음 (가장 reliable).
+// <a href="logout.html"> 인 경우: fresh timestamp 만 attach → 브라우저가 native navigation.
+// <button> 인 경우 (예: profile.html 의 #account-signout): performLogout 호출 (location.replace).
 if (typeof document !== 'undefined' && typeof window !== 'undefined' && !window.__ymanLogoutBound) {
     document.addEventListener('click', (e) => {
         const btn = e.target?.closest?.('#logout-btn, #drawer-logout-btn, #account-signout, [data-logout]');
         if (!btn) return;
+        // 시각 보조 (즉시 anon 상태 표시)
+        try {
+            document.body.classList.add('is-anon');
+            document.body.classList.remove('is-admin');
+        } catch {}
+        // a 태그면 href 만 fresh 하게 — preventDefault 호출 X, 브라우저 navigation 진행.
+        if (btn.tagName === 'A') {
+            try { btn.setAttribute('href', 'logout.html?_t=' + Date.now()); } catch {}
+            return;   // 브라우저가 a href 로 navigate 함
+        }
+        // button 류는 명시적 navigation.
         performLogout(e);
     }, true);   // capture phase — 다른 핸들러보다 먼저
     window.__ymanLogoutBound = true;
@@ -575,7 +587,7 @@ export function mountAppHeader(opts) {
                 <span id="user-display" class="user-display">${escapeHtmlSafe(cachedName)}</span>
                 <a href="profile.html" id="profile-link" class="user-menu-link"><span class="profile-link-icon">${ICON.user}</span><span class="profile-link-label">내 정보</span></a>
                 <a href="admin.html" id="admin-link" class="user-menu-link">관리자</a>
-                <button type="button" id="logout-btn" class="user-menu-btn">로그아웃</button>
+                <a href="logout.html" id="logout-btn" class="user-menu-btn" role="button">로그아웃</a>
             </div>
         </div>
     `;
@@ -596,7 +608,7 @@ export function mountAppHeader(opts) {
             <nav class="nav-secondary">${secondaryHtml}</nav>
             <div class="mobile-drawer-account">
                 <a href="admin.html" class="mobile-drawer-account-link" data-admin-only data-anon-hide><span class="mobile-drawer-icon">⚙</span><span>관리자</span></a>
-                <button type="button" class="mobile-drawer-account-link" id="drawer-logout-btn" data-anon-hide><span class="mobile-drawer-icon">↩</span><span>로그아웃</span></button>
+                <a href="logout.html" class="mobile-drawer-account-link" id="drawer-logout-btn" data-anon-hide role="button"><span class="mobile-drawer-icon">↩</span><span>로그아웃</span></a>
                 <a href="index.html#login" class="mobile-drawer-account-link" data-anon-show><span class="mobile-drawer-icon">→</span><span>로그인</span></a>
             </div>
         </aside>
@@ -676,12 +688,9 @@ export function mountAppHeader(opts) {
     // 백그라운드로 사용자 정의 양식 목록 갱신 — 다음 페이지 진입 시 dropdown 에 반영
     refreshNavFormsCache();
 
-    // mountAppHeader 내 inline 등록 — 동기적으로 즉시 storage 정리 + 페이지 이동.
-    // (지연 await 없음 — signOut 은 fire-and-forget. document 레벨 backup 핸들러도 별도 등록)
-    const logoutBtn = root.querySelector('#logout-btn');
-    if (logoutBtn) logoutBtn.addEventListener('click', performLogout);
-    const drawerLogoutBtn = drawerEl?.querySelector('#drawer-logout-btn');
-    if (drawerLogoutBtn) drawerLogoutBtn.addEventListener('click', performLogout);
+    // 로그아웃: #logout-btn / #drawer-logout-btn 는 이제 <a href="logout.html"> 이라
+    // 브라우저 native navigation 으로 작동. capture handler 가 fresh timestamp 만 attach.
+    // 별도 click handler 등록 X — 등록하면 preventDefault 가 native navigation 을 막을 수 있음.
 
     // 로그인 버튼 — 메인 페이지가 아니면 메인 페이지의 #auth-screen 모달이 없어서
     // 'index.html#login' 으로 이동하던 기존 동작 대신 현재 페이지에서 모달 띄우기.
