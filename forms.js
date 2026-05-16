@@ -14,7 +14,7 @@
  * 토글 필드는 settings.customFields[i] = { key, label, type:'toggle', onLabel, offLabel, custom:true }
  */
 
-import { initSupabase, apiRequest, getSession, refreshNavForms } from './auth-shared.js?v=20260516-nickname-header';
+import { initSupabase, apiRequest, getSession, refreshNavForms } from './auth-shared.js?v=20260517-token-refresh';
 import {
     isLedgerMobile, onLedgerViewportChange, openRowAddModal,
     attachColumnFilters, applyColumnFilters,

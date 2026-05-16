@@ -140,23 +140,59 @@ export async function getAccessToken({ forceRefresh = false } = {}) {
     return currentSession?.access_token || null;
 }
 
+/* 만료 임박/만료된 access_token 을 refresh_token 으로 갱신. 모바일 백그라운드 탭에서
+   setInterval 기반 auto-refresh 가 멈춰 토큰이 만료되는 케이스 대응. */
+async function ensureFreshAccessToken() {
+    if (!supabaseClient) return null;
+    try {
+        const nowSec = Math.floor(Date.now() / 1000);
+        const exp = Number(currentSession?.expires_at || 0);
+        // 만료 60초 이내 또는 이미 만료 → 강제 refresh
+        if (!exp || exp - nowSec < 60) {
+            const { data, error } = await supabaseClient.auth.refreshSession();
+            if (!error && data?.session) currentSession = data.session;
+        } else {
+            const { data } = await supabaseClient.auth.getSession();
+            currentSession = data?.session || currentSession;
+        }
+    } catch {}
+    return currentSession?.access_token || null;
+}
+
 export async function apiRequest(resource, options = {}) {
     const headers = {
         'Content-Type': 'application/json',
         ...(options.headers || {}),
     };
-    const token = await getAccessToken({ forceRefresh: true });
+    let token = await ensureFreshAccessToken();
     if (token) headers.Authorization = `Bearer ${token}`;
 
     const url = options.query
         ? `${API_URL}?resource=${encodeURIComponent(resource)}&${options.query}`
         : `${API_URL}?resource=${encodeURIComponent(resource)}`;
 
-    const response = await fetch(url, {
+    let response = await fetch(url, {
         method: options.method || 'GET',
         headers,
         body: options.body,
     });
+
+    // 401 → refresh_token 으로 한 번 더 갱신 후 재시도. (서버 stale clock / 비정상 만료 케이스 보호.)
+    if (response.status === 401 && supabaseClient) {
+        try {
+            const { data, error } = await supabaseClient.auth.refreshSession();
+            if (!error && data?.session?.access_token) {
+                currentSession = data.session;
+                const retryHeaders = { ...headers, Authorization: `Bearer ${data.session.access_token}` };
+                response = await fetch(url, {
+                    method: options.method || 'GET',
+                    headers: retryHeaders,
+                    body: options.body,
+                });
+            }
+        } catch {}
+    }
+
     const payload = await response.json().catch(() => null);
     if (!response.ok || !payload || payload.ok === false) {
         const err = new Error(payload?.error || `요청 실패 (${response.status})`);
