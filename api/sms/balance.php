@@ -37,7 +37,17 @@ $cfg = __DIR__ . '/../db_config.php';
 if (!is_file($cfg)) $cfg = dirname(__DIR__, 2) . '/db_config.php';
 if (!is_file($cfg)) { http_response_code(500); echo json_encode(['ok'=>false, 'error'=>'DB 설정 파일이 없습니다.'], JSON_UNESCAPED_UNICODE); exit; }
 $db = require $cfg;
-$pdo = $db;
+try {
+    $pdo = new PDO(
+        sprintf('mysql:host=%s;port=%d;dbname=%s;charset=utf8mb4',
+            $db['host'] ?? 'localhost', (int)($db['port'] ?? 3306), $db['database'] ?? ''),
+        $db['user'] ?? '', $db['password'] ?? '',
+        [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC]
+    );
+} catch (Throwable $e) {
+    echo json_encode(['ok'=>false, 'error'=>'DB 연결 실패: ' . $e->getMessage()], JSON_UNESCAPED_UNICODE);
+    exit;
+}
 
 // Bearer auth
 $authHeader = '';
@@ -67,7 +77,7 @@ try {
     $stmt->execute([':o' => $ownerEmail]);
     $cred = $stmt->fetch();
 } catch (Throwable $e) {
-    echo json_encode(['ok'=>false, 'error'=>'문자 설정 테이블 미준비'], JSON_UNESCAPED_UNICODE);
+    echo json_encode(['ok'=>false, 'error'=>'문자 설정 조회 실패: ' . $e->getMessage()], JSON_UNESCAPED_UNICODE);
     exit;
 }
 if (!$cred) {
