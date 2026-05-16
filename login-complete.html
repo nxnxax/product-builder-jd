@@ -107,7 +107,7 @@
 
         let session = null;
         try {
-            const mod = await import('./auth-shared.js?v=20260518-display-name');
+            const mod = await import('./auth-shared.js?v=20260519-google-modal');
             const result = await mod.initSupabase().catch(() => null);
             const client = result?.client;
             if (client?.auth?.getSession) {
@@ -120,7 +120,7 @@
         if (!session) {
             await new Promise(r => setTimeout(r, 120));
             try {
-                const mod = await import('./auth-shared.js?v=20260518-display-name');
+                const mod = await import('./auth-shared.js?v=20260519-google-modal');
                 const result = await mod.initSupabase().catch(() => null);
                 if (result?.client?.auth?.getSession) {
                     const { data } = await result.client.auth.getSession();
@@ -137,10 +137,18 @@
             // session 확정 → members 행 자동 보강 (idempotent ensure mode).
             // supabase auth 에는 있는데 public.members 에 없는 '고아 user' 케이스 자동 복구.
             const meta = session.user?.user_metadata || {};
-            const provider = session.user?.app_metadata?.provider || '';
-            const isGoogle = provider === 'google';
+            const appMeta = session.user?.app_metadata || {};
+            const providerStr = String(appMeta.provider || '').toLowerCase();
+            const providersArr = Array.isArray(appMeta.providers) ? appMeta.providers.map(p => String(p).toLowerCase()) : [];
+            // Supabase 버전/계정 상태에 따라 provider 가 빈 경우 providers 배열로도 판단.
+            // identities 에 google 가 있으면 그것도 인정.
+            const identitiesGoogle = Array.isArray(session.user?.identities)
+                && session.user.identities.some(i => String(i?.provider || '').toLowerCase() === 'google');
+            const isGoogle = providerStr === 'google' || providersArr.includes('google') || identitiesGoogle;
             let ensureSucceeded = false;
-            let needsNickname = false;   // 서버가 알려주는 닉네임 부재 신호 (이미 등록 + 신규 INSERT 둘 다 커버)
+            let needsNickname = false;   // 서버: 닉네임 부재 (신규 INSERT or 기존 nickname 비어있음)
+            let needsPhone = false;      // 서버: 휴대폰 부재 (Google 가입자가 휴대폰 안 줬을 때)
+            let ensureData = {};
             try {
                 const ensureResp = await fetch('records.php?resource=auth-member&ensure=1', {
                     method: 'POST',
@@ -157,11 +165,11 @@
                         nickname: meta.nickname || '',
                     }),
                 });
-                const ensureData = await ensureResp.json().catch(() => ({}));
+                ensureData = await ensureResp.json().catch(() => ({}));
                 console.log('[ensure member]', ensureResp.status, ensureData);
                 ensureSucceeded = ensureResp.ok && (ensureData?.ok || ensureData?.already);
-                // server 가 needsNickname=true 면 무조건 닉네임 입력 필요 (신규 INSERT or 기존 nickname 비어있음)
                 needsNickname = !!ensureData?.needsNickname;
+                needsPhone    = !!ensureData?.needsPhone;
                 if (!ensureSucceeded) {
                     try {
                         sessionStorage.setItem('erp.ensureError', JSON.stringify({
@@ -176,12 +184,22 @@
                 try { sessionStorage.setItem('erp.ensureError', JSON.stringify({ error: String(e?.message || e), at: new Date().toISOString() })); } catch {}
             }
 
-            // Google 가입자 + members.nickname 비어있음 (신규 INSERT 또는 기존 행 닉네임 미설정) → 추가 정보 입력 form 표시.
-            const needsExtra = isGoogle && needsNickname && !(meta.nickname || '').trim();
+            // Google 가입자가 nickname 또는 phone 중 하나라도 비어있으면 모달 표시.
+            // meta.nickname 이 채워져 있어도 휴대폰이 없으면 모달 → 휴대폰 슬롯 필수 수집.
+            const needsExtra = isGoogle && (needsNickname || needsPhone);
+            console.log('[signup-extra trigger]', {
+                provider: providerStr, providers: providersArr, identitiesGoogle,
+                isGoogle, needsNickname, needsPhone, metaNickname: meta.nickname || '',
+                metaPhone: meta.phone || '', needsExtra,
+            });
             if (needsExtra) {
                 document.getElementById('loadingState').style.display = 'none';
                 document.getElementById('extraWrap').style.display = 'flex';
-                setupExtraForm(session, target);
+                // 기존 nickname 이 있으면(휴대폰만 누락 케이스) pre-fill 해서 사용자 부담 ↓
+                setupExtraForm(session, target, {
+                    presetNickname: (ensureData && ensureData.nickname) || meta.nickname || '',
+                    presetPhone: meta.phone || '',
+                });
                 // submit 후 진행 — 자동 redirect 안 함. module top-level 이라 return 사용 X.
             } else {
 
@@ -202,7 +220,7 @@
         }
 
         // Google 신규 가입자 — 닉네임 + 약관 입력 form 처리.
-        function setupExtraForm(session, target) {
+        function setupExtraForm(session, target, presets) {
             const form = document.getElementById('extraForm');
             const nickEl = document.getElementById('extraNickname');
             const phoneEl = document.getElementById('extraPhone');
@@ -215,6 +233,18 @@
             const agreePrivacy = document.getElementById('extraAgreePrivacy');
             const agreeMarketing = document.getElementById('extraAgreeMarketing');
             let nickChecked = false;
+
+            // 기존 nickname/phone 이 이미 채워져 있는 경우 pre-fill.
+            const presetNick = (presets?.presetNickname || '').trim();
+            const presetPhone = (presets?.presetPhone || '').toString().replace(/\D/g, '');
+            if (presetNick) {
+                nickEl.value = presetNick;
+                nickChecked = true; // 본인이 이미 쓰던 닉네임 → 중복확인 skip
+                resultEl.hidden = false;
+                resultEl.className = 'nick-result ok';
+                resultEl.textContent = '✅ 현재 닉네임을 그대로 사용 (수정 시 다시 중복확인)';
+            }
+            if (presetPhone) phoneEl.value = presetPhone;
 
             // 전체동의 체크 동기화
             agreeAll.addEventListener('change', () => {
@@ -282,7 +312,7 @@
 
                     // 2) supabase user_metadata 업데이트 (nickname + 약관 동의 기록)
                     try {
-                        const mod = await import('./auth-shared.js?v=20260518-display-name');
+                        const mod = await import('./auth-shared.js?v=20260519-google-modal');
                         const result = await mod.initSupabase().catch(() => null);
                         const client = result?.client;
                         if (client?.auth?.updateUser) {

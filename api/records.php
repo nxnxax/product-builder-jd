@@ -339,25 +339,39 @@ function create_member_from_google(PDO $pdo, $authUser, $data) {
     $ensure = !empty($_GET['ensure']) || !empty($data['ensure']);
     if (member_exists_by_email($pdo, $email) === true) {
         if ($ensure) {
-            // 기존 row 의 nickname 도 함께 반환 → client 가 "추가 입력 필요" 판단 가능
+            // 기존 row 의 nickname/phone 도 함께 반환 → client 가 "추가 입력 필요" 판단 가능
             $existingNick = null;
+            $existingPhonePlain = '';
             try {
                 $nickColExisting = first_existing_column($store['columns'], ['nickname', 'nick', 'display_name']);
-                if ($nickColExisting) {
+                $phoneColExisting = first_existing_column($store['columns'], ['phone', 'mobile', 'tel', 'contact', 'user_phone', 'mb_hp']);
+                $selectCols = [];
+                if ($nickColExisting)  $selectCols[] = quote_identifier($nickColExisting) . ' AS nk';
+                if ($phoneColExisting) $selectCols[] = quote_identifier($phoneColExisting) . ' AS ph';
+                if (!empty($selectCols)) {
                     $emailColQ = quote_identifier($store['email_column']);
-                    $nickColQ  = quote_identifier($nickColExisting);
                     $tableQ    = quote_identifier($store['table']);
-                    $stmt = $pdo->prepare("SELECT {$nickColQ} AS nk FROM {$tableQ} WHERE LOWER({$emailColQ}) = :e LIMIT 1");
+                    $stmt = $pdo->prepare("SELECT " . implode(', ', $selectCols) . " FROM {$tableQ} WHERE LOWER({$emailColQ}) = :e LIMIT 1");
                     $stmt->execute([':e' => $email]);
                     $r = $stmt->fetch();
-                    if ($r) $existingNick = (string)($r['nk'] ?? '');
+                    if ($r) {
+                        if ($nickColExisting)  $existingNick = (string)($r['nk'] ?? '');
+                        if ($phoneColExisting) {
+                            // 암호화 저장이므로 복호화 시도 (평문도 호환)
+                            $existingPhonePlain = function_exists('youngman_decrypt')
+                                ? (string)youngman_decrypt((string)($r['ph'] ?? ''))
+                                : (string)($r['ph'] ?? '');
+                        }
+                    }
                 }
             } catch (Throwable $e) {}
+            $needsPhone = (preg_replace('/\D/', '', $existingPhonePlain) === '');
             respond([
                 'ok' => true,
                 'already' => true,
                 'nickname' => $existingNick,
                 'needsNickname' => ($existingNick === null || trim((string)$existingNick) === ''),
+                'needsPhone' => $needsPhone,
                 'message' => '이미 가입된 계정 — 기존 행 유지',
             ]);
         }
@@ -437,8 +451,9 @@ function create_member_from_google(PDO $pdo, $authUser, $data) {
         'created' => true,
         'role' => is_admin_email($email) ? 'admin' : 'member',
         'nickname' => $nickname,
-        // 신규 INSERT 시 nickname 비어있으면 client 가 추가 입력 받음
+        // 신규 INSERT 시 nickname/phone 비어있으면 client 가 추가 입력 받음
         'needsNickname' => ($nickname === null || trim((string)$nickname) === ''),
+        'needsPhone' => (preg_replace('/\D/', '', (string)$phone) === ''),
     ]);
 }
 
