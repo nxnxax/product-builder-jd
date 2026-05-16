@@ -949,16 +949,26 @@ function openSharedLoginModal(initialMode = 'login') {
     form.addEventListener('submit', async (e) => {
         e.preventDefault();
         const isSignup = mode === 'signup';
-        const email = form.email.value.trim();
-        const password = form.password.value;
+        const email = form.email?.value?.trim() || '';
+        const password = form.password?.value || '';
+
+        console.log('[auth submit]', { mode, email, hasPassword: !!password });   // 디버깅
 
         if (!email || !password) { msgEl.textContent = '이메일과 비밀번호를 입력해주세요.'; return; }
 
+        // supabaseClient 미초기화 가드 — bootApp 이 init 못 한 케이스
+        if (!supabaseClient?.auth) {
+            msgEl.style.color = '#c8362c';
+            msgEl.textContent = '인증 초기화 중입니다. 잠시 후 다시 시도해주세요.';
+            try { await initSupabase(); } catch {}
+            return;
+        }
+
         if (isSignup) {
-            const fullName  = form.fullName.value.trim();
-            const phone     = normalizePhone(form.phone.value);
-            const nickname  = form.nickname.value.trim();
-            const passwordConfirm = form.passwordConfirm.value;
+            const fullName  = form.fullName?.value?.trim() || '';
+            const phone     = normalizePhone(form.phone?.value || '');
+            const nickname  = form.nickname?.value?.trim() || '';
+            const passwordConfirm = form.passwordConfirm?.value || '';
 
             if (!fullName)                              { msgEl.textContent = '이름을 입력해주세요.'; return; }
             if (!phone)                                 { msgEl.textContent = '올바른 휴대폰 번호를 입력해주세요 (010-...).'; return; }
@@ -970,13 +980,13 @@ function openSharedLoginModal(initialMode = 'login') {
 
             submitBtn.disabled = true; submitBtn.textContent = '가입 중…'; msgEl.textContent = '';
             try {
-                if (!supabaseClient) { await initSupabase(); }
                 const consentMeta = {
                     terms_agreed: true,
                     privacy_agreed: true,
-                    marketing_opt_in: !!form.agreeMarketing.checked,
+                    marketing_opt_in: !!form.agreeMarketing?.checked,
                     consent_at: new Date().toISOString(),
                 };
+                console.log('[signUp] calling supabase.auth.signUp...');
                 const { data, error } = await supabaseClient.auth.signUp({
                     email, password,
                     options: { data: {
@@ -986,6 +996,7 @@ function openSharedLoginModal(initialMode = 'login') {
                         ...consentMeta,
                     }},
                 });
+                console.log('[signUp] result', { error, hasSession: !!data?.session, userId: data?.user?.id });
                 if (error) throw error;
                 if (!data.session) {
                     msgEl.style.color = '#1b5e20';
@@ -1009,6 +1020,7 @@ function openSharedLoginModal(initialMode = 'login') {
                 close();
                 await navigateAfterAuth();
             } catch (err) {
+                console.error('[signUp] error', err);
                 msgEl.style.color = '#c8362c';
                 msgEl.textContent = err?.message || '가입 처리에 실패했습니다.';
                 submitBtn.disabled = false; submitBtn.textContent = '회원가입';
@@ -1016,12 +1028,14 @@ function openSharedLoginModal(initialMode = 'login') {
         } else {
             submitBtn.disabled = true; submitBtn.textContent = '로그인 중…'; msgEl.textContent = '';
             try {
-                if (!supabaseClient) { await initSupabase(); }
-                const { error } = await supabaseClient.auth.signInWithPassword({ email, password });
+                console.log('[signIn] calling signInWithPassword...');
+                const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
+                console.log('[signIn] result', { error, hasSession: !!data?.session });
                 if (error) throw error;
                 close();
                 await navigateAfterAuth();
             } catch (err) {
+                console.error('[signIn] error', err);
                 msgEl.style.color = '#c8362c';
                 msgEl.textContent = err?.message || '로그인 실패';
                 submitBtn.disabled = false; submitBtn.textContent = '로그인';
@@ -1030,52 +1044,58 @@ function openSharedLoginModal(initialMode = 'login') {
     });
 
     googleBtn.addEventListener('click', () => {
-        // 중요: 동기적 흐름 유지 — await 한 번이라도 들어가면 모바일 Safari/안드로이드가
-        // user gesture context 잃음으로 인식 → signInWithOAuth 의 navigation 차단.
-        // 그래서 await initSupabase 없이 supabaseClient 가 이미 init 됐다고 가정 (모달 진입 전 bootApp 에서 됨).
+        // 동기 흐름 유지 — await 한 번이라도 들어가면 모바일이 user gesture 잃음으로 인식 → OAuth navigation 차단.
         msgEl.textContent = '';
         googleBtn.disabled = true;
 
         const client = supabaseClient;
+        console.log('[google oauth] click', { hasClient: !!client, hasAuth: !!client?.auth });
+
         if (!client?.auth?.signInWithOAuth) {
             msgEl.style.color = '#c8362c';
-            msgEl.textContent = '인증 초기화 중입니다. 잠시 후 다시 시도해주세요.';
+            msgEl.textContent = '인증 초기화 중입니다. 한 번 더 클릭해주세요.';
             googleBtn.disabled = false;
-            // fire-and-forget 으로 init 트리거 — 다음 click 엔 client 살아있음
             try { initSupabase().catch(() => {}); } catch {}
             return;
         }
 
         // OAuth callback 도 login-complete.html 을 거치게 해서 일관된 transition 흐름.
-        // 사용자가 로그인 시도한 페이지로 그대로 돌려보냄 — 메인이면 메인, 서브면 서브.
         const origin = window.location.origin;
         const path   = window.location.pathname.replace(/^\//, '') || 'index.html';
         const search = window.location.search || '';
         const nextRaw = path + search;
         const redirectTo = origin + '/login-complete.html?next=' + encodeURIComponent(nextRaw);
+        console.log('[google oauth] redirectTo', redirectTo);
 
         // signInWithOAuth 는 sync 으로 OAuth URL 생성 + location.assign 시도 → 같은 user gesture 안에 실행.
-        // promise 결과(error) 는 비동기로 catch — navigation 자체는 이미 시작됨.
-        // prompt=select_account: Google 이 기존 로그인 세션이 있어도 항상 계정 선택 화면 표시
-        // → 다른 계정으로 로그인 가능. 미지정 시 Google 이 즉시 callback (계정 선택 화면 skip).
-        client.auth.signInWithOAuth({
-            provider: 'google',
-            options: {
-                redirectTo,
-                queryParams: { prompt: 'select_account' },
-            },
-        }).then(({ error }) => {
-            if (error) {
+        // prompt=select_account: 항상 계정 선택 화면 표시 (가입 시 다른 계정 선택 가능).
+        try {
+            client.auth.signInWithOAuth({
+                provider: 'google',
+                options: {
+                    redirectTo,
+                    queryParams: { prompt: 'select_account' },
+                },
+            }).then(({ error, data }) => {
+                console.log('[google oauth] response', { hasUrl: !!data?.url, error });
+                if (error) {
+                    msgEl.style.color = '#c8362c';
+                    msgEl.textContent = error.message || 'Google 로그인 실패';
+                    googleBtn.disabled = false;
+                }
+                // 성공 시 supabase 가 이미 redirect 시작 — 추가 처리 X.
+            }).catch((err) => {
+                console.error('[google oauth] catch', err);
                 msgEl.style.color = '#c8362c';
-                msgEl.textContent = error.message || 'Google 로그인 실패';
+                msgEl.textContent = err?.message || 'Google 로그인 실패';
                 googleBtn.disabled = false;
-            }
-            // 성공 시 supabase 가 이미 redirect 시작했으므로 추가 처리 X.
-        }).catch((err) => {
+            });
+        } catch (sync_err) {
+            console.error('[google oauth] sync throw', sync_err);
             msgEl.style.color = '#c8362c';
-            msgEl.textContent = err?.message || 'Google 로그인 실패';
+            msgEl.textContent = sync_err?.message || 'OAuth 호출 실패';
             googleBtn.disabled = false;
-        });
+        }
     });
 }
 
