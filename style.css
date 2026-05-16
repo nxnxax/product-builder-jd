@@ -2541,6 +2541,152 @@ select:focus {
 .sms-modal-body .sms-result-tbl tbody tr:last-child td{border-bottom:0}
 .sms-modal-body .sms-result-tbl td:first-child{font-family:'SF Mono',Menlo,Consolas,monospace;color:#0e0d0c}
 
+/* ===== SMS 스마트폰 미리보기 디자인 (작성창) ===== */
+.sms-modal .modal-panel.sms-phone-panel{max-width:600px}
+.sms-phone{
+    width:100%;max-width:340px;margin:14px auto 4px;
+    background:linear-gradient(160deg,#1f1f23 0%,#0f0f12 100%);
+    border-radius:42px;padding:12px;
+    box-shadow:0 22px 50px rgba(20,14,8,.32), inset 0 0 0 2px rgba(255,255,255,.06);
+    position:relative
+}
+.sms-phone::before{
+    content:'';position:absolute;top:12px;left:50%;transform:translateX(-50%);
+    width:110px;height:22px;background:#0f0f12;border-radius:0 0 14px 14px;z-index:3
+}
+.sms-phone-screen{
+    background:#f5f5f7;border-radius:32px;overflow:hidden;
+    min-height:480px;display:flex;flex-direction:column
+}
+.sms-phone-statusbar{
+    padding:14px 22px 4px;display:flex;justify-content:space-between;align-items:center;
+    font-size:13px;font-weight:700;color:#0e0d0c;letter-spacing:.02em
+}
+.sms-phone-statusbar .status-r{display:flex;align-items:center;gap:5px;font-size:11.5px;color:#4f4943}
+.sms-phone-statusbar .status-r svg{display:block}
+.sms-phone-header{
+    background:rgba(247,247,250,.92);backdrop-filter:blur(8px);
+    border-bottom:1px solid rgba(0,0,0,.07);
+    padding:10px 14px 8px;text-align:center;position:relative
+}
+.sms-phone-header h3{margin:0;font-size:13.5px;font-weight:700;color:#0e0d0c;letter-spacing:-.01em}
+.sms-phone-header::before{
+    content:'';position:absolute;left:14px;top:50%;transform:translateY(-50%);
+    width:9px;height:9px;border-left:2px solid #0a84ff;border-bottom:2px solid #0a84ff;
+    transform:translateY(-50%) rotate(45deg)
+}
+.sms-phone-recipients{
+    background:#fff;border-bottom:1px solid rgba(0,0,0,.07);
+    padding:9px 14px;display:flex;flex-wrap:wrap;align-items:center;gap:5px 6px;
+    font-size:12.5px;position:relative
+}
+.sms-phone-recipients-label{
+    color:#8a847e;font-weight:600;margin-right:2px;font-size:11.5px
+}
+.sms-recipient-chip{
+    background:#e8eaed;color:#0e0d0c;
+    padding:3px 10px;border-radius:999px;
+    font-size:11.5px;font-weight:600;
+    font-family:'SF Mono',Menlo,Consolas,monospace;
+    letter-spacing:.01em;white-space:nowrap;
+    border:1px solid rgba(0,0,0,.06)
+}
+.sms-recipient-chip .chip-name{
+    margin-right:4px;color:#4f4943;font-family:inherit;font-weight:500
+}
+.sms-recipient-more-wrap{position:relative;display:inline-block}
+.sms-recipient-more{
+    background:linear-gradient(135deg,#c8362c 0%,#a02720 100%);
+    color:#fff;border:0;cursor:pointer;
+    padding:3px 11px;border-radius:999px;
+    font-size:11.5px;font-weight:700;font-family:inherit;
+    box-shadow:0 2px 6px rgba(200,54,44,.25);transition:all .15s
+}
+.sms-recipient-more:hover{filter:brightness(1.08);transform:translateY(-1px)}
+.sms-recipient-more::after{content:' ▾';font-size:10px}
+.sms-recipient-dropdown{
+    position:absolute;top:calc(100% + 6px);right:0;z-index:50;
+    background:#fff;border-radius:14px;
+    box-shadow:0 14px 36px rgba(20,14,8,.18), 0 0 0 1px rgba(0,0,0,.06);
+    padding:6px 0;min-width:240px;max-width:300px;max-height:280px;overflow-y:auto;
+    display:none
+}
+.sms-recipient-dropdown.open{display:block}
+.sms-recipient-dropdown-head{
+    padding:8px 14px 6px;font-size:11px;font-weight:700;color:#8a847e;
+    text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid rgba(0,0,0,.06)
+}
+.sms-recipient-dropdown-item{
+    padding:8px 14px;font-size:12.5px;display:flex;justify-content:space-between;
+    align-items:center;gap:12px;border-bottom:1px solid rgba(0,0,0,.04)
+}
+.sms-recipient-dropdown-item:last-child{border-bottom:0}
+.sms-recipient-dropdown-item:hover{background:#fbf7ef}
+.sms-recipient-dropdown-item .nm{color:#4f4943;font-weight:600}
+.sms-recipient-dropdown-item .ph{
+    color:#0e0d0c;font-family:'SF Mono',Menlo,Consolas,monospace;font-weight:600
+}
+.sms-phone-thread{
+    flex:1;background:linear-gradient(180deg,#f5f5f7 0%,#ebebef 100%);
+    padding:14px 12px;overflow-y:auto;
+    display:flex;flex-direction:column;justify-content:flex-end;gap:6px;
+    min-height:180px
+}
+.sms-phone-bubble{
+    align-self:flex-end;
+    background:linear-gradient(135deg,#0a84ff 0%,#0a6eff 100%);
+    color:#fff;padding:9px 14px;border-radius:18px 18px 4px 18px;
+    max-width:78%;font-size:13.5px;line-height:1.5;
+    word-break:break-word;white-space:pre-wrap;
+    box-shadow:0 2px 5px rgba(10,132,255,.22);
+    animation:smsBubbleIn .2s ease-out
+}
+@keyframes smsBubbleIn{from{opacity:0;transform:translateY(6px) scale(.98)}to{opacity:1;transform:translateY(0) scale(1)}}
+.sms-phone-bubble.placeholder{
+    background:#e0e0e6;color:#7d7d83;font-style:italic;
+    box-shadow:none;animation:none
+}
+.sms-phone-time{
+    align-self:center;font-size:10.5px;color:#8a847e;
+    margin:4px 0 2px;font-weight:600;letter-spacing:.02em
+}
+.sms-phone-inputbar{
+    background:#fff;border-top:1px solid rgba(0,0,0,.08);
+    padding:8px 10px 12px;display:flex;align-items:flex-end;gap:8px
+}
+.sms-modal .sms-phone-input{
+    flex:1;border:1px solid rgba(0,0,0,.14);border-radius:18px;
+    padding:8px 14px;font-size:13.5px;line-height:1.5;
+    font-family:'Pretendard',-apple-system,sans-serif;
+    resize:none;min-height:36px;max-height:120px;
+    background:#f5f5f7;color:#0e0d0c;
+    width:auto;outline:none;overflow-y:auto
+}
+.sms-modal .sms-phone-input:focus{border-color:#0a84ff;background:#fff;box-shadow:0 0 0 3px rgba(10,132,255,.12)}
+.sms-phone-send{
+    width:36px;height:36px;border-radius:50%;
+    background:#0a84ff;color:#fff;border:0;
+    display:flex;align-items:center;justify-content:center;cursor:pointer;
+    flex-shrink:0;transition:all .15s;font-family:inherit
+}
+.sms-phone-send:hover:not(:disabled){background:#0066d6;transform:scale(1.06)}
+.sms-phone-send:disabled{background:#c8c8d0;cursor:not-allowed;opacity:.7}
+.sms-phone-send svg{width:16px;height:16px}
+.sms-phone-helper{
+    margin:14px auto 0;max-width:340px;
+    display:flex;flex-wrap:wrap;gap:6px 18px;justify-content:space-between;
+    font-size:12.5px;color:#4f4943
+}
+.sms-phone-helper b{color:#0e0d0c;font-variant-numeric:tabular-nums}
+
+@media (max-width:520px){
+    .sms-phone{max-width:300px;border-radius:36px;padding:10px}
+    .sms-phone-screen{border-radius:28px;min-height:440px}
+    .sms-phone-recipients{padding:8px 12px}
+    .sms-recipient-chip{padding:3px 8px;font-size:11px}
+    .sms-recipient-dropdown{min-width:200px;right:auto;left:0}
+}
+
 /* ===== 서브 페이지용 통합 인증 모달 (auth-shared.openSharedLoginModal) ===== */
 .shared-auth-backdrop{position:fixed;inset:0;background:rgba(20,14,8,.5);z-index:1000;display:flex;align-items:center;justify-content:center;padding:20px;backdrop-filter:blur(4px)}
 .shared-auth-panel{background:#fff;border-radius:16px;max-width:420px;width:100%;padding:28px 26px;box-shadow:0 24px 60px rgba(20,14,8,.3);position:relative;max-height:90vh;overflow-y:auto;font-family:inherit}

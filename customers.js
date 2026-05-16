@@ -883,6 +883,21 @@ function updateBulkBar() {
 function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
 function escapeHtml(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function escapeAttr(s) { return String(s ?? '').replace(/"/g, '&quot;'); }
+function formatPhoneDisplay(p) {
+    const digits = String(p ?? '').replace(/\D/g, '');
+    if (digits.length === 11) return digits.replace(/(\d{3})(\d{4})(\d{4})/, '$1-$2-$3');
+    if (digits.length === 10) return digits.replace(/(\d{2,3})(\d{3,4})(\d{4})/, '$1-$2-$3');
+    if (digits.length === 8)  return digits.replace(/(\d{4})(\d{4})/, '$1-$2');
+    return String(p ?? '');
+}
+function truncateName(n, max = 4) {
+    const s = String(n ?? '');
+    return s.length > max ? s.slice(0, max) + '…' : s;
+}
+function nowHHMM() {
+    const d = new Date();
+    return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+}
 function showError(msg) {
     console.error(msg);
     const c = document.getElementById('content');
@@ -905,11 +920,43 @@ async function openSmsModal() {
     }
 
     const ids = [...selectedIds];
+
+    // 선택된 고객 → {name, phone} 리스트
+    const selectedRecords = records.filter(r => ids.includes(r.id));
+    const recipients = selectedRecords.map(r => ({
+        name: r.customer || '이름없음',
+        phone: formatPhoneDisplay(r.phone || ''),
+        rawPhone: r.phone || ''
+    }));
+    const visibleRcpt = recipients.slice(0, 5);
+    const extraRcpt   = recipients.slice(5);
+    const senderPhoneFmt = formatPhoneDisplay(cred.senderPhone || '');
+
+    const chipsHtml = visibleRcpt.map(r => `
+        <span class="sms-recipient-chip" title="${escapeAttr(r.name)} · ${escapeAttr(r.phone)}">
+            <span class="chip-name">${escapeHtml(truncateName(r.name))}</span>${escapeHtml(r.phone || '번호없음')}
+        </span>
+    `).join('');
+    const moreHtml = extraRcpt.length ? `
+        <span class="sms-recipient-more-wrap">
+            <button type="button" class="sms-recipient-more" data-more>+${extraRcpt.length}명</button>
+            <div class="sms-recipient-dropdown" data-more-list>
+                <div class="sms-recipient-dropdown-head">전체 수신자 (${recipients.length}명)</div>
+                ${recipients.map(r => `
+                    <div class="sms-recipient-dropdown-item">
+                        <span class="nm">${escapeHtml(r.name)}</span>
+                        <span class="ph">${escapeHtml(r.phone || '번호없음')}</span>
+                    </div>
+                `).join('')}
+            </div>
+        </span>
+    ` : '';
+
     const md = document.createElement('div');
     md.className = 'modal-backdrop sms-modal';
     md.style.zIndex = '300';
     md.innerHTML = `
-        <div class="modal-panel">
+        <div class="modal-panel sms-phone-panel">
             <header class="modal-header">
                 <div>
                     <h2>📨 문자 단체 발송</h2>
@@ -920,20 +967,59 @@ async function openSmsModal() {
                 <div class="sms-notice">
                     <b>안내</b><br>
                     · 문자 요금은 본인의 <b>Solapi 계정 잔액</b>에서 차감됩니다.<br>
-                    · 발신번호: <code>${escapeHtml(cred.senderPhone || '미등록')}</code><br>
+                    · 발신번호: <code>${escapeHtml(senderPhoneFmt || '미등록')}</code><br>
                     · 광고성 문자는 <b>수신동의 고객에게만</b> 발송해야 하며, 본문에 <b>[수신거부]</b> 문구가 필요합니다.
                 </div>
-                <label class="sms-label">문자 내용</label>
-                <textarea id="smsText" rows="6" maxlength="2000" placeholder="안녕하세요. ○○분양 담당자입니다 …&#10;&#10;(광고성일 경우 마지막 줄에 '[수신거부] 080-XXX-XXXX' 같이 거부 방법을 명시해 주세요.)"></textarea>
-                <div class="sms-meta">
+
+                <!-- 스마트폰 미리보기 + 입력 -->
+                <div class="sms-phone" aria-label="문자 미리보기">
+                    <div class="sms-phone-screen">
+                        <div class="sms-phone-statusbar">
+                            <span>${nowHHMM()}</span>
+                            <span class="status-r">
+                                <svg width="16" height="10" viewBox="0 0 16 10" aria-hidden="true">
+                                    <path d="M2 8.5l1.5-1.5 M5 7l2-2 M8.5 5.5L11 3 M12 4l2.5-2.5" stroke="#0e0d0c" stroke-width="1.4" fill="none" stroke-linecap="round"/>
+                                </svg>
+                                <svg width="22" height="10" viewBox="0 0 22 10" aria-hidden="true">
+                                    <rect x="1" y="1" width="17" height="8" rx="2" fill="none" stroke="#0e0d0c" stroke-width="1.2" opacity=".75"/>
+                                    <rect x="19" y="3.5" width="2" height="3" rx=".6" fill="#0e0d0c" opacity=".75"/>
+                                    <rect x="2.5" y="2.5" width="13" height="5" rx="1" fill="#34a853"/>
+                                </svg>
+                            </span>
+                        </div>
+                        <div class="sms-phone-header">
+                            <h3>새 메시지</h3>
+                        </div>
+                        <div class="sms-phone-recipients">
+                            <span class="sms-phone-recipients-label">받는사람</span>
+                            ${chipsHtml}
+                            ${moreHtml}
+                        </div>
+                        <div class="sms-phone-thread" id="smsThread">
+                            <div class="sms-phone-time">방금</div>
+                            <div class="sms-phone-bubble placeholder" id="smsBubble">메시지를 입력하면 여기에 미리보기가 표시됩니다.</div>
+                        </div>
+                        <div class="sms-phone-inputbar">
+                            <textarea id="smsText" class="sms-phone-input" rows="1" maxlength="2000"
+                                placeholder="메시지 작성..."></textarea>
+                            <button type="button" class="sms-phone-send" disabled title="미리보기 갱신" aria-label="미리보기">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                    <path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/>
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="sms-phone-helper">
                     <span><b id="smsLen">0</b> 자 · 90바이트 초과 시 LMS 로 자동 전환</span>
                     <span>선택 고객 <b>${ids.length}</b>명 · 발송 건수는 동의/번호 확인 후 결정</span>
                 </div>
-                <p class="form-help error" data-error style="margin:8px 0 0;display:none;"></p>
+                <p class="form-help error" data-error style="margin:10px 0 0;display:none;"></p>
             </div>
             <footer class="modal-footer">
                 <button class="tiny-btn" type="button" data-cancel>취소</button>
-                <button class="tiny-btn primary" type="button" data-send>발송하기</button>
+                <button class="tiny-btn primary" type="button" data-send>📨 발송하기</button>
             </footer>
         </div>
     `;
@@ -944,14 +1030,47 @@ async function openSmsModal() {
     const errEl    = md.querySelector('[data-error]');
     const sendBtn  = md.querySelector('[data-send]');
     const cancelBtn = md.querySelector('[data-cancel]');
+    const bubbleEl  = md.querySelector('#smsBubble');
+    const previewSendBtn = md.querySelector('.sms-phone-send');
+    const moreBtn   = md.querySelector('[data-more]');
+    const moreList  = md.querySelector('[data-more-list]');
 
     const close = () => md.remove();
     cancelBtn.addEventListener('click', close);
-    md.addEventListener('click', (e) => { if (e.target === md) close(); });
-
-    textarea.addEventListener('input', () => {
-        lenEl.textContent = textarea.value.length;
+    md.addEventListener('click', (e) => {
+        if (e.target === md) close();
+        // dropdown 외부 클릭 시 닫힘
+        if (moreList && moreList.classList.contains('open') &&
+            !moreList.contains(e.target) && e.target !== moreBtn) {
+            moreList.classList.remove('open');
+        }
     });
+
+    if (moreBtn) {
+        moreBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            moreList.classList.toggle('open');
+        });
+    }
+
+    const updatePreview = () => {
+        const v = textarea.value;
+        lenEl.textContent = v.length;
+        // textarea auto-grow
+        textarea.style.height = 'auto';
+        textarea.style.height = Math.min(textarea.scrollHeight, 120) + 'px';
+        // bubble
+        if (v.trim()) {
+            bubbleEl.classList.remove('placeholder');
+            bubbleEl.textContent = v;
+            previewSendBtn.disabled = false;
+        } else {
+            bubbleEl.classList.add('placeholder');
+            bubbleEl.textContent = '메시지를 입력하면 여기에 미리보기가 표시됩니다.';
+            previewSendBtn.disabled = true;
+        }
+    };
+    textarea.addEventListener('input', updatePreview);
     textarea.focus();
 
     sendBtn.addEventListener('click', async () => {
