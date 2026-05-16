@@ -903,6 +903,22 @@ function escapeHtmlSafe(s) {
     return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
+/**
+ * 모달 backdrop 클릭 close 헬퍼 — pointerdown/pointerup 모두 backdrop 위일 때만 close.
+ * input 안에서 텍스트 드래그(또는 select-all) 후 mouseup 이 backdrop 위에서 발생해도 close 안 됨.
+ */
+function bindBackdropClose(backdrop, closeFn) {
+    let downOnBackdrop = false;
+    backdrop.addEventListener('pointerdown', (e) => {
+        downOnBackdrop = (e.target === backdrop);
+    });
+    backdrop.addEventListener('pointerup', (e) => {
+        const wasDownOnBackdrop = downOnBackdrop;
+        downOnBackdrop = false;
+        if (wasDownOnBackdrop && e.target === backdrop) closeFn();
+    });
+}
+
 /* =========================================================================
    아이디(이메일) 찾기 모달 — 2단계: 이름+휴대폰 → SMS 인증번호 발송 → 코드 입력 → 마스킹 이메일.
    records.php (public) endpoints:
@@ -942,9 +958,7 @@ function openFindIdModal() {
     document.body.appendChild(md);
     const close = () => md.remove();
     md.querySelector('.shared-auth-close').addEventListener('click', close);
-    md.querySelector('.shared-auth-backdrop').addEventListener('click', (e) => {
-        if (e.target.classList.contains('shared-auth-backdrop')) close();
-    });
+    bindBackdropClose(md.querySelector('.shared-auth-backdrop'), close);
     md.querySelector('[data-back]').addEventListener('click', () => { close(); openSharedLoginModal('login'); });
     const form = md.querySelector('.shared-auth-form');
     const msgEl = md.querySelector('.shared-auth-message');
@@ -1084,9 +1098,7 @@ function openFindPasswordModal(prefillEmail = '') {
     document.body.appendChild(md);
     const close = () => md.remove();
     md.querySelector('.shared-auth-close').addEventListener('click', close);
-    md.querySelector('.shared-auth-backdrop').addEventListener('click', (e) => {
-        if (e.target.classList.contains('shared-auth-backdrop')) close();
-    });
+    bindBackdropClose(md.querySelector('.shared-auth-backdrop'), close);
     md.querySelector('[data-back]').addEventListener('click', () => { close(); openSharedLoginModal('login'); });
 
     const form = md.querySelector('.shared-auth-form');
@@ -1293,9 +1305,17 @@ function openSharedLoginModal(initialMode = 'login') {
                         <label>이름 <input type="text" name="fullName" autocomplete="name" placeholder="실명"></label>
                         <label>휴대폰 <input type="tel" name="phone" autocomplete="tel" placeholder="010-0000-0000"></label>
                     </div>
-                    <label>이메일 <input type="email" name="email" autocomplete="email" required placeholder="name@example.com"></label>
+                    <div class="signup-input-row" data-signup-input>
+                        <label style="flex:1;">이메일 <input type="email" name="email" autocomplete="email" required placeholder="name@example.com"></label>
+                        <button type="button" data-check-email class="check-dup-btn" data-signup-only hidden>중복확인</button>
+                    </div>
+                    <small class="check-result" data-check-email-result hidden style="margin-top:-6px;display:block;"></small>
                     <div class="shared-auth-fields" data-signup-only hidden>
-                        <label>닉네임 <input type="text" name="nickname" minlength="2" maxlength="20" placeholder="2~20자 한글/영문/숫자"></label>
+                        <div class="signup-input-row">
+                            <label style="flex:1;">닉네임 <input type="text" name="nickname" minlength="2" maxlength="20" placeholder="2~20자 한글/영문/숫자"></label>
+                            <button type="button" data-check-nickname class="check-dup-btn">중복확인</button>
+                        </div>
+                        <small class="check-result" data-check-nickname-result hidden style="margin-top:-6px;display:block;"></small>
                     </div>
                     <label>비밀번호 <input type="password" name="password" autocomplete="current-password" required minlength="6" placeholder="6자 이상"></label>
                     <div class="shared-auth-fields" data-login-only style="flex-direction:row;align-items:center;justify-content:space-between;gap:8px;font-size:12.5px;">
@@ -1380,10 +1400,83 @@ function openSharedLoginModal(initialMode = 'login') {
 
     const close = () => md.remove();
     closeBtn.addEventListener('click', close);
-    backdrop.addEventListener('click', (e) => { if (e.target === backdrop) close(); });
+    bindBackdropClose(backdrop, close);
     const escHandler = (e) => { if (e.key === 'Escape') { close(); document.removeEventListener('keydown', escHandler); } };
     document.addEventListener('keydown', escHandler);
     setTimeout(() => form.email?.focus(), 50);
+
+    // 이메일 / 닉네임 중복확인 — auth-availability (public) 호출.
+    const checkEmailBtn      = md.querySelector('[data-check-email]');
+    const checkEmailResultEl = md.querySelector('[data-check-email-result]');
+    const checkNickBtn       = md.querySelector('[data-check-nickname]');
+    const checkNickResultEl  = md.querySelector('[data-check-nickname-result]');
+
+    const showCheckResult = (el, ok, text) => {
+        if (!el) return;
+        el.hidden = false;
+        el.style.color = ok ? '#1b5e20' : '#c8362c';
+        el.style.fontSize = '11.5px';
+        el.style.fontWeight = '600';
+        el.textContent = text;
+    };
+
+    async function checkAvailability(kind, value) {
+        const params = new URLSearchParams();
+        params.set('resource', 'auth-availability');
+        if (kind === 'email') params.set('email', value);
+        if (kind === 'nickname') params.set('nickname', value);
+        const resp = await fetch('records.php?' + params.toString(), { method: 'GET' });
+        const data = await resp.json().catch(() => ({}));
+        return data;
+    }
+
+    checkEmailBtn?.addEventListener('click', async () => {
+        const v = form.email.value.trim();
+        if (!v) { showCheckResult(checkEmailResultEl, false, '이메일을 입력해주세요.'); return; }
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) { showCheckResult(checkEmailResultEl, false, '올바른 이메일 형식이 아닙니다.'); return; }
+        checkEmailBtn.disabled = true; checkEmailBtn.textContent = '확인 중…';
+        try {
+            const data = await checkAvailability('email', v);
+            if (data?.email_taken === true) {
+                showCheckResult(checkEmailResultEl, false, '이미 사용 중인 이메일입니다.');
+            } else if (data?.email_invalid) {
+                showCheckResult(checkEmailResultEl, false, '올바른 이메일 형식이 아닙니다.');
+            } else {
+                showCheckResult(checkEmailResultEl, true, '✅ 사용 가능한 이메일입니다.');
+            }
+        } catch (e) {
+            showCheckResult(checkEmailResultEl, false, '확인 실패: ' + (e?.message || e));
+        } finally {
+            checkEmailBtn.disabled = false; checkEmailBtn.textContent = '중복확인';
+        }
+    });
+    // 이메일 변경 시 결과 reset
+    form.email?.addEventListener('input', () => {
+        if (checkEmailResultEl) checkEmailResultEl.hidden = true;
+    });
+
+    checkNickBtn?.addEventListener('click', async () => {
+        const v = form.nickname.value.trim();
+        if (!v) { showCheckResult(checkNickResultEl, false, '닉네임을 입력해주세요.'); return; }
+        checkNickBtn.disabled = true; checkNickBtn.textContent = '확인 중…';
+        try {
+            const data = await checkAvailability('nickname', v);
+            if (data?.nickname_invalid) {
+                showCheckResult(checkNickResultEl, false, '닉네임은 2~20자, 한글/영문/숫자/_/- 만 가능합니다.');
+            } else if (data?.nickname_taken === true) {
+                showCheckResult(checkNickResultEl, false, '이미 사용 중인 닉네임입니다.');
+            } else {
+                showCheckResult(checkNickResultEl, true, '✅ 사용 가능한 닉네임입니다.');
+            }
+        } catch (e) {
+            showCheckResult(checkNickResultEl, false, '확인 실패: ' + (e?.message || e));
+        } finally {
+            checkNickBtn.disabled = false; checkNickBtn.textContent = '중복확인';
+        }
+    });
+    form.nickname?.addEventListener('input', () => {
+        if (checkNickResultEl) checkNickResultEl.hidden = true;
+    });
 
     // 전체동의 체크 동기화
     agreeAll?.addEventListener('change', () => {

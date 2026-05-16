@@ -2953,6 +2953,16 @@ select:focus {
 .shared-auth-form input:focus{border-color:#0e0d0c}
 .shared-auth-fields{display:flex;flex-direction:column;gap:12px}
 .shared-auth-fields[hidden]{display:none}   /* author display:flex 가 [hidden] 기본을 덮어버리는 버그 fix */
+.signup-input-row{display:flex;gap:6px;align-items:flex-end}
+.check-dup-btn{
+    padding:9px 12px;background:#0e0d0c;color:#fff;border:0;border-radius:8px;
+    font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;font-family:inherit;
+    transition:all .15s
+}
+.check-dup-btn:hover:not(:disabled){background:#2a2520}
+.check-dup-btn:disabled{opacity:.5;cursor:wait}
+.check-dup-btn[hidden]{display:none}
+.check-result[hidden]{display:none}
 .shared-auth-consents{display:flex;flex-direction:column;gap:8px;padding:12px;background:#fbf7ef;border-radius:8px;margin-top:4px}
 .shared-auth-consents label{flex-direction:row;align-items:center;gap:8px;font-size:13px;font-weight:500;color:#4f4943;cursor:pointer}
 .shared-auth-consents input[type=checkbox]{width:14px;height:14px;accent-color:#c8362c;margin:0}
