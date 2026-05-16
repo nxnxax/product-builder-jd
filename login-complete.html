@@ -105,7 +105,7 @@
 
         let session = null;
         try {
-            const mod = await import('./auth-shared.js?v=20260516-card-expand-persist');
+            const mod = await import('./auth-shared.js?v=20260516-hotfix-return');
             const result = await mod.initSupabase().catch(() => null);
             const client = result?.client;
             if (client?.auth?.getSession) {
@@ -118,7 +118,7 @@
         if (!session) {
             await new Promise(r => setTimeout(r, 120));
             try {
-                const mod = await import('./auth-shared.js?v=20260516-card-expand-persist');
+                const mod = await import('./auth-shared.js?v=20260516-hotfix-return');
                 const result = await mod.initSupabase().catch(() => null);
                 if (result?.client?.auth?.getSession) {
                     const { data } = await result.client.auth.getSession();
@@ -180,8 +180,8 @@
                 document.getElementById('loadingState').style.display = 'none';
                 document.getElementById('extraWrap').style.display = 'flex';
                 setupExtraForm(session, target);
-                return;   // redirect skip — submit 후에 진행
-            }
+                // submit 후 진행 — 자동 redirect 안 함. module top-level 이라 return 사용 X.
+            } else {
 
             // 원래 가려던 페이지로 cache-bust replace.
             const sep = target.includes('?') ? '&' : '?';
@@ -196,6 +196,7 @@
                     setTimeout(() => { try { window.location.reload(); } catch {} }, 800);
                 }
             }, 1800);
+            } /* end else (needsExtra 가 false 인 경우만 redirect) */
         }
 
         // Google 신규 가입자 — 닉네임 + 약관 입력 form 처리.
@@ -274,7 +275,7 @@
 
                     // 2) supabase user_metadata 업데이트 (nickname + 약관 동의 기록)
                     try {
-                        const mod = await import('./auth-shared.js?v=20260516-card-expand-persist');
+                        const mod = await import('./auth-shared.js?v=20260516-hotfix-return');
                         const result = await mod.initSupabase().catch(() => null);
                         const client = result?.client;
                         if (client?.auth?.updateUser) {
