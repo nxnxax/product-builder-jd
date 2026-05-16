@@ -1023,18 +1023,37 @@ function openSharedLoginModal(initialMode = 'login') {
                 console.error('[signUp] error', err);
                 msgEl.style.color = '#c8362c';
                 const raw = String(err?.message || '');
-                // supabase "User already registered" → 친화 메시지 + 로그인 모드 자동 전환
+                // supabase "User already registered" → 큰 안내 + 비밀번호 재설정 옵션 + 로그인 자동 전환
                 if (/already\s*registered|already\s*exists|user.*exist/i.test(raw)) {
-                    msgEl.textContent = '이미 가입된 이메일입니다. 로그인 모드로 전환합니다.';
-                    msgEl.style.color = '#1b5e20';
+                    msgEl.innerHTML = ''
+                        + '<b style="color:#c8362c;font-size:14px;">이미 가입된 이메일입니다.</b><br>'
+                        + '<span style="color:#4f4943;font-size:12.5px;">로그인 모드로 전환하거나, 비밀번호를 모르면 재설정 메일을 받아주세요.</span><br>'
+                        + '<button type="button" id="ymanResetPwdBtn" style="margin-top:8px;padding:6px 12px;background:#fff5ed;border:1px solid rgba(200,54,44,.4);color:#c8362c;border-radius:6px;font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit;">📧 비밀번호 재설정 메일 보내기</button>';
                     submitBtn.disabled = false; submitBtn.textContent = '회원가입';
+                    const resetBtn = msgEl.querySelector('#ymanResetPwdBtn');
+                    if (resetBtn) {
+                        resetBtn.addEventListener('click', async () => {
+                            resetBtn.disabled = true; resetBtn.textContent = '메일 보내는 중…';
+                            try {
+                                const { error: resetErr } = await supabaseClient.auth.resetPasswordForEmail(email, {
+                                    redirectTo: window.location.origin + '/index.html',
+                                });
+                                if (resetErr) throw resetErr;
+                                msgEl.innerHTML = '<b style="color:#1b5e20;">📧 ' + email + ' 으로 재설정 메일을 보냈습니다.</b><br><span style="font-size:12px;color:#4f4943;">메일함을 확인하고 링크를 클릭하세요.</span>';
+                            } catch (e2) {
+                                resetBtn.disabled = false; resetBtn.textContent = '📧 비밀번호 재설정 메일 보내기';
+                                msgEl.insertAdjacentHTML('beforeend', '<br><span style="color:#c8362c;font-size:11.5px;">전송 실패: ' + escapeHtmlSafe(e2?.message || '알 수 없음') + '</span>');
+                            }
+                        });
+                    }
+                    // 5초 후 자동으로 로그인 모드 전환 (사용자가 비밀번호 안다면)
                     setTimeout(() => {
-                        mode = 'login';
-                        applyMode();
-                        // 입력한 이메일/비번 유지 — 사용자가 곧장 로그인 가능
-                        msgEl.style.color = '#0e0d0c';
-                        msgEl.textContent = '비밀번호를 입력하고 "로그인" 을 눌러주세요.';
-                    }, 1200);
+                        if (mode === 'signup') {
+                            mode = 'login';
+                            applyMode();
+                            msgEl.innerHTML = '<span style="color:#0e0d0c;font-size:13px;">로그인 모드로 전환했습니다. 비밀번호를 입력하고 "로그인" 을 눌러주세요.</span>';
+                        }
+                    }, 5000);
                 } else {
                     msgEl.textContent = raw || '가입 처리에 실패했습니다.';
                     submitBtn.disabled = false; submitBtn.textContent = '회원가입';
