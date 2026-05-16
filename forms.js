@@ -596,17 +596,16 @@ function renderFormUse() {
     document.getElementById('clearSelBtn')?.addEventListener('click', () => { selectedIds.clear(); render(); });
     document.getElementById('bulkDelBtn')?.addEventListener('click', () => bulkDeleteSelected(form));
 
-    // 텍스트 검색 — debounce 로 350ms 지연 후 재렌더
+    // 텍스트 검색 — debounce + IME(한글) 조합 중 render skip
     const searchInput = document.getElementById('searchInput');
     if (searchInput) {
         let timer = null;
-        searchInput.addEventListener('input', (e) => {
-            const v = e.target.value;
+        let composing = false;
+        const fire = (v) => {
             clearTimeout(timer);
             timer = setTimeout(() => {
                 searchQuery = v;
                 render();
-                // 재렌더 후 focus 복원
                 requestAnimationFrame(() => {
                     const newInput = document.getElementById('searchInput');
                     if (newInput) {
@@ -615,7 +614,10 @@ function renderFormUse() {
                     }
                 });
             }, 350);
-        });
+        };
+        searchInput.addEventListener('compositionstart', () => { composing = true; });
+        searchInput.addEventListener('compositionend',   (e) => { composing = false; fire(e.target.value); });
+        searchInput.addEventListener('input', (e) => { if (!composing) fire(e.target.value); });
         // 엔터 키는 즉시 적용
         searchInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') {

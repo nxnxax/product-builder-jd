@@ -846,19 +846,27 @@ function bindTableEvents() {
     document.querySelectorAll('[data-status-switch]').forEach(b => {
         b.addEventListener('click', () => cycleStatus(parseInt(b.dataset.id, 10)));
     });
-    // 그룹별 검색
+    // 그룹별 검색 — IME(한글) 조합 중 render skip + debounce.
     document.querySelectorAll('[data-search-gid]').forEach(input => {
-        input.addEventListener('input', () => {
-            const gid = parseInt(input.dataset.searchGid, 10);
-            searchByGroup[gid] = input.value;
-            const caret = input.selectionStart;
-            renderRecords();
-            const restored = document.querySelector(`[data-search-gid="${gid}"]`);
-            if (restored) {
-                restored.focus();
-                try { restored.setSelectionRange(caret, caret); } catch {}
-            }
-        });
+        const gid = parseInt(input.dataset.searchGid, 10);
+        let timer = null;
+        let composing = false;
+        const trigger = () => {
+            clearTimeout(timer);
+            timer = setTimeout(() => {
+                searchByGroup[gid] = input.value;
+                const caret = input.selectionStart;
+                renderRecords();
+                const restored = document.querySelector(`[data-search-gid="${gid}"]`);
+                if (restored) {
+                    restored.focus();
+                    try { restored.setSelectionRange(caret, caret); } catch {}
+                }
+            }, 220);
+        };
+        input.addEventListener('compositionstart', () => { composing = true; });
+        input.addEventListener('compositionend',   () => { composing = false; trigger(); });
+        input.addEventListener('input', () => { if (!composing) trigger(); });
     });
     document.querySelectorAll('[data-search-clear-gid]').forEach(btn => {
         btn.addEventListener('click', (e) => {
