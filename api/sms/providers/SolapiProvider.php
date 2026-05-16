@@ -74,32 +74,84 @@ class SolapiProvider extends SmsProvider
             return $this->markAllFailed($messages, $e->getMessage());
         }
 
-        // Solapi 응답: { groupInfo: {...}, messageList: { 메시지ID: { statusCode, statusMessage, to, ... } } }
-        $statusByTo = [];
-        if (is_array($rawResponse) && isset($rawResponse['messageList']) && is_array($rawResponse['messageList'])) {
-            foreach ($rawResponse['messageList'] as $msg) {
-                if (!is_array($msg)) continue;
-                $to = $msg['to'] ?? '';
-                $sc = $msg['statusCode'] ?? '';
-                if ($to === '') continue;
-                $statusByTo[$to] = $sc;
+        // Solapi 응답 분석.
+        // 가능한 source (우선순위 순):
+        //   1) failedMessageList — 실패한 to 와 사유 명시
+        //   2) messageList — 각 메시지의 statusCode (구조: 객체 또는 배열)
+        //   3) groupInfo.count — registeredSuccess/registeredFailed 집계
+        // 매칭은 마지막 11자리(한국 핸드폰) 기준 — Solapi 응답이 '+82...' 로 올 수 있어
+        // 단순 문자열 비교는 실패. digits-only + tail-11 으로 normalize.
+
+        $tailKey = function ($v) {
+            $d = preg_replace('/\D/', '', (string)$v);
+            return $d === '' ? '' : substr($d, -11);
+        };
+
+        // 1) failedMessageList 의 to 추출
+        $failedSet = [];
+        $fml = $rawResponse['failedMessageList'] ?? null;
+        if (is_array($fml)) {
+            foreach ($fml as $fm) {
+                if (!is_array($fm)) continue;
+                $k = $tailKey($fm['to'] ?? '');
+                if ($k === '') continue;
+                $reason = $fm['statusMessage'] ?? $fm['statusCode'] ?? '발송 실패';
+                $failedSet[$k] = (string)$reason;
             }
         }
+
+        // 2) messageList — 객체/배열 둘 다 지원
+        $statusByTo = [];
+        $ml = $rawResponse['messageList'] ?? null;
+        if (is_array($ml)) {
+            foreach ($ml as $msg) {
+                if (!is_array($msg)) continue;
+                $k = $tailKey($msg['to'] ?? '');
+                if ($k === '') continue;
+                $statusByTo[$k] = (string)($msg['statusCode'] ?? '');
+            }
+        }
+
+        // 3) groupInfo.count
+        $groupInfo = $rawResponse['groupInfo'] ?? null;
+        $counts = is_array($groupInfo) ? ($groupInfo['count'] ?? []) : [];
+        $registeredFailed  = isset($counts['registeredFailed'])  ? (int)$counts['registeredFailed']  : null;
+        $registeredSuccess = isset($counts['registeredSuccess']) ? (int)$counts['registeredSuccess'] : null;
 
         $success = 0;
         $failed  = [];
         foreach ($messages as $m) {
-            $sc = $statusByTo[$m['to']] ?? null;
-            // Solapi: 성공 코드 '2000'/'4000' 류로 시작하는 처리완료/대기. 실패는 4xxx 외 명시.
-            // 보수적으로 statusCode 가 '2' 로 시작하면 성공으로.
-            if ($sc !== null && substr((string)$sc, 0, 1) === '2') {
-                $success++;
-            } else {
-                $failed[] = [
-                    'to'    => $m['to'],
-                    'error' => $sc ? ('코드 ' . $sc) : '응답에서 상태 누락',
-                ];
+            $k = $tailKey($m['to']);
+
+            // 명시 실패 — failedMessageList
+            if (isset($failedSet[$k])) {
+                $failed[] = ['to' => $m['to'], 'error' => $failedSet[$k]];
+                continue;
             }
+
+            $sc = $statusByTo[$k] ?? null;
+            // Solapi: '2xxx' = 성공 (등록 완료), '4xxx' = 실패, '3xxx' = 처리 중.
+            if ($sc !== null && $sc !== '' && substr($sc, 0, 1) === '2') {
+                $success++;
+                continue;
+            }
+
+            // statusCode 못 찾았으면 groupInfo 의 집계로 판단.
+            // Solapi 가 모든 메시지를 성공 등록했고 (registeredFailed=0) 우리 to 가
+            // failedMessageList 에도 없으면 success 로 인정.
+            if ($registeredFailed === 0 && $registeredSuccess !== null && $registeredSuccess > 0) {
+                $success++;
+                continue;
+            }
+
+            // statusCode 있는데 '2' 시작 아님 → 그 코드 그대로 실패.
+            if ($sc !== null && $sc !== '') {
+                $failed[] = ['to' => $m['to'], 'error' => '코드 ' . $sc];
+                continue;
+            }
+
+            // 정말 정보 없음
+            $failed[] = ['to' => $m['to'], 'error' => '응답에서 상태 누락'];
         }
 
         return [
