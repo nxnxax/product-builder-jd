@@ -1,6 +1,6 @@
 # PROJECT_CONTEXT — youngman-biz.com
 
-*최종 갱신: 2026-05-17*
+*최종 갱신: 2026-05-21*
 
 ## 1. 사이트 목적
 
@@ -80,7 +80,20 @@ SMS_USER_GUIDE.txt             — 사용자 설명서
 - ✅ **아이디 찾기 (SMS 인증)** — 관리자 Solapi 자격증명으로 OTP 발송 + 마스킹 이메일
 - ✅ **비밀번호 찾기 (SMS 인증 + 새 비번 설정)** — supabase admin API 직접 변경, Google 가입자는 안내만
 - ✅ **이메일/닉네임 중복확인** — 회원가입 form (한 줄 layout)
-- ✅ **Google 신규 가입자 닉네임/휴대폰/약관 모달** — login-complete.html 의 needsNickname 기반, phone 도 동시 수집 → auth-profile PUT
+- ✅ **Google 신규 가입자 닉네임/휴대폰/약관 모달** — login-complete.html 의 needsNickname/needsPhone 기반
+  - isGoogle 판별: app_metadata.provider OR providers[] OR identities[] (broaden)
+  - needsExtra = isGoogle && (needsNickname || needsPhone) — 둘 중 하나만 비어도 모달
+  - 기존 nickname 있으면 pre-fill + 중복확인 skip (수정 시 재검증)
+- ✅ **모바일 백그라운드 후 토큰 만료 → 자동 refresh + 401 retry** (apiRequest)
+  - 만료 60초 이내면 refreshSession() 선제 호출
+  - 401 응답 시 한 번 더 refresh + 동일 요청 재시도
+- ✅ **헤더 닉네임 표시 즉시 보장** — mountAppHeader 가 cachedName 빈 경우 currentSession.user 에서 즉시 도출, refreshAppHeader 는 apiRequest 전에 metadata 기반 이름 우선 cache
+- ✅ **Solapi 미등록 시 친절한 안내 모달** (customers → 문자발송 클릭)
+  - 단계 4개(가입→API발급→복사→붙여넣기) ol 목록 + solapi.com / console.solapi.com/credentials 링크
+  - 큰 글자(14.5~15px), 요금 충전 안내 박스 포함
+- ✅ **검색 input 한글 IME 조합 깨짐 fix** (customers/contracts/org/forms)
+  - 근본 원인: renderRecords() 가 input 요소 매번 재생성 → IME composer 바인딩 끊김
+  - 해결: filterDOMRowsBySearch() — 기존 DOM 행 textContent.includes(q) 로 hide/show 만, input 요소 보존
 - ✅ **헤더 표시 이름 닉네임 우선** — getDisplayName candidates 순서 변경
 - ✅ 영문 에러 한국어 친화 메시지 (translateAuthError 단일 헬퍼)
 - ✅ 모달 드래그 시 강제 종료 fix (pointerdown/up 둘 다 backdrop 일 때만 close)
@@ -131,24 +144,67 @@ SMS_USER_GUIDE.txt             — 사용자 설명서
 - 📡 **PHP timeout 30초** — send-bulk.php 는 set_time_limit(120) 명시 (Solapi curl 25초 + 처리 = 30초 근접 시 502)
 - 📊 **DB 컬럼 폭** — PII 암호화 'enc:v1:...' 는 100~200 chars. 새 PII 컬럼 도입 시 최소 VARCHAR(255)
 
-## 7. 최근 수정한 파일 (오늘 +1일 커밋 흐름)
+## 7. 최근 수정한 파일 (커밋 흐름)
 
 ```
+1df7e2c style(mobile-nav): 하단 고정 nav 배경 — 칙칙한 회색 → 물방울/유리 톤 (glass)
+8d4864b fix(search): 검색 input DOM 재생성 안 함 — 모바일 한글 IME 조합 깨짐 근본 fix
+8eae73f fix(mobile): 카드 toolbar — 검색바 + 행 추가 버튼 한 줄 정렬
+5a8ad9d fix(mobile): 카드 toolbar — 두 줄 분리 시도 (이후 8eae73f 가 한 줄로 회귀)
+10d380a fix(ledger/forms): 검색 한글 IME — compositionstart/end + debounce 1차 시도 (불충분)
+e1f6a28 feat(sms): Solapi 안내 모달에 요금 차감/충전 안내 추가
+4b8df2a feat(sms): Solapi 미연동 시 친절한 안내 모달 (60대+ 가독성 우선, 단계별 ol)
+922e287 fix(auth): Google 가입 모달 트리거 강화 — needsNickname || needsPhone + isGoogle broaden
+4f3cbab fix(auth): 헤더 닉네임 표시 즉시 보장 — 빈 표시 회귀 차단
+b73bfff fix(auth): 모바일 백그라운드 후 access token 만료 시 자동 refresh + 401 retry
+ba8669c docs: PROJECT_CONTEXT — Google 가입 모달에 휴대폰 수집 반영
+5e713db feat(auth): Google 신규 가입자 모달에 휴대폰 번호 입력 슬롯 추가
 0fd2816 feat(auth): 헤더 우측 상단 사용자 이름을 닉네임 우선으로 표시
 b99ec62 fix(auth): 구글 가입 후 닉네임 모달 — needsNickname 기반 판별
 a2385b8 hotfix(auth): login-complete.html module top-level 'return' SyntaxError fix
 9afb505 fix(ledger): 카드 expanded re-render 후 보존 (_expandedRowIds + MutationObserver)
 0cf1f14 feat(auth): Google 신규 가입자 닉네임/약관 모달 + auth-profile PUT nickname
-fdae27a feat(auth): 모달 드래그 close fix + 이메일/닉네임 중복확인 + 한줄 정렬
+fdae27a feat(auth): 모달 드래그 close fix + 이메일/닉네임 중복확인
 256684b feat(auth): 비밀번호 찾기 SMS 인증 + 새 비번 + Google 사용자 안내
-3ca7959 fix(auth): normalize_resource 화이트리스트 누락 fix
-2720378 feat(auth): 아이디 찾기 SMS 인증 (관리자 Solapi)
-e2d3e54 feat(auth): 로그인 유지 + 아이디/비밀번호 찾기 (기본)
-238eb04 fix(auth): 영문 에러 한국어 친화 메시지 통일
-e028540 fix(auth): members PII 컬럼 자동 VARCHAR(255) 확장 (22001 fix)
-c87c524 fix(sms): 수신자 이름/번호 추출 경로 + 빈 첨부 깨진 아이콘 제거
 ... (이전: SMS UI 일원화, 인증 흐름 일원화, 모바일 hero, 단체문자 발송 등)
 ```
+
+### 2026-05-21 작업 요약
+
+- **인증/가입 — Google 모달 보강**
+  - login-complete.html: 닉네임 row 아래 휴대폰 input 슬롯 추가, auth-profile PUT 에 phone 동시 전송, user_metadata 동기화
+  - 모달 트리거 조건 broaden: `isGoogle = provider OR providers[] OR identities[].google`
+  - needsExtra = `isGoogle && (needsNickname || needsPhone)` — 휴대폰만 없어도 모달 강제 표시
+  - 기존 nickname 있을 때 pre-fill + 중복확인 skip
+  - 서버(records.php) auth-member ensure 응답에 needsPhone 필드 추가 (existing member 도 phone 복호화 후 판정)
+
+- **모바일 토큰 만료 자동 복구**
+  - 증상: 모바일 백그라운드 탭에서 1시간+ 후 forms/관리대장 진입 시 "지원하지 않는 인증 토큰입니다." 에러
+  - 원인: setInterval 기반 supabase auto-refresh 가 mobile background 에서 멈춤
+  - 수정 (auth-shared.js apiRequest): expires_at-60초 검사 후 선제 refreshSession + 401 응답 시 한 번 더 refresh + retry
+
+- **헤더 닉네임 "보였다 안 보였다" 증상**
+  - 원인: bootApp 의 첫 mountAppHeader 가 initSupabase 완료 전 동기 실행 → cachedName=='', currentSession=null → 빈 span 렌더, refreshAppHeader apiRequest 완료까지 빈 표시
+  - 수정: mountAppHeader 가 currentSession.user 있으면 getDisplayName(null, user) 즉시 도출 + cache, refreshAppHeader 가 apiRequest 전에 metadata 기반 이름 우선 cache & 재렌더
+
+- **Solapi 미연동 안내 모달**
+  - customers → 문자발송 클릭 시 confirm() 대체 → 큼직한 안내 모달
+  - 단계 4개 ol: ①solapi.com 가입 ②console.solapi.com/credentials API 발급 ③API KEY/SECRET 복사(SECRET 조회버튼 안내) ④내 정보>문자설정 붙여넣기
+  - 요금 충전 안내 박스 (주황 배경, "사용자 Solapi 계정 잔액 차감, 충전 필요")
+  - 60대+ 사용자 가독성: 14.5~15px, color contrast 강조, 클릭 가능 링크
+
+- **검색 input 한글 IME 조합 깨짐 (모바일)**
+  - 1차 시도: compositionstart/end + debounce (10d380a) — 일부 모바일 키보드가 jamo 별 compositionend 발화하는 케이스 미해결
+  - 근본 fix (8d4864b): filterDOMRowsBySearch() — renderRecords() 호출 대신 기존 DOM 행에 textContent.includes(q) 매칭, 안 맞으면 display:none. input 요소 자체는 절대 재생성 안 됨 → IME composer 바인딩 유지
+  - 적용: customers/contracts/org/forms.js
+
+- **모바일 카드 toolbar 레이아웃**
+  - + 행 추가 버튼이 검색바에 눌려 찌그러지던 증상
+  - 1차: 줄바꿈 분리 (5a8ad9d) → 사용자 한 줄 요청 → 8eae73f: flex-wrap:nowrap + 버튼 flex:0 0 auto + white-space:nowrap + min-height:40px
+
+- **모바일 하단 고정 nav 글래스 톤**
+  - 기존 짙은 회색 베이지(rgba(214,208,199,0.96)) → 흰색 반투명 그라데이션 + blur(26px) saturate(180%) + 윗면 inset highlight
+  - active 아이템 inset highlight + 약한 빨강 그림자로 살짝 떠있는 효과
 
 ## 8. 절대 건드리면 안 되는 부분
 
@@ -173,6 +229,9 @@ c87c524 fix(sms): 수신자 이름/번호 추출 경로 + 빈 첨부 깨진 아�
 - 🔒 **SMS 회원별 자격증명** — 영맨은 발송 중계만 (단 관리자 키는 OTP 발송용 별도)
 - 🔒 **sms_logs 원문 저장 금지** — phone_masked + message_hash 만
 - 🔒 **헤더 anon 결정**에 cachedName **OR** currentSession 둘 다 — 로그인 직후 헤더 stale 회귀 금지
+- 🔒 **검색 input 재생성 금지** — renderRecords() 호출 대신 filterDOMRowsBySearch() 로 hide/show. input 요소 재생성하면 모바일 한글 IME 즉시 깨짐
+- 🔒 **apiRequest 토큰 refresh + 401 retry** — 제거 시 모바일 백그라운드 후 "지원하지 않는 인증 토큰" 회귀
+- 🔒 **mountAppHeader 의 currentSession 즉시 도출** — 제거 시 헤더 닉네임 "보였다 안 보였다" 회귀
 - 🔒 **apiRequest 호출 형식** — `apiRequest('xxx', { query: 'k=v' })`. URL 직접 X (인코딩 깨짐)
 - 🔒 **normalize_resource 화이트리스트** — 신규 resource 추가 시 $allowed 배열에도 추가 (안 그러면 400)
 
