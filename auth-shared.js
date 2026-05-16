@@ -190,12 +190,14 @@ const ADMIN_FLAG_KEY   = 'yman_is_admin';
 
 /** 보여줄 이름을 안전하게 결정 — members.name → user_metadata.full_name → 이메일 prefix → 이메일 */
 export function getDisplayName(profile, user) {
+    // 우선순위: 가입 시 입력한 닉네임 > supabase metadata.nickname > 실명 > 이메일
     const candidates = [
+        profile?.nickname,
+        user?.user_metadata?.nickname,
         profile?.name,
         profile?.full_name,
         user?.user_metadata?.full_name,
         user?.user_metadata?.name,
-        user?.user_metadata?.nickname,
     ];
     for (const c of candidates) {
         const t = String(c ?? '').trim();
