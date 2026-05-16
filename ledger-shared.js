@@ -32,8 +32,8 @@ if (typeof document !== 'undefined' && typeof window !== 'undefined' && !window.
         if (!card) return;
         // 본문 영역(.ledger-card-body) 내부 클릭은 토글 안 함
         if (e.target.closest('.ledger-card-body')) return;
-        // 인터랙티브 요소 클릭은 토글 안 함
-        if (e.target.closest('input, button, select, textarea, a, label, [data-no-toggle]')) {
+        // 인터랙티브 요소 클릭은 토글 안 함 — data-cell-* 마커도 포함 (셀 안 토글/스위치 클릭이 카드 접힘 유발하던 버그 fix)
+        if (e.target.closest('input, button, select, textarea, a, label, [data-no-toggle], [data-cell-toggle], [data-cell-switch], [data-cell-cycle]')) {
             // 단, 카드 자체의 toggle 버튼은 토글 동작
             if (e.target.closest('.ledger-card-toggle')) {
                 card.classList.toggle('expanded');
@@ -271,19 +271,20 @@ export function attachCellClickHandlers({ root, onToggle, onCycle }) {
         if (el.dataset.cellBound === '1') return;
         el.dataset.cellBound = '1';
         el.style.cursor = 'pointer';
-        el.addEventListener('click', (e) => handleToggle(el, e));
+        el.addEventListener('click', (e) => { e.stopPropagation(); handleToggle(el, e); });
     });
     scope.querySelectorAll('[data-cell-switch]').forEach(el => {
         if (el.dataset.cellBound === '1') return;
         el.dataset.cellBound = '1';
         el.style.cursor = 'pointer';
-        el.addEventListener('click', (e) => handleToggle(el, e));
+        el.addEventListener('click', (e) => { e.stopPropagation(); handleToggle(el, e); });
     });
     scope.querySelectorAll('[data-cell-cycle]').forEach(el => {
         if (el.dataset.cellBound === '1') return;
         el.dataset.cellBound = '1';
         el.style.cursor = 'pointer';
         el.addEventListener('click', async (e) => {
+            e.stopPropagation();
             e.preventDefault();
             if (el.dataset.busy === '1') return;
             el.dataset.busy = '1';
