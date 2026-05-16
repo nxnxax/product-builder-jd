@@ -2694,7 +2694,6 @@ select:focus {
 }
 
 .sms-phone{
-.sms-phone{
     width:100%;max-width:340px;margin:14px auto 4px;
     background:linear-gradient(160deg,#1f1f23 0%,#0f0f12 100%);
     border-radius:42px;padding:12px;
