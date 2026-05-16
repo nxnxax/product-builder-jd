@@ -408,6 +408,102 @@ function create_member_from_google(PDO $pdo, $authUser, $data) {
 }
 
 /**
+ * 휴대폰 마스킹 — 010-1234-**** 형태 (auth_otp 응답에 사용).
+ */
+function mask_phone($phone) {
+    $digits = preg_replace('/\D/', '', (string)$phone);
+    if (strlen($digits) >= 8) {
+        return substr($digits, 0, 3) . '-' . substr($digits, 3, 4) . '-' . str_repeat('*', max(0, strlen($digits) - 7));
+    }
+    return $digits;
+}
+
+/**
+ * 인증번호 저장용 auth_otp 테이블 자동 생성.
+ */
+function ensure_auth_otp_table(PDO $pdo) {
+    static $checked = false;
+    if ($checked) return;
+    $checked = true;
+    try {
+        $pdo->exec("CREATE TABLE IF NOT EXISTS auth_otp (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            purpose VARCHAR(32) NOT NULL DEFAULT 'find_email',
+            target VARCHAR(32) NOT NULL,
+            code VARCHAR(8) NOT NULL,
+            attempts INT NOT NULL DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            expires_at TIMESTAMP NOT NULL,
+            INDEX idx_otp_target_purpose (target, purpose),
+            INDEX idx_otp_expires (expires_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+        // GC — 만료된 OTP 정리 (request 당 가벼움)
+        $pdo->exec("DELETE FROM auth_otp WHERE expires_at < NOW()");
+    } catch (Throwable $e) {
+        // silent — 다음 INSERT 시 에러 노출
+    }
+}
+
+/**
+ * 관리자(admin) 계정의 Solapi 자격증명을 사용해 OTP SMS 발송.
+ * 일반 사용자 lookup 용으로 익명 호출되므로 sender 는 사이트 관리자 본인 계정.
+ */
+function send_otp_sms_via_admin(PDO $pdo, $purpose, $targetPhone) {
+    // 관리자 이메일 후보 — admin_email_allowlist 의 첫 값
+    $adminEmail = admin_email_allowlist()[0] ?? '';
+    if ($adminEmail === '') return ['ok'=>false, 'error'=>'관리자 정보 없음', 'status'=>500];
+
+    try {
+        $stmt = $pdo->prepare("SELECT api_key_enc, api_secret_enc, sender_phone_enc, provider
+                              FROM sms_credentials WHERE owner_email = :o LIMIT 1");
+        $stmt->execute([':o' => strtolower($adminEmail)]);
+        $cred = $stmt->fetch();
+    } catch (Throwable $e) {
+        return ['ok'=>false, 'error'=>'관리자 SMS 자격증명 조회 실패', 'status'=>500];
+    }
+    if (!$cred) return ['ok'=>false, 'error'=>'관리자 Solapi 미연동 — 사이트 운영자에게 문의해주세요.', 'status'=>503];
+
+    $apiKey = function_exists('youngman_decrypt') ? youngman_decrypt((string)$cred['api_key_enc']) : (string)$cred['api_key_enc'];
+    $apiSec = function_exists('youngman_decrypt') ? youngman_decrypt((string)$cred['api_secret_enc']) : (string)$cred['api_secret_enc'];
+    $sender = preg_replace('/\D/', '', (string)(function_exists('youngman_decrypt') ? youngman_decrypt((string)$cred['sender_phone_enc']) : (string)$cred['sender_phone_enc']));
+    if (!$apiKey || !$apiSec || !$sender) return ['ok'=>false, 'error'=>'관리자 SMS 자격증명 불완전', 'status'=>503];
+
+    // 인증번호 생성
+    try {
+        $code = sprintf('%06d', random_int(0, 999999));
+    } catch (Throwable $e) {
+        $code = sprintf('%06d', mt_rand(0, 999999));
+    }
+
+    // 기존 OTP 삭제 후 새로 저장
+    try {
+        $pdo->prepare('DELETE FROM auth_otp WHERE target = ? AND purpose = ?')->execute([$targetPhone, $purpose]);
+        $pdo->prepare("INSERT INTO auth_otp (purpose, target, code, expires_at)
+                       VALUES (?, ?, ?, DATE_ADD(NOW(), INTERVAL 5 MINUTE))")
+            ->execute([$purpose, $targetPhone, $code]);
+    } catch (Throwable $e) {
+        return ['ok'=>false, 'error'=>'인증번호 저장 실패: ' . $e->getMessage(), 'status'=>500];
+    }
+
+    // Solapi 발송
+    require_once __DIR__ . '/sms/providers/SmsProvider.php';
+    require_once __DIR__ . '/sms/providers/SolapiProvider.php';
+    try {
+        $provider = new SolapiProvider(['api_key' => $apiKey, 'api_secret' => $apiSec]);
+        $msg = "[영맨] 아이디 찾기 인증번호: {$code} (5분 안에 입력해주세요)";
+        $result = $provider->sendBulk([['to' => $targetPhone, 'text' => $msg]], $sender, []);
+        if (!isset($result['success']) || $result['success'] < 1) {
+            $reason = '';
+            if (!empty($result['failed'][0]['error'])) $reason = ' (' . $result['failed'][0]['error'] . ')';
+            return ['ok'=>false, 'error'=>'SMS 발송 실패' . $reason, 'status'=>502];
+        }
+        return ['ok'=>true];
+    } catch (Throwable $e) {
+        return ['ok'=>false, 'error'=>'Solapi 호출 오류: ' . $e->getMessage(), 'status'=>500];
+    }
+}
+
+/**
  * members 테이블의 PII 암호화 대상 컬럼을 VARCHAR(255) 로 자동 확장.
  * AES-256-GCM 결과 'enc:v1:<base64IV>:<base64ct>:<base64tag>' 는 100~200 chars.
  * 좁은 VARCHAR(20~64) 컬럼이면 SQLSTATE 22001 (Data too long) 으로 INSERT 실패.
@@ -1199,7 +1295,7 @@ function verify_auth_token($auth) {
 
 try {
     // Public resources (no auth) — keep narrow.
-    $publicResources = ['auth-availability', 'find-email'];
+    $publicResources = ['auth-availability', 'find-email', 'find-email-send-otp', 'find-email-verify-otp'];
     $peekedResource = strtolower(trim((string)($_GET['resource'] ?? '')));
     $authUser = in_array($peekedResource, $publicResources, true) ? null : verify_auth_token($auth);
 
@@ -1244,6 +1340,89 @@ try {
     if ($resource === 'auth-member') {
         if ($method !== 'POST') respond(['ok' => false, 'error' => '지원하지 않는 요청 방식입니다.'], 405);
         create_member_from_google($pdo, $authUser, $body);
+    }
+
+    if ($resource === 'find-email-send-otp') {
+        // 휴대폰 인증번호 발송 — 관리자(admin) sms_credentials 사용해서 Solapi 발송.
+        // 인증번호는 auth_otp 테이블에 5분 만료로 저장.
+        if ($method !== 'POST') respond(['ok'=>false, 'error'=>'지원하지 않는 요청 방식'], 405);
+        $phone = preg_replace('/\D/', '', (string)($body['phone'] ?? ''));
+        if (strlen($phone) < 10) respond(['ok'=>false, 'error'=>'올바른 휴대폰 번호를 입력해주세요.'], 400);
+
+        ensure_auth_otp_table($pdo);
+
+        // rate limit — 같은 phone 1분 내 재발송 금지
+        $check = $pdo->prepare("SELECT created_at FROM auth_otp WHERE target = :t AND purpose = 'find_email' ORDER BY created_at DESC LIMIT 1");
+        $check->execute([':t' => $phone]);
+        $last = $check->fetch();
+        if ($last && (time() - strtotime($last['created_at'])) < 60) {
+            respond(['ok'=>false, 'error'=>'1분 후 재발송 가능합니다.'], 429);
+        }
+
+        $sendResult = send_otp_sms_via_admin($pdo, 'find_email', $phone);
+        if (!$sendResult['ok']) {
+            respond(['ok'=>false, 'error'=>$sendResult['error'] ?? 'SMS 발송 실패'], $sendResult['status'] ?? 500);
+        }
+        respond(['ok'=>true, 'sentTo'=>mask_phone($phone), 'expiresInSec'=>300]);
+    }
+
+    if ($resource === 'find-email-verify-otp') {
+        // 인증번호 검증 + 이름 매칭 + 마스킹된 이메일 반환.
+        if ($method !== 'POST') respond(['ok'=>false, 'error'=>'지원하지 않는 요청 방식'], 405);
+        $name  = clean($body['name'] ?? null);
+        $phone = preg_replace('/\D/', '', (string)($body['phone'] ?? ''));
+        $code  = preg_replace('/\D/', '', (string)($body['code'] ?? ''));
+        if (!$name || !$phone || !$code) respond(['ok'=>false, 'error'=>'이름/휴대폰/인증번호를 모두 입력해주세요.'], 400);
+
+        ensure_auth_otp_table($pdo);
+
+        // OTP 검증 — purpose=find_email, target=phone, 5분 미만, attempts<5
+        $stmt = $pdo->prepare("SELECT id, code, attempts, expires_at FROM auth_otp WHERE target = :t AND purpose = 'find_email' ORDER BY created_at DESC LIMIT 1");
+        $stmt->execute([':t' => $phone]);
+        $otp = $stmt->fetch();
+        if (!$otp) respond(['ok'=>false, 'error'=>'인증번호를 먼저 받아주세요.'], 400);
+        if (strtotime($otp['expires_at']) < time()) {
+            $pdo->prepare('DELETE FROM auth_otp WHERE id = ?')->execute([$otp['id']]);
+            respond(['ok'=>false, 'error'=>'인증번호가 만료되었습니다. 다시 받아주세요.'], 410);
+        }
+        if ((int)$otp['attempts'] >= 5) {
+            respond(['ok'=>false, 'error'=>'시도 횟수를 초과했습니다. 다시 받아주세요.'], 429);
+        }
+        if ($otp['code'] !== $code) {
+            $pdo->prepare('UPDATE auth_otp SET attempts = attempts + 1 WHERE id = ?')->execute([$otp['id']]);
+            respond(['ok'=>false, 'error'=>'인증번호가 일치하지 않습니다.'], 400);
+        }
+
+        // 이름 + 휴대폰 매칭 (find-email 과 동일 로직)
+        $store = find_member_store($pdo);
+        if (!$store) respond(['ok'=>false, 'error'=>'회원 테이블을 찾을 수 없습니다.'], 500);
+        $cols = $store['columns'];
+        $nameCol = first_existing_column($cols, ['name', 'full_name', 'user_name', 'username', 'mb_name']);
+        $phoneCol = first_existing_column($cols, ['phone', 'mobile', 'tel', 'contact', 'user_phone', 'mb_hp']);
+        $emailCol = $store['email_column'];
+        if (!$nameCol || !$phoneCol || !$emailCol) respond(['ok'=>false, 'error'=>'회원 테이블 구조 문제'], 500);
+
+        $rows = $pdo->query("SELECT " . quote_identifier($nameCol) . " AS nm, "
+            . quote_identifier($phoneCol) . " AS ph, "
+            . quote_identifier($emailCol) . " AS em FROM " . quote_identifier($store['table']))->fetchAll();
+        $matched = null;
+        foreach ($rows as $r) {
+            $rNm = function_exists('youngman_decrypt') ? youngman_decrypt((string)$r['nm']) : (string)$r['nm'];
+            $rPh = function_exists('youngman_decrypt') ? youngman_decrypt((string)$r['ph']) : (string)$r['ph'];
+            if (trim((string)$rNm) !== trim($name)) continue;
+            if (preg_replace('/\D/', '', (string)$rPh) === $phone) { $matched = (string)$r['em']; break; }
+        }
+        if (!$matched) respond(['ok'=>false, 'error'=>'인증은 성공했으나 입력한 이름과 일치하는 계정이 없습니다.'], 404);
+
+        // OTP 소멸 (재사용 방지)
+        $pdo->prepare('DELETE FROM auth_otp WHERE id = ?')->execute([$otp['id']]);
+
+        // 마스킹
+        $parts = explode('@', $matched, 2);
+        $local = $parts[0] ?? '';
+        $domain = $parts[1] ?? '';
+        $maskedLocal = mb_substr($local, 0, 2) . str_repeat('*', max(0, mb_strlen($local) - 2));
+        respond(['ok'=>true, 'email' => $maskedLocal . '@' . $domain]);
     }
 
     if ($resource === 'find-email') {

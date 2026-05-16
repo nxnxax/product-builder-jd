@@ -904,8 +904,10 @@ function escapeHtmlSafe(s) {
 }
 
 /* =========================================================================
-   아이디(이메일) 찾기 모달 — 이름 + 휴대폰 → 마스킹된 이메일 반환.
-   records.php?resource=find-email (public) POST.
+   아이디(이메일) 찾기 모달 — 2단계: 이름+휴대폰 → SMS 인증번호 발송 → 코드 입력 → 마스킹 이메일.
+   records.php (public) endpoints:
+     - find-email-send-otp  : 인증번호 SMS 발송 (관리자 Solapi 자격증명 사용)
+     - find-email-verify-otp: 코드 검증 + 이름 매칭 + 마스킹 이메일
    ========================================================================= */
 function openFindIdModal() {
     document.querySelectorAll('[data-shared-auth]').forEach(el => el.remove());
@@ -917,12 +919,19 @@ function openFindIdModal() {
                 <button type="button" class="shared-auth-close" aria-label="닫기">&times;</button>
                 <div class="shared-auth-brand"><img src="logo_main.png" alt="YOUNGMAN"></div>
                 <h2 class="shared-auth-title">아이디 찾기</h2>
-                <p class="shared-auth-sub">가입 시 입력한 이름과 휴대폰 번호를 입력해주세요.</p>
+                <p class="shared-auth-sub">가입 시 입력한 이름과 휴대폰 번호로 SMS 인증을 진행합니다.</p>
                 <form class="shared-auth-form" novalidate>
                     <label>이름 <input type="text" name="name" required autocomplete="name" placeholder="실명"></label>
-                    <label>휴대폰 <input type="tel" name="phone" required autocomplete="tel" placeholder="010-0000-0000"></label>
+                    <div style="display:flex;gap:6px;align-items:flex-end;">
+                        <label style="flex:1;">휴대폰 <input type="tel" name="phone" required autocomplete="tel" placeholder="010-0000-0000"></label>
+                        <button type="button" data-send-otp style="padding:9px 12px;background:#0e0d0c;color:#fff;border:0;border-radius:8px;font-size:12.5px;font-weight:700;cursor:pointer;white-space:nowrap;font-family:inherit;">인증번호 받기</button>
+                    </div>
+                    <div data-otp-zone hidden>
+                        <label>인증번호 <input type="text" name="code" inputmode="numeric" maxlength="6" placeholder="6자리 숫자" autocomplete="one-time-code"></label>
+                        <small style="display:block;margin-top:4px;color:#8a847e;font-size:11.5px;">5분 안에 입력해주세요. <span data-otp-target></span></small>
+                    </div>
                     <p class="shared-auth-message" aria-live="polite"></p>
-                    <button type="submit" class="shared-auth-submit">아이디 찾기</button>
+                    <button type="submit" class="shared-auth-submit" disabled>인증 후 아이디 찾기</button>
                 </form>
                 <p class="shared-auth-switch">
                     <button type="button" class="shared-auth-mode-btn" data-back>← 로그인으로 돌아가기</button>
@@ -940,37 +949,88 @@ function openFindIdModal() {
     const form = md.querySelector('.shared-auth-form');
     const msgEl = md.querySelector('.shared-auth-message');
     const submitBtn = md.querySelector('.shared-auth-submit');
+    const sendOtpBtn = md.querySelector('[data-send-otp]');
+    const otpZone   = md.querySelector('[data-otp-zone]');
+    const otpTargetEl = md.querySelector('[data-otp-target]');
+    let otpSent = false;
     setTimeout(() => form.name?.focus(), 50);
-    form.addEventListener('submit', async (e) => {
-        e.preventDefault();
+
+    // 인증번호 받기
+    sendOtpBtn.addEventListener('click', async () => {
         const name  = form.name.value.trim();
         const phone = form.phone.value.trim();
-        if (!name || !phone) { msgEl.style.color = '#c8362c'; msgEl.textContent = '이름과 휴대폰 번호를 모두 입력해주세요.'; return; }
-        submitBtn.disabled = true; submitBtn.textContent = '조회 중…'; msgEl.textContent = '';
+        if (!name) { msgEl.style.color = '#c8362c'; msgEl.textContent = '이름을 먼저 입력해주세요.'; return; }
+        if (!phone) { msgEl.style.color = '#c8362c'; msgEl.textContent = '휴대폰 번호를 입력해주세요.'; return; }
+        sendOtpBtn.disabled = true; sendOtpBtn.textContent = '발송 중…'; msgEl.textContent = '';
         try {
-            const resp = await fetch('records.php?resource=find-email', {
+            const resp = await fetch('records.php?resource=find-email-send-otp', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ resource: 'find-email', name, phone }),
+                body: JSON.stringify({ resource: 'find-email-send-otp', phone }),
             });
             const data = await resp.json().catch(() => ({}));
             if (!resp.ok || !data.ok) {
                 msgEl.style.color = '#c8362c';
-                msgEl.textContent = data?.error || '아이디를 찾지 못했습니다.';
-                submitBtn.disabled = false; submitBtn.textContent = '아이디 찾기';
+                msgEl.textContent = data?.error || '인증번호 발송 실패';
+                sendOtpBtn.disabled = false; sendOtpBtn.textContent = '인증번호 받기';
+                return;
+            }
+            otpSent = true;
+            otpZone.hidden = false;
+            otpTargetEl.textContent = (data.sentTo ? '발송 대상: ' + data.sentTo : '');
+            msgEl.style.color = '#1b5e20';
+            msgEl.textContent = '✅ 인증번호를 발송했습니다. 문자메시지를 확인해주세요.';
+            submitBtn.disabled = false;
+            sendOtpBtn.textContent = '재발송';
+            // 60초 동안 재발송 lock
+            let secs = 60;
+            sendOtpBtn.disabled = true;
+            const iv = setInterval(() => {
+                secs--;
+                sendOtpBtn.textContent = `재발송 (${secs}s)`;
+                if (secs <= 0) { clearInterval(iv); sendOtpBtn.disabled = false; sendOtpBtn.textContent = '재발송'; }
+            }, 1000);
+            setTimeout(() => form.code?.focus(), 100);
+        } catch (err) {
+            msgEl.style.color = '#c8362c';
+            msgEl.textContent = translateAuthError(err?.message, 'SMS 발송 오류');
+            sendOtpBtn.disabled = false; sendOtpBtn.textContent = '인증번호 받기';
+        }
+    });
+
+    // 인증번호 검증 + 아이디 찾기
+    form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        if (!otpSent) { msgEl.style.color = '#c8362c'; msgEl.textContent = '먼저 인증번호를 받아주세요.'; return; }
+        const name  = form.name.value.trim();
+        const phone = form.phone.value.trim();
+        const code  = (form.code?.value || '').trim();
+        if (!name || !phone || !code) { msgEl.style.color = '#c8362c'; msgEl.textContent = '이름/휴대폰/인증번호를 모두 입력해주세요.'; return; }
+        submitBtn.disabled = true; submitBtn.textContent = '검증 중…'; msgEl.textContent = '';
+        try {
+            const resp = await fetch('records.php?resource=find-email-verify-otp', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ resource: 'find-email-verify-otp', name, phone, code }),
+            });
+            const data = await resp.json().catch(() => ({}));
+            if (!resp.ok || !data.ok) {
+                msgEl.style.color = '#c8362c';
+                msgEl.textContent = data?.error || '인증 실패';
+                submitBtn.disabled = false; submitBtn.textContent = '인증 후 아이디 찾기';
                 return;
             }
             msgEl.style.color = '#1b5e20';
             msgEl.innerHTML = '<b>가입된 아이디(이메일):</b><br>'
                 + '<code style="display:inline-block;margin-top:4px;padding:6px 10px;background:#fbf7ef;border-radius:6px;font-size:14px;color:#0e0d0c;font-family:\'SF Mono\',Menlo,monospace;">' + escapeHtmlSafe(data.email) + '</code>'
                 + '<br><small style="color:#4f4943;font-size:11.5px;display:block;margin-top:6px;">전체 이메일은 가입 시 사용한 메일함을 확인해 주세요.</small>';
-            submitBtn.disabled = false; submitBtn.textContent = '확인';
-            submitBtn.addEventListener('click', () => { close(); openSharedLoginModal('login'); }, { once: true });
+            submitBtn.disabled = false; submitBtn.textContent = '로그인으로 이동';
             submitBtn.type = 'button';
+            submitBtn.addEventListener('click', () => { close(); openSharedLoginModal('login'); }, { once: true });
         } catch (err) {
             msgEl.style.color = '#c8362c';
-            msgEl.textContent = translateAuthError(err?.message, '조회 실패');
-            submitBtn.disabled = false; submitBtn.textContent = '아이디 찾기';
+            msgEl.textContent = translateAuthError(err?.message, '검증 실패');
+            submitBtn.disabled = false; submitBtn.textContent = '인증 후 아이디 찾기';
         }
     });
 }
