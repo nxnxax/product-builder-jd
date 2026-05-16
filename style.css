@@ -2688,16 +2688,30 @@ select:focus {
 }
 .sms-rp-list li{
     display:flex;justify-content:space-between;align-items:center;
-    padding:7px 14px;border-bottom:1px solid rgba(0,0,0,.04);gap:10px
+    padding:7px 10px 7px 14px;border-bottom:1px solid rgba(0,0,0,.04);gap:8px
 }
 .sms-rp-list li:last-child{border-bottom:0}
 .sms-rp-list li:hover{background:#fbf7ef}
-.sms-rp-list .rp-nm{color:#4f4943;font-weight:600;flex:0 0 auto;max-width:48%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sms-rp-list li:hover .rp-remove{opacity:1}
+.sms-rp-list .rp-nm{color:#4f4943;font-weight:600;flex:1;min-width:0;max-width:48%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .sms-rp-list .rp-ph{
     color:#0e0d0c;font-family:'SF Mono',Menlo,Consolas,monospace;font-weight:600;
-    font-size:11.5px;letter-spacing:-.01em
+    font-size:11.5px;letter-spacing:-.01em;flex-shrink:0
 }
 .sms-rp-list .rp-ph.muted{color:#c8362c;font-style:italic}
+.sms-rp-list .rp-remove{
+    border:0;background:transparent;color:#8a847e;
+    width:22px;height:22px;border-radius:50%;
+    font-size:14px;font-weight:700;line-height:1;
+    cursor:pointer;font-family:inherit;flex-shrink:0;
+    opacity:.45;transition:all .15s
+}
+.sms-rp-list .rp-remove:hover{
+    opacity:1;background:#fdecea;color:#c8362c
+}
+.sms-rp-list .rp-empty{
+    padding:18px 14px;color:#8a847e;text-align:center;font-size:12.5px;font-style:italic
+}
 
 /* 사진 첨부 영역 */
 .sms-attach-zone{

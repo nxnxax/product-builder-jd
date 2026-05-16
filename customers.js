@@ -9,13 +9,13 @@
  *  - client_idempotency_key 로 같은 통화의 중복 전송 차단
  */
 
-import { initSupabase, apiRequest, getSession } from './auth-shared.js?v=20260516-balance-compact';
+import { initSupabase, apiRequest, getSession } from './auth-shared.js?v=20260516-recipient-remove';
 import { attachColumnFilters, applyColumnFilters, openRowAddModal, attachPhoneAutoFormat, getEffectiveFields, mountFieldManager,
          exportRecordsToExcel, pickExcelFile, parseExcelFile, suggestFieldMapping, openImportPreviewModal,
          saveImportSession, loadImportSession, clearImportSession,
          findBlankRecordIds, showSweepToast,
          attachCellClickHandlers,
-         isLedgerMobile, onLedgerViewportChange } from './ledger-shared.js?v=20260516-balance-compact';
+         isLedgerMobile, onLedgerViewportChange } from './ledger-shared.js?v=20260516-recipient-remove';
 
 const MOBILE_PRIMARY_KEYS = ['customer', 'phone', 'date'];
 
@@ -949,45 +949,20 @@ async function openSmsModal() {
         if (!phoneRaw) phoneRaw = d.phone || d.tel || d.mobile || d.hp || d['전화번호'] || d['연락처'] || d['휴대폰'] || '';
 
         return {
+            id: r.id,
             name: String(name).trim() || '이름없음',
             phone: formatPhoneDisplay(phoneRaw),
             rawPhone: String(phoneRaw).trim()
         };
     });
-    const visibleRcpt = recipients.slice(0, 5);
-    const extraRcpt   = recipients.slice(5);
+    // 모달 안에서만 임시 제외된 수신자 id 집합 — 발송 시 제외, selectedIds(글로벌) 는 안 건드림.
+    const removedIds = new Set();
     const senderPhoneFmt = formatPhoneDisplay(cred.senderPhone || '');
 
-    // 폰 헤더 chip (위쪽 5개 + more)
-    const chipsHtml = visibleRcpt.map(r => `
-        <span class="sms-recipient-chip" title="${escapeAttr(r.name)} · ${escapeAttr(r.phone)}">
-            <span class="chip-name">${escapeHtml(truncateName(r.name))}</span>${escapeHtml(r.phone || '번호없음')}
-        </span>
-    `).join('');
-    const moreHtml = extraRcpt.length ? `
-        <span class="sms-recipient-more-wrap">
-            <button type="button" class="sms-recipient-more" data-more>+${extraRcpt.length}명</button>
-            <div class="sms-recipient-dropdown" data-more-list>
-                <div class="sms-recipient-dropdown-head">전체 수신자 (${recipients.length}명)</div>
-                ${recipients.map(r => `
-                    <div class="sms-recipient-dropdown-item">
-                        <span class="nm">${escapeHtml(r.name)}</span>
-                        <span class="ph">${escapeHtml(r.phone || '번호없음')}</span>
-                    </div>
-                `).join('')}
-            </div>
-        </span>
-    ` : '';
-
-    // 좌측 풀 리스트
-    const rpListHtml = recipients.map(r => `
-        <li>
-            <span class="rp-nm" title="${escapeAttr(r.name)}">${escapeHtml(r.name)}</span>
-            <span class="rp-ph ${r.rawPhone ? '' : 'muted'}" title="${escapeAttr(r.phone || '번호없음')}">
-                ${escapeHtml(r.phone || '번호없음')}
-            </span>
-        </li>
-    `).join('');
+    // 초기 chip/dropdown/list 는 빈 placeholder — mount 후 renderRecipientPanel() 이 채움.
+    const chipsHtml = '';
+    const moreHtml = '';
+    const rpListHtml = '';
 
     const md = document.createElement('div');
     md.className = 'modal-backdrop sms-modal';
@@ -1153,6 +1128,96 @@ async function openSmsModal() {
 
     let attachedImage = null;   // { name, base64, sizeKB, dataUrl, width, height }
 
+    // ===== 수신자 panel/chip/dropdown 렌더링 =====
+    // removedIds 변화 시 호출 → 모달 안의 모든 수신자 표시를 동기화한다.
+    const rpListEl = md.querySelector('.sms-rp-list');
+    const rpCountEl = md.querySelector('.sms-rp-head .rp-count');
+    const recipientsBar = md.querySelector('.sms-phone-recipients');
+    const recipientsLabel = recipientsBar?.querySelector('.sms-phone-recipients-label');
+    const modalSubtitle = md.querySelector('.modal-subtitle');
+
+    function renderRecipientPanel() {
+        const active = recipients.filter(r => !removedIds.has(r.id));
+        const N = active.length;
+
+        // 1) 좌측 list — 각 행에 × 버튼
+        if (N === 0) {
+            rpListEl.innerHTML = '<li class="rp-empty">제외할 수신자가 없습니다.<br>모든 수신자를 제거했습니다.</li>';
+        } else {
+            rpListEl.innerHTML = active.map(r => `
+                <li data-rid="${r.id}">
+                    <span class="rp-nm" title="${escapeAttr(r.name)}">${escapeHtml(r.name)}</span>
+                    <span class="rp-ph ${r.rawPhone ? '' : 'muted'}" title="${escapeAttr(r.phone || '번호없음')}">${escapeHtml(r.phone || '번호없음')}</span>
+                    <button type="button" class="rp-remove" data-remove-id="${r.id}" title="이 수신자 제외" aria-label="제외">×</button>
+                </li>
+            `).join('');
+        }
+
+        // 2) count + subtitle
+        if (rpCountEl) rpCountEl.textContent = `${N}명`;
+        if (modalSubtitle) modalSubtitle.textContent = `선택한 ${N}명의 고객에게 문자를 보냅니다.`;
+
+        // 3) 폰 헤더 chip (5개 + more) — 처음부터 다시 그림
+        if (recipientsBar && recipientsLabel) {
+            // label 만 유지하고 그 뒤를 다 비운 후 다시 채움
+            // (label 다음 노드들 제거)
+            let n = recipientsLabel.nextSibling;
+            while (n) {
+                const next = n.nextSibling;
+                recipientsBar.removeChild(n);
+                n = next;
+            }
+            const visible = active.slice(0, 5);
+            const extra = active.slice(5);
+            const chipsHtml = visible.map(r => `
+                <span class="sms-recipient-chip" title="${escapeAttr(r.name)} · ${escapeAttr(r.phone)}">
+                    <span class="chip-name">${escapeHtml(truncateName(r.name))}</span>${escapeHtml(r.phone || '번호없음')}
+                </span>
+            `).join('');
+            const moreHtml = extra.length ? `
+                <span class="sms-recipient-more-wrap">
+                    <button type="button" class="sms-recipient-more" data-more>+${extra.length}명</button>
+                    <div class="sms-recipient-dropdown" data-more-list>
+                        <div class="sms-recipient-dropdown-head">전체 수신자 (${active.length}명)</div>
+                        ${active.map(r => `
+                            <div class="sms-recipient-dropdown-item">
+                                <span class="nm">${escapeHtml(r.name)}</span>
+                                <span class="ph">${escapeHtml(r.phone || '번호없음')}</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                </span>
+            ` : '';
+            recipientsBar.insertAdjacentHTML('beforeend', chipsHtml + moreHtml);
+            // more 버튼 click → dropdown toggle (재바인딩)
+            const newMoreBtn = recipientsBar.querySelector('[data-more]');
+            const newMoreList = recipientsBar.querySelector('[data-more-list]');
+            if (newMoreBtn && newMoreList) {
+                newMoreBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    newMoreList.classList.toggle('open');
+                });
+            }
+        }
+
+        // 4) 발송 버튼 활성/비활성 — 수신자 0명이면 비활성
+        sendBtn.disabled = (N === 0);
+        sendBtn.textContent = (N === 0) ? '수신자가 없습니다' : '📨 발송하기';
+    }
+
+    // list 의 × 버튼 click 위임
+    rpListEl.addEventListener('click', (e) => {
+        const btn = e.target.closest('[data-remove-id]');
+        if (!btn) return;
+        const rid = Number(btn.dataset.removeId);
+        if (!isNaN(rid)) {
+            removedIds.add(rid);
+            renderRecipientPanel();
+        }
+    });
+
+    renderRecipientPanel();   // 첫 렌더
+
     // Solapi 잔액 fetch — 비동기, UI 막지 않음
     (async () => {
         try {
@@ -1196,19 +1261,14 @@ async function openSmsModal() {
     cancelBtn.addEventListener('click', close);
     md.addEventListener('click', (e) => {
         if (e.target === md) close();
-        // dropdown 외부 클릭 시 닫힘
-        if (moreList && moreList.classList.contains('open') &&
-            !moreList.contains(e.target) && e.target !== moreBtn) {
-            moreList.classList.remove('open');
+        // dropdown 외부 클릭 시 닫힘 — renderRecipientPanel 이 매번 새 dropdown 만들므로 fresh fetch.
+        const currentList = md.querySelector('[data-more-list]');
+        const currentBtn  = md.querySelector('[data-more]');
+        if (currentList?.classList.contains('open') &&
+            !currentList.contains(e.target) && e.target !== currentBtn) {
+            currentList.classList.remove('open');
         }
     });
-
-    if (moreBtn) {
-        moreBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            moreList.classList.toggle('open');
-        });
-    }
 
     // ===== 메시지 타입 + bytes 계산 =====
     const computeMessageType = () => {
@@ -1402,6 +1462,12 @@ async function openSmsModal() {
             errEl.textContent = '문자 내용 또는 이미지를 입력해주세요.';
             errEl.style.display = ''; return;
         }
+        // 수신자 panel 에서 제외된 ids 빼고 실제 발송 대상 산출
+        const activeIds = ids.filter(id => !removedIds.has(id));
+        if (activeIds.length === 0) {
+            errEl.textContent = '수신자가 없습니다. 좌측 목록에서 한 명 이상 유지해주세요.';
+            errEl.style.display = ''; return;
+        }
         if (!confirm('광고성 문자는 수신동의 고객에게만 발송해야 하며, 수신거부 문구가 필요합니다.\n\n계속 진행할까요?')) return;
 
         sendBtn.disabled = true;
@@ -1411,7 +1477,7 @@ async function openSmsModal() {
         try {
             const res = await apiRequest('sms-credentials');   // 방어적
             if (!res?.configured) throw new Error('Solapi 가 해제되었습니다. 설정에서 다시 등록해 주세요.');
-            const payload = { customer_ids: ids, message: text };
+            const payload = { customer_ids: activeIds, message: text };
             if (attachedImage) {
                 payload.image_base64 = attachedImage.base64;
                 payload.image_name   = attachedImage.name;
@@ -1450,7 +1516,7 @@ async function openSmsModal() {
 }
 
 async function getAccessTokenForSms() {
-    const { getAccessToken } = await import('./auth-shared.js?v=20260516-balance-compact');
+    const { getAccessToken } = await import('./auth-shared.js?v=20260516-recipient-remove');
     return await getAccessToken();
 }
 
