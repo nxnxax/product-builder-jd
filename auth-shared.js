@@ -881,6 +881,35 @@ function escapeHtmlSafe(s) {
     return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
+/**
+ * Supabase / OAuth 영문 에러를 한국어 친화 메시지로 변환.
+ * 매칭 안 된 케이스는 원본 그대로 (디버깅 용) 또는 fallback 반환.
+ */
+function translateAuthError(raw, fallback) {
+    const s = String(raw || '').trim();
+    if (!s) return fallback || '인증 처리에 실패했습니다.';
+
+    // 자주 나오는 supabase 패턴들 — 우선순위 순
+    if (/invalid\s*login\s*credentials/i.test(s))           return '비밀번호가 일치하지 않습니다.';
+    if (/email\s*not\s*confirmed/i.test(s))                 return '이메일 인증이 완료되지 않았습니다. 가입 시 받은 메일을 확인해 주세요.';
+    if (/user\s*not\s*found/i.test(s))                      return '가입되지 않은 이메일입니다.';
+    if (/already\s*registered|user.*exist|email.*exist/i.test(s))  return '이미 가입된 이메일입니다.';
+    if (/password.*at\s*least\s*\d+|password.*too\s*short|weak\s*password/i.test(s)) return '비밀번호는 6자 이상이어야 합니다.';
+    if (/validate\s*email|invalid\s*email|invalid.*email.*format/i.test(s)) return '올바른 이메일 형식이 아닙니다.';
+    if (/email\s*rate\s*limit|over\s*email\s*send\s*rate|too\s*many\s*request/i.test(s)) return '잠시 후 다시 시도해주세요 (요청 횟수 제한).';
+    if (/database\s*error.*new\s*user|saving\s*new\s*user/i.test(s)) return '사용자 정보 저장 실패. 잠시 후 다시 시도해주세요.';
+    if (/signup.*disabled|sign[\s_-]*ups?.*not\s*allowed/i.test(s)) return '현재 회원가입이 일시 중단되어 있습니다.';
+    if (/captcha|verification.*failed/i.test(s))            return '보안 인증에 실패했습니다. 잠시 후 다시 시도해주세요.';
+    if (/provider.*not.*found|provider.*disabled/i.test(s)) return 'Google 로그인 설정에 문제가 있습니다. 관리자에게 문의해 주세요.';
+    if (/oauth.*error|oauth.*denied/i.test(s))              return 'Google 로그인이 취소되었거나 거부되었습니다.';
+    if (/network\s*error|fetch.*failed|failed\s*to\s*fetch|networkerror/i.test(s)) return '네트워크 오류 — 인터넷 연결을 확인하고 다시 시도해 주세요.';
+    if (/jwt|token.*expired|token.*invalid/i.test(s))       return '인증이 만료되었습니다. 다시 로그인해 주세요.';
+    if (/cors|cross.origin/i.test(s))                       return '브라우저 보안 정책으로 차단되었습니다. 새로고침 후 다시 시도해 주세요.';
+
+    // 매칭 실패 — 원본 메시지 (사용자/개발자가 보고 진단 가능)
+    return s;
+}
+
 /* =========================================================================
    서브 페이지용 통합 인증 모달 — 로그인 + 회원가입 모두 지원.
    메인 페이지(#auth-screen) 가 없는 페이지에서 같은 흐름으로 사용.
@@ -1118,7 +1147,7 @@ function openSharedLoginModal(initialMode = 'login') {
                                 msgEl.innerHTML = '<b style="color:#1b5e20;">📧 ' + email + ' 으로 재설정 메일을 보냈습니다.</b><br><span style="font-size:12px;color:#4f4943;">메일함을 확인하고 링크를 클릭하세요.</span>';
                             } catch (e2) {
                                 resetBtn.disabled = false; resetBtn.textContent = '📧 비밀번호 재설정 메일 보내기';
-                                msgEl.insertAdjacentHTML('beforeend', '<br><span style="color:#c8362c;font-size:11.5px;">전송 실패: ' + escapeHtmlSafe(e2?.message || '알 수 없음') + '</span>');
+                                msgEl.insertAdjacentHTML('beforeend', '<br><span style="color:#c8362c;font-size:11.5px;">전송 실패: ' + escapeHtmlSafe(translateAuthError(e2?.message, '알 수 없음')) + '</span>');
                             }
                         });
                     }
@@ -1131,7 +1160,7 @@ function openSharedLoginModal(initialMode = 'login') {
                         }
                     }, 5000);
                 } else {
-                    msgEl.textContent = raw || '가입 처리에 실패했습니다.';
+                    msgEl.textContent = translateAuthError(raw, '가입 처리에 실패했습니다.');
                     submitBtn.disabled = false; submitBtn.textContent = '회원가입';
                 }
             }
@@ -1147,21 +1176,7 @@ function openSharedLoginModal(initialMode = 'login') {
             } catch (err) {
                 console.error('[signIn] error', err);
                 msgEl.style.color = '#c8362c';
-                const raw = String(err?.message || '');
-                // 자주 나오는 supabase 영문 에러 → 한국어 친화 메시지
-                let friendly = raw;
-                if (/invalid\s*login\s*credentials/i.test(raw)) {
-                    friendly = '비밀번호가 일치하지 않습니다.';
-                } else if (/email\s*not\s*confirmed/i.test(raw)) {
-                    friendly = '이메일 인증이 완료되지 않았습니다. 가입 시 받은 메일을 확인해 주세요.';
-                } else if (/user\s*not\s*found/i.test(raw)) {
-                    friendly = '가입되지 않은 이메일입니다.';
-                } else if (/network\s*error|fetch.*failed/i.test(raw)) {
-                    friendly = '네트워크 오류 — 인터넷 연결을 확인하고 다시 시도해 주세요.';
-                } else if (!raw) {
-                    friendly = '로그인에 실패했습니다.';
-                }
-                msgEl.textContent = friendly;
+                msgEl.textContent = translateAuthError(err?.message, '로그인에 실패했습니다.');
                 submitBtn.disabled = false; submitBtn.textContent = '로그인';
             }
         }
@@ -1204,14 +1219,14 @@ function openSharedLoginModal(initialMode = 'login') {
                 console.log('[google oauth] response', { hasUrl: !!data?.url, error });
                 if (error) {
                     msgEl.style.color = '#c8362c';
-                    msgEl.textContent = error.message || 'Google 로그인 실패';
+                    msgEl.textContent = translateAuthError(error.message, 'Google 로그인 실패');
                     googleBtn.disabled = false;
                 }
                 // 성공 시 supabase 가 이미 redirect 시작 — 추가 처리 X.
             }).catch((err) => {
                 console.error('[google oauth] catch', err);
                 msgEl.style.color = '#c8362c';
-                msgEl.textContent = err?.message || 'Google 로그인 실패';
+                msgEl.textContent = translateAuthError(err?.message, 'Google 로그인 실패');
                 googleBtn.disabled = false;
             });
         } catch (sync_err) {
