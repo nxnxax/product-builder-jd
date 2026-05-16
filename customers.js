@@ -904,6 +904,73 @@ function showError(msg) {
     if (c) c.insertAdjacentHTML('afterbegin', `<div style="background:#fef2f2;color:#b91c1c;border:1px solid #fecaca;padding:10px 14px;border-radius:8px;margin-bottom:12px;font-size:13px;">${escapeHtml(msg)}</div>`);
 }
 
+/* ============== Solapi 미연동 안내 모달 — 60대+ 사용자 가독성 우선 ============== */
+function showSolapiSetupGuide() {
+    document.querySelectorAll('.solapi-guide-modal').forEach(m => m.remove());
+    const md = document.createElement('div');
+    md.className = 'modal-backdrop solapi-guide-modal';
+    md.style.zIndex = '500';
+    md.innerHTML = `
+        <div class="modal-panel" style="max-width:560px;">
+            <header class="modal-header" style="display:flex;align-items:center;gap:10px;">
+                <div>
+                    <h2 style="font-size:20px;">문자 발송 준비가 필요해요</h2>
+                    <p class="modal-subtitle" style="font-size:14px;line-height:1.55;color:#4f4943;margin-top:6px;">
+                        문자 발송에는 <b>솔라피(Solapi) 계정</b>의 API 키가 필요합니다.<br>
+                        아래 순서대로 한 번만 등록하시면 그 다음부터는 바로 발송할 수 있어요.
+                    </p>
+                </div>
+            </header>
+            <div class="modal-body" style="padding:6px 22px 4px;">
+                <ol style="padding-left:22px;margin:14px 0;line-height:1.85;font-size:15px;color:#0e0d0c;">
+                    <li style="margin-bottom:14px;">
+                        <b>솔라피 회원가입</b><br>
+                        <a href="https://solapi.com/" target="_blank" rel="noopener"
+                           style="color:#c8362c;font-weight:700;text-decoration:underline;font-size:15px;">
+                            👉 https://solapi.com/ 바로가기
+                        </a>
+                    </li>
+                    <li style="margin-bottom:14px;">
+                        <b>로그인 후 API 키 발급 페이지로 이동</b><br>
+                        <a href="https://console.solapi.com/credentials" target="_blank" rel="noopener"
+                           style="color:#c8362c;font-weight:700;text-decoration:underline;font-size:15px;">
+                            👉 https://console.solapi.com/credentials 바로가기
+                        </a>
+                    </li>
+                    <li style="margin-bottom:14px;">
+                        <b>두 가지 항목을 복사</b>
+                        <div style="background:#fbf7ef;border-radius:8px;padding:12px 14px;margin-top:8px;font-size:14.5px;line-height:1.75;">
+                            • <b>API KEY</b><br>
+                            • <b>API SECRET</b>
+                            <span style="color:#7a1812;font-size:13px;">
+                                (SECRET 은 <b>조회 버튼</b>을 누르셔야 보입니다)
+                            </span>
+                        </div>
+                    </li>
+                    <li>
+                        <b>영맨 사이트 [내 정보 &gt; 문자설정] 으로 돌아와서 붙여넣기 → 저장</b>
+                    </li>
+                </ol>
+            </div>
+            <footer class="modal-footer" style="display:flex;gap:8px;padding:16px 22px 18px;">
+                <button type="button" class="tiny-btn" data-cancel
+                        style="font-size:14px;padding:10px 16px;">나중에 할게요</button>
+                <button type="button" class="tiny-btn primary" data-goto-sms
+                        style="font-size:14.5px;padding:10px 18px;font-weight:700;">
+                    내 정보 &gt; 문자설정 으로 이동
+                </button>
+            </footer>
+        </div>
+    `;
+    document.body.appendChild(md);
+    const close = () => md.remove();
+    md.querySelector('[data-cancel]').addEventListener('click', close);
+    md.addEventListener('click', (e) => { if (e.target === md) close(); });
+    md.querySelector('[data-goto-sms]').addEventListener('click', () => {
+        window.location.href = 'profile.html?tab=sms';
+    });
+}
+
 /* ============== SMS 단체 발송 모달 (선택 고객들에게) ============== */
 async function openSmsModal() {
     if (selectedIds.size === 0) { alert('먼저 보낼 고객을 체크해 주세요.'); return; }
@@ -913,9 +980,7 @@ async function openSmsModal() {
     try { cred = await apiRequest('sms-credentials'); }
     catch (e) { alert('문자 설정을 불러오지 못했습니다: ' + (e.message || e)); return; }
     if (!cred?.configured) {
-        if (confirm('Solapi 가 연동되어 있지 않습니다.\n\n본인의 Solapi 계정 + 발신번호를 등록해야 문자 발송이 가능합니다.\n지금 문자 설정 페이지로 이동할까요?')) {
-            window.location.href = 'profile.html?tab=sms';
-        }
+        showSolapiSetupGuide();
         return;
     }
 
