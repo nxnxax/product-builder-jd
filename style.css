@@ -2645,6 +2645,8 @@ select:focus {
     display:flex;align-items:center;justify-content:center;gap:14px;
     padding:8px 4px;color:#8a847e;font-size:13px;line-height:1.5
 }
+.sms-attach-empty[hidden],
+.sms-attach-preview[hidden]{display:none}   /* author display:flex 가 [hidden] 기본을 덮는 버그 fix */
 .sms-attach-empty svg{flex-shrink:0;color:#c8362c;opacity:.7}
 .sms-attach-empty p{margin:0;font-weight:600;color:#4f4943}
 .sms-attach-empty small{display:block;margin-top:2px;color:#8a847e;font-size:11.5px;font-weight:500}

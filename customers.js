@@ -9,13 +9,13 @@
  *  - client_idempotency_key 로 같은 통화의 중복 전송 차단
  */
 
-import { initSupabase, apiRequest, getSession } from './auth-shared.js?v=20260516-mms-hotfix';
+import { initSupabase, apiRequest, getSession } from './auth-shared.js?v=20260516-recipient-fix';
 import { attachColumnFilters, applyColumnFilters, openRowAddModal, attachPhoneAutoFormat, getEffectiveFields, mountFieldManager,
          exportRecordsToExcel, pickExcelFile, parseExcelFile, suggestFieldMapping, openImportPreviewModal,
          saveImportSession, loadImportSession, clearImportSession,
          findBlankRecordIds, showSweepToast,
          attachCellClickHandlers,
-         isLedgerMobile, onLedgerViewportChange } from './ledger-shared.js?v=20260516-mms-hotfix';
+         isLedgerMobile, onLedgerViewportChange } from './ledger-shared.js?v=20260516-recipient-fix';
 
 const MOBILE_PRIMARY_KEYS = ['customer', 'phone', 'date'];
 
@@ -922,12 +922,38 @@ async function openSmsModal() {
     const ids = [...selectedIds];
 
     // 선택된 고객 → {name, phone} 리스트
+    // record 데이터는 r.data 안에 있고 사용자가 양식을 커스텀할 수 있으므로
+    // 그룹의 effective fields (type='tel' = 전화번호) + 흔한 키 fallback 으로 추출.
     const selectedRecords = records.filter(r => ids.includes(r.id));
-    const recipients = selectedRecords.map(r => ({
-        name: r.customer || '이름없음',
-        phone: formatPhoneDisplay(r.phone || ''),
-        rawPhone: r.phone || ''
-    }));
+    const recipients = selectedRecords.map(r => {
+        const d = r.data || {};
+        const group = groups.find(g => g.id === r.groupId);
+        const fields = group ? getEffectiveFields(group, DEFAULT_FIELDS) : DEFAULT_FIELDS;
+
+        // 이름 — customer/name 키 또는 label 매칭 우선
+        let name = '';
+        for (const f of fields) {
+            const lbl = String(f.label || '');
+            if (f.key === 'customer' || f.key === 'name'
+                || /이름|고객명|성명|의뢰인/.test(lbl)) {
+                if (d[f.key]) { name = String(d[f.key]); break; }
+            }
+        }
+        if (!name) name = d.customer || d.name || d['이름'] || d['고객명'] || '이름없음';
+
+        // 전화번호 — type='tel' 필드 우선, 없으면 흔한 키 fallback
+        let phoneRaw = '';
+        for (const f of fields) {
+            if (f.type === 'tel' && d[f.key]) { phoneRaw = String(d[f.key]); break; }
+        }
+        if (!phoneRaw) phoneRaw = d.phone || d.tel || d.mobile || d.hp || d['전화번호'] || d['연락처'] || d['휴대폰'] || '';
+
+        return {
+            name: String(name).trim() || '이름없음',
+            phone: formatPhoneDisplay(phoneRaw),
+            rawPhone: String(phoneRaw).trim()
+        };
+    });
     const visibleRcpt = recipients.slice(0, 5);
     const extraRcpt   = recipients.slice(5);
     const senderPhoneFmt = formatPhoneDisplay(cred.senderPhone || '');
@@ -1057,10 +1083,10 @@ async function openSmsModal() {
                         </div>
                     </div>
                     <div class="sms-attach-preview" data-preview hidden>
-                        <img id="smsAttachImg" alt="첨부 이미지">
+                        <img id="smsAttachImg" alt="">
                         <div class="sms-attach-info">
-                            <b id="smsAttachName">파일명</b>
-                            <small id="smsAttachSize">0 KB</small>
+                            <b id="smsAttachName"></b>
+                            <small id="smsAttachSize"></small>
                         </div>
                         <button type="button" class="sms-attach-remove" data-attach-remove>제거</button>
                     </div>
@@ -1312,7 +1338,7 @@ async function openSmsModal() {
 }
 
 async function getAccessTokenForSms() {
-    const { getAccessToken } = await import('./auth-shared.js?v=20260516-mms-hotfix');
+    const { getAccessToken } = await import('./auth-shared.js?v=20260516-recipient-fix');
     return await getAccessToken();
 }
 
