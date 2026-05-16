@@ -1036,7 +1036,11 @@ function openFindIdModal() {
 }
 
 /* =========================================================================
-   비밀번호 찾기 모달 — 이메일 입력 → supabase resetPasswordForEmail.
+   비밀번호 찾기 모달 — 3단계:
+     1) 이름 + 휴대폰 → SMS 인증번호 발송
+     2) 인증번호 입력 → 검증 → resetToken 발급
+     3) 새 비밀번호 입력 → supabase admin API 로 변경
+   Google 가입자는 step 2 응답에서 별도 안내 (구글 계정 보안 설정 링크).
    ========================================================================= */
 function openFindPasswordModal(prefillEmail = '') {
     document.querySelectorAll('[data-shared-auth]').forEach(el => el.remove());
@@ -1048,11 +1052,28 @@ function openFindPasswordModal(prefillEmail = '') {
                 <button type="button" class="shared-auth-close" aria-label="닫기">&times;</button>
                 <div class="shared-auth-brand"><img src="logo_main.png" alt="YOUNGMAN"></div>
                 <h2 class="shared-auth-title">비밀번호 재설정</h2>
-                <p class="shared-auth-sub">가입한 이메일로 비밀번호 재설정 링크를 보내드립니다.</p>
+                <p class="shared-auth-sub" data-sub>본인 확인을 위해 이름과 휴대폰 번호로 SMS 인증을 진행합니다.</p>
                 <form class="shared-auth-form" novalidate>
-                    <label>이메일 <input type="email" name="email" required autocomplete="email" placeholder="name@example.com" value="${escapeHtmlSafe(prefillEmail)}"></label>
+                    <div data-step-verify>
+                        <label>이름 <input type="text" name="name" required autocomplete="name" placeholder="실명"></label>
+                        <div style="display:flex;gap:6px;align-items:flex-end;">
+                            <label style="flex:1;">휴대폰 <input type="tel" name="phone" required autocomplete="tel" placeholder="010-0000-0000"></label>
+                            <button type="button" data-send-otp style="padding:9px 12px;background:#0e0d0c;color:#fff;border:0;border-radius:8px;font-size:12.5px;font-weight:700;cursor:pointer;white-space:nowrap;font-family:inherit;">인증번호 받기</button>
+                        </div>
+                        <div data-otp-zone hidden>
+                            <label>인증번호 <input type="text" name="code" inputmode="numeric" maxlength="6" placeholder="6자리 숫자" autocomplete="one-time-code"></label>
+                            <small style="display:block;margin-top:4px;color:#8a847e;font-size:11.5px;">5분 안에 입력해주세요. <span data-otp-target></span></small>
+                        </div>
+                    </div>
+                    <div data-step-reset hidden>
+                        <div style="padding:10px 12px;background:#e6f4ea;border:1px solid #a5d6a7;border-radius:8px;font-size:12.5px;color:#1b5e20;margin-bottom:8px;">
+                            ✅ 본인 확인 완료. 새 비밀번호를 입력해 주세요.
+                        </div>
+                        <label>새 비밀번호 <input type="password" name="newPassword" minlength="6" placeholder="6자 이상"></label>
+                        <label>비밀번호 확인 <input type="password" name="newPasswordConfirm" minlength="6" placeholder="다시 입력"></label>
+                    </div>
                     <p class="shared-auth-message" aria-live="polite"></p>
-                    <button type="submit" class="shared-auth-submit">재설정 메일 보내기</button>
+                    <button type="submit" class="shared-auth-submit" disabled>인증 후 진행</button>
                 </form>
                 <p class="shared-auth-switch">
                     <button type="button" class="shared-auth-mode-btn" data-back>← 로그인으로 돌아가기</button>
@@ -1067,32 +1088,142 @@ function openFindPasswordModal(prefillEmail = '') {
         if (e.target.classList.contains('shared-auth-backdrop')) close();
     });
     md.querySelector('[data-back]').addEventListener('click', () => { close(); openSharedLoginModal('login'); });
+
     const form = md.querySelector('.shared-auth-form');
     const msgEl = md.querySelector('.shared-auth-message');
     const submitBtn = md.querySelector('.shared-auth-submit');
-    setTimeout(() => form.email?.focus(), 50);
+    const sendOtpBtn = md.querySelector('[data-send-otp]');
+    const otpZone   = md.querySelector('[data-otp-zone]');
+    const otpTargetEl = md.querySelector('[data-otp-target]');
+    const stepVerify  = md.querySelector('[data-step-verify]');
+    const stepReset   = md.querySelector('[data-step-reset]');
+    const subEl       = md.querySelector('[data-sub]');
+
+    let phase = 'verify';   // 'verify' | 'reset'
+    let resetToken = null;
+    let matchedEmail = null;
+    let otpSent = false;
+    setTimeout(() => form.name?.focus(), 50);
+
+    // 인증번호 받기
+    sendOtpBtn.addEventListener('click', async () => {
+        const phone = form.phone.value.trim();
+        if (!phone) { msgEl.style.color = '#c8362c'; msgEl.textContent = '휴대폰 번호를 입력해주세요.'; return; }
+        sendOtpBtn.disabled = true; sendOtpBtn.textContent = '발송 중…'; msgEl.textContent = '';
+        try {
+            const resp = await fetch('records.php?resource=find-pwd-send-otp', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ resource: 'find-pwd-send-otp', phone }),
+            });
+            const data = await resp.json().catch(() => ({}));
+            if (!resp.ok || !data.ok) {
+                msgEl.style.color = '#c8362c'; msgEl.textContent = data?.error || 'SMS 발송 실패';
+                sendOtpBtn.disabled = false; sendOtpBtn.textContent = '인증번호 받기';
+                return;
+            }
+            otpSent = true;
+            otpZone.hidden = false;
+            otpTargetEl.textContent = data.sentTo ? '발송 대상: ' + data.sentTo : '';
+            msgEl.style.color = '#1b5e20';
+            msgEl.textContent = '✅ 인증번호를 발송했습니다.';
+            submitBtn.disabled = false;
+            let secs = 60;
+            sendOtpBtn.disabled = true;
+            const iv = setInterval(() => {
+                secs--;
+                sendOtpBtn.textContent = `재발송 (${secs}s)`;
+                if (secs <= 0) { clearInterval(iv); sendOtpBtn.disabled = false; sendOtpBtn.textContent = '재발송'; }
+            }, 1000);
+            setTimeout(() => form.code?.focus(), 100);
+        } catch (err) {
+            msgEl.style.color = '#c8362c'; msgEl.textContent = translateAuthError(err?.message, 'SMS 발송 오류');
+            sendOtpBtn.disabled = false; sendOtpBtn.textContent = '인증번호 받기';
+        }
+    });
+
+    // submit — phase 에 따라 verify or reset
     form.addEventListener('submit', async (e) => {
         e.preventDefault();
-        const email = form.email.value.trim();
-        if (!email) { msgEl.style.color = '#c8362c'; msgEl.textContent = '이메일을 입력해주세요.'; return; }
-        submitBtn.disabled = true; submitBtn.textContent = '메일 보내는 중…'; msgEl.textContent = '';
-        try {
-            if (!supabaseClient) await initSupabase();
-            const { error } = await supabaseClient.auth.resetPasswordForEmail(email, {
-                redirectTo: window.location.origin + '/index.html',
-            });
-            if (error) throw error;
-            msgEl.style.color = '#1b5e20';
-            msgEl.innerHTML = '<b>📧 ' + escapeHtmlSafe(email) + ' 으로 재설정 메일을 보냈습니다.</b><br>'
-                + '<small style="color:#4f4943;font-size:11.5px;display:block;margin-top:6px;">메일함을 확인하고 링크를 클릭한 뒤 새 비밀번호를 설정해 주세요.</small>';
-            submitBtn.textContent = '닫기';
-            submitBtn.disabled = false;
-            submitBtn.type = 'button';
-            submitBtn.addEventListener('click', () => { close(); openSharedLoginModal('login'); }, { once: true });
-        } catch (err) {
-            msgEl.style.color = '#c8362c';
-            msgEl.textContent = translateAuthError(err?.message, '메일 전송 실패');
-            submitBtn.disabled = false; submitBtn.textContent = '재설정 메일 보내기';
+        if (phase === 'verify') {
+            // Step 2: 인증번호 + 이름 매칭 검증
+            const name  = form.name.value.trim();
+            const phone = form.phone.value.trim();
+            const code  = (form.code?.value || '').trim();
+            if (!otpSent) { msgEl.style.color = '#c8362c'; msgEl.textContent = '먼저 인증번호를 받아주세요.'; return; }
+            if (!name || !phone || !code) { msgEl.style.color = '#c8362c'; msgEl.textContent = '이름/휴대폰/인증번호를 모두 입력해주세요.'; return; }
+            submitBtn.disabled = true; submitBtn.textContent = '검증 중…'; msgEl.textContent = '';
+            try {
+                const resp = await fetch('records.php?resource=find-pwd-verify-otp', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ resource: 'find-pwd-verify-otp', name, phone, code }),
+                });
+                const data = await resp.json().catch(() => ({}));
+                // Google 가입자 케이스 — ok:false + reason:'oauth_provider'
+                if (data?.reason === 'oauth_provider') {
+                    msgEl.style.color = '#c8362c';
+                    msgEl.innerHTML = '<b>구글 로그인 계정입니다.</b><br>'
+                        + '<small style="display:block;margin-top:4px;color:#4f4943;font-size:11.5px;">이 계정의 비밀번호는 Google 에서 관리합니다. 구글 계정 보안 설정에서 비밀번호를 변경해주세요.</small>'
+                        + '<a href="https://myaccount.google.com/security" target="_blank" rel="noopener" style="display:inline-block;margin-top:8px;padding:7px 14px;background:#4285F4;color:#fff;border-radius:6px;font-size:12.5px;font-weight:700;text-decoration:none;">Google 계정 보안 설정 →</a>';
+                    submitBtn.textContent = '닫기';
+                    submitBtn.disabled = false; submitBtn.type = 'button';
+                    submitBtn.addEventListener('click', close, { once: true });
+                    return;
+                }
+                if (!resp.ok || !data.ok) {
+                    msgEl.style.color = '#c8362c'; msgEl.textContent = data?.error || '인증 실패';
+                    submitBtn.disabled = false; submitBtn.textContent = '인증 후 진행';
+                    return;
+                }
+                // 검증 성공 → Step 3 (새 비밀번호)
+                resetToken = data.resetToken;
+                matchedEmail = data.email;
+                phase = 'reset';
+                stepVerify.hidden = true;
+                stepReset.hidden = false;
+                subEl.textContent = `${matchedEmail} 계정의 새 비밀번호를 설정합니다.`;
+                msgEl.textContent = '';
+                submitBtn.textContent = '비밀번호 변경';
+                submitBtn.disabled = false;
+                setTimeout(() => form.newPassword?.focus(), 80);
+            } catch (err) {
+                msgEl.style.color = '#c8362c'; msgEl.textContent = translateAuthError(err?.message, '검증 실패');
+                submitBtn.disabled = false; submitBtn.textContent = '인증 후 진행';
+            }
+        } else {
+            // Step 3: 새 비밀번호 설정
+            const phone        = form.phone.value.trim();
+            const newPassword  = form.newPassword.value;
+            const confirmPwd   = form.newPasswordConfirm.value;
+            if (newPassword.length < 6) { msgEl.style.color = '#c8362c'; msgEl.textContent = '비밀번호는 6자 이상이어야 합니다.'; return; }
+            if (newPassword !== confirmPwd) { msgEl.style.color = '#c8362c'; msgEl.textContent = '비밀번호와 확인이 일치하지 않습니다.'; return; }
+            submitBtn.disabled = true; submitBtn.textContent = '변경 중…'; msgEl.textContent = '';
+            try {
+                const resp = await fetch('records.php?resource=find-pwd-reset', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        resource: 'find-pwd-reset',
+                        phone, resetToken, email: matchedEmail, newPassword,
+                    }),
+                });
+                const data = await resp.json().catch(() => ({}));
+                if (!resp.ok || !data.ok) {
+                    msgEl.style.color = '#c8362c'; msgEl.textContent = data?.error || '비밀번호 변경 실패';
+                    submitBtn.disabled = false; submitBtn.textContent = '비밀번호 변경';
+                    return;
+                }
+                msgEl.style.color = '#1b5e20';
+                msgEl.innerHTML = '<b>✅ 비밀번호가 변경되었습니다.</b><br>'
+                    + '<small style="display:block;margin-top:4px;color:#4f4943;font-size:11.5px;">새 비밀번호로 로그인해 주세요.</small>';
+                submitBtn.textContent = '로그인으로 이동';
+                submitBtn.disabled = false; submitBtn.type = 'button';
+                submitBtn.addEventListener('click', () => { close(); openSharedLoginModal('login'); }, { once: true });
+            } catch (err) {
+                msgEl.style.color = '#c8362c'; msgEl.textContent = translateAuthError(err?.message, '변경 실패');
+                submitBtn.disabled = false; submitBtn.textContent = '비밀번호 변경';
+            }
         }
     });
 }

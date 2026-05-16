@@ -145,11 +145,13 @@ jobs:
           LOTTO_DB_PASS: ${{ secrets.LOTTO_DB_PASS }}
           LOTTO_CRON_TOKEN: ${{ secrets.LOTTO_CRON_TOKEN }}
           CRYPTO_KEY: ${{ secrets.YOUNGMAN_CRYPTO_KEY }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
         run: |
           set -e
           {
             echo "VITE_SUPABASE_URL=https://xktjucyijpkopkyvxovh.supabase.co/rest/v1/"
             echo "VITE_SUPABASE_ANON_KEY=sb_publishable_Qg7NbgXvnIEchsjR18X8Mw_d8YsqVbS"
+            [ -n "$SUPABASE_SERVICE_KEY" ] && echo "SUPABASE_SERVICE_KEY=$SUPABASE_SERVICE_KEY" || echo "::warning::SUPABASE_SERVICE_KEY missing — 비밀번호 재설정(SMS 인증) 비활성. Secret 등록 필요."
             [ -n "$CRYPTO_KEY" ]    && echo "YOUNGMAN_CRYPTO_KEY=$CRYPTO_KEY"   || echo "::warning::YOUNGMAN_CRYPTO_KEY missing — PII 평문 폴백 (보안 약함)"
             [ -n "$OPENAI_KEY" ]    && echo "OPENAI_API_KEY=$OPENAI_KEY"       || echo "::warning::OPENAI_API_KEY missing"
             [ -n "$RECRAFT_KEY" ]   && echo "RECRAFT_API_KEY=$RECRAFT_KEY"     || true

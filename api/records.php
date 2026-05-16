@@ -93,6 +93,10 @@ $auth = is_file($authConfigPath) ? require $authConfigPath : ['require_auth' => 
             $rawKey = (string)($source['VITE_SUPABASE_ANON_KEY'] ?? $source['SUPABASE_ANON_KEY'] ?? '');
             if ($rawKey !== '') $auth['anon_key'] = $rawKey;
         }
+        if (empty($auth['service_key'])) {
+            $rawSvc = (string)($source['SUPABASE_SERVICE_KEY'] ?? $source['SUPABASE_SERVICE_ROLE_KEY'] ?? '');
+            if ($rawSvc !== '') $auth['service_key'] = $rawSvc;
+        }
     }
 })();
 
@@ -124,6 +128,7 @@ function normalize_resource($value) {
         'mobile-tokens',
         'community-posts',
         'find-email', 'find-email-send-otp', 'find-email-verify-otp',
+        'find-pwd-send-otp', 'find-pwd-verify-otp', 'find-pwd-reset',
     ];
     if (!in_array($resource, $allowed, true)) {
         respond(['ok' => false, 'error' => '지원하지 않는 리소스입니다.'], 400);
@@ -406,6 +411,65 @@ function create_member_from_google(PDO $pdo, $authUser, $data) {
         'created' => true,
         'role' => is_admin_email($email) ? 'admin' : 'member',
     ]);
+}
+
+/**
+ * Supabase admin — 이메일로 user id 조회. service_role 키 필요.
+ * 응답: user.id (string) 또는 null.
+ */
+function supabase_admin_find_user_id(string $base, string $serviceKey, string $email): ?string {
+    if ($base === '' || $serviceKey === '' || $email === '') return null;
+    $url = $base . '/auth/v1/admin/users?email=' . urlencode($email);
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_HTTPHEADER => [
+            'Authorization: Bearer ' . $serviceKey,
+            'apikey: ' . $serviceKey,
+        ],
+        CURLOPT_TIMEOUT => 10,
+        CURLOPT_SSL_VERIFYPEER => true,
+    ]);
+    $body = curl_exec($ch);
+    $http = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    if (!is_string($body) || $http >= 400) return null;
+    $data = json_decode($body, true);
+    if (!is_array($data)) return null;
+    // 응답 형식: { users: [...] } 또는 { id: ... } 또는 단일 객체
+    $users = $data['users'] ?? null;
+    if (is_array($users) && !empty($users[0]['id'])) return (string)$users[0]['id'];
+    if (!empty($data['id'])) return (string)$data['id'];
+    return null;
+}
+
+/**
+ * Supabase admin — user 비밀번호 변경. service_role 키 필요.
+ */
+function supabase_admin_set_password(string $base, string $serviceKey, string $userId, string $newPassword): bool {
+    if ($base === '' || $serviceKey === '' || $userId === '') return false;
+    $url = $base . '/auth/v1/admin/users/' . urlencode($userId);
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_CUSTOMREQUEST => 'PUT',
+        CURLOPT_POSTFIELDS => json_encode(['password' => $newPassword], JSON_UNESCAPED_UNICODE),
+        CURLOPT_HTTPHEADER => [
+            'Authorization: Bearer ' . $serviceKey,
+            'apikey: ' . $serviceKey,
+            'Content-Type: application/json',
+        ],
+        CURLOPT_TIMEOUT => 10,
+        CURLOPT_SSL_VERIFYPEER => true,
+    ]);
+    $body = curl_exec($ch);
+    $http = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    if (!is_string($body) || $http >= 400) {
+        error_log('[supabase admin set_password] http=' . $http . ' body=' . substr((string)$body, 0, 300));
+        return false;
+    }
+    return true;
 }
 
 /**
@@ -1296,7 +1360,8 @@ function verify_auth_token($auth) {
 
 try {
     // Public resources (no auth) — keep narrow.
-    $publicResources = ['auth-availability', 'find-email', 'find-email-send-otp', 'find-email-verify-otp'];
+    $publicResources = ['auth-availability', 'find-email', 'find-email-send-otp', 'find-email-verify-otp',
+                        'find-pwd-send-otp', 'find-pwd-verify-otp', 'find-pwd-reset'];
     $peekedResource = strtolower(trim((string)($_GET['resource'] ?? '')));
     $authUser = in_array($peekedResource, $publicResources, true) ? null : verify_auth_token($auth);
 
@@ -1341,6 +1406,148 @@ try {
     if ($resource === 'auth-member') {
         if ($method !== 'POST') respond(['ok' => false, 'error' => '지원하지 않는 요청 방식입니다.'], 405);
         create_member_from_google($pdo, $authUser, $body);
+    }
+
+    if ($resource === 'find-pwd-send-otp') {
+        // 비밀번호 찾기 — SMS 인증번호 발송 (purpose='find_pwd')
+        if ($method !== 'POST') respond(['ok'=>false, 'error'=>'지원하지 않는 요청 방식'], 405);
+        $phone = preg_replace('/\D/', '', (string)($body['phone'] ?? ''));
+        if (strlen($phone) < 10) respond(['ok'=>false, 'error'=>'올바른 휴대폰 번호를 입력해주세요.'], 400);
+
+        ensure_auth_otp_table($pdo);
+
+        // 1분 내 재발송 금지
+        $check = $pdo->prepare("SELECT created_at FROM auth_otp WHERE target = :t AND purpose = 'find_pwd' ORDER BY created_at DESC LIMIT 1");
+        $check->execute([':t' => $phone]);
+        $last = $check->fetch();
+        if ($last && (time() - strtotime($last['created_at'])) < 60) {
+            respond(['ok'=>false, 'error'=>'1분 후 재발송 가능합니다.'], 429);
+        }
+
+        $sendResult = send_otp_sms_via_admin($pdo, 'find_pwd', $phone);
+        if (!$sendResult['ok']) {
+            respond(['ok'=>false, 'error'=>$sendResult['error'] ?? 'SMS 발송 실패'], $sendResult['status'] ?? 500);
+        }
+        respond(['ok'=>true, 'sentTo'=>mask_phone($phone), 'expiresInSec'=>300]);
+    }
+
+    if ($resource === 'find-pwd-verify-otp') {
+        // 비밀번호 찾기 — OTP 검증 + 사용자 정보 + provider 판별.
+        // google 가입자면 별도 응답 → 클라이언트가 안내.
+        // email 가입자면 reset_token (10분 만료) 발급 → find-pwd-reset 에서 사용.
+        if ($method !== 'POST') respond(['ok'=>false, 'error'=>'지원하지 않는 요청 방식'], 405);
+        $name  = clean($body['name'] ?? null);
+        $phone = preg_replace('/\D/', '', (string)($body['phone'] ?? ''));
+        $code  = preg_replace('/\D/', '', (string)($body['code'] ?? ''));
+        if (!$name || !$phone || !$code) respond(['ok'=>false, 'error'=>'이름/휴대폰/인증번호를 모두 입력해주세요.'], 400);
+
+        ensure_auth_otp_table($pdo);
+        $stmt = $pdo->prepare("SELECT id, code, attempts, expires_at FROM auth_otp WHERE target = :t AND purpose = 'find_pwd' ORDER BY created_at DESC LIMIT 1");
+        $stmt->execute([':t' => $phone]);
+        $otp = $stmt->fetch();
+        if (!$otp) respond(['ok'=>false, 'error'=>'인증번호를 먼저 받아주세요.'], 400);
+        if (strtotime($otp['expires_at']) < time()) {
+            $pdo->prepare('DELETE FROM auth_otp WHERE id = ?')->execute([$otp['id']]);
+            respond(['ok'=>false, 'error'=>'인증번호가 만료되었습니다. 다시 받아주세요.'], 410);
+        }
+        if ((int)$otp['attempts'] >= 5) respond(['ok'=>false, 'error'=>'시도 횟수를 초과했습니다.'], 429);
+        if ($otp['code'] !== $code) {
+            $pdo->prepare('UPDATE auth_otp SET attempts = attempts + 1 WHERE id = ?')->execute([$otp['id']]);
+            respond(['ok'=>false, 'error'=>'인증번호가 일치하지 않습니다.'], 400);
+        }
+
+        // 이름+휴대폰 매칭 + provider 판별
+        $store = find_member_store($pdo);
+        if (!$store) respond(['ok'=>false, 'error'=>'회원 테이블을 찾을 수 없습니다.'], 500);
+        $cols = $store['columns'];
+        $nameCol = first_existing_column($cols, ['name', 'full_name', 'user_name', 'username', 'mb_name']);
+        $phoneCol = first_existing_column($cols, ['phone', 'mobile', 'tel', 'contact', 'user_phone', 'mb_hp']);
+        $emailCol = $store['email_column'];
+        $providerCol = first_existing_column($cols, ['provider', 'signup_method', 'oauth_provider']);
+        if (!$nameCol || !$phoneCol || !$emailCol) respond(['ok'=>false, 'error'=>'회원 테이블 구조 문제'], 500);
+
+        $providerSel = $providerCol ? ", " . quote_identifier($providerCol) . " AS pv" : "";
+        $rows = $pdo->query("SELECT " . quote_identifier($nameCol) . " AS nm, "
+            . quote_identifier($phoneCol) . " AS ph, "
+            . quote_identifier($emailCol) . " AS em" . $providerSel
+            . " FROM " . quote_identifier($store['table']))->fetchAll();
+        $matched = null;
+        foreach ($rows as $r) {
+            $rNm = function_exists('youngman_decrypt') ? youngman_decrypt((string)$r['nm']) : (string)$r['nm'];
+            $rPh = function_exists('youngman_decrypt') ? youngman_decrypt((string)$r['ph']) : (string)$r['ph'];
+            if (trim((string)$rNm) !== trim($name)) continue;
+            if (preg_replace('/\D/', '', (string)$rPh) === $phone) {
+                $matched = ['email' => (string)$r['em'], 'provider' => $providerCol ? strtolower((string)($r['pv'] ?? '')) : ''];
+                break;
+            }
+        }
+        if (!$matched) respond(['ok'=>false, 'error'=>'인증은 성공했으나 입력한 이름과 일치하는 계정이 없습니다.'], 404);
+
+        // Google 가입자는 비밀번호 재설정 불가 — 안내 응답
+        if (in_array($matched['provider'], ['google', 'oauth', 'oauth_google'], true)) {
+            $pdo->prepare('DELETE FROM auth_otp WHERE id = ?')->execute([$otp['id']]);
+            respond([
+                'ok' => false,
+                'reason' => 'oauth_provider',
+                'provider' => $matched['provider'],
+                'email' => $matched['email'],
+                'error' => '구글 계정으로 가입하신 회원입니다. 구글 계정 보안 설정에서 비밀번호를 변경해주세요.',
+            ], 200);
+        }
+
+        // 이메일 가입자 — reset_token 10분 만료 발급 (별도 OTP 행)
+        try {
+            $token = bin2hex(random_bytes(24));   // 48 hex chars
+        } catch (Throwable $e) {
+            $token = bin2hex(openssl_random_pseudo_bytes(24));
+        }
+        $pdo->prepare('DELETE FROM auth_otp WHERE id = ?')->execute([$otp['id']]);
+        $pdo->prepare("INSERT INTO auth_otp (purpose, target, code, expires_at)
+                       VALUES ('find_pwd_reset', ?, ?, DATE_ADD(NOW(), INTERVAL 10 MINUTE))")
+            ->execute([$phone, $token]);
+        respond(['ok'=>true, 'resetToken'=>$token, 'email'=>$matched['email']]);
+    }
+
+    if ($resource === 'find-pwd-reset') {
+        // 새 비밀번호 설정 — reset_token 검증 + supabase admin API 로 user 비밀번호 변경.
+        if ($method !== 'POST') respond(['ok'=>false, 'error'=>'지원하지 않는 요청 방식'], 405);
+        $phone       = preg_replace('/\D/', '', (string)($body['phone'] ?? ''));
+        $resetToken  = clean($body['resetToken'] ?? null);
+        $email       = strtolower(trim((string)($body['email'] ?? '')));
+        $newPassword = (string)($body['newPassword'] ?? '');
+        if (!$phone || !$resetToken || !$email || $newPassword === '') {
+            respond(['ok'=>false, 'error'=>'필수 정보가 누락되었습니다.'], 400);
+        }
+        if (strlen($newPassword) < 6) respond(['ok'=>false, 'error'=>'비밀번호는 6자 이상이어야 합니다.'], 400);
+
+        ensure_auth_otp_table($pdo);
+        $stmt = $pdo->prepare("SELECT id, code, expires_at FROM auth_otp WHERE target = :t AND purpose = 'find_pwd_reset' ORDER BY created_at DESC LIMIT 1");
+        $stmt->execute([':t' => $phone]);
+        $row = $stmt->fetch();
+        if (!$row) respond(['ok'=>false, 'error'=>'인증 단계를 먼저 완료해주세요.'], 400);
+        if (strtotime($row['expires_at']) < time()) {
+            $pdo->prepare('DELETE FROM auth_otp WHERE id = ?')->execute([$row['id']]);
+            respond(['ok'=>false, 'error'=>'재설정 토큰이 만료되었습니다. 처음부터 다시 진행해주세요.'], 410);
+        }
+        if ($row['code'] !== $resetToken) respond(['ok'=>false, 'error'=>'잘못된 재설정 토큰입니다.'], 403);
+
+        $svcKey = (string)($auth['service_key'] ?? '');
+        if ($svcKey === '') respond(['ok'=>false, 'error'=>'서버 설정 누락 — SUPABASE_SERVICE_KEY 미설정. 운영자에게 문의해주세요.'], 503);
+
+        // supabase admin API — user id 먼저 찾기
+        $base = rtrim((string)($auth['supabase_url'] ?? ''), '/');
+        $base = preg_replace('#/rest/v1/?$#', '', $base);
+        if ($base === '') respond(['ok'=>false, 'error'=>'서버 설정 누락 — SUPABASE_URL'], 503);
+
+        $userId = supabase_admin_find_user_id($base, $svcKey, $email);
+        if (!$userId) respond(['ok'=>false, 'error'=>'Supabase 사용자 조회 실패'], 502);
+
+        $ok = supabase_admin_set_password($base, $svcKey, $userId, $newPassword);
+        if (!$ok) respond(['ok'=>false, 'error'=>'비밀번호 변경 실패 (Supabase API)'], 502);
+
+        // 토큰 소멸
+        $pdo->prepare('DELETE FROM auth_otp WHERE id = ?')->execute([$row['id']]);
+        respond(['ok'=>true]);
     }
 
     if ($resource === 'find-email-send-otp') {
