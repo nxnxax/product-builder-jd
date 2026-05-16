@@ -35,6 +35,8 @@ export async function initSupabase() {
         // 을 발화 안 할 수도 있어 명시적으로 한 번 호출 — 슬롯 dropdown 양식 표시 보장.
         if (currentSession?.user) {
             try { refreshNavFormsCache(); } catch {}
+            // 고아 user (supabase auth 만 있고 members 없음) 자동 복구 — 매 페이지 boot 시.
+            try { ensureMemberRowOnce(); } catch {}
         }
         supabaseClient.auth.onAuthStateChange((event, session) => {
             const had = !!currentSession?.user;
@@ -45,11 +47,60 @@ export async function initSupabase() {
             // 케이스의 양식 누락 문제 fix.
             if (currentSession?.user && (event === 'SIGNED_IN' || event === 'INITIAL_SESSION' || event === 'TOKEN_REFRESHED' || !had)) {
                 try { refreshNavFormsCache(); } catch {}
+                try { ensureMemberRowOnce(); } catch {}
             }
         });
         return { client: supabaseClient, session: currentSession };
     })();
     return initPromise;
+}
+
+// 고아 user 자동 복구 — auth.users 엔 있고 public.members 엔 없는 사용자.
+// session 당 한 번만 호출 (sessionStorage flag). 매 페이지마다 호출 안 해도 됨.
+let _ensureInflight = null;
+async function ensureMemberRowOnce() {
+    try { if (sessionStorage.getItem('erp.memberEnsured') === '1') return; } catch {}
+    if (_ensureInflight) return _ensureInflight;
+    if (!currentSession?.access_token) return;
+
+    _ensureInflight = (async () => {
+        try {
+            const meta = currentSession.user?.user_metadata || {};
+            const resp = await fetch('records.php?resource=auth-member&ensure=1', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': 'Bearer ' + currentSession.access_token,
+                },
+                body: JSON.stringify({
+                    resource: 'auth-member',
+                    ensure: true,
+                    email: currentSession.user?.email || '',
+                    fullName: meta.full_name || meta.name || '',
+                    phone: meta.phone || '',
+                    nickname: meta.nickname || '',
+                }),
+            });
+            const data = await resp.json().catch(() => ({}));
+            console.log('[ensure member auto]', resp.status, data);
+            if (resp.ok && (data?.ok || data?.already)) {
+                try { sessionStorage.setItem('erp.memberEnsured', '1'); } catch {}
+            } else {
+                try {
+                    sessionStorage.setItem('erp.ensureError', JSON.stringify({
+                        status: resp.status,
+                        error: data?.error || 'unknown',
+                        at: new Date().toISOString(),
+                    }));
+                } catch {}
+            }
+        } catch (e) {
+            console.error('[ensure member auto] fetch error', e);
+        } finally {
+            _ensureInflight = null;
+        }
+    })();
+    return _ensureInflight;
 }
 
 export function getSession() { return currentSession; }
