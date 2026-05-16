@@ -292,10 +292,25 @@ function create_member_from_google(PDO $pdo, $authUser, $data) {
         respond(['ok' => false, 'error' => 'Google 인증 이메일과 가입 이메일이 일치하지 않습니다.'], 403);
     }
 
+    // fullName 우선순위: body → supabase user metadata → email local-part
+    // (회원가입 모달은 fullName 명시 전달; 로그인 후 자동 보강은 metadata fallback 사용)
     $fullName = clean($data['fullName'] ?? $data['name'] ?? null);
+    if (!$fullName) {
+        $meta = is_array($authUser['user_metadata'] ?? null) ? $authUser['user_metadata'] : [];
+        $fullName = clean($meta['full_name'] ?? $meta['name'] ?? null);
+    }
+    if (!$fullName) {
+        // 마지막 fallback — email local-part (사용자가 나중에 본인 정보에서 수정 가능)
+        $fullName = substr($email, 0, strpos($email, '@') ?: strlen($email));
+    }
+
     $phone = clean($data['phone'] ?? null);
+    if (!$phone) {
+        $meta = is_array($authUser['user_metadata'] ?? null) ? $authUser['user_metadata'] : [];
+        $phone = clean($meta['phone'] ?? null);
+    }
+
     $nickname = clean($data['nickname'] ?? null);
-    if (!$fullName) respond(['ok' => false, 'error' => '가입자 이름은 필수입니다.'], 400);
     if ($nickname !== null && !is_valid_nickname($nickname)) {
         respond(['ok' => false, 'error' => '닉네임 형식이 올바르지 않습니다.'], 400);
     }
@@ -303,7 +318,13 @@ function create_member_from_google(PDO $pdo, $authUser, $data) {
 
     $store = find_member_store($pdo);
     if (!$store) respond(['ok' => false, 'error' => 'members 또는 users 회원 테이블을 찾을 수 없습니다.'], 500);
+
+    // idempotent 모드 — ?ensure=1 또는 body.ensure=true 면 이미 존재해도 OK (skip + 200 반환)
+    $ensure = !empty($_GET['ensure']) || !empty($data['ensure']);
     if (member_exists_by_email($pdo, $email) === true) {
+        if ($ensure) {
+            respond(['ok' => true, 'already' => true, 'message' => '이미 가입된 계정 — 기존 행 유지']);
+        }
         respond(['ok' => false, 'error' => '이미 가입된 계정입니다.'], 409);
     }
     if ($nickname !== null && nickname_taken($pdo, $store, $nickname)) {

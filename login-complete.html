@@ -61,7 +61,7 @@
 
         let session = null;
         try {
-            const mod = await import('./auth-shared.js?v=20260516-signup-diag');
+            const mod = await import('./auth-shared.js?v=20260516-member-ensure');
             const result = await mod.initSupabase().catch(() => null);
             const client = result?.client;
             if (client?.auth?.getSession) {
@@ -74,7 +74,7 @@
         if (!session) {
             await new Promise(r => setTimeout(r, 120));
             try {
-                const mod = await import('./auth-shared.js?v=20260516-signup-diag');
+                const mod = await import('./auth-shared.js?v=20260516-member-ensure');
                 const result = await mod.initSupabase().catch(() => null);
                 if (result?.client?.auth?.getSession) {
                     const { data } = await result.client.auth.getSession();
@@ -88,7 +88,25 @@
             $msg.innerHTML = '<span class="err">로그인이 완료되지 않았습니다.</span><small>메인 페이지로 돌아갑니다.</small>';
             setTimeout(() => { window.location.replace('index.html?_a=' + Date.now()); }, 800);
         } else {
-            // session 확정 → 원래 가려던 페이지로 cache-bust replace.
+            // session 확정 → members 행 자동 보강 (idempotent ensure mode).
+            // supabase auth 에는 있는데 public.members 에 없는 '고아 user' 케이스 자동 복구.
+            // 실패해도 silent — 페이지 진입에 영향 없음.
+            try {
+                await fetch('records.php?resource=auth-member&ensure=1', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': 'Bearer ' + session.access_token,
+                    },
+                    body: JSON.stringify({
+                        resource: 'auth-member',
+                        ensure: true,
+                        email: session.user?.email || '',
+                    }),
+                });
+            } catch {}
+
+            // 원래 가려던 페이지로 cache-bust replace.
             const sep = target.includes('?') ? '&' : '?';
             const url = target + sep + '_a=' + Date.now();
             try { window.location.replace(url); }

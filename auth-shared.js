@@ -1022,8 +1022,23 @@ function openSharedLoginModal(initialMode = 'login') {
             } catch (err) {
                 console.error('[signUp] error', err);
                 msgEl.style.color = '#c8362c';
-                msgEl.textContent = err?.message || '가입 처리에 실패했습니다.';
-                submitBtn.disabled = false; submitBtn.textContent = '회원가입';
+                const raw = String(err?.message || '');
+                // supabase "User already registered" → 친화 메시지 + 로그인 모드 자동 전환
+                if (/already\s*registered|already\s*exists|user.*exist/i.test(raw)) {
+                    msgEl.textContent = '이미 가입된 이메일입니다. 로그인 모드로 전환합니다.';
+                    msgEl.style.color = '#1b5e20';
+                    submitBtn.disabled = false; submitBtn.textContent = '회원가입';
+                    setTimeout(() => {
+                        mode = 'login';
+                        applyMode();
+                        // 입력한 이메일/비번 유지 — 사용자가 곧장 로그인 가능
+                        msgEl.style.color = '#0e0d0c';
+                        msgEl.textContent = '비밀번호를 입력하고 "로그인" 을 눌러주세요.';
+                    }, 1200);
+                } else {
+                    msgEl.textContent = raw || '가입 처리에 실패했습니다.';
+                    submitBtn.disabled = false; submitBtn.textContent = '회원가입';
+                }
             }
         } else {
             submitBtn.disabled = true; submitBtn.textContent = '로그인 중…'; msgEl.textContent = '';
