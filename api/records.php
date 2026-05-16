@@ -319,6 +319,10 @@ function create_member_from_google(PDO $pdo, $authUser, $data) {
     $store = find_member_store($pdo);
     if (!$store) respond(['ok' => false, 'error' => 'members 또는 users 회원 테이블을 찾을 수 없습니다.'], 500);
 
+    // PII 암호문(enc:v1: + base64) 을 저장하려면 VARCHAR(64) 같은 좁은 컬럼은 부족.
+    // SQLSTATE 22001 ("Data too long") 방지 위해 name/phone/nickname 을 VARCHAR(255) 로 자동 확장.
+    ensure_member_pii_columns_wide($pdo, $store);
+
     // idempotent 모드 — ?ensure=1 또는 body.ensure=true 면 이미 존재해도 OK (skip + 200 반환)
     $ensure = !empty($_GET['ensure']) || !empty($data['ensure']);
     if (member_exists_by_email($pdo, $email) === true) {
@@ -401,6 +405,45 @@ function create_member_from_google(PDO $pdo, $authUser, $data) {
         'created' => true,
         'role' => is_admin_email($email) ? 'admin' : 'member',
     ]);
+}
+
+/**
+ * members 테이블의 PII 암호화 대상 컬럼을 VARCHAR(255) 로 자동 확장.
+ * AES-256-GCM 결과 'enc:v1:<base64IV>:<base64ct>:<base64tag>' 는 100~200 chars.
+ * 좁은 VARCHAR(20~64) 컬럼이면 SQLSTATE 22001 (Data too long) 으로 INSERT 실패.
+ *
+ * idempotent — 이미 충분히 크면 skip. ALTER 실패해도 silent (사용자 INSERT 시 명확한 에러).
+ */
+function ensure_member_pii_columns_wide(PDO $pdo, $store) {
+    static $checked = false;
+    if ($checked) return;
+    $checked = true;
+
+    $table = $store['table'];
+    $targetCols = ['name', 'full_name', 'phone', 'mobile', 'tel', 'nickname', 'nick', 'display_name'];
+
+    try {
+        $cols = $pdo->query("SHOW COLUMNS FROM " . quote_identifier($table))->fetchAll(PDO::FETCH_ASSOC);
+    } catch (Throwable $e) {
+        return;   // SHOW COLUMNS 실패 — silent
+    }
+    foreach ($cols as $col) {
+        $name = strtolower((string)($col['Field'] ?? ''));
+        $type = strtolower((string)($col['Type'] ?? ''));
+        if (!in_array($name, $targetCols, true)) continue;
+        // VARCHAR(N) 이고 N < 255 이면 확장. TEXT 종류는 충분히 크므로 skip.
+        if (preg_match('/^varchar\((\d+)\)/i', $type, $m)) {
+            $width = (int)$m[1];
+            if ($width < 255) {
+                try {
+                    $sql = "ALTER TABLE " . quote_identifier($table) . " MODIFY " . quote_identifier($col['Field']) . " VARCHAR(255)";
+                    $pdo->exec($sql);
+                } catch (Throwable $e) {
+                    // ALTER 실패해도 silent — 다음 INSERT 시 명확한 에러 발생.
+                }
+            }
+        }
+    }
 }
 
 function enforce_registered_member(PDO $pdo, $authUser) {
