@@ -1056,9 +1056,14 @@ function openSharedLoginModal(initialMode = 'login') {
 
         // signInWithOAuth 는 sync 으로 OAuth URL 생성 + location.assign 시도 → 같은 user gesture 안에 실행.
         // promise 결과(error) 는 비동기로 catch — navigation 자체는 이미 시작됨.
+        // prompt=select_account: Google 이 기존 로그인 세션이 있어도 항상 계정 선택 화면 표시
+        // → 다른 계정으로 로그인 가능. 미지정 시 Google 이 즉시 callback (계정 선택 화면 skip).
         client.auth.signInWithOAuth({
             provider: 'google',
-            options: { redirectTo },
+            options: {
+                redirectTo,
+                queryParams: { prompt: 'select_account' },
+            },
         }).then(({ error }) => {
             if (error) {
                 msgEl.style.color = '#c8362c';

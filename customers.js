@@ -9,13 +9,13 @@
  *  - client_idempotency_key 로 같은 통화의 중복 전송 차단
  */
 
-import { initSupabase, apiRequest, getSession } from './auth-shared.js?v=20260516-oauth-gesture';
+import { initSupabase, apiRequest, getSession } from './auth-shared.js?v=20260516-oauth-prompt';
 import { attachColumnFilters, applyColumnFilters, openRowAddModal, attachPhoneAutoFormat, getEffectiveFields, mountFieldManager,
          exportRecordsToExcel, pickExcelFile, parseExcelFile, suggestFieldMapping, openImportPreviewModal,
          saveImportSession, loadImportSession, clearImportSession,
          findBlankRecordIds, showSweepToast,
          attachCellClickHandlers,
-         isLedgerMobile, onLedgerViewportChange } from './ledger-shared.js?v=20260516-oauth-gesture';
+         isLedgerMobile, onLedgerViewportChange } from './ledger-shared.js?v=20260516-oauth-prompt';
 
 const MOBILE_PRIMARY_KEYS = ['customer', 'phone', 'date'];
 
@@ -1338,7 +1338,7 @@ async function openSmsModal() {
 }
 
 async function getAccessTokenForSms() {
-    const { getAccessToken } = await import('./auth-shared.js?v=20260516-oauth-gesture');
+    const { getAccessToken } = await import('./auth-shared.js?v=20260516-oauth-prompt');
     return await getAccessToken();
 }
 
