@@ -4007,18 +4007,35 @@ select:focus {
         color: var(--fg-tertiary);
         font-size: 13px;
     }
-    /* 그룹 액션 바 (+ 행 추가) 모바일 정렬 */
+    /* 그룹 액션 바 (+ 행 추가) 모바일 정렬 — 검색창 한 줄, 행 추가 버튼 다음 줄 풀폭.
+       기존엔 한 줄에 둘 다 강제로 들어가서 + 행 추가 버튼이 검색바에 눌려 찌그러짐. */
     .ledger-cards-toolbar {
         display: flex;
-        justify-content: flex-end;
-        padding: 6px 8px;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 10px;
         border-bottom: 1px solid var(--border);
         background: var(--bg-subtle);
     }
+    .ledger-cards-toolbar .ledger-search-wrap,
+    .ledger-cards-toolbar .ledger-search-box {
+        flex: 1 1 100% !important;
+        max-width: none !important;
+        min-width: 0 !important;
+    }
+    .ledger-cards-toolbar .ledger-search-input {
+        height: 40px;
+        font-size: 14.5px;
+        padding: 0 36px 0 14px;
+    }
     .ledger-cards-toolbar .tiny-btn {
-        padding: 7px 12px !important;
-        font-size: 13.5px !important;
-        font-weight: 600 !important;
+        flex: 1 1 100%;
+        min-height: 44px;
+        padding: 11px 16px !important;
+        font-size: 14.5px !important;
+        font-weight: 700 !important;
+        letter-spacing: -0.01em;
     }
 
     /* 그룹 헤더 — 모바일에선 제목 한 줄 + 액션 버튼 다음 줄에 wrap. 글자 세로로 깨지지 않게 */
