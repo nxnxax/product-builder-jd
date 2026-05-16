@@ -90,16 +90,22 @@ if ($apiKey === '' || $apiSecret === '') {
 
 $provider = new SolapiProvider(['api_key'=>$apiKey, 'api_secret'=>$apiSecret]);
 $bal = $provider->getBalance();
-if ($bal === null) {
-    echo json_encode(['ok'=>false, 'error'=>'잔액 조회 실패', 'reason'=>'api_error'], JSON_UNESCAPED_UNICODE);
+
+if (is_array($bal) && isset($bal['error'])) {
+    echo json_encode([
+        'ok'    => false,
+        'error' => $bal['error'],
+        'http'  => $bal['http'] ?? null,
+        'reason'=> 'solapi_api_error',
+    ], JSON_UNESCAPED_UNICODE);
     exit;
 }
 
 echo json_encode([
     'ok'       => true,
     'provider' => 'solapi',
-    'balance'  => $bal['balance'],
-    'point'    => $bal['point'],
+    'balance'  => $bal['balance'] ?? null,
+    'point'    => $bal['point']   ?? null,
 ], JSON_UNESCAPED_UNICODE);
 
 /* ===================== 헬퍼 ===================== */

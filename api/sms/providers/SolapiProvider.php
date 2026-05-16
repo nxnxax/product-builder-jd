@@ -171,11 +171,14 @@ class SolapiProvider extends SmsProvider
 
     /**
      * Solapi 계정 잔액 조회.
-     * 응답: ['balance' => float|null, 'point' => float|null] 또는 null (실패).
+     * 응답: ['balance' => float|null, 'point' => float|null]
+     *      또는 ['error' => '...', 'http' => N] (실패 — debug 정보 포함).
      */
-    public function getBalance(): ?array
+    public function getBalance(): array
     {
-        if (!$this->isConfigured()) return null;
+        if (!$this->isConfigured()) {
+            return ['error' => 'API Key/Secret 미설정', 'http' => 0];
+        }
         $endpoint = 'https://api.solapi.com/cash/v1/balance';
         try {
             $auth = $this->buildAuthHeader();
@@ -184,22 +187,40 @@ class SolapiProvider extends SmsProvider
                 CURLOPT_RETURNTRANSFER => true,
                 CURLOPT_HTTPHEADER => [
                     'Authorization: ' . $auth,
+                    'Content-Type: application/json',
                 ],
                 CURLOPT_TIMEOUT => 10,
                 CURLOPT_SSL_VERIFYPEER => true,
             ]);
             $body = curl_exec($ch);
             $http = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            $cerr = curl_error($ch);
             curl_close($ch);
-            if (!is_string($body) || $body === '' || $http >= 400) return null;
+
+            if ($body === false || !is_string($body)) {
+                return ['error' => 'Solapi 서버 연결 실패' . ($cerr ? ' (' . $cerr . ')' : ''), 'http' => (int)$http];
+            }
             $resp = json_decode($body, true);
-            if (!is_array($resp)) return null;
+
+            // 4xx — Solapi 에러 응답에서 사유 추출 (errorCode/errorMessage)
+            if ($http >= 400) {
+                $msg = is_array($resp) ? ($resp['errorMessage'] ?? $resp['message'] ?? $body) : $body;
+                // 권한 관련 친화적 메시지
+                if ($http === 401 || $http === 403) {
+                    $msg = 'API Key 권한 부족 또는 잘못된 키 (' . substr((string)$msg, 0, 120) . ')';
+                }
+                return ['error' => $msg, 'http' => $http];
+            }
+            if (!is_array($resp)) {
+                return ['error' => 'Solapi 응답 파싱 실패', 'http' => $http];
+            }
             return [
                 'balance' => isset($resp['balance']) ? (float)$resp['balance'] : null,
                 'point'   => isset($resp['point'])   ? (float)$resp['point']   : null,
+                'http'    => $http,
             ];
         } catch (Throwable $e) {
-            return null;
+            return ['error' => $e->getMessage(), 'http' => 0];
         }
     }
 

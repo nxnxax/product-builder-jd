@@ -9,13 +9,13 @@
  *  - client_idempotency_key 로 같은 통화의 중복 전송 차단
  */
 
-import { initSupabase, apiRequest, getSession } from './auth-shared.js?v=20260516-sms-balance';
+import { initSupabase, apiRequest, getSession } from './auth-shared.js?v=20260516-balance-detail';
 import { attachColumnFilters, applyColumnFilters, openRowAddModal, attachPhoneAutoFormat, getEffectiveFields, mountFieldManager,
          exportRecordsToExcel, pickExcelFile, parseExcelFile, suggestFieldMapping, openImportPreviewModal,
          saveImportSession, loadImportSession, clearImportSession,
          findBlankRecordIds, showSweepToast,
          attachCellClickHandlers,
-         isLedgerMobile, onLedgerViewportChange } from './ledger-shared.js?v=20260516-sms-balance';
+         isLedgerMobile, onLedgerViewportChange } from './ledger-shared.js?v=20260516-balance-detail';
 
 const MOBILE_PRIMARY_KEYS = ['customer', 'phone', 'date'];
 
@@ -1014,7 +1014,7 @@ async function openSmsModal() {
                         <div class="value"><span data-balance-value>—</span><small>원</small></div>
                     </div>
                     <div class="sub" data-balance-sub>잔액을 불러오는 중…</div>
-                    <a href="https://console.solapi.com/cash/charge" target="_blank" rel="noopener" class="recharge">충전 →</a>
+                    <a href="https://console.solapi.com/dashboard" target="_blank" rel="noopener" class="recharge">Solapi 대시보드 →</a>
                 </div>
 
                 <div class="sms-notice">
@@ -1161,6 +1161,7 @@ async function openSmsModal() {
             });
             const data = await resp.json().catch(() => ({}));
             balCard.classList.remove('loading');
+            console.log('[sms balance]', resp.status, data);   // 디버깅
             if (data?.ok && typeof data.balance === 'number') {
                 const won = Math.round(data.balance);
                 balValueEl.textContent = won.toLocaleString('ko-KR');
@@ -1174,13 +1175,18 @@ async function openSmsModal() {
             } else {
                 balCard.classList.add('err');
                 balValueEl.textContent = '?';
-                balSubEl.textContent = data?.error || '잔액 조회 실패';
+                // Solapi 가 준 에러 사유를 그대로 보여줌 — 사용자가 진단 가능
+                const reason = data?.error || data?.reason || `HTTP ${resp.status}`;
+                balSubEl.textContent = '잔액 조회 실패: ' + reason;
+                balSubEl.style.fontSize = '11px';
+                balSubEl.style.maxWidth = '60%';
             }
         } catch (e) {
             balCard.classList.remove('loading');
             balCard.classList.add('err');
             balValueEl.textContent = '?';
-            balSubEl.textContent = '잔액 조회 실패';
+            balSubEl.textContent = '잔액 조회 실패: ' + (e.message || e);
+            console.error('[sms balance]', e);
         }
     })();
 
@@ -1442,7 +1448,7 @@ async function openSmsModal() {
 }
 
 async function getAccessTokenForSms() {
-    const { getAccessToken } = await import('./auth-shared.js?v=20260516-sms-balance');
+    const { getAccessToken } = await import('./auth-shared.js?v=20260516-balance-detail');
     return await getAccessToken();
 }
 
