@@ -286,38 +286,32 @@ async function refreshNavFormsCache() {
 export function refreshNavForms() { return refreshNavFormsCache(); }
 
 /* =========================================================================
-   로그인/회원가입 성공 후 navigation — race condition 방어.
+   로그인/회원가입 성공 후 navigation — 단일 transition 페이지(login-complete.html)로.
 
-   문제 (사용자 보고): "로그인하면 안되다가 다른 페이지로 넘어가면 그때 로그인됨".
-   원인:
-   1) signInWithPassword 직후 supabase 가 localStorage 에 sb-* 토큰 키를 쓰는 작업은
-      비동기적으로 늦게 완료될 수 있음. window.location.reload() 가 너무 빨라
-      reload 후 새 페이지가 initSupabase 할 때 storage 가 아직 비어있어 비로그인으로 인식.
-   2) 같은 URL 로 reload 하면 일부 브라우저/환경에서 bfcache 또는 캐시 hit 으로
-      module 이 재실행되지 않아 currentSession 이 갱신 안 됨.
+   이전: 모달 안에서 곧장 현재 페이지 reload/replace 했더니 supabase 의 비동기
+        storage write 와 race 해서 "로그인이 가끔 안 됨" 증상 반복.
 
-   해결:
-   - getSession() 명시 await → storage 가 확실히 set 될 때까지 대기
-   - URL 에 cache-bust query 붙여서 강제 fresh fetch (location.replace)
+   현재: 어떤 페이지에서 로그인하든 무조건 login-complete.html 로 한 번 navigate.
+        그 페이지가 getSession 으로 session 확정 + 원래 페이지(next)로 redirect.
+
+   효과 — 로그아웃 흐름(logout.html)과 대칭적:
+     - 모든 로그인 흐름이 동일 → 재발 없음.
+     - storage write 가 끝날 때까지 transition 페이지가 양보 (120ms + 한번 더 확인).
+     - cache-bust replace 로 bfcache 회피.
    ========================================================================= */
 async function navigateAfterAuth() {
+    // 원래 가려던 페이지 (현재 URL) 을 next 로 인코딩 — login-complete 가 redirect.
+    let next = '';
     try {
-        // storage write 가 확실히 commit 되도록 한번 더 session 확정.
-        if (supabaseClient?.auth?.getSession) {
-            await supabaseClient.auth.getSession();
-        }
-    } catch {}
-    // 추가 안전장치 — microtask 양보로 supabase internal write 완료 대기.
-    await new Promise(r => setTimeout(r, 50));
+        const path = window.location.pathname.replace(/^\//, '');
+        next = (path || 'customers.html') + window.location.search;
+        // index.html 에서 로그인 했으면 customers.html 로 (메인 대신 작업 페이지로).
+        if (!path || /^index\.html/i.test(path)) next = 'customers.html';
+    } catch { next = 'customers.html'; }
 
-    try {
-        const u = new URL(window.location.href);
-        u.hash = '';   // #login 등 잔여 hash 제거
-        u.searchParams.set('_a', String(Date.now()));   // cache-bust
-        window.location.replace(u.toString());
-    } catch {
-        try { window.location.reload(); } catch {}
-    }
+    const target = 'login-complete.html?next=' + encodeURIComponent(next);
+    try { window.location.replace(target); }
+    catch { try { window.location.href = target; } catch {} }
 }
 
 /* =========================================================================
@@ -1009,9 +1003,16 @@ function openSharedLoginModal(initialMode = 'login') {
         googleBtn.disabled = true;
         try {
             if (!supabaseClient) { await initSupabase(); }
+            // OAuth callback 도 login-complete.html 을 거치게 해서 일관된 transition 흐름.
+            const origin = window.location.origin;
+            const path   = window.location.pathname.replace(/^\//, '') || 'customers.html';
+            const search = window.location.search || '';
+            // index.html 에서 시작했으면 작업 페이지(customers)로.
+            const nextRaw = /^index\.html/i.test(path) ? 'customers.html' : (path + search);
+            const redirectTo = origin + '/login-complete.html?next=' + encodeURIComponent(nextRaw);
             const { error } = await supabaseClient.auth.signInWithOAuth({
                 provider: 'google',
-                options: { redirectTo: window.location.href },
+                options: { redirectTo },
             });
             if (error) throw error;
         } catch (err) {

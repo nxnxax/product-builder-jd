@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>로그인 처리 중… · YOUNGMAN</title>
+<meta name="robots" content="noindex,nofollow">
+<link rel="icon" type="image/png" href="logo_main.png">
+<link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
+<style>
+    html, body { margin:0; padding:0; background:#fbf8f3; font-family:'Pretendard',-apple-system,system-ui,sans-serif; color:#0e0d0c }
+    .wrap { min-height:100vh; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:20px; padding:24px; text-align:center }
+    img { height:38px; opacity:.85 }
+    .ring { width:38px; height:38px; border:3px solid rgba(200,54,44,.18); border-top-color:#c8362c; border-radius:50%; animation:spin .9s linear infinite }
+    @keyframes spin { to { transform:rotate(360deg) } }
+    p { margin:0; color:#4f4943; font-size:14px; letter-spacing:-.005em }
+    small { display:block; color:#8a847e; font-size:12px; margin-top:6px }
+    a { color:#0e0d0c; font-weight:600 }
+    .err { color:#c8362c; font-weight:700 }
+</style>
+</head>
+<body>
+    <div class="wrap" role="status" aria-live="polite">
+        <img src="logo_main.png" alt="YOUNGMAN">
+        <div class="ring" aria-hidden="true"></div>
+        <p id="msg">로그인 처리 중…<small>잠시 후 이전 페이지로 돌아갑니다.</small></p>
+        <small>이동되지 않으면 <a href="customers.html">고객관리대장으로 이동</a>하세요.</small>
+    </div>
+    <script type="module">
+        /* =========================================================================
+           단일 로그인 transition 페이지 — 모든 로그인 성공 흐름의 종착지.
+
+           이전 분산된 흐름(openSharedLoginModal 안에서 곧장 navigateAfterAuth,
+           Google OAuth 가 현재 페이지로 callback) 이 supabase 의 비동기 storage
+           write 와 race 해서 "로그인이 가끔 안 됨" 증상 반복 발생.
+
+           이 페이지의 역할:
+             1) initSupabase 호출 → supabase 가 storage 에서 session 읽음
+                (OAuth 의 경우 URL hash 의 access_token 자동 처리)
+             2) getSession 명시 await → session 인식 확정
+             3) 짧은 양보(120ms) 후 한 번 더 확인 → 비동기 storage write 따라잡기
+             4) ?next=<url> 파라미터로 받은 페이지로 cache-bust replace
+             5) 1.8 초 fallback: 여전히 본 페이지면 강제 customers.html 로 이동
+           ========================================================================= */
+
+        const $msg = document.getElementById('msg');
+
+        function safeNext(raw) {
+            // 외부 URL / 절대 경로 / javascript: 같은 위험 차단 — 같은 사이트의 .html 만 허용.
+            const decoded = (() => { try { return decodeURIComponent(raw || ''); } catch { return ''; } })()
+                .replace(/^\/+/, '');
+            if (!decoded) return 'customers.html';
+            if (!/^[A-Za-z0-9_.-]+(\.html)?(\?[^/]*)?$/.test(decoded)) return 'customers.html';
+            return decoded;
+        }
+
+        const params = new URLSearchParams(location.search);
+        const nextRaw = params.get('next');
+        const target  = safeNext(nextRaw);
+
+        let session = null;
+        try {
+            const mod = await import('./auth-shared.js?v=20260516-login-page');
+            const result = await mod.initSupabase().catch(() => null);
+            const client = result?.client;
+            if (client?.auth?.getSession) {
+                const { data } = await client.auth.getSession();
+                session = data?.session || null;
+            }
+        } catch {}
+
+        // 첫 시도에 session 없으면 짧게 양보 후 한 번 더 — 비동기 storage write 따라잡기.
+        if (!session) {
+            await new Promise(r => setTimeout(r, 120));
+            try {
+                const mod = await import('./auth-shared.js?v=20260516-login-page');
+                const result = await mod.initSupabase().catch(() => null);
+                if (result?.client?.auth?.getSession) {
+                    const { data } = await result.client.auth.getSession();
+                    session = data?.session || null;
+                }
+            } catch {}
+        }
+
+        if (!session) {
+            // 세션이 확실히 set 안 된 경우 — 메인 페이지로 가서 로그인 모달 다시 띄움.
+            $msg.innerHTML = '<span class="err">로그인이 완료되지 않았습니다.</span><small>메인 페이지로 돌아갑니다.</small>';
+            setTimeout(() => { window.location.replace('index.html?_a=' + Date.now()); }, 800);
+        } else {
+            // session 확정 → 원래 가려던 페이지로 cache-bust replace.
+            const sep = target.includes('?') ? '&' : '?';
+            const url = target + sep + '_a=' + Date.now();
+            try { window.location.replace(url); }
+            catch { try { window.location.href = url; } catch {} }
+
+            // fallback — 1.8 초 후에도 여전히 이 페이지면 강제 이동.
+            setTimeout(() => {
+                if (location.pathname.endsWith('login-complete.html')) {
+                    try { window.location.href = 'customers.html?_a=' + Date.now(); } catch {}
+                    setTimeout(() => { try { window.location.reload(); } catch {} }, 800);
+                }
+            }, 1800);
+        }
+    </script>
+</body>
+</html>
