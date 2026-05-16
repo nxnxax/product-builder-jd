@@ -61,7 +61,7 @@
 
         let session = null;
         try {
-            const mod = await import('./auth-shared.js?v=20260516-member-ensure');
+            const mod = await import('./auth-shared.js?v=20260516-ensure-diag');
             const result = await mod.initSupabase().catch(() => null);
             const client = result?.client;
             if (client?.auth?.getSession) {
@@ -74,7 +74,7 @@
         if (!session) {
             await new Promise(r => setTimeout(r, 120));
             try {
-                const mod = await import('./auth-shared.js?v=20260516-member-ensure');
+                const mod = await import('./auth-shared.js?v=20260516-ensure-diag');
                 const result = await mod.initSupabase().catch(() => null);
                 if (result?.client?.auth?.getSession) {
                     const { data } = await result.client.auth.getSession();
@@ -90,9 +90,9 @@
         } else {
             // session 확정 → members 행 자동 보강 (idempotent ensure mode).
             // supabase auth 에는 있는데 public.members 에 없는 '고아 user' 케이스 자동 복구.
-            // 실패해도 silent — 페이지 진입에 영향 없음.
             try {
-                await fetch('records.php?resource=auth-member&ensure=1', {
+                const meta = session.user?.user_metadata || {};
+                const ensureResp = await fetch('records.php?resource=auth-member&ensure=1', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -102,9 +102,28 @@
                         resource: 'auth-member',
                         ensure: true,
                         email: session.user?.email || '',
+                        // metadata 의 user 정보도 함께 보냄 → records.php 가 우선 사용
+                        fullName: meta.full_name || meta.name || '',
+                        phone:    meta.phone || '',
+                        nickname: meta.nickname || '',
                     }),
                 });
-            } catch {}
+                const ensureData = await ensureResp.json().catch(() => ({}));
+                console.log('[ensure member]', ensureResp.status, ensureData);
+                // 실패 시 sessionStorage 에 기록 — 다음 페이지에서 확인 가능
+                if (!ensureResp.ok && !ensureData?.ok) {
+                    try {
+                        sessionStorage.setItem('erp.ensureError', JSON.stringify({
+                            status: ensureResp.status,
+                            error: ensureData?.error || 'unknown',
+                            at: new Date().toISOString(),
+                        }));
+                    } catch {}
+                }
+            } catch (e) {
+                console.error('[ensure member] fetch error', e);
+                try { sessionStorage.setItem('erp.ensureError', JSON.stringify({ error: String(e?.message || e), at: new Date().toISOString() })); } catch {}
+            }
 
             // 원래 가려던 페이지로 cache-bust replace.
             const sep = target.includes('?') ? '&' : '?';

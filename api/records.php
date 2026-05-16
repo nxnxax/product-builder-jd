@@ -377,12 +377,24 @@ function create_member_from_google(PDO $pdo, $authUser, $data) {
     $placeholderSql = implode(', ', array_map(function ($column) {
         return ':' . $column;
     }, array_keys($row)));
-    $stmt = $pdo->prepare("INSERT INTO " . quote_identifier($store['table']) . " ({$fieldSql}) VALUES ({$placeholderSql})");
+    $sql = "INSERT INTO " . quote_identifier($store['table']) . " ({$fieldSql}) VALUES ({$placeholderSql})";
     $params = [];
     foreach ($row as $column => $value) {
         $params[':' . $column] = $value;
     }
-    $stmt->execute($params);
+    try {
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute($params);
+    } catch (Throwable $e) {
+        // DB 제약 위반 / 컬럼 누락 등의 실제 사유를 client 에 노출 → 진단 가능
+        respond([
+            'ok'    => false,
+            'error' => 'members 행 생성 실패: ' . $e->getMessage(),
+            'sql_state' => $e->getCode(),
+            'columns'   => array_keys($row),
+            'table'     => $store['table'],
+        ], 500);
+    }
 
     respond([
         'ok' => true,
