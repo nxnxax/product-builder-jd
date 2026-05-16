@@ -1030,28 +1030,47 @@ function openSharedLoginModal(initialMode = 'login') {
         }
     });
 
-    googleBtn.addEventListener('click', async () => {
+    googleBtn.addEventListener('click', () => {
+        // 중요: 동기적 흐름 유지 — await 한 번이라도 들어가면 모바일 Safari/안드로이드가
+        // user gesture context 잃음으로 인식 → signInWithOAuth 의 navigation 차단.
+        // 그래서 await initSupabase 없이 supabaseClient 가 이미 init 됐다고 가정 (모달 진입 전 bootApp 에서 됨).
         msgEl.textContent = '';
         googleBtn.disabled = true;
-        try {
-            if (!supabaseClient) { await initSupabase(); }
-            // OAuth callback 도 login-complete.html 을 거치게 해서 일관된 transition 흐름.
-            const origin = window.location.origin;
-            const path   = window.location.pathname.replace(/^\//, '') || 'customers.html';
-            const search = window.location.search || '';
-            // index.html 에서 시작했으면 작업 페이지(customers)로.
-            const nextRaw = /^index\.html/i.test(path) ? 'customers.html' : (path + search);
-            const redirectTo = origin + '/login-complete.html?next=' + encodeURIComponent(nextRaw);
-            const { error } = await supabaseClient.auth.signInWithOAuth({
-                provider: 'google',
-                options: { redirectTo },
-            });
-            if (error) throw error;
-        } catch (err) {
+
+        const client = supabaseClient;
+        if (!client?.auth?.signInWithOAuth) {
+            msgEl.style.color = '#c8362c';
+            msgEl.textContent = '인증 초기화 중입니다. 잠시 후 다시 시도해주세요.';
+            googleBtn.disabled = false;
+            // fire-and-forget 으로 init 트리거 — 다음 click 엔 client 살아있음
+            try { initSupabase().catch(() => {}); } catch {}
+            return;
+        }
+
+        // OAuth callback 도 login-complete.html 을 거치게 해서 일관된 transition 흐름.
+        const origin = window.location.origin;
+        const path   = window.location.pathname.replace(/^\//, '') || 'customers.html';
+        const search = window.location.search || '';
+        const nextRaw = /^index\.html/i.test(path) ? 'customers.html' : (path + search);
+        const redirectTo = origin + '/login-complete.html?next=' + encodeURIComponent(nextRaw);
+
+        // signInWithOAuth 는 sync 으로 OAuth URL 생성 + location.assign 시도 → 같은 user gesture 안에 실행.
+        // promise 결과(error) 는 비동기로 catch — navigation 자체는 이미 시작됨.
+        client.auth.signInWithOAuth({
+            provider: 'google',
+            options: { redirectTo },
+        }).then(({ error }) => {
+            if (error) {
+                msgEl.style.color = '#c8362c';
+                msgEl.textContent = error.message || 'Google 로그인 실패';
+                googleBtn.disabled = false;
+            }
+            // 성공 시 supabase 가 이미 redirect 시작했으므로 추가 처리 X.
+        }).catch((err) => {
             msgEl.style.color = '#c8362c';
             msgEl.textContent = err?.message || 'Google 로그인 실패';
             googleBtn.disabled = false;
-        }
+        });
     });
 }
 
