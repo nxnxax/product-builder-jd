@@ -3488,11 +3488,16 @@ select:focus {
         grid-template-columns: repeat(4, minmax(0, 1fr));
         min-height: 64px;
         padding: 7px 6px calc(7px + env(safe-area-inset-bottom, 0px));
-        background: rgba(214, 208, 199, 0.96);  /* 본문(베이지/흰) 과 구분되는 짙은 회색 톤 */
-        border-top: 1px solid rgba(20, 14, 8, 0.18);
-        box-shadow: 0 -10px 28px rgba(20, 14, 8, 0.14);
-        backdrop-filter: blur(18px);
-        -webkit-backdrop-filter: blur(18px);
+        /* 물방울/유리 느낌 — 반투명 흰색 + 강한 backdrop blur + saturate + 윗면 highlight */
+        background: linear-gradient(180deg,
+                        rgba(255, 255, 255, 0.72) 0%,
+                        rgba(255, 252, 247, 0.62) 100%);
+        border-top: 1px solid rgba(255, 255, 255, 0.65);
+        box-shadow:
+            0 -10px 30px rgba(20, 14, 8, 0.08),
+            inset 0 1px 0 rgba(255, 255, 255, 0.85);
+        backdrop-filter: blur(26px) saturate(180%);
+        -webkit-backdrop-filter: blur(26px) saturate(180%);
     }
 
     .mobile-bottom-nav-item {
@@ -3539,7 +3544,10 @@ select:focus {
     .mobile-bottom-nav-item.active,
     .mobile-bottom-nav-item:active {
         color: var(--accent, #c8362c);
-        background: rgba(255, 255, 255, 0.55);
+        background: rgba(255, 255, 255, 0.85);
+        box-shadow:
+            inset 0 1px 0 rgba(255, 255, 255, 0.95),
+            0 2px 8px rgba(200, 54, 44, 0.12);
     }
     /* 고객관리대장 = bottom-nav 의 메인 — 빨강으로 강조 */
     .mobile-bottom-nav-item.main {
