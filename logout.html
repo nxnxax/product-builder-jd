@@ -39,44 +39,39 @@
 
         const TARGET = 'index.html?_a=' + Date.now();
 
-        // 정밀 cleanup — supabase 인증/세션만 제거. 사용자 prefs (헤더 슬롯 선택 등) 는 보존.
-        //
-        // KEEP (재로그인 후에도 유지): erp.slot1.* / erp.slot2.* — 헤더 신규양식 슬롯 선택 기억
-        // REMOVE: sb-* / supabase* / auth-token / access_token / refresh_token / erp.user* (이름/admin)
-        function clearStorage() {
-            // KEEP 가 우선 — 매칭되면 REMOVE 무시.
-            const KEEP = [
-                /^yman_nav_/i,            // 헤더 신규양식 슬롯 1/2 선택값 (재로그인 후에도 유지)
-                /^erp\.userEmail\.last$/i, // 슬롯 키 매칭에 필요한 마지막 이메일
-            ];
-            const REMOVE = [
-                /^sb-/i,                  // supabase v2 토큰
-                /supabase/i,              // 옛 supabase 키
-                /auth-token/i,
-                /access_token/i,
-                /refresh_token/i,
-                /^erp\.userDisplayName$/i,
-                /^erp\.userIsAdmin$/i,
-                /^erp\.userEmail$/i,      // session 의 현재 email (last 와 구분)
-                /^erp\.customForms$/i,    // 사용자 양식 캐시 (재로그인 시 새로 fetch)
-            ];
-            const shouldRemove = (k) => {
-                if (!k) return false;
-                if (KEEP.some(p => p.test(k))) return false;
-                return REMOVE.some(p => p.test(k));
-            };
+        // cleanup — 전체 wipe + KEEP 키만 백업/복원.
+        // 이 방식은 (1) 어떤 supabase 키 prefix 도 빠짐없이 제거 (2) 사용자 슬롯 선택값만 살림.
+        // 정밀 패턴 매칭이 미지의 supabase 키 잔재를 남길 위험 차단.
+        const KEEP_PATTERNS = [
+            /^yman_nav_/i,             // 헤더 신규양식 슬롯 1/2 선택값
+            /^erp\.userEmail\.last$/i, // 재로그인 시 슬롯 키 매칭용 마지막 email
+        ];
+        const shouldKeep = (k) => !!k && KEEP_PATTERNS.some(p => p.test(k));
 
-            for (const store of [sessionStorage, localStorage]) {
-                try {
-                    const keys = [];
-                    for (let i = 0; i < store.length; i++) keys.push(store.key(i));
-                    keys.forEach(k => {
-                        if (shouldRemove(k)) {
-                            try { store.removeItem(k); } catch {}
-                        }
-                    });
-                } catch {}
-            }
+        function clearStorage() {
+            // 1) localStorage 의 KEEP 키 백업
+            const backup = {};
+            try {
+                for (let i = 0; i < localStorage.length; i++) {
+                    const k = localStorage.key(i);
+                    if (shouldKeep(k)) {
+                        try { backup[k] = localStorage.getItem(k); } catch {}
+                    }
+                }
+            } catch {}
+
+            // 2) 전체 wipe
+            try { sessionStorage.clear(); } catch {}
+            try { localStorage.clear(); } catch {}
+
+            // 3) KEEP 복원
+            try {
+                Object.entries(backup).forEach(([k, v]) => {
+                    if (v !== null && v !== undefined) {
+                        try { localStorage.setItem(k, v); } catch {}
+                    }
+                });
+            } catch {}
             // 쿠키 — 인증 관련 추정되는 것만
             try {
                 document.cookie.split(';').forEach(c => {
@@ -107,7 +102,7 @@
         // 1) Supabase signOut — scope: 'global' 로 서버의 모든 refresh token revoke.
         //    다른 브라우저/디바이스에서 silent refresh 로 살아나는 시나리오 차단.
         try {
-            const mod = await import('./auth-shared.js?v=20260516-slot-persist');
+            const mod = await import('./auth-shared.js?v=20260516-slot-backup-restore');
             const result = await mod.initSupabase().catch(() => null);
             const client = result?.client;
             if (client?.auth?.signOut) {
