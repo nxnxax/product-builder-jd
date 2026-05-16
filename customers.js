@@ -9,13 +9,13 @@
  *  - client_idempotency_key 로 같은 통화의 중복 전송 차단
  */
 
-import { initSupabase, apiRequest, getSession } from './auth-shared.js?v=20260516-stay-on-page';
+import { initSupabase, apiRequest, getSession } from './auth-shared.js?v=20260516-sms-balance';
 import { attachColumnFilters, applyColumnFilters, openRowAddModal, attachPhoneAutoFormat, getEffectiveFields, mountFieldManager,
          exportRecordsToExcel, pickExcelFile, parseExcelFile, suggestFieldMapping, openImportPreviewModal,
          saveImportSession, loadImportSession, clearImportSession,
          findBlankRecordIds, showSweepToast,
          attachCellClickHandlers,
-         isLedgerMobile, onLedgerViewportChange } from './ledger-shared.js?v=20260516-stay-on-page';
+         isLedgerMobile, onLedgerViewportChange } from './ledger-shared.js?v=20260516-sms-balance';
 
 const MOBILE_PRIMARY_KEYS = ['customer', 'phone', 'date'];
 
@@ -994,6 +994,12 @@ async function openSmsModal() {
     md.style.zIndex = '300';
     md.innerHTML = `
         <div class="modal-panel sms-phone-panel">
+            <!-- 발송 대기 로딩 overlay (modal-panel.is-sending 일 때만 표시) -->
+            <div class="sms-loading" aria-hidden="true">
+                <div class="ring"></div>
+                <p>문자 발송 중…<small>잠시만 기다려 주세요.</small></p>
+            </div>
+
             <header class="modal-header">
                 <div>
                     <h2>📨 문자 단체 발송</h2>
@@ -1001,6 +1007,16 @@ async function openSmsModal() {
                 </div>
             </header>
             <div class="modal-body sms-modal-body">
+                <!-- Solapi 충전 잔액 카드 — fetch 후 채워짐 -->
+                <div class="sms-balance-card loading" data-balance-card>
+                    <div>
+                        <div class="label">💰 Solapi 충전 잔액</div>
+                        <div class="value"><span data-balance-value>—</span><small>원</small></div>
+                    </div>
+                    <div class="sub" data-balance-sub>잔액을 불러오는 중…</div>
+                    <a href="https://console.solapi.com/cash/charge" target="_blank" rel="noopener" class="recharge">충전 →</a>
+                </div>
+
                 <div class="sms-notice">
                     <b>안내</b><br>
                     · 문자 요금은 본인의 <b>Solapi 계정 잔액</b>에서 차감됩니다.<br>
@@ -1106,6 +1122,7 @@ async function openSmsModal() {
     `;
     document.body.appendChild(md);
 
+    const modalPanel = md.querySelector('.modal-panel');
     const textarea = md.querySelector('#smsText');
     const lenEl    = md.querySelector('#smsLen');
     const bytesEl  = md.querySelector('#smsBytes');
@@ -1128,8 +1145,44 @@ async function openSmsModal() {
     const attachName  = md.querySelector('#smsAttachName');
     const attachSize  = md.querySelector('#smsAttachSize');
     const attachRemove = md.querySelector('[data-attach-remove]');
+    const balCard     = md.querySelector('[data-balance-card]');
+    const balValueEl  = md.querySelector('[data-balance-value]');
+    const balSubEl    = md.querySelector('[data-balance-sub]');
 
-    let attachedImage = null;   // { name, base64, sizeKB, dataUrl }
+    let attachedImage = null;   // { name, base64, sizeKB, dataUrl, width, height }
+
+    // Solapi 잔액 fetch — 비동기, UI 막지 않음
+    (async () => {
+        try {
+            const token = await getAccessTokenForSms();
+            const resp = await fetch('sms/balance.php', {
+                method: 'GET',
+                headers: { 'Authorization': 'Bearer ' + token },
+            });
+            const data = await resp.json().catch(() => ({}));
+            balCard.classList.remove('loading');
+            if (data?.ok && typeof data.balance === 'number') {
+                const won = Math.round(data.balance);
+                balValueEl.textContent = won.toLocaleString('ko-KR');
+                const pointStr = (typeof data.point === 'number' && data.point > 0)
+                    ? ` · 포인트 ${Math.round(data.point).toLocaleString('ko-KR')}원` : '';
+                balSubEl.textContent = `발송 가능${pointStr}`;
+                if (won < 100) {
+                    balCard.classList.add('err');
+                    balSubEl.textContent = '⚠️ 잔액 부족 — 충전 후 발송하세요';
+                }
+            } else {
+                balCard.classList.add('err');
+                balValueEl.textContent = '?';
+                balSubEl.textContent = data?.error || '잔액 조회 실패';
+            }
+        } catch (e) {
+            balCard.classList.remove('loading');
+            balCard.classList.add('err');
+            balValueEl.textContent = '?';
+            balSubEl.textContent = '잔액 조회 실패';
+        }
+    })();
 
     const close = () => md.remove();
     cancelBtn.addEventListener('click', close);
@@ -1214,34 +1267,82 @@ async function openSmsModal() {
     textarea.addEventListener('input', updatePreview);
     textarea.focus();
 
-    // ===== 이미지 첨부 =====
-    const MAX_IMAGE_BYTES = 200 * 1024;   // Solapi MMS 200KB
+    // ===== 이미지 첨부 (Solapi MMS 제약 검증) =====
+    const MAX_IMAGE_BYTES = 200 * 1024;     // 200KB
+    const MAX_IMAGE_WIDTH  = 1500;          // Solapi MMS 권장 max
+    const MAX_IMAGE_HEIGHT = 1440;
+
+    const showAttachError = (msg) => {
+        errEl.style.color = '#c8362c';
+        errEl.textContent = msg;
+        errEl.style.display = '';
+        // 첨부 zone 도 흔들기로 강조
+        try {
+            attachZone.animate(
+                [{ transform: 'translateX(0)' }, { transform: 'translateX(-6px)' }, { transform: 'translateX(6px)' }, { transform: 'translateX(0)' }],
+                { duration: 280 }
+            );
+        } catch {}
+    };
 
     const setAttachedImage = async (file) => {
         if (!file) return;
+
+        // 1) MIME 형식
         if (!/^image\/(jpe?g|png|gif)$/i.test(file.type)) {
-            errEl.textContent = '이미지 형식이 지원되지 않습니다. JPG/PNG/GIF 만 가능합니다.';
-            errEl.style.display = ''; return;
+            const ext = (file.name || '').split('.').pop()?.toLowerCase() || '알 수 없음';
+            showAttachError(`이 이미지는 첨부할 수 없습니다. JPG / PNG / GIF 만 가능합니다. (현재: ${ext})`);
+            return;
         }
+
+        // 2) 파일 크기
         if (file.size > MAX_IMAGE_BYTES) {
-            errEl.textContent = `이미지 크기가 너무 큽니다 (${(file.size/1024).toFixed(0)} KB). 200KB 이하만 가능합니다.`;
-            errEl.style.display = ''; return;
+            const kb = (file.size / 1024).toFixed(0);
+            showAttachError(`이미지가 너무 큽니다 (${kb} KB). MMS 첨부는 200 KB 이하만 가능합니다. 압축하거나 작은 이미지로 시도해주세요.`);
+            return;
         }
-        errEl.style.display = 'none';
-        const dataUrl = await new Promise((resolve, reject) => {
+
+        // 3) data URL 로 읽기
+        const dataUrl = await new Promise((resolve) => {
             const fr = new FileReader();
             fr.onload  = () => resolve(fr.result);
-            fr.onerror = () => reject(fr.error);
+            fr.onerror = () => resolve(null);
             fr.readAsDataURL(file);
-        }).catch(() => null);
-        if (!dataUrl) return;
+        });
+        if (!dataUrl || typeof dataUrl !== 'string') {
+            showAttachError('이미지를 읽을 수 없습니다. 다른 이미지로 시도해주세요.');
+            return;
+        }
+
+        // 4) 해상도 — Image 로드해서 width/height 검사
+        const dim = await new Promise((resolve) => {
+            const img = new Image();
+            img.onload  = () => resolve({ w: img.naturalWidth, h: img.naturalHeight });
+            img.onerror = () => resolve(null);
+            img.src = dataUrl;
+        });
+        if (!dim) {
+            showAttachError('이미지 파일이 손상되었거나 표시할 수 없습니다. 다른 이미지로 시도해주세요.');
+            return;
+        }
+        if (dim.w > MAX_IMAGE_WIDTH || dim.h > MAX_IMAGE_HEIGHT) {
+            showAttachError(`이미지 해상도가 너무 큽니다 (${dim.w}×${dim.h}px). MMS 첨부는 ${MAX_IMAGE_WIDTH}×${MAX_IMAGE_HEIGHT}px 이하만 가능합니다. 리사이즈 후 다시 시도해주세요.`);
+            return;
+        }
+
+        // 통과 — 적용
+        errEl.style.display = 'none';
         const base64 = String(dataUrl).split(',')[1] || '';
-        attachedImage = { name: file.name, sizeKB: file.size / 1024, dataUrl, base64, mime: file.type };
+        attachedImage = {
+            name: file.name, sizeKB: file.size / 1024,
+            dataUrl, base64, mime: file.type,
+            width: dim.w, height: dim.h,
+        };
         attachEmpty.hidden = true;
         attachPreview.hidden = false;
         attachImg.src = dataUrl;
         attachName.textContent = file.name;
-        attachSize.textContent = `${attachedImage.sizeKB.toFixed(1)} KB · ${file.type}`;
+        attachSize.textContent = `${attachedImage.sizeKB.toFixed(1)} KB · ${dim.w}×${dim.h} · ${file.type}`;
         updatePreview();
     };
 
@@ -1298,6 +1399,7 @@ async function openSmsModal() {
         sendBtn.disabled = true;
         sendBtn.textContent = '발송 중…';
         errEl.style.display = 'none';
+        modalPanel.classList.add('is-sending');   // 로딩 overlay 표시
         try {
             const res = await apiRequest('sms-credentials');   // 방어적
             if (!res?.configured) throw new Error('Solapi 가 해제되었습니다. 설정에서 다시 등록해 주세요.');
@@ -1333,12 +1435,14 @@ async function openSmsModal() {
             sendBtn.textContent = '📨 발송하기';
             errEl.textContent = '발송 실패: ' + (e.message || e);
             errEl.style.display = '';
+        } finally {
+            modalPanel.classList.remove('is-sending');   // 성공/실패 모두 overlay 해제
         }
     });
 }
 
 async function getAccessTokenForSms() {
-    const { getAccessToken } = await import('./auth-shared.js?v=20260516-stay-on-page');
+    const { getAccessToken } = await import('./auth-shared.js?v=20260516-sms-balance');
     return await getAccessToken();
 }
 

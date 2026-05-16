@@ -6,7 +6,7 @@ import {
     mountAppHeader,
     refreshAppHeader,
     getInitial,
-} from './auth-shared.js?v=20260516-stay-on-page';
+} from './auth-shared.js?v=20260516-sms-balance';
 
 const tabButtons = document.querySelectorAll('.side-nav button[data-tab]');
 const tabSections = document.querySelectorAll('.profile-tab');

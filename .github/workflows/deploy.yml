@@ -55,6 +55,7 @@ jobs:
           php -l api/ledger-mobile.php
           php -l api/crypto_helpers.php
           php -l api/sms/send-bulk.php
+          php -l api/sms/balance.php
           php -l api/sms/providers/SmsProvider.php
           php -l api/sms/providers/SolapiProvider.php
           php -l api/sms/providers/AligoProvider.php
@@ -103,6 +104,7 @@ jobs:
           # SMS 단체 발송 — 디렉토리 구조 유지 (sms/send-bulk.php + sms/providers/*)
           mkdir -p deploy/sms/providers
           cp api/sms/send-bulk.php deploy/sms/send-bulk.php
+          cp api/sms/balance.php deploy/sms/balance.php
           cp api/sms/providers/SmsProvider.php deploy/sms/providers/SmsProvider.php
           cp api/sms/providers/SolapiProvider.php deploy/sms/providers/SolapiProvider.php
           cp api/sms/providers/AligoProvider.php deploy/sms/providers/AligoProvider.php

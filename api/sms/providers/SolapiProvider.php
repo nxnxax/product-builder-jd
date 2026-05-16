@@ -170,6 +170,40 @@ class SolapiProvider extends SmsProvider
     }
 
     /**
+     * Solapi 계정 잔액 조회.
+     * 응답: ['balance' => float|null, 'point' => float|null] 또는 null (실패).
+     */
+    public function getBalance(): ?array
+    {
+        if (!$this->isConfigured()) return null;
+        $endpoint = 'https://api.solapi.com/cash/v1/balance';
+        try {
+            $auth = $this->buildAuthHeader();
+            $ch = curl_init($endpoint);
+            curl_setopt_array($ch, [
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_HTTPHEADER => [
+                    'Authorization: ' . $auth,
+                ],
+                CURLOPT_TIMEOUT => 10,
+                CURLOPT_SSL_VERIFYPEER => true,
+            ]);
+            $body = curl_exec($ch);
+            $http = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            curl_close($ch);
+            if (!is_string($body) || $body === '' || $http >= 400) return null;
+            $resp = json_decode($body, true);
+            if (!is_array($resp)) return null;
+            return [
+                'balance' => isset($resp['balance']) ? (float)$resp['balance'] : null,
+                'point'   => isset($resp['point'])   ? (float)$resp['point']   : null,
+            ];
+        } catch (Throwable $e) {
+            return null;
+        }
+    }
+
+    /**
      * Solapi storage 에 이미지 업로드 → fileId 반환.
      * 문서: https://developers.solapi.com/references/storage/uploadFile
      * @param string $base64  base64 인코딩된 raw 이미지 (data: prefix 없이)
