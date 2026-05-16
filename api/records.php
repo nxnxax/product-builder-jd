@@ -123,6 +123,7 @@ function normalize_resource($value) {
         'ledger-groups', 'ledger-records', 'ledger-records-bulk',
         'mobile-tokens',
         'community-posts',
+        'find-email', 'find-email-send-otp', 'find-email-verify-otp',
     ];
     if (!in_array($resource, $allowed, true)) {
         respond(['ok' => false, 'error' => '지원하지 않는 리소스입니다.'], 400);
