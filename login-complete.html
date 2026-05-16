@@ -105,7 +105,7 @@
 
         let session = null;
         try {
-            const mod = await import('./auth-shared.js?v=20260516-hotfix-return');
+            const mod = await import('./auth-shared.js?v=20260516-needs-nickname');
             const result = await mod.initSupabase().catch(() => null);
             const client = result?.client;
             if (client?.auth?.getSession) {
@@ -118,7 +118,7 @@
         if (!session) {
             await new Promise(r => setTimeout(r, 120));
             try {
-                const mod = await import('./auth-shared.js?v=20260516-hotfix-return');
+                const mod = await import('./auth-shared.js?v=20260516-needs-nickname');
                 const result = await mod.initSupabase().catch(() => null);
                 if (result?.client?.auth?.getSession) {
                     const { data } = await result.client.auth.getSession();
@@ -137,8 +137,8 @@
             const meta = session.user?.user_metadata || {};
             const provider = session.user?.app_metadata?.provider || '';
             const isGoogle = provider === 'google';
-            let isNewUser = false;
             let ensureSucceeded = false;
+            let needsNickname = false;   // 서버가 알려주는 닉네임 부재 신호 (이미 등록 + 신규 INSERT 둘 다 커버)
             try {
                 const ensureResp = await fetch('records.php?resource=auth-member&ensure=1', {
                     method: 'POST',
@@ -158,8 +158,8 @@
                 const ensureData = await ensureResp.json().catch(() => ({}));
                 console.log('[ensure member]', ensureResp.status, ensureData);
                 ensureSucceeded = ensureResp.ok && (ensureData?.ok || ensureData?.already);
-                // 새로 INSERT 된 경우 (already=false) — Google 가입자라면 닉네임/약관 입력 필요
-                isNewUser = ensureSucceeded && !ensureData?.already;
+                // server 가 needsNickname=true 면 무조건 닉네임 입력 필요 (신규 INSERT or 기존 nickname 비어있음)
+                needsNickname = !!ensureData?.needsNickname;
                 if (!ensureSucceeded) {
                     try {
                         sessionStorage.setItem('erp.ensureError', JSON.stringify({
@@ -174,8 +174,8 @@
                 try { sessionStorage.setItem('erp.ensureError', JSON.stringify({ error: String(e?.message || e), at: new Date().toISOString() })); } catch {}
             }
 
-            // Google 가입자 + 닉네임 미설정 → 추가 정보 입력 form 표시 후 그 단계에서 redirect.
-            const needsExtra = isGoogle && isNewUser && !(meta.nickname || '').trim();
+            // Google 가입자 + members.nickname 비어있음 (신규 INSERT 또는 기존 행 닉네임 미설정) → 추가 정보 입력 form 표시.
+            const needsExtra = isGoogle && needsNickname && !(meta.nickname || '').trim();
             if (needsExtra) {
                 document.getElementById('loadingState').style.display = 'none';
                 document.getElementById('extraWrap').style.display = 'flex';
@@ -275,7 +275,7 @@
 
                     // 2) supabase user_metadata 업데이트 (nickname + 약관 동의 기록)
                     try {
-                        const mod = await import('./auth-shared.js?v=20260516-hotfix-return');
+                        const mod = await import('./auth-shared.js?v=20260516-needs-nickname');
                         const result = await mod.initSupabase().catch(() => null);
                         const client = result?.client;
                         if (client?.auth?.updateUser) {

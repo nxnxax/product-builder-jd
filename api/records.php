@@ -339,7 +339,27 @@ function create_member_from_google(PDO $pdo, $authUser, $data) {
     $ensure = !empty($_GET['ensure']) || !empty($data['ensure']);
     if (member_exists_by_email($pdo, $email) === true) {
         if ($ensure) {
-            respond(['ok' => true, 'already' => true, 'message' => '이미 가입된 계정 — 기존 행 유지']);
+            // 기존 row 의 nickname 도 함께 반환 → client 가 "추가 입력 필요" 판단 가능
+            $existingNick = null;
+            try {
+                $nickColExisting = first_existing_column($store['columns'], ['nickname', 'nick', 'display_name']);
+                if ($nickColExisting) {
+                    $emailColQ = quote_identifier($store['email_column']);
+                    $nickColQ  = quote_identifier($nickColExisting);
+                    $tableQ    = quote_identifier($store['table']);
+                    $stmt = $pdo->prepare("SELECT {$nickColQ} AS nk FROM {$tableQ} WHERE LOWER({$emailColQ}) = :e LIMIT 1");
+                    $stmt->execute([':e' => $email]);
+                    $r = $stmt->fetch();
+                    if ($r) $existingNick = (string)($r['nk'] ?? '');
+                }
+            } catch (Throwable $e) {}
+            respond([
+                'ok' => true,
+                'already' => true,
+                'nickname' => $existingNick,
+                'needsNickname' => ($existingNick === null || trim((string)$existingNick) === ''),
+                'message' => '이미 가입된 계정 — 기존 행 유지',
+            ]);
         }
         respond(['ok' => false, 'error' => '이미 가입된 계정입니다.'], 409);
     }
@@ -416,6 +436,9 @@ function create_member_from_google(PDO $pdo, $authUser, $data) {
         'ok' => true,
         'created' => true,
         'role' => is_admin_email($email) ? 'admin' : 'member',
+        'nickname' => $nickname,
+        // 신규 INSERT 시 nickname 비어있으면 client 가 추가 입력 받음
+        'needsNickname' => ($nickname === null || trim((string)$nickname) === ''),
     ]);
 }
 
