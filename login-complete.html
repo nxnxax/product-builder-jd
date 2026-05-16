@@ -107,7 +107,7 @@
 
         let session = null;
         try {
-            const mod = await import('./auth-shared.js?v=20260517-token-refresh');
+            const mod = await import('./auth-shared.js?v=20260518-display-name');
             const result = await mod.initSupabase().catch(() => null);
             const client = result?.client;
             if (client?.auth?.getSession) {
@@ -120,7 +120,7 @@
         if (!session) {
             await new Promise(r => setTimeout(r, 120));
             try {
-                const mod = await import('./auth-shared.js?v=20260517-token-refresh');
+                const mod = await import('./auth-shared.js?v=20260518-display-name');
                 const result = await mod.initSupabase().catch(() => null);
                 if (result?.client?.auth?.getSession) {
                     const { data } = await result.client.auth.getSession();
@@ -282,7 +282,7 @@
 
                     // 2) supabase user_metadata 업데이트 (nickname + 약관 동의 기록)
                     try {
-                        const mod = await import('./auth-shared.js?v=20260517-token-refresh');
+                        const mod = await import('./auth-shared.js?v=20260518-display-name');
                         const result = await mod.initSupabase().catch(() => null);
                         const client = result?.client;
                         if (client?.auth?.updateUser) {

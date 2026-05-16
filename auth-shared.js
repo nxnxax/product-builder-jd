@@ -553,7 +553,13 @@ export function mountAppHeader(opts) {
     if (!root) return;
 
     const path = ((opts && opts.activeKey) || (location.pathname.split('/').pop() || 'index.html')).toLowerCase();
-    const cachedName = readCachedDisplayName();
+    // cachedName 비어있어도 currentSession.user 있으면 metadata/email 로 즉시 이름 도출.
+    // 새 탭 / 로그인 직후 sessionStorage 빈 상태에서 빈 헤더 → 닉네임 사라짐 증상 차단.
+    let cachedName = readCachedDisplayName();
+    if (!cachedName && currentSession?.user) {
+        cachedName = getDisplayName(null, currentSession.user) || '';
+        if (cachedName) cacheDisplayName(cachedName);
+    }
     const cachedAdmin = readCachedAdminFlag();
 
     // body 클래스로 가시성 제어 — CSS 가 admin-only / user-menu / login-btn 조정.
@@ -906,11 +912,22 @@ export async function refreshAppHeader() {
 
     if (!loggedIn) { cacheDisplayName(''); return; }
 
+    // 1) metadata 기반 이름 즉시 cache + 헤더 재렌더 — apiRequest 지연 동안 빈 표시 차단.
     let displayName = getDisplayName(null, currentSession.user);
-    // members.name 가져와서 가장 정확한 이름으로 갱신.
+    if (displayName) {
+        cacheDisplayName(displayName);
+        const earlyDisplay = document.getElementById('user-display');
+        if (earlyDisplay) earlyDisplay.textContent = displayName;
+        try { mountAppHeader(); } catch {}
+    }
+
+    // 2) members.name/nickname 가져와서 가장 정확한 이름으로 갱신.
     try {
         const payload = await apiRequest('auth-profile');
-        if (payload?.profile) displayName = getDisplayName(payload.profile, currentSession.user);
+        if (payload?.profile) {
+            const refined = getDisplayName(payload.profile, currentSession.user);
+            if (refined) displayName = refined;
+        }
     } catch {}
 
     cacheDisplayName(displayName);
