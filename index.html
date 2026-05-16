@@ -9,7 +9,7 @@
     <link rel="apple-touch-icon" href="logo_main.png">
     <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
     <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
-    <link rel="stylesheet" href="style.css?v=20260516-floating-bg">
+    <link rel="stylesheet" href="style.css?v=20260516-auth-fix">
     <style>
         :root {
             --brand: #c8362c;
@@ -322,8 +322,8 @@
         .floating-bg .fb {
             position: absolute;
             color: var(--brand-deep);
-            opacity: .07;
-            filter: blur(.2px);
+            opacity: .14;
+            filter: blur(.15px);
             will-change: transform;
         }
         .hero-inner, .feature-inner, .end-cta-inner { position: relative; z-index: 2; }
@@ -398,7 +398,7 @@
             .hero-eyebrow { margin-bottom: 14px; }
 
             /* 모바일 floating icon 살짝 줄임 */
-            .floating-bg .fb { opacity: .055; }
+            .floating-bg .fb { opacity: .11; }
             .fb-1, .fb-3, .fb-5, .fb-7, .fb-9, .fb-11 { transform: scale(.78); }
             .fb-2, .fb-4, .fb-6, .fb-8, .fb-10, .fb-12 { transform: scale(.78); }
 
@@ -903,7 +903,7 @@
     </main>
 
     <script type="module">
-        import { mountAppHeader, mountAppFooter, initSupabase } from './auth-shared.js?v=20260516-floating-bg';
+        import { mountAppHeader, mountAppFooter, initSupabase } from './auth-shared.js?v=20260516-auth-fix';
         mountAppHeader();
         mountAppFooter();
         initSupabase();

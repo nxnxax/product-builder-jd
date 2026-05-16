@@ -286,10 +286,45 @@ async function refreshNavFormsCache() {
 export function refreshNavForms() { return refreshNavFormsCache(); }
 
 /* =========================================================================
+   로그인/회원가입 성공 후 navigation — race condition 방어.
+
+   문제 (사용자 보고): "로그인하면 안되다가 다른 페이지로 넘어가면 그때 로그인됨".
+   원인:
+   1) signInWithPassword 직후 supabase 가 localStorage 에 sb-* 토큰 키를 쓰는 작업은
+      비동기적으로 늦게 완료될 수 있음. window.location.reload() 가 너무 빨라
+      reload 후 새 페이지가 initSupabase 할 때 storage 가 아직 비어있어 비로그인으로 인식.
+   2) 같은 URL 로 reload 하면 일부 브라우저/환경에서 bfcache 또는 캐시 hit 으로
+      module 이 재실행되지 않아 currentSession 이 갱신 안 됨.
+
+   해결:
+   - getSession() 명시 await → storage 가 확실히 set 될 때까지 대기
+   - URL 에 cache-bust query 붙여서 강제 fresh fetch (location.replace)
+   ========================================================================= */
+async function navigateAfterAuth() {
+    try {
+        // storage write 가 확실히 commit 되도록 한번 더 session 확정.
+        if (supabaseClient?.auth?.getSession) {
+            await supabaseClient.auth.getSession();
+        }
+    } catch {}
+    // 추가 안전장치 — microtask 양보로 supabase internal write 완료 대기.
+    await new Promise(r => setTimeout(r, 50));
+
+    try {
+        const u = new URL(window.location.href);
+        u.hash = '';   // #login 등 잔여 hash 제거
+        u.searchParams.set('_a', String(Date.now()));   // cache-bust
+        window.location.replace(u.toString());
+    } catch {
+        try { window.location.reload(); } catch {}
+    }
+}
+
+/* =========================================================================
    로그아웃 — 동기적으로 즉시 storage 정리 + 페이지 이동.
    - signOut 은 fire-and-forget (await 안 함 — 네트워크 이슈에도 즉시 이동)
    - 모든 supabase/erp 관련 키를 sessionStorage / localStorage 에서 일괄 제거
-   - window.location.replace 로 history 정리하며 이동
+   - window.location.replace 로 history 정리하며 이동 (cache-bust query 포함 — 같은 URL bfcache 회피)
    ========================================================================= */
 export function performLogout(e) {
     try { e?.preventDefault?.(); e?.stopPropagation?.(); } catch {}
@@ -332,11 +367,11 @@ export function performLogout(e) {
         }
     } catch {}
 
-    // 즉시 페이지 이동 — replace 로 history 안 남김
+    // 즉시 페이지 이동 — replace 로 history 안 남김 + cache-bust (bfcache/같은 URL reload 회피)
     try {
-        window.location.replace('index.html');
+        window.location.replace('index.html?_a=' + Date.now());
     } catch {
-        try { window.location.href = 'index.html'; } catch {}
+        try { window.location.href = 'index.html?_a=' + Date.now(); } catch {}
     }
 }
 
@@ -964,7 +999,7 @@ function openSharedLoginModal(initialMode = 'login') {
                     });
                 } catch {}
                 close();
-                window.location.reload();
+                await navigateAfterAuth();
             } catch (err) {
                 msgEl.style.color = '#c8362c';
                 msgEl.textContent = err?.message || '가입 처리에 실패했습니다.';
@@ -977,7 +1012,7 @@ function openSharedLoginModal(initialMode = 'login') {
                 const { error } = await supabaseClient.auth.signInWithPassword({ email, password });
                 if (error) throw error;
                 close();
-                window.location.reload();
+                await navigateAfterAuth();
             } catch (err) {
                 msgEl.style.color = '#c8362c';
                 msgEl.textContent = err?.message || '로그인 실패';
