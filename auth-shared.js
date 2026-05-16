@@ -321,57 +321,40 @@ async function navigateAfterAuth() {
 }
 
 /* =========================================================================
-   로그아웃 — 동기적으로 즉시 storage 정리 + 페이지 이동.
-   - signOut 은 fire-and-forget (await 안 함 — 네트워크 이슈에도 즉시 이동)
-   - 모든 supabase/erp 관련 키를 sessionStorage / localStorage 에서 일괄 제거
-   - window.location.replace 로 history 정리하며 이동 (cache-bust query 포함 — 같은 URL bfcache 회피)
+   로그아웃 — 단일 cleanup 페이지(logout.html)로 navigate.
+
+   이전: storage 정리 + signOut + index.html 이동을 한 번에 하다가
+        같은 URL 일 때 bfcache hit, supabase 비동기 storage write race,
+        분산된 로그아웃 핸들러(profile.js / main.js) 가 서로 다른 흐름을
+        가져 "로그아웃이 가끔 안 됨" 증상이 반복됐다.
+
+   현재: 단 두 단계만.
+     1) 본 함수: location.replace('logout.html?_t=ts') — 한 번의 단순 navigation.
+        같은 URL/bfcache 가능성 없음 (다른 path, query 다름).
+     2) logout.html: 모든 storage cleanup + supabase signOut + index.html 로 redirect.
+        실패 시 강제 reload fallback.
+
+   효과:
+     - 어느 페이지에서 로그아웃하든 동일 흐름.
+     - replace 가 무조건 작동 (다른 path 이므로).
+     - cleanup 은 새 페이지 컨텍스트에서 진행 → race condition 원천 차단.
    ========================================================================= */
 export function performLogout(e) {
     try { e?.preventDefault?.(); e?.stopPropagation?.(); } catch {}
 
-    // 시각적 즉시 반영
+    // 시각적 즉시 반영 (사용자 피드백 — navigation 사이 짧은 순간)
     try {
         document.body.classList.add('is-anon');
         document.body.classList.remove('is-admin');
     } catch {}
 
-    // sessionStorage 일괄 정리
+    const target = 'logout.html?_t=' + Date.now();
     try {
-        const keys = [];
-        for (let i = 0; i < sessionStorage.length; i++) keys.push(sessionStorage.key(i));
-        keys.forEach(k => {
-            if (!k) return;
-            if (k.startsWith('erp') || k.startsWith('sb-') || k.startsWith('supabase')) {
-                try { sessionStorage.removeItem(k); } catch {}
-            }
-        });
-    } catch {}
-
-    // localStorage 일괄 정리 (supabase 세션 토큰 + erp OAuth 흔적)
-    try {
-        const keys = [];
-        for (let i = 0; i < localStorage.length; i++) keys.push(localStorage.key(i));
-        keys.forEach(k => {
-            if (!k) return;
-            if (k.startsWith('erp') || k.startsWith('sb-') || k.startsWith('supabase')) {
-                try { localStorage.removeItem(k); } catch {}
-            }
-        });
-    } catch {}
-
-    // signOut fire-and-forget — 결과 기다리지 않음
-    try {
-        if (supabaseClient && supabaseClient.auth && typeof supabaseClient.auth.signOut === 'function') {
-            // catch attach 후 호출 — unhandled rejection 방지
-            supabaseClient.auth.signOut().catch(() => {});
-        }
-    } catch {}
-
-    // 즉시 페이지 이동 — replace 로 history 안 남김 + cache-bust (bfcache/같은 URL reload 회피)
-    try {
-        window.location.replace('index.html?_a=' + Date.now());
+        window.location.replace(target);
     } catch {
-        try { window.location.href = 'index.html?_a=' + Date.now(); } catch {}
+        try { window.location.href = target; } catch {
+            try { window.location.assign(target); } catch {}
+        }
     }
 }
 
@@ -379,7 +362,7 @@ export function performLogout(e) {
 // 모든 #logout-btn / #drawer-logout-btn 클릭이 항상 performLogout 트리거.
 if (typeof document !== 'undefined' && typeof window !== 'undefined' && !window.__ymanLogoutBound) {
     document.addEventListener('click', (e) => {
-        const btn = e.target?.closest?.('#logout-btn, #drawer-logout-btn, [data-logout]');
+        const btn = e.target?.closest?.('#logout-btn, #drawer-logout-btn, #account-signout, [data-logout]');
         if (!btn) return;
         performLogout(e);
     }, true);   // capture phase — 다른 핸들러보다 먼저

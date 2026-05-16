@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>로그아웃 중… · YOUNGMAN</title>
+<meta name="robots" content="noindex,nofollow">
+<link rel="icon" type="image/png" href="logo_main.png">
+<link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
+<style>
+    html, body { margin:0; padding:0; background:#fbf8f3; font-family:'Pretendard',-apple-system,system-ui,sans-serif; color:#0e0d0c }
+    .wrap { min-height:100vh; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:20px; padding:24px; text-align:center }
+    img { height:38px; opacity:.85 }
+    .ring { width:38px; height:38px; border:3px solid rgba(200,54,44,.18); border-top-color:#c8362c; border-radius:50%; animation:spin .9s linear infinite }
+    @keyframes spin { to { transform:rotate(360deg) } }
+    p { margin:0; color:#4f4943; font-size:14px; letter-spacing:-.005em }
+    small { display:block; color:#8a847e; font-size:12px; margin-top:6px }
+    a { color:#0e0d0c; font-weight:600 }
+</style>
+</head>
+<body>
+    <div class="wrap" role="status" aria-live="polite">
+        <img src="logo_main.png" alt="YOUNGMAN">
+        <div class="ring" aria-hidden="true"></div>
+        <p>로그아웃 처리 중…<small>잠시 후 메인 페이지로 이동합니다.</small></p>
+        <small>이동되지 않으면 <a href="index.html">여기를 눌러 메인으로 이동</a>하세요.</small>
+    </div>
+    <script type="module">
+        /* =========================================================================
+           단일 로그아웃 cleanup 페이지 — 모든 로그아웃 경로의 종착지.
+           이전 분산된 로직(auth-shared / profile.js / main.js)으로 인한
+           cache hit, race condition, await hang 같은 증상을 원천 차단한다.
+
+           흐름:
+             1) Supabase signOut 시도 (fire-and-forget — 결과 안 기다림)
+             2) localStorage / sessionStorage 의 supabase / erp 키 일괄 제거
+             3) body class is-anon (시각 보조)
+             4) 새 URL (index.html?_a=Date.now()) 로 location.replace
+                → bfcache / 같은 URL reload 회피
+             5) 만약 어떤 이유로 4) 가 실패하면 1.5초 후 강제 reload fallback
+           ========================================================================= */
+
+        const TARGET = 'index.html?_a=' + Date.now();
+
+        function clearStorage() {
+            try {
+                const keys = [];
+                for (let i = 0; i < sessionStorage.length; i++) keys.push(sessionStorage.key(i));
+                keys.forEach(k => {
+                    if (!k) return;
+                    if (k.startsWith('erp') || k.startsWith('sb-') || k.startsWith('supabase')) {
+                        try { sessionStorage.removeItem(k); } catch {}
+                    }
+                });
+            } catch {}
+            try {
+                const keys = [];
+                for (let i = 0; i < localStorage.length; i++) keys.push(localStorage.key(i));
+                keys.forEach(k => {
+                    if (!k) return;
+                    if (k.startsWith('erp') || k.startsWith('sb-') || k.startsWith('supabase')) {
+                        try { localStorage.removeItem(k); } catch {}
+                    }
+                });
+            } catch {}
+        }
+
+        document.body.classList.add('is-anon');
+
+        // 1) Supabase signOut — auth-shared.js 의 client 가 이 페이지에서 다시 init.
+        //    실패해도 무방 — storage 직접 정리로 보강.
+        let signOutDone = false;
+        try {
+            const mod = await import('./auth-shared.js?v=20260516-logout-page');
+            const result = await mod.initSupabase().catch(() => null);
+            const client = result?.client;
+            if (client && client.auth && typeof client.auth.signOut === 'function') {
+                client.auth.signOut().catch(() => {}).finally(() => { signOutDone = true; });
+            }
+        } catch {}
+
+        // 2) storage 정리 (supabase 가 비동기로 쓰는 잔여 키도 함께)
+        clearStorage();
+
+        // 3) 50ms 양보 후 한 번 더 cleanup (signOut 의 비동기 storage write 완료 대비)
+        await new Promise(r => setTimeout(r, 60));
+        clearStorage();
+
+        // 4) 새 URL 로 replace — 메인 페이지가 fresh fetch 되도록 cache-bust
+        try {
+            window.location.replace(TARGET);
+        } catch {
+            try { window.location.href = TARGET; } catch {}
+        }
+
+        // 5) 1.5초 후에도 같은 페이지면 강제 fallback
+        setTimeout(() => {
+            if (window.location.pathname.endsWith('logout.html')) {
+                try { window.location.href = TARGET; } catch {}
+                setTimeout(() => { try { window.location.reload(); } catch {} }, 800);
+            }
+        }, 1500);
+    </script>
+</body>
+</html>

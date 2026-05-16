@@ -6,7 +6,7 @@ import {
     mountAppHeader,
     refreshAppHeader,
     getInitial,
-} from './auth-shared.js?v=20260516-recipient-fix';
+} from './auth-shared.js?v=20260516-logout-page';
 
 const tabButtons = document.querySelectorAll('.side-nav button[data-tab]');
 const tabSections = document.querySelectorAll('.profile-tab');
@@ -179,11 +179,8 @@ passwordForm?.addEventListener('submit', async (event) => {
     }
 });
 
-accountSignout?.addEventListener('click', async () => {
-    const client = getClient();
-    if (client) await client.auth.signOut();
-    window.location.href = 'index.html';
-});
+// 로그아웃은 auth-shared.js 의 document-level capture 핸들러가 처리한다 (#account-signout 매칭).
+// → logout.html 페이지에서 cleanup + index.html 로 redirect. 여기선 별도 핸들러 등록 안 함.
 
 accountDelete?.addEventListener('click', async () => {
     // 1단계: 강한 경고 + 동의 확인
