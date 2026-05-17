@@ -128,6 +128,7 @@ function normalize_resource($value) {
         'mobile-tokens',
         'customer-log',
         'app-fcm-token',
+        'recording-job',
         'community-posts',
         'find-email', 'find-email-send-otp', 'find-email-verify-otp',
         'find-pwd-send-otp', 'find-pwd-verify-otp', 'find-pwd-reset',
@@ -1669,7 +1670,7 @@ try {
                         'find-pwd-send-otp', 'find-pwd-verify-otp', 'find-pwd-reset'];
     // self-auth resources — global verify_auth_token 우회, handler 안에서 단순 /auth/v1/user 패턴 + spec §4 응답 shape.
     // upload.php / process-recording.php 와 동일한 인증 흐름으로 통일.
-    $selfAuthResources = ['customer-log', 'app-fcm-token'];
+    $selfAuthResources = ['customer-log', 'app-fcm-token', 'recording-job'];
     $peekedResource = strtolower(trim((string)($_GET['resource'] ?? '')));
     $isSkipGlobalAuth = in_array($peekedResource, $publicResources, true)
                       || in_array($peekedResource, $selfAuthResources, true);
@@ -3315,6 +3316,87 @@ try {
                 'status' => 'ok',
                 'items' => array_map('user_fcm_token_row', $stmt->fetchAll()),
             ]);
+        }
+
+        respond(['status' => 'error', 'code' => 'invalid_request', 'message' => '지원하지 않는 action 입니다.'], 400);
+    }
+
+    /* ============================================================
+       recording-job — Phase 2 M2: async 작업 status 폴링 (M3 FCM 전 fallback).
+       customer-log / app-fcm-token 와 같은 self-auth + spec §4 표준 응답.
+       ============================================================ */
+    if ($resource === 'recording-job') {
+        $rjHdr = read_authorization_header();
+        if (!preg_match('/^Bearer\s+(.+)$/i', $rjHdr, $rjM)) {
+            respond(['status' => 'error', 'code' => 'unauthorized', 'message' => '로그인이 필요합니다.'], 401);
+        }
+        $rjToken = trim($rjM[1]);
+        $rjBase = !empty($auth['supabase_url']) ? rtrim((string)$auth['supabase_url'], '/') : '';
+        $rjKey  = (string)($auth['anon_key'] ?? '');
+        if ($rjBase === '' || $rjKey === '') {
+            respond(['status' => 'error', 'code' => 'unauthorized', 'message' => '서버 인증 설정 누락.'], 500);
+        }
+        $rjCh = curl_init($rjBase . '/auth/v1/user');
+        curl_setopt_array($rjCh, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_HTTPHEADER => ['Authorization: Bearer ' . $rjToken, 'apikey: ' . $rjKey],
+            CURLOPT_TIMEOUT => 8,
+            CURLOPT_CONNECTTIMEOUT => 5,
+        ]);
+        $rjResp = curl_exec($rjCh);
+        $rjStatus = (int)curl_getinfo($rjCh, CURLINFO_HTTP_CODE);
+        curl_close($rjCh);
+        if ($rjStatus !== 200 || !$rjResp) {
+            respond(['status' => 'error', 'code' => 'unauthorized', 'message' => '토큰 검증 실패.'], 401);
+        }
+        $rjData = json_decode((string)$rjResp, true);
+        $rjOwner = strtolower(trim((string)($rjData['email'] ?? '')));
+        if ($rjOwner === '') {
+            respond(['status' => 'error', 'code' => 'unauthorized', 'message' => '토큰 이메일 추출 실패.'], 401);
+        }
+
+        if (!ensure_recording_jobs_table($pdo)) {
+            respond(['status' => 'error', 'code' => 'upstream_failed', 'message' => 'recording_jobs 마이그레이션 실패.'], 503);
+        }
+
+        $owner = $rjOwner;
+        $action = strtolower(trim((string)($body['action'] ?? $_GET['action'] ?? '')));
+
+        // ─── GET (단일 job 폴링) ───
+        if ($action === 'recording_job_get') {
+            $jid = trim((string)($body['job_id'] ?? $_GET['job_id'] ?? ''));
+            if ($jid === '') respond(['status' => 'error', 'code' => 'invalid_request', 'message' => 'job_id 가 필요합니다.'], 400);
+            $stmt = $pdo->prepare('SELECT * FROM recording_jobs WHERE id = :id AND owner_email = :o LIMIT 1');
+            $stmt->execute([':id' => $jid, ':o' => $owner]);
+            $row = $stmt->fetch();
+            if (!$row) respond(['status' => 'error', 'code' => 'not_found', 'message' => '존재하지 않거나 권한이 없습니다.'], 404);
+            respond([
+                'status' => 'ok',
+                'job' => [
+                    'id'                => (string)$row['id'],
+                    'job_status'        => $row['status'],
+                    'customer_log_id'   => $row['customer_log_id'] ?? null,
+                    'storage_path'      => $row['storage_path'] ?? null,
+                    'client_request_id' => $row['client_request_id'] ?? null,
+                    'error_message'     => $row['error_message'] ?? null,
+                    'fcm_sent_at'       => $row['fcm_sent_at'] ?? null,
+                    'started_at'        => $row['started_at'] ?? null,
+                    'completed_at'      => $row['completed_at'] ?? null,
+                    'created_at'        => $row['created_at'] ?? null,
+                ],
+            ]);
+        }
+
+        // ─── LIST (사용자 본인 최근 jobs) ───
+        if ($action === 'recording_job_list') {
+            $limit = (int)($body['limit'] ?? $_GET['limit'] ?? 20);
+            if ($limit < 1) $limit = 20;
+            if ($limit > 100) $limit = 100;
+            $stmt = $pdo->prepare('SELECT id, status, customer_log_id, error_message, started_at, completed_at, created_at
+                                   FROM recording_jobs WHERE owner_email = :o
+                                   ORDER BY created_at DESC LIMIT ' . $limit);
+            $stmt->execute([':o' => $owner]);
+            respond(['status' => 'ok', 'items' => $stmt->fetchAll()]);
         }
 
         respond(['status' => 'error', 'code' => 'invalid_request', 'message' => '지원하지 않는 action 입니다.'], 400);

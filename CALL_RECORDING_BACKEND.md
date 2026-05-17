@@ -169,10 +169,43 @@ Authorization: Bearer <JWT>
 
 bridge.js 의 FCM 토큰 수신 핸들러에서 `app-fcm-token register` 호출. SIGNED_IN 시 등록 / SIGNED_OUT 시 unregister / 토큰 refresh 시 재등록.
 
-#### M2 (다음 commit)
-- `process-recording.php?mode=async` 분기 → 즉시 `{status:"queued", job_id}` 응답
-- 백그라운드 처리 (PHP `fastcgi_finish_request` + `ignore_user_abort`)
-- recording_jobs row 생성/갱신 → 완료 시 customer_log row insert
+#### M2 — async mode 분기 + 폴링 (ship 완료)
+
+**process-recording.php body 에 `mode: "async"` 추가 시:**
+- validation 통과 후 `recording_jobs` row 생성 (`status='queued'`)
+- 즉시 `{status:"queued", job_id, mode:"async"}` HTTP 202 응답
+- `fastcgi_finish_request()` + `ignore_user_abort(true)` → client 연결 종료 + 백그라운드 계속
+- `set_time_limit(300)` 으로 5분 한도
+- 백그라운드: `recording_jobs.status='processing'` → Clova STT → LLM → customer_log insert → `status='completed' + customer_log_id 저장`
+- 실패 시: `register_shutdown_function` 의 failsafe 가 `status='failed'` + error_message 자동 마크
+- M3 의 FCM 발송은 같은 백그라운드 분기 끝에 hook 예정 (현재는 fcm_sent_at = null)
+
+**Idempotency**: `recording_jobs` UNIQUE `(owner_email, client_request_id)`. 24h 내 같은 client_request_id 재호출 시 기존 job_id 반환 (HTTP 202 + duplicate:true).
+
+**폴링 endpoint (M3 FCM 전 fallback):**
+```
+POST /records.php?resource=recording-job
+Authorization: Bearer <JWT>
+
+{ "action": "recording_job_get", "job_id": "<uuid>" }
+{ "action": "recording_job_list", "limit": 20 }    // 사용자 본인 최근 작업
+```
+
+응답 (get):
+```json
+{
+  "status": "ok",
+  "job": {
+    "id": "...",
+    "job_status": "queued | processing | completed | failed",
+    "customer_log_id": "...",   // completed 시
+    "error_message": "...",     // failed 시
+    "started_at": "...", "completed_at": "...", "created_at": "..."
+  }
+}
+```
+
+앱 측 통합: async 호출 → job_id 받음 → 폴링 (예: 5초 간격, completed/failed 까지) → completed 시 customer_log_get 으로 결과 받기. M3 ship 후엔 FCM 푸시로 대체 가능.
 
 #### M3 (그 다음 commit)
 - FCM HTTP v1 API 호출 (Firebase service account JSON 으로 OAuth token 발급)

@@ -236,6 +236,59 @@ function ensure_members_plan_columns(PDO $pdo): bool {
     }
 }
 
+/**
+ * Phase 2 M2: 비동기 작업 큐 테이블. records.php 의 ensure_recording_jobs_table 과 schema 동기화.
+ */
+function ensure_recording_jobs_table(PDO $pdo): bool {
+    static $done = null;
+    if ($done !== null) return $done;
+    try {
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS recording_jobs (
+                id CHAR(36) NOT NULL PRIMARY KEY,
+                owner_email VARCHAR(255) NOT NULL,
+                customer_log_id CHAR(36) NULL DEFAULT NULL,
+                status VARCHAR(16) NOT NULL DEFAULT 'queued',
+                storage_path VARCHAR(512) NULL DEFAULT NULL,
+                client_request_id VARCHAR(64) NULL DEFAULT NULL,
+                error_message TEXT NULL DEFAULT NULL,
+                fcm_sent_at DATETIME NULL DEFAULT NULL,
+                started_at DATETIME NULL DEFAULT NULL,
+                completed_at DATETIME NULL DEFAULT NULL,
+                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                INDEX idx_rj_owner_status (owner_email, status),
+                INDEX idx_rj_status_created (status, created_at),
+                UNIQUE KEY uniq_rj_idempotency (owner_email, client_request_id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        ");
+        return $done = true;
+    } catch (Throwable $e) {
+        error_log('[process-recording] ensure_recording_jobs_table failed: ' . $e->getMessage());
+        return $done = false;
+    }
+}
+
+/**
+ * async mode 즉시 응답 — fastcgi_finish_request 로 client 연결 종료 후 백그라운드 계속.
+ */
+function respond_async_queued(string $jobId): void {
+    http_response_code(202);
+    header('Content-Type: application/json; charset=utf-8');
+    header('Cache-Control: no-store');
+    header('X-Content-Type-Options: nosniff');
+    echo json_encode([
+        'status' => 'queued',
+        'job_id' => $jobId,
+        'mode'   => 'async',
+    ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    if (function_exists('fastcgi_finish_request')) {
+        fastcgi_finish_request();
+    }
+    ignore_user_abort(true);
+    @set_time_limit(300);   // 5분 — 백그라운드 처리 한도
+}
+
 function customer_phone_lookup_key(?string $phone): ?string {
     if ($phone === null) return null;
     $digits = preg_replace('/\D/', '', $phone);
@@ -336,6 +389,10 @@ $origFilename = trim((string)($body['original_filename'] ?? ''));
 $customerNameHint = trim((string)($body['customer_name_hint'] ?? ''));
 if (mb_strlen($customerNameHint) > 80) $customerNameHint = mb_substr($customerNameHint, 0, 80);
 
+// Phase 2 M2: async mode 옵션. body.mode = 'async' 이면 즉시 job_id 응답 + 백그라운드 처리.
+// 기본 'sync' — 완료까지 응답 hold (기존 흐름 유지).
+$asyncMode = (strtolower(trim((string)($body['mode'] ?? ''))) === 'async');
+
 if ($storagePath === '') jerror('invalid_audio', 'storage_path 누락.', 400);
 if ($clientReqId === '') jerror('invalid_audio', 'client_request_id 누락.', 400);
 if (strlen($clientReqId) > 64) jerror('invalid_audio', 'client_request_id 너무 김.', 400);
@@ -374,6 +431,69 @@ if ($existing) {
         ],
         'duplicate' => true,
     ]);
+}
+
+/* ========== Phase 2 M2 — async 분기 ==========
+ * customer_log idempotency check 까지 통과 (이미 처리된 결과는 없음).
+ * async 모드면 recording_jobs row 생성 + 즉시 응답 + 백그라운드 처리 시작.
+ * sync 모드는 아래 흐름 그대로.
+ */
+$asyncJobId = null;
+if ($asyncMode) {
+    if (!ensure_recording_jobs_table($pdo)) {
+        jerror('upstream_failed', 'recording_jobs 마이그레이션 실패.', 503);
+    }
+    // recording_jobs idempotency — 같은 client_request_id 의 job 이 있으면 그 job_id 반환.
+    $jobIdem = $pdo->prepare("SELECT * FROM recording_jobs
+        WHERE owner_email = :o AND client_request_id = :k
+          AND created_at >= (NOW() - INTERVAL 24 HOUR) LIMIT 1");
+    $jobIdem->execute([':o' => $ownerEmail, ':k' => $clientReqId]);
+    $existingJob = $jobIdem->fetch();
+    if ($existingJob) {
+        jout([
+            'status' => 'queued',
+            'job_id' => (string)$existingJob['id'],
+            'duplicate' => true,
+            'job_status' => $existingJob['status'],
+            'customer_log_id' => $existingJob['customer_log_id'] ?? null,
+        ], 202);
+    }
+    // 새 job 생성.
+    $asyncJobId = uuid_v4();
+    $insJob = $pdo->prepare("INSERT INTO recording_jobs
+        (id, owner_email, status, storage_path, client_request_id)
+        VALUES (:id, :o, 'queued', :sp, :k)");
+    $insJob->execute([
+        ':id' => $asyncJobId,
+        ':o'  => $ownerEmail,
+        ':sp' => $storagePath,
+        ':k'  => $clientReqId,
+    ]);
+
+    // 즉시 응답 — client 연결 종료. 이후 코드는 백그라운드.
+    respond_async_queued($asyncJobId);
+
+    // 정상 완료 안 되면 (PHP fatal, jerror exit 등) shutdown 시 'failed' 마크.
+    register_shutdown_function(function() use ($pdo, $asyncJobId) {
+        try {
+            $check = $pdo->prepare("SELECT status FROM recording_jobs WHERE id = :id LIMIT 1");
+            $check->execute([':id' => $asyncJobId]);
+            $current = (string)$check->fetchColumn();
+            if ($current === 'queued' || $current === 'processing') {
+                $pdo->prepare("UPDATE recording_jobs
+                    SET status = 'failed', completed_at = NOW(),
+                        error_message = COALESCE(error_message, 'unexpected shutdown')
+                    WHERE id = :id")
+                    ->execute([':id' => $asyncJobId]);
+            }
+        } catch (Throwable $e) { /* shutdown 중 — log 만 */ error_log('[process-recording] shutdown failsafe: ' . $e->getMessage()); }
+    });
+
+    // status: processing 으로 업데이트 (백그라운드 시작).
+    try {
+        $pdo->prepare("UPDATE recording_jobs SET status = 'processing', started_at = NOW() WHERE id = :id")
+            ->execute([':id' => $asyncJobId]);
+    } catch (Throwable $e) { /* 무시 */ }
 }
 
 /* ========== Plan check ========== */
@@ -673,12 +793,30 @@ if ($convertedPath !== null && is_file($convertedPath)) @unlink($convertedPath);
 // 디렉터리도 비어있으면 정리 — best-effort, 실패 무시.
 @rmdir(dirname($realPath));
 
-/* ========== 응답 ========== */
+/* ========== 응답 (sync) / 완료 표시 (async) ========== */
 $fetch = $pdo->prepare('SELECT * FROM customer_log WHERE id = :id LIMIT 1');
 $fetch->execute([':id' => $rowId]);
 $savedRow = $fetch->fetch();
-if (!$savedRow) jerror('upstream_failed', 'insert 후 조회 실패.', 500);
+if (!$savedRow) {
+    // async 모드: 응답 이미 갔으니 jerror 출력은 무시되지만 exit → shutdown_function 이 failed 마크.
+    jerror('upstream_failed', 'insert 후 조회 실패.', 500);
+}
 
+if ($asyncMode) {
+    // async 모드 — client 응답은 이미 'queued' 로 갔음. 백그라운드 작업 완료 표시.
+    try {
+        $pdo->prepare("UPDATE recording_jobs
+            SET status = 'completed', completed_at = NOW(), customer_log_id = :cl
+            WHERE id = :id")
+            ->execute([':cl' => $rowId, ':id' => $asyncJobId]);
+    } catch (Throwable $e) {
+        error_log('[process-recording] recording_jobs completed update failed: ' . $e->getMessage());
+    }
+    // M3 (다음 commit) — 여기서 FCM 푸시 발송. 지금은 fcm_sent_at = null 유지.
+    exit;
+}
+
+// sync 모드 — 정상 응답.
 jout([
     'status' => 'ok',
     'customer_log' => customer_log_row($savedRow),
