@@ -925,7 +925,7 @@ function showSolapiSetupGuide() {
     document.querySelectorAll('.solapi-guide-modal').forEach(m => m.remove());
     const md = document.createElement('div');
     md.className = 'modal-backdrop solapi-guide-modal';
-    md.style.zIndex = '500';
+    // 인라인 z-index 박지 않음 — .modal-backdrop 의 1000 이 그대로 적용돼야 mobile bottom nav(900) 위에 표시됨.
     md.innerHTML = `
         <div class="modal-panel" style="max-width:560px;">
             <header class="modal-header" style="display:flex;align-items:center;gap:10px;">

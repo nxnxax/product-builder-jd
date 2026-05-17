@@ -1338,6 +1338,21 @@ select:focus {
     .modal-row > .row-label { font-size: 12px; color: var(--fg-tertiary); }
 }
 
+/* 하단 고정 mobile-bottom-nav (≤860px, 64px+여백+safe-area ≈ 76px) 가 모달 footer 를
+   가리던 문제 fix. nav 가 backdrop-filter 로 새 stacking context 를 만들면 z-index 만으로
+   안전하지 않으므로 modal-backdrop 의 padding-bottom + modal-panel max-height 로 nav
+   영역 자체를 reserve 해서 footer 가 nav 위쪽에 물리적으로 위치하게 한다. */
+@media (max-width: 860px) {
+    .modal-backdrop,
+    .modal {
+        padding-bottom: calc(12px + 76px + env(safe-area-inset-bottom, 0px));
+    }
+    .modal-panel,
+    .modal-content {
+        max-height: calc(100vh - 24px - 76px - env(safe-area-inset-bottom, 0px));
+    }
+}
+
 .close-btn {
     flex: 0 0 auto;
     background: transparent;
