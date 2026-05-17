@@ -158,9 +158,11 @@ function getFcmToken() { return _fcmToken; }
 
 // ─── window 노출 ─────────────────────────────────────────────────────
 // 앱은 injectJavaScript 로 window.YoungmanBridge.<name>(...) 를 호출.
+// DevTools / non-module 스크립트에서도 동일 객체로 web→app 헬퍼 호출 가능.
 const YoungmanBridge = {
     version: BRIDGE_VERSION,
     isInApp,
+    // ── app → web (앱이 호출) ──
     // 등록형 핸들러 dispatch — 앱은 이 한 군데만 호출하면 됨.
     handle(name, ...args) { return _invoke(name, ...args); },
     // 자주 쓰는 핸들러는 직접 호출도 허용 (편의)
@@ -172,6 +174,19 @@ const YoungmanBridge = {
     onBack() { return _invoke('onBack') === true; },
     // 외부 핸들러 등록
     setHandler,
+    // ── web → app (웹이 호출) ──
+    postToApp,
+    notifyLogin,
+    notifyLogout,
+    openExternal,
+    share,
+    requestAppInfo,
+    requestFcmToken,
+    setStatusBar,
+    haptic,
+    // 디버깅용 — 현재 캐시된 앱 정보
+    getAppInfo,
+    getFcmToken,
 };
 
 if (typeof window !== 'undefined') {
