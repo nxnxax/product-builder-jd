@@ -57,6 +57,15 @@ if (!function_exists('youngman_encrypt')) {
     function youngman_master_key(): ?string { return null; }
 }
 
+/* ========== FCM 발송 헬퍼 — fcm_helpers.php 가 없으면 stub (async hook 무력화). ========== */
+$__fcmFile = __DIR__ . '/fcm_helpers.php';
+if (is_file($__fcmFile)) require_once $__fcmFile;
+if (!function_exists('send_fcm_to_user')) {
+    function send_fcm_to_user(PDO $pdo, string $ownerEmail, array $message): array {
+        return ['sent' => 0, 'failed' => 0, 'invalid_tokens' => [], 'reason' => 'helper_missing'];
+    }
+}
+
 /* ========== Supabase 인증 (upload.php 와 동일한 패턴) ========== */
 function load_supabase_auth(): array {
     $cfgPath = __DIR__ . '/supabase_config.php';
@@ -812,7 +821,32 @@ if ($asyncMode) {
     } catch (Throwable $e) {
         error_log('[process-recording] recording_jobs completed update failed: ' . $e->getMessage());
     }
-    // M3 (다음 commit) — 여기서 FCM 푸시 발송. 지금은 fcm_sent_at = null 유지.
+
+    // M3: FCM 푸시 발송 — user_fcm_tokens 의 owner 토큰들에게.
+    // 실패는 무시 (recording_jobs 는 이미 completed, 폴링 fallback 으로 앱이 결과 받을 수 있음).
+    try {
+        $custName = (string)(youngman_decrypt($savedRow['customer_name'] ?? '') ?: '고객');
+        $sumPreview = (string)(youngman_decrypt($savedRow['summary'] ?? '') ?: '');
+        if (mb_strlen($sumPreview) > 60) $sumPreview = mb_substr($sumPreview, 0, 57) . '...';
+        $fcmResult = send_fcm_to_user($pdo, $ownerEmail, [
+            'title' => '통화 요약 완료 — ' . $custName,
+            'body'  => $sumPreview !== '' ? $sumPreview : '새 통화 요약이 저장되었습니다.',
+            'data'  => [
+                'type'            => 'call_summary_ready',
+                'job_id'          => (string)$asyncJobId,
+                'customer_log_id' => (string)$rowId,
+                'consult_at'      => (string)($savedRow['consult_at'] ?? ''),
+            ],
+        ]);
+        if (!empty($fcmResult['sent'])) {
+            $pdo->prepare("UPDATE recording_jobs SET fcm_sent_at = NOW() WHERE id = :id")
+                ->execute([':id' => $asyncJobId]);
+        }
+        error_log('[process-recording] FCM dispatch ' . json_encode($fcmResult, JSON_UNESCAPED_UNICODE));
+    } catch (Throwable $e) {
+        error_log('[process-recording] FCM dispatch threw: ' . $e->getMessage());
+    }
+
     exit;
 }
 

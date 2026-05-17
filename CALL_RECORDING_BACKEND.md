@@ -207,10 +207,34 @@ Authorization: Bearer <JWT>
 
 앱 측 통합: async 호출 → job_id 받음 → 폴링 (예: 5초 간격, completed/failed 까지) → completed 시 customer_log_get 으로 결과 받기. M3 ship 후엔 FCM 푸시로 대체 가능.
 
-#### M3 (그 다음 commit)
-- FCM HTTP v1 API 호출 (Firebase service account JSON 으로 OAuth token 발급)
-- 작업 완료 시 user_fcm_tokens 의 owner 토큰들로 push
-- 사용자 작업 필요: Firebase 콘솔에서 service account JSON 다운로드 + GitHub Secret `FIREBASE_SERVICE_ACCOUNT_JSON` 등록
+#### M3 — FCM HTTP v1 발송 (ship 완료, GitHub Secret 등록 후 활성)
+
+**구조**:
+- 신규 파일 `api/fcm_helpers.php` — 외부 라이브러리 없이 RS256 JWT + OAuth 2.0 직접 호출
+- `fcm_load_service_account()` — `.env` 의 `FIREBASE_SERVICE_ACCOUNT_JSON` 파싱 (multi-line `\n` literal 정규화)
+- `fcm_get_access_token()` — Service Account JSON 으로 self-signed JWT 만들고 `oauth2.googleapis.com/token` 에 교환. process 내 메모리 캐시 (expires_in 5분 전까지 재사용).
+- `fcm_send_to_token($accessToken, $projectId, $token, $payload)` — 개별 device 에 FCM HTTP v1 `/projects/{ID}/messages:send` 호출. 404/INVALID_ARGUMENT → `INVALID_TOKEN` 반환.
+- `send_fcm_to_user(PDO, $ownerEmail, $message)` — owner 의 모든 `user_fcm_tokens` 에 발송 + INVALID_TOKEN 응답 토큰 자동 DELETE (stale 정리). 반환 `{sent, failed, invalid_tokens}`.
+
+**process-recording.php async 완료 hook**:
+- customer_log insert + recording_jobs.status='completed' 후 → `send_fcm_to_user` 호출
+- 발송 성공 시 `recording_jobs.fcm_sent_at = NOW()`
+- 실패는 무시 (recording_jobs 는 이미 completed, 앱이 폴링 fallback 으로 결과 확인 가능)
+
+**알림 내용**:
+- title: `통화 요약 완료 — {customer_name}` (LLM 결과 또는 hint, 없으면 "고객")
+- body: summary 첫 57자 + "..." (60자 한도)
+- data: `{type: "call_summary_ready", job_id, customer_log_id, consult_at}` — 앱이 딥링크 라우팅용
+
+**Android priority**: high (백그라운드/Doze 모드에서도 즉시 도달).
+
+**전제 조건**:
+- 운영자 작업: Firebase 콘솔 → 프로젝트 설정 → 서비스 계정 → 새 비공개 키 → JSON 다운로드 → GitHub Secret `FIREBASE_SERVICE_ACCOUNT_JSON` 등록.
+- `deploy.yml` `.env` assembly 에 `FIREBASE_SERVICE_ACCOUNT_JSON` 추가됨. 누락 시 `::warning::` + `send_fcm_to_user` 가 `reason: service_account_missing` 반환 (async 흐름은 계속, 푸시만 비활성).
+
+**보안**:
+- service account JSON 은 cafe24 `.env` 와 GitHub Secrets 에만. repo 에는 절대 commit 안 함.
+- `private_key` 는 cache 되지만 access_token 은 1시간 만료 자동 재발급.
 
 #### M4 (별개)
 - cron 으로 24h 미정리 audio 파일 cleanup (실패 retry 윈도우용)
