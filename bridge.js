@@ -20,7 +20,7 @@
  * 전체 메시지 스펙은 BRIDGE_API.md 참고.
  */
 
-const BRIDGE_VERSION = '1.0.0';
+const BRIDGE_VERSION = '1.1.0';
 
 function isInApp() {
     return typeof window !== 'undefined'

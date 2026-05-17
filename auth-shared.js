@@ -4,7 +4,7 @@
  */
 
 // 네이티브 앱 (React Native WebView) 브리지 — 브라우저에서는 모든 호출 no-op.
-import { notifyLogin as _bridgeLogin, notifyLogout as _bridgeLogout } from './bridge.js?v=20260517-bridge-v1';
+import { notifyLogin as _bridgeLogin, notifyLogout as _bridgeLogout } from './bridge.js?v=20260517-bridge-v2';
 
 const API_URL = 'records.php';
 
@@ -117,7 +117,15 @@ export async function initSupabase() {
         const config = await loadConfig();
         if (!config) return { client: null, session: null };
         const { createClient } = await import('https://esm.sh/@supabase/supabase-js@2');
-        supabaseClient = createClient(config.url, config.anonKey);
+        // 명시 옵션 — persistSession / autoRefreshToken 은 default true 지만,
+        // 앱(WebView) 잠금화면 후 자동 로그아웃 회귀 방지를 위해 명시적으로 보장.
+        supabaseClient = createClient(config.url, config.anonKey, {
+            auth: {
+                persistSession: true,
+                autoRefreshToken: true,
+                detectSessionInUrl: true,
+            },
+        });
         const { data } = await supabaseClient.auth.getSession();
         currentSession = data?.session || null;
         cacheUserEmail(currentSession?.user?.email);
@@ -142,8 +150,72 @@ export async function initSupabase() {
                 try { ensureMemberRowOnce(); } catch {}
                 try { _bridgeLogin(currentSession); } catch {}
             }
-            if (event === 'SIGNED_OUT') { try { _bridgeLogout(); } catch {} }
+            if (event === 'SIGNED_OUT') {
+                // 앱(WebView) 안에서는 사용자가 명시적으로 logout.html 을 거친 경우에만
+                // 네이티브에 로그아웃 통보. supabase 의 transient refresh 실패로 SIGNED_OUT
+                // 이 발화돼도 앱은 토큰 유지 → 재진입/재시도 시 복구 가능.
+                // logout.html 은 cleanup 진입 직전 `erp.userInitiatedLogout='1'` 을 set.
+                const inApp = _bridgeIsInApp();
+                let userInitiated = true;
+                if (inApp) {
+                    try { userInitiated = sessionStorage.getItem('erp.userInitiatedLogout') === '1'; } catch {}
+                }
+                if (userInitiated) {
+                    try { _bridgeLogout(); } catch {}
+                } else {
+                    // 앱 안 transient SIGNED_OUT — 마지막 토큰으로 refresh 한 번 더 시도.
+                    try {
+                        supabaseClient.auth.refreshSession().then(({ data: rd }) => {
+                            if (rd?.session) {
+                                currentSession = rd.session;
+                                try { _bridgeLogin(rd.session); } catch {}
+                            }
+                        }).catch(() => {});
+                    } catch {}
+                }
+            }
         });
+        // 앱(WebView) 포어그라운드 복귀 시 proactive token refresh.
+        // 잠금화면 / 백그라운드 중에는 setInterval 기반 auto-refresh 가 멈춰
+        // access_token 이 만료될 수 있는데, 그대로 두면 다음 API 호출이 401 → 일부
+        // 흐름에서 SIGNED_OUT 까지 이어짐. resume 직후 한 번 강제 refresh 로 차단.
+        try {
+            const g = (typeof window !== 'undefined') ? window.YoungmanBridge : null;
+            if (g?.setHandler) {
+                g.setHandler('onAppResume', () => {
+                    try {
+                        supabaseClient.auth.refreshSession().then(({ data: rd }) => {
+                            if (rd?.session) {
+                                currentSession = rd.session;
+                                try { _bridgeLogin(rd.session); } catch {}
+                            }
+                        }).catch(() => {});
+                    } catch {}
+                });
+            }
+        } catch {}
+        // 일반 브라우저/WebView 공통 안전망 — 페이지가 다시 보일 때 토큰이 만료 임박이면 refresh.
+        try {
+            if (typeof document !== 'undefined' && !window.__ymanVisRefreshBound) {
+                window.__ymanVisRefreshBound = true;
+                document.addEventListener('visibilitychange', () => {
+                    if (document.visibilityState !== 'visible') return;
+                    if (!currentSession) return;
+                    const nowSec = Math.floor(Date.now() / 1000);
+                    const exp = Number(currentSession?.expires_at || 0);
+                    if (!exp || exp - nowSec < 120) {
+                        try {
+                            supabaseClient.auth.refreshSession().then(({ data: rd }) => {
+                                if (rd?.session) {
+                                    currentSession = rd.session;
+                                    try { _bridgeLogin(rd.session); } catch {}
+                                }
+                            }).catch(() => {});
+                        } catch {}
+                    }
+                });
+            }
+        } catch {}
         return { client: supabaseClient, session: currentSession };
     })();
     return initPromise;
@@ -558,10 +630,23 @@ if (typeof window !== 'undefined' && !window.__ymanPageshowBound) {
 
 // "로그인 유지" 체크박스 해제 케이스 — 브라우저/탭 종료 시 supabase 토큰 제거.
 // pagehide 가 모바일에서도 안정적. beforeunload 는 데스크탑 fallback.
+//
+// 앱(WebView) 에서는 절대 동작하면 안 됨. 앱은 "탭/창을 닫는" 개념 없이 백그라운드↔포어
+// 그라운드만 오가는데, 일부 환경에서 잠금화면/홈 진입 시 pagehide 가 발화해 sb-* 토큰을
+// 지워버리는 회귀가 발생. 이런 케이스에서 자동 로그아웃 보이게 됨 → 앱에서는 플래그
+// 자체를 강제 해제하고 리스너도 skip.
 if (typeof window !== 'undefined' && !window.__ymanEndSessionBound) {
     window.__ymanEndSessionBound = true;
+    const inAppForSession = () => {
+        try { return window.YoungmanBridge?.isInApp() === true; } catch { return false; }
+    };
+    // 앱 안: 과거에 "로그인 유지" 체크 해제로 set 된 플래그 잔재 제거 — 부팅 시 1회.
+    if (inAppForSession()) {
+        try { sessionStorage.removeItem('erp.endSessionOnClose'); } catch {}
+    }
     const handleEndSession = () => {
         try {
+            if (inAppForSession()) return;   // 앱(WebView): 토큰 절대 건드리지 않음.
             if (sessionStorage.getItem('erp.endSessionOnClose') !== '1') return;
             const keys = [];
             for (let i = 0; i < localStorage.length; i++) keys.push(localStorage.key(i));
@@ -1509,6 +1594,15 @@ function openSharedLoginModal(initialMode = 'login') {
     const titleEl     = md.querySelector('[data-title]');
     const subEl       = md.querySelector('[data-sub]');
     const switchText  = md.querySelector('[data-switch-text]');
+
+    // 앱(WebView) 안에서는 "로그인 유지" UI 자체를 숨김. 앱은 항상 영구 유지가 기본 — 사용자
+    // 가 선택할 여지가 없도록 함. (checkbox 는 DOM 에 남아있고 default checked 라 remember=true.)
+    if (_bridgeIsInApp()) {
+        try {
+            const rememberLabel = form.querySelector('input[name="rememberMe"]')?.closest('label');
+            if (rememberLabel) rememberLabel.style.display = 'none';
+        } catch {}
+    }
     const modeBtn     = md.querySelector('[data-mode-btn]');
     const submitLabel = md.querySelector('[data-submit-label]');
     const googleLabel = md.querySelector('[data-google-label]');
@@ -1785,9 +1879,10 @@ function openSharedLoginModal(initialMode = 'login') {
                 // 로그인 유지 체크박스 처리:
                 // 체크: localStorage (supabase default — 영구)
                 // 해제: sessionStorage.erp.endSessionOnClose='1' set + 브라우저 unload 시 sb-* 토큰 제거
+                // 앱(WebView): 체크 여부 무시. 앱은 항상 영구 유지.
                 const remember = form.rememberMe?.checked !== false;
                 try {
-                    if (!remember) {
+                    if (!remember && !_bridgeIsInApp()) {
                         sessionStorage.setItem('erp.endSessionOnClose', '1');
                     } else {
                         sessionStorage.removeItem('erp.endSessionOnClose');

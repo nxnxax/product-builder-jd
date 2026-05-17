@@ -44,8 +44,8 @@ inject 가 늦으면 잠시 미존재할 수 있으므로 `bridge.ready` 메시�
 | type | payload | 발생 시점 |
 |---|---|---|
 | `bridge.ready` | `{ version, page, userAgent }` | 페이지 로드 직후 (브리지 초기화) |
-| `auth.login` | `{ accessToken, refreshToken, userId, email, expiresAt }` | 로그인 성공 / 세션 갱신 / 페이지 진입 시 기존 세션 |
-| `auth.logout` | `null` | 로그아웃 (logout.html 진입 시) |
+| `auth.login` | `{ accessToken, refreshToken, userId, email, expiresAt }` | 로그인 성공 / 세션 갱신 / 페이지 진입 시 기존 세션 / `onAppResume` 직후 refresh 성공 |
+| `auth.logout` | `null` | **사용자 의도적 로그아웃 시에만** (logout.html 진입 시). supabase 의 transient SIGNED_OUT 으로는 발화 안 됨 — 백그라운드/잠금화면 후 토큰 일시 refresh 실패는 무시되고 앱 토큰 유지. |
 | `auth.googleSignIn.request` | `{ nonce }` | 앱 안에서 Google 로그인 버튼 클릭 — 앱이 Google SDK 호출해야 함 |
 | `nav.openExternal` | `{ url }` | 외부 도메인 또는 `target="_blank"` 링크 클릭 |
 | `nav.share` | `{ title?, text?, url? }` | 웹에서 share API 호출 |
@@ -106,7 +106,15 @@ window.YoungmanBridge.onPushOpen({ route: '/customers', recordId: 123 });
 웹은 `data.route` 가 있으면 `location.assign(data.route)` 같은 식으로 처리할 수 있습니다.
 
 ### 3-4. onAppResume()
-백그라운드 → 포어그라운드 복귀. 웹은 세션 만료 체크/재인증 트리거에 사용.
+백그라운드 → 포어그라운드 복귀. 웹은 이 호출을 받으면 supabase access token 을
+즉시 `refreshSession()` 으로 갱신 — 잠금화면 동안 setInterval 기반 auto-refresh 가
+멈춰 토큰이 만료된 경우의 자동 로그아웃 회귀 방지. 성공 시 새 `auth.login` 메시지가
+이어 발화돼 앱이 최신 access token 으로 갱신됨.
+
+앱 측 구현 권장:
+- `AppState.addEventListener('change', s => s==='active' && inject('window.YoungmanBridge.onAppResume()'))`
+- 추가로 `WebView` 가 백그라운드에서 destroy 되지 않게 keep-alive — 앱 자체가 통화 감지
+  등의 이유로 포어그라운드 서비스/persistent notification 으로 살아있어야 함.
 
 ### 3-5. onGoogleSignInResult(result)
 앱이 Google Sign-In SDK 호출 결과를 웹에 반환. 웹이 `auth.googleSignIn.request` 를
@@ -325,4 +333,10 @@ export default function App() {
 ## 6. 버전
 
 - bridge.js v1.0.0 (2026-05-17)
+- bridge.js v1.1.0 (2026-05-17) — 앱 영구 로그인 유지:
+  · `onAppResume` 에 supabase `refreshSession()` 자동 hook
+  · `SIGNED_OUT` 시 `auth.logout` 은 `erp.userInitiatedLogout` 플래그 (logout.html 에서 set) 가
+    있을 때만 발화 — transient refresh 실패로는 앱 토큰이 폐기되지 않음
+  · 앱(WebView) 안에서 `pagehide`/`beforeunload` 의 sb-* 토큰 cleanup 비활성화
+  · 로그인 모달의 "로그인 유지" 체크박스 앱에서 숨김 (항상 영구)
 - 메시지 추가 시 본 문서 표 갱신 후 `bridge.js` 의 `BRIDGE_VERSION` bump.

@@ -399,7 +399,7 @@ tr:last-child td{border-bottom:0}
 
 <header id="app-header" class="app-header"></header>
 <script type="module">
-    import { mountAppHeader, mountAppFooter } from './auth-shared.js?v=20260512-forms-ledger-css';
+    import { mountAppHeader, mountAppFooter } from './auth-shared.js?v=20260517-session-persist';
     mountAppHeader();
     mountAppFooter();
 </script>

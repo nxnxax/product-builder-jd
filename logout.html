@@ -99,17 +99,22 @@
             } catch {}
         }
 
-        // 0) 네이티브 앱에 logout 먼저 통보 — navigation race 로 SIGNED_OUT 이벤트가
-        //    못 닿는 경우 대비. 브라우저에서는 no-op.
+        // 0) 사용자 의도적 로그아웃 플래그 set — auth-shared.js 가 onAuthStateChange
+        //    의 SIGNED_OUT 시점에 이 플래그를 보고만 네이티브 앱에 logout 을 통보함.
+        //    (없으면 supabase 의 transient refresh 실패로 SIGNED_OUT 떠도 앱은 로그인 유지.)
+        try { sessionStorage.setItem('erp.userInitiatedLogout', '1'); } catch {}
+
+        // 0-2) 네이티브 앱에 logout 먼저 통보 — navigation race 로 SIGNED_OUT 이벤트가
+        //      못 닿는 경우 대비. 브라우저에서는 no-op.
         try {
-            const b = await import('./bridge.js?v=20260517-bridge-v1');
+            const b = await import('./bridge.js?v=20260517-bridge-v2');
             b.notifyLogout();
         } catch {}
 
         // 1) Supabase signOut — scope: 'global' 로 서버의 모든 refresh token revoke.
         //    다른 브라우저/디바이스에서 silent refresh 로 살아나는 시나리오 차단.
         try {
-            const mod = await import('./auth-shared.js?v=20260519-google-modal');
+            const mod = await import('./auth-shared.js?v=20260517-session-persist');
             const result = await mod.initSupabase().catch(() => null);
             const client = result?.client;
             if (client?.auth?.signOut) {
