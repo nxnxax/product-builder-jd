@@ -46,6 +46,7 @@ inject 가 늦으면 잠시 미존재할 수 있으므로 `bridge.ready` 메시�
 | `bridge.ready` | `{ version, page, userAgent }` | 페이지 로드 직후 (브리지 초기화) |
 | `auth.login` | `{ accessToken, refreshToken, userId, email, expiresAt }` | 로그인 성공 / 세션 갱신 / 페이지 진입 시 기존 세션 |
 | `auth.logout` | `null` | 로그아웃 (logout.html 진입 시) |
+| `auth.googleSignIn.request` | `{ nonce }` | 앱 안에서 Google 로그인 버튼 클릭 — 앱이 Google SDK 호출해야 함 |
 | `nav.openExternal` | `{ url }` | 외부 도메인 또는 `target="_blank"` 링크 클릭 |
 | `nav.share` | `{ title?, text?, url? }` | 웹에서 share API 호출 |
 | `app.info.request` | `null` | 웹이 앱 정보 요청 |
@@ -107,7 +108,31 @@ window.YoungmanBridge.onPushOpen({ route: '/customers', recordId: 123 });
 ### 3-4. onAppResume()
 백그라운드 → 포어그라운드 복귀. 웹은 세션 만료 체크/재인증 트리거에 사용.
 
-### 3-5. onBack() → boolean
+### 3-5. onGoogleSignInResult(result)
+앱이 Google Sign-In SDK 호출 결과를 웹에 반환. 웹이 `auth.googleSignIn.request` 를
+보낸 뒤 응답으로 호출.
+
+```js
+window.YoungmanBridge.handle('onGoogleSignInResult', {
+  idToken: 'eyJhbGciOi...',   // Google ID token (필수)
+  accessToken: null,          // 선택 — 필요 없음
+  email: 'user@gmail.com',    // 선택
+  // 또는 실패/취소:
+  // error: 'NETWORK_ERROR',
+  // cancelled: true,
+});
+```
+
+웹이 받은 idToken 으로 `supabase.auth.signInWithIdToken({ provider:'google', token, nonce })`
+를 호출 — 백엔드 검증 엔드포인트 별도 불필요. 성공 시 기존 `auth.login` 메시지 흐름으로 자연 연결.
+
+**nonce 처리 (replay 공격 방지):**
+1. 웹이 raw nonce 생성 → SHA-256 hash 만 `auth.googleSignIn.request` 의 `nonce` 로 전달
+2. 앱은 그 hash 를 Google SDK 의 nonce 파라미터로 그대로 사용
+3. 결과 idToken 안에 hash 가 포함됨 — Supabase 가 raw nonce 를 hash 해서 비교
+4. 앱은 raw nonce 를 모름. hash 만 알아도 됨.
+
+### 3-6. onBack() → boolean
 Android 뒤로가기 버튼. 웹이 모달/드로어/시트를 닫았으면 `true`, 아니면 `false` 반환.
 앱은 `false` 일 때 라우터 pop 또는 앱 종료를 진행.
 
@@ -189,6 +214,29 @@ export default function App() {
       case 'app.fcm.request': {
         const token = await messaging().getToken().catch(() => null);
         if (token) inject(`window.YoungmanBridge.onFcmToken(${JSON.stringify(token)})`);
+        break;
+      }
+
+      case 'auth.googleSignIn.request': {
+        // payload.nonce 는 SHA-256 hash — Google SDK 에 그대로 전달.
+        // import { GoogleSignin } from '@react-native-google-signin/google-signin';
+        try {
+          // 앱 초기화에서: GoogleSignin.configure({ webClientId: '<YOUR_WEB_CLIENT_ID>' });
+          await GoogleSignin.hasPlayServices();
+          // RN Google Sign-In v11+ 는 signIn 옵션에 nonce 지원.
+          const userInfo = await GoogleSignin.signIn({ nonce: payload.nonce });
+          const idToken = userInfo?.idToken || userInfo?.data?.idToken;
+          inject(`window.YoungmanBridge.handle('onGoogleSignInResult', ${JSON.stringify({
+            idToken,
+            email: userInfo?.user?.email || userInfo?.data?.user?.email || null,
+          })})`);
+        } catch (e) {
+          const cancelled = e?.code === 'SIGN_IN_CANCELLED' || e?.message?.includes('cancel');
+          inject(`window.YoungmanBridge.handle('onGoogleSignInResult', ${JSON.stringify({
+            cancelled: !!cancelled,
+            error: cancelled ? null : String(e?.message || e),
+          })})`);
+        }
         break;
       }
 

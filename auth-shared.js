@@ -8,6 +8,93 @@ import { notifyLogin as _bridgeLogin, notifyLogout as _bridgeLogout } from './br
 
 const API_URL = 'records.php';
 
+// ─── 네이티브 Google Sign-In 보조 ──────────────────────────────────────
+// 앱 안에서는 OAuth redirect 가 막혀(disallowed_useragent) Google SDK 경유.
+// 흐름: 웹이 raw nonce 생성 → SHA-256 hash 만 앱에 전달 → 앱이 Google SDK 호출
+// → idToken 반환 → 웹이 supabase.auth.signInWithIdToken(raw nonce, idToken).
+let _pendingGoogleNonce = null;
+let _pendingGoogleUI = null;     // { msgEl, googleBtn } — 결과 도착 시 UI 복구용
+
+function _bridgeIsInApp() {
+    try { return window.YoungmanBridge?.isInApp() === true; } catch { return false; }
+}
+function _bridgePostToApp(type, payload) {
+    try { return window.YoungmanBridge?.postToApp(type, payload); } catch { return false; }
+}
+function _generateRawNonce() {
+    try { if (crypto?.randomUUID) return crypto.randomUUID() + '-' + crypto.randomUUID(); } catch {}
+    const arr = new Uint8Array(32);
+    crypto.getRandomValues(arr);
+    return Array.from(arr).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+async function _sha256Hex(s) {
+    const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
+    return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+// 앱 → 웹: Google Sign-In SDK 결과 수신.
+// payload: { idToken, accessToken?, email?, error?, cancelled? }
+function _installGoogleNativeHandler() {
+    const g = (typeof window !== 'undefined') ? window.YoungmanBridge : null;
+    if (!g || typeof g.setHandler !== 'function') return;
+    g.setHandler('onGoogleSignInResult', async (result) => {
+        const ui = _pendingGoogleUI;
+        const rawNonce = _pendingGoogleNonce;
+        _pendingGoogleUI = null;
+        _pendingGoogleNonce = null;
+
+        const msgEl = ui?.msgEl;
+        const googleBtn = ui?.googleBtn;
+        const reenable = () => { if (googleBtn) googleBtn.disabled = false; };
+        const showErr = (txt) => {
+            if (msgEl) { msgEl.style.color = '#c8362c'; msgEl.textContent = txt; }
+        };
+
+        if (!result || typeof result !== 'object') {
+            showErr('Google 인증 응답이 비어있습니다.');
+            reenable();
+            return;
+        }
+        if (result.cancelled) {
+            // 사용자 취소 — 메시지 없이 조용히 복구.
+            if (msgEl) msgEl.textContent = '';
+            reenable();
+            return;
+        }
+        if (result.error || !result.idToken) {
+            showErr('Google 로그인 실패: ' + (result.error || 'idToken 없음'));
+            reenable();
+            return;
+        }
+        if (!supabaseClient?.auth?.signInWithIdToken) {
+            showErr('인증 시스템 초기화 미완료.');
+            reenable();
+            return;
+        }
+        try {
+            const { error } = await supabaseClient.auth.signInWithIdToken({
+                provider: 'google',
+                token: result.idToken,
+                nonce: rawNonce || undefined,
+            });
+            if (error) throw error;
+            // 성공 — login-complete.html 로 이동해 consent / member ensure / next redirect 처리.
+            const origin = window.location.origin;
+            const path = window.location.pathname.replace(/^\//, '') || 'index.html';
+            const search = window.location.search || '';
+            const nextRaw = path + search;
+            const target = origin + '/login-complete.html?next=' + encodeURIComponent(nextRaw);
+            window.location.replace(target);
+        } catch (err) {
+            console.error('[google native] signInWithIdToken error', err);
+            showErr(err?.message || 'Google 토큰 검증 실패');
+            reenable();
+        }
+    });
+}
+// bridge.js 의 window.YoungmanBridge 는 import 와 동시에 set 됨 — 다음 microtask 에서 등록.
+Promise.resolve().then(_installGoogleNativeHandler);
+
 let supabaseClient = null;
 let currentSession = null;
 let initPromise = null;
@@ -1730,6 +1817,25 @@ function openSharedLoginModal(initialMode = 'login') {
             msgEl.textContent = '인증 초기화 중입니다. 한 번 더 클릭해주세요.';
             googleBtn.disabled = false;
             try { initSupabase().catch(() => {}); } catch {}
+            return;
+        }
+
+        // 네이티브 앱 안에서는 OAuth redirect 가 accounts.google.com 의 disallowed_useragent
+        // 로 막힘 → 네이티브 Google Sign-In SDK 경유. nonce 는 raw 생성 후 hash 만 앱에 전달.
+        if (_bridgeIsInApp()) {
+            console.log('[google oauth] in-app — routing to native bridge');
+            const rawNonce = _generateRawNonce();
+            _pendingGoogleUI = { msgEl, googleBtn };
+            _sha256Hex(rawNonce).then(hashedNonce => {
+                _pendingGoogleNonce = rawNonce;
+                _bridgePostToApp('auth.googleSignIn.request', { nonce: hashedNonce });
+            }).catch(err => {
+                console.error('[google oauth] nonce hash failed', err);
+                msgEl.style.color = '#c8362c';
+                msgEl.textContent = 'Google 로그인 초기화 실패: ' + (err?.message || 'nonce');
+                googleBtn.disabled = false;
+                _pendingGoogleUI = null;
+            });
             return;
         }
 
