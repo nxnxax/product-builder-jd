@@ -308,6 +308,9 @@ $recordedAt   = trim((string)($body['recorded_at'] ?? ''));
 $phoneNumber  = trim((string)($body['phone_number'] ?? ''));
 $durationSec  = (int)($body['duration_sec'] ?? 0);
 $origFilename = trim((string)($body['original_filename'] ?? ''));
+// 앱이 폰 contacts lookup 결과로 매칭한 이름. 있으면 LLM 출력보다 우선 적용 (룰 §1).
+$customerNameHint = trim((string)($body['customer_name_hint'] ?? ''));
+if (mb_strlen($customerNameHint) > 80) $customerNameHint = mb_substr($customerNameHint, 0, 80);
 
 if ($storagePath === '') jerror('invalid_audio', 'storage_path 누락.', 400);
 if ($clientReqId === '') jerror('invalid_audio', 'client_request_id 누락.', 400);
@@ -508,25 +511,29 @@ $sys = <<<SYS
   "next_action": string | null
 }
 
-==== customer_name 결정 규칙 ====
+==== customer_name 결정 규칙 (7단계) ====
 
 transcript 에 실제 나타난 단서만 사용. 임의로 추측/추정 금지.
 
+(주: 1번 우선순위 — 외부 customer_name_hint 가 제공되면 백엔드 코드가 LLM
+ 출력을 덮어쓰니, LLM 은 아래 2~7번만 적용해서 출력하면 됨.)
+
 [우선순위]
-1. 통화 중 명시된 이름 추출 가능 → "{이름}님" 형식. (예: "김상우님")
-   - 영업측이 부른 호칭이라도 그게 고객 이름이면 사용.
-   - 단, 영업측 본인 이름이나 다른 사람 이름은 절대 customer_name 으로 쓰지 말 것.
+2. transcript 에 고객 본인 이름 또는 영업측이 부른 고객 이름 추출 가능
+   → "{이름}님" 형식. (예: "김상우님")
+   - 영업측 본인 이름이나 통화와 무관한 제3자 이름은 절대 사용 금지.
 
-2. 이름 미추출 + 고객을 가리키는 "사장님" 호칭이 transcript 에 등장:
-   - transcript 에 나이/연령대 명시(예: "올해 마흔", "쉰", "오십대") 있으면
-     → "{연령대}대 남성" (예: "40대 남성")
-   - 나이 언급 없으면 → "남성"
+3. 이름 미추출 + 고객을 가리키는 "사장님" 호칭 + transcript 에 나이/연령대
+   명시 (예: "올해 마흔", "쉰", "오십대") → "{연령대}대 남성" (예: "40대 남성")
 
-3. 이름 미추출 + 고객을 가리키는 "사모님" 호칭이 transcript 에 등장:
-   - transcript 에 나이/연령대 명시 있으면 → "{연령대}대 여성"
-   - 나이 언급 없으면 → "여성"
+4. 이름 미추출 + 고객을 가리키는 "사모님" 호칭 + transcript 에 나이/연령대
+   명시 → "{연령대}대 여성" (예: "60대 여성")
 
-4. 위 어느 것도 해당 없음 → "고객"
+5. 이름 미추출 + "사장님" 호칭만 등장, 나이 언급 없음 → "남성"
+
+6. 이름 미추출 + "사모님" 호칭만 등장, 나이 언급 없음 → "여성"
+
+7. 위 2~6번 모두 미해당 → "고객"
 
 [절대 금지]
 - 음성 timbre, 어휘 수준, 말투 등으로 성별/연령 추정 금지.
@@ -539,6 +546,7 @@ transcript 에 실제 나타난 단서만 사용. 임의로 추측/추정 금지
 - "사장님 안녕하세요. 자료 검토하셨어요?" "네, 봤어요." → "남성"
 - "사모님, 60대시면 이 상품이 잘 맞으세요." "그래요?" → "60대 여성"
 - "안녕하세요 김상우 사장님" "네 반갑습니다" → "김상우님"
+- "안녕하세요 마흔살 사장님" "네 반갑습니다" → "40대 남성"
 - "여보세요" "네 안녕하세요" → "고객"
 
 ==== 그 외 규칙 ====
@@ -591,6 +599,8 @@ if (!is_array($parsed)) {
 if (!is_array($parsed)) jerror('upstream_failed', 'LLM JSON 파싱 실패.', 502);
 
 $llmName    = isset($parsed['customer_name'])    ? trim((string)$parsed['customer_name'])    : '';
+// 룰 §1: 앱이 전달한 contacts hint 가 있으면 LLM 출력보다 우선.
+if ($customerNameHint !== '') $llmName = $customerNameHint;
 $llmSummary = isset($parsed['summary'])          ? trim((string)$parsed['summary'])          : '';
 $llmIntr    = isset($parsed['interest'])         ? trim((string)$parsed['interest'])         : '';
 $llmInq     = isset($parsed['inquiry'])          ? trim((string)$parsed['inquiry'])          : '';
