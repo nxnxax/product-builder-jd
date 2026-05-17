@@ -1,0 +1,80 @@
+name: Audio Cleanup (daily cron)
+
+# 매일 KST 04:00 (UTC 19:00) audio_cleanup.php 호출.
+# Phase 2 M4 — cafe24 cron 미지원 환경의 대체. 외부 서비스 0 의존.
+#
+# 작동 조건:
+#   - GitHub Secret AUDIO_CLEANUP_TOKEN 등록되어 있어야 (없으면 workflow 자체가 fail).
+#   - cafe24 의 .env 에 같은 AUDIO_CLEANUP_TOKEN 이 등록되어 있어야 (deploy.yml 의 .env assembly 단계가 동일 secret 사용 — 자동 동기화).
+#
+# 수동 실행: Actions 탭 → "Audio Cleanup (daily cron)" 선택 → Run workflow.
+
+on:
+  schedule:
+    # cron 표기 (UTC). '0 19 * * *' = UTC 19:00 = KST 다음날 04:00.
+    - cron: '0 19 * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run mode (삭제 안 하고 listing 만 반환)'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
+
+concurrency:
+  group: audio-cleanup
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify AUDIO_CLEANUP_TOKEN secret
+        env:
+          TOKEN: ${{ secrets.AUDIO_CLEANUP_TOKEN }}
+        run: |
+          if [ -z "$TOKEN" ]; then
+            echo "::error::AUDIO_CLEANUP_TOKEN secret 이 없습니다. GitHub Settings → Secrets and variables → Actions 에서 등록 필요."
+            exit 1
+          fi
+          echo "Token secret OK (length=${#TOKEN})"
+
+      - name: Call audio_cleanup.php
+        env:
+          TOKEN: ${{ secrets.AUDIO_CLEANUP_TOKEN }}
+          DRY_RUN: ${{ inputs.dry_run || 'false' }}
+        run: |
+          set -e
+          URL="https://youngman-biz.com/audio_cleanup.php?token=$TOKEN"
+          if [ "$DRY_RUN" = "true" ]; then
+            URL="$URL&dry_run=1"
+            echo "Mode: dry_run"
+          else
+            echo "Mode: live"
+          fi
+
+          # 호출. 응답 body + HTTP code 분리 캡처.
+          # token 은 URL 안에 있으니 set -x 로 echo 되지 않도록 주의.
+          RESPONSE=$(curl -sk -w "\n__HTTP_CODE__%{http_code}" "$URL")
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n1 | sed 's/__HTTP_CODE__//')
+          BODY=$(echo "$RESPONSE" | sed '$d')
+
+          # 응답 body 출력 (audio cleanup 결과 — scanned/deleted/skipped/...)
+          echo "── Response ($HTTP_CODE) ──"
+          echo "$BODY"
+          echo "──────────────"
+
+          # 성공 판정: HTTP 200 + body 안에 "ok":true
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "::error::HTTP $HTTP_CODE — audio_cleanup.php 호출 실패"
+            exit 1
+          fi
+          if ! echo "$BODY" | grep -q '"ok":true'; then
+            echo "::error::응답에 ok:true 없음 — 작업 실패"
+            exit 1
+          fi
+
+          echo "Audio cleanup 정상 완료."
