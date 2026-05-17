@@ -391,115 +391,66 @@ if (!$uploadsReal || strpos($realPath, $uploadsReal . DIRECTORY_SEPARATOR) !== 0
 $apiKey = load_env_value('OPENAI_API_KEY');
 if ($apiKey === '') jerror('upstream_failed', 'OPENAI_API_KEY 미설정.', 500);
 
-/* ========== 컨테이너 호환성 검증 + 필요 시 ffmpeg transcode ==========
- * Samsung T전화 등 일부 OEM 통화녹음은 .m4a 확장자지만 내부는 3gpp 컨테이너
- * (ftyp major_brand = "3gp4") + AMR-NB/AMR-WB 코덱. Whisper 는 3gp/amr 미지원.
- * → ftyp brand 읽어서 Whisper 호환 brand 아니면 ffmpeg 로 transcode (AAC/mp4).
- * cafe24 PHP 환경에 ffmpeg 가용 여부도 같은 분기에서 확정.
+/* ========== Naver CLOVA Speech (Long Sentence Recognition) ==========
+ * 3gpp/AMR (Samsung T전화 등) / m4a/mp4 등 다양한 컨테이너 네이티브 지원이라
+ * ffmpeg transcode 단계 불필요. cafe24 .env 의 NCP_CLOVA_INVOKE_URL + NCP_CLOVA_SECRET 사용.
+ *
+ * API: POST {INVOKE_URL}/recognizer/upload
+ *   - 헤더: X-CLOVASPEECH-API-KEY
+ *   - multipart: media (audio file) + params (JSON: language/completion/fullText/diarization)
+ *   - completion="sync" → 결과 받을 때까지 응답 hold (Whisper 와 동일 sync 패턴)
+ *   - diarization → 화자 분리 (영업/고객 2명 가정), LLM 이 customer_name 추출 유리
  */
-$realPathForWhisper = $realPath;
-$convertedPath = null;
-$transcodeDebug = null;
-
-$majorBrand = '';
-$fpDetect = @fopen($realPath, 'rb');
-if ($fpDetect) {
-    $head = (string)@fread($fpDetect, 16);
-    @fclose($fpDetect);
-    if (strlen($head) >= 12 && substr($head, 4, 4) === 'ftyp') {
-        $majorBrand = substr($head, 8, 4);
-    }
-}
-$whisperFriendlyBrands = ['M4A ', 'M4B ', 'M4P ', 'mp41', 'mp42', 'isom', 'iso2'];
-$needTranscode = ($majorBrand !== '' && !in_array($majorBrand, $whisperFriendlyBrands, true));
-
-if ($needTranscode) {
-    if (!function_exists('exec')) {
-        jout(['status' => 'error', 'code' => 'upstream_failed',
-              'message' => 'exec() 함수가 비활성화되어 ffmpeg 호출 불가. cafe24 PHP 설정 또는 대체 transcode 경로 필요.',
-              'debug' => ['major_brand' => $majorBrand, 'reason' => 'exec_disabled']], 502);
-    }
-    // ffmpeg 가용성 + 변환 한 번에 시도. fail 시 진단으로 가용성 보고.
-    $convertedPath = $realPath . '.whisper.m4a';
-    $cmd = 'ffmpeg -y -i ' . escapeshellarg($realPath)
-         . ' -vn -ac 1 -ar 16000 -c:a aac -b:a 64k '
-         . escapeshellarg($convertedPath) . ' 2>&1';
-    $ffmpegOut = [];
-    $ffmpegExit = 0;
-    @exec($cmd, $ffmpegOut, $ffmpegExit);
-
-    if ($ffmpegExit === 0 && is_file($convertedPath) && filesize($convertedPath) > 0) {
-        $realPathForWhisper = $convertedPath;
-        $transcodeDebug = ['major_brand' => $majorBrand, 'transcoded' => true,
-                           'src_bytes' => filesize($realPath),
-                           'out_bytes' => filesize($convertedPath)];
-    } else {
-        // ffmpeg not available or transcode fail.
-        $tail = implode("\n", array_slice($ffmpegOut, -10));
-        $notFound = ($ffmpegExit === 127)
-                    || stripos($tail, 'not found') !== false
-                    || stripos($tail, 'command not found') !== false;
-        jout(['status' => 'error', 'code' => 'upstream_failed',
-              'message' => $notFound
-                  ? 'ffmpeg 가 cafe24 환경에 설치되지 않은 것으로 보입니다 (exit=' . $ffmpegExit . '). 대체 transcode 경로 필요.'
-                  : 'ffmpeg transcode 실패 (exit=' . $ffmpegExit . '): ' . substr($tail, 0, 300),
-              'debug' => [
-                  'major_brand' => $majorBrand,
-                  'ffmpeg_exit' => $ffmpegExit,
-                  'ffmpeg_tail' => $tail,
-                  'ffmpeg_available' => !$notFound,
-              ]], 502);
-    }
+$clovaInvokeUrl = load_env_value('NCP_CLOVA_INVOKE_URL');
+$clovaSecret    = load_env_value('NCP_CLOVA_SECRET');
+if ($clovaInvokeUrl === '' || $clovaSecret === '') {
+    jerror('upstream_failed', 'NCP Clova 설정 누락 (NCP_CLOVA_INVOKE_URL / NCP_CLOVA_SECRET).', 500);
 }
 
-// Whisper 는 multipart filename 확장자 또는 Content-Type 으로 포맷을 판단.
-// 우리 파일명은 UUID (예: 9f0e8d7c-1234-...-m4a) — 하이픈이 많아 일부 Whisper 파서가 확장자 인식 실패 → 400.
-// 또한 mime_content_type 이 'audio/x-m4a' 같은 변형 mime 을 반환하면 Whisper 가 거부.
-// 해결: 디스크 확장자에서 정규화된 mime + 명시적 'audio.<ext>' postname 으로 전송.
+// mime 결정 — Clova 는 관대하지만 정확히 보내는 게 안전.
 $srcExt = strtolower(pathinfo($realPath, PATHINFO_EXTENSION));
-$whisperMimeMap = [
-    'm4a'  => 'audio/mp4',
-    'mp4'  => 'audio/mp4',
-    'mp3'  => 'audio/mpeg',
-    'mpga' => 'audio/mpeg',
-    'wav'  => 'audio/wav',
-    'webm' => 'audio/webm',
-    'ogg'  => 'audio/ogg',
-    'oga'  => 'audio/ogg',
-    'opus' => 'audio/ogg',
-    'flac' => 'audio/flac',
-    '3gp'  => 'audio/mp4',
-    '3gpp' => 'audio/mp4',
-    'aac'  => 'audio/mp4',
-    'amr'  => 'audio/mp4',
+$clovaMimeMap = [
+    'm4a' => 'audio/mp4',   'mp4' => 'audio/mp4',  'mp3' => 'audio/mpeg',
+    'wav' => 'audio/wav',   'webm'=> 'audio/webm', 'ogg' => 'audio/ogg',
+    'flac'=> 'audio/flac',  '3gp' => 'audio/3gpp', '3gpp'=> 'audio/3gpp',
+    'aac' => 'audio/aac',   'amr' => 'audio/amr',  'opus'=> 'audio/ogg',
 ];
-$whisperExt  = isset($whisperMimeMap[$srcExt]) ? $srcExt : 'm4a';
-$whisperMime = $whisperMimeMap[$whisperExt];
-$whisperPostname = 'audio.' . $whisperExt;
+$clovaMime = $clovaMimeMap[$srcExt] ?? 'audio/mp4';
+$clovaPostname = 'audio.' . ($srcExt !== '' ? $srcExt : 'm4a');
 
-$ch = curl_init('https://api.openai.com/v1/audio/transcriptions');
+$clovaParams = json_encode([
+    'language'    => 'ko-KR',
+    'completion'  => 'sync',
+    'fullText'    => true,
+    'wordAlignment' => false,
+    'diarization' => ['enable' => true, 'speakerCountMin' => 2, 'speakerCountMax' => 2],
+    'resultToObs' => false,
+], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+$ch = curl_init(rtrim($clovaInvokeUrl, '/') . '/recognizer/upload');
 curl_setopt_array($ch, [
     CURLOPT_RETURNTRANSFER => true,
     CURLOPT_POST => true,
     CURLOPT_POSTFIELDS => [
-        'model' => 'whisper-1',
-        'language' => 'ko',
-        'file' => new CURLFile($realPathForWhisper, $whisperMime, $whisperPostname),
+        'media'  => new CURLFile($realPath, $clovaMime, $clovaPostname),
+        'params' => $clovaParams,
     ],
-    CURLOPT_HTTPHEADER => ['Authorization: Bearer ' . $apiKey],
-    CURLOPT_TIMEOUT => 120,
+    CURLOPT_HTTPHEADER => ['X-CLOVASPEECH-API-KEY: ' . $clovaSecret],
+    CURLOPT_TIMEOUT => 180,
     CURLOPT_CONNECTTIMEOUT => 10,
 ]);
 $sttResp = curl_exec($ch);
 $sttStatus = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
 $sttErr = curl_error($ch);
+$sttTimeMs = (int)(curl_getinfo($ch, CURLINFO_TOTAL_TIME) * 1000);
 curl_close($ch);
 
-if ($sttResp === false) jerror('upstream_failed', 'Whisper 호출 실패: ' . $sttErr, 502);
+if ($sttResp === false) jerror('upstream_failed', 'Clova 호출 실패: ' . $sttErr, 502);
 $sttData = json_decode((string)$sttResp, true);
+
 if ($sttStatus < 200 || $sttStatus >= 300) {
-    $msg = is_array($sttData) ? ($sttData['error']['message'] ?? json_encode($sttData)) : substr((string)$sttResp, 0, 300);
-    // 임시 진단 — 라운드 1 디버깅 후 제거 예정. fix_build 로 deploy 반영 여부 확인.
+    $msg = is_array($sttData) ? ($sttData['message'] ?? json_encode($sttData)) : substr((string)$sttResp, 0, 300);
+    // 임시 진단 — e2e 1회 성공 후 제거 예정.
     $diskMime = function_exists('mime_content_type') ? (@mime_content_type($realPath) ?: null) : null;
     $sniffHex = '';
     $fp = @fopen($realPath, 'rb');
@@ -511,23 +462,34 @@ if ($sttStatus < 200 || $sttStatus >= 300) {
     jout([
         'status' => 'error',
         'code' => 'upstream_failed',
-        'message' => 'Whisper ' . $sttStatus . ': ' . $msg,
+        'message' => 'Clova ' . $sttStatus . ': ' . $msg,
         'debug' => [
-            'fix_build' => 'ffmpeg+diag2',
+            'fix_build' => 'clova-v1',
             'src_ext' => $srcExt,
-            'whisper_postname' => $whisperPostname,
-            'whisper_mime' => $whisperMime,
+            'clova_postname' => $clovaPostname,
+            'clova_mime' => $clovaMime,
             'disk_mime_detect' => $diskMime,
-            'real_path_basename' => basename($realPath),
             'file_head_hex' => $sniffHex,
+            'clova_time_ms' => $sttTimeMs,
             'audio_storage_path' => $storagePath,
-            'transcode' => $transcodeDebug,
-            'sent_to_whisper' => basename($realPathForWhisper),
         ],
     ], 502);
 }
+
+// transcript 추출: fullText=true 면 $sttData['text'] 에 합쳐진 결과 옴.
+// fallback: segments[].text 합치기 (화자 정보 포함 시 LLM 이 더 잘 추출).
 $transcript = trim((string)($sttData['text'] ?? ''));
-if ($transcript === '') jerror('upstream_failed', 'STT 결과가 비어있습니다.', 502);
+if ($transcript === '' && !empty($sttData['segments']) && is_array($sttData['segments'])) {
+    $parts = [];
+    foreach ($sttData['segments'] as $seg) {
+        $segText = trim((string)($seg['text'] ?? ''));
+        if ($segText === '') continue;
+        $speakerLabel = $seg['speaker']['label'] ?? ($seg['speaker'] ?? null);
+        $parts[] = ($speakerLabel !== null ? '[화자' . $speakerLabel . '] ' : '') . $segText;
+    }
+    $transcript = implode("\n", $parts);
+}
+if ($transcript === '') jerror('upstream_failed', 'Clova STT 결과가 비어있습니다.', 502);
 
 /* ========== LLM 요약 (gpt-4o-mini, JSON 응답) ========== */
 $llmModel = 'gpt-4o-mini';
@@ -639,7 +601,7 @@ try {
         ':tr'  => youngman_encrypt($transcript),
         ':ca'  => $consultAt,
         ':asp' => $storagePath,
-        ':am'  => $llmModel,
+        ':am'  => 'naver-clova-speech+' . $llmModel,
         ':cri' => $clientReqId,
     ]);
 } catch (Throwable $e) {
