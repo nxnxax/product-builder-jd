@@ -267,6 +267,108 @@ if ($mime === '' && function_exists('finfo_open')) {
     }
 }
 
+/* === AUDIO RECORDING 분기 (CALL_RECORDING_BACKEND.md §2) ===
+ * kind=recording 이면 spec 응답 형태 (status/storage_path/bytes/mime) 반환 후 종료.
+ * 일반 업로드(이미지/동영상/문서) 경로와 응답 shape 가 다르므로 여기서 분기.
+ */
+$kindIn = strtolower(trim((string)($_POST['kind'] ?? '')));
+if ($kindIn === 'recording') {
+    $audioMimeMap = [
+        'audio/mp4'   => 'm4a',
+        'audio/m4a'   => 'm4a',
+        'audio/x-m4a' => 'm4a',
+        'audio/3gpp'  => '3gp',
+        'audio/amr'   => 'amr',
+        'audio/ogg'   => 'ogg',
+        'audio/opus'  => 'opus',
+        'audio/mpeg'  => 'mp3',
+        'audio/mp3'   => 'mp3',
+        'audio/wav'   => 'wav',
+        'audio/x-wav' => 'wav',
+        'audio/aac'   => 'aac',
+    ];
+    $audioExtList = ['m4a', '3gp', '3gpp', 'amr', 'ogg', 'opus', 'mp3', 'wav', 'aac', 'mp4'];
+
+    $audExt = $audioMimeMap[$mime] ?? null;
+    if (!$audExt) {
+        $extFromName = strtolower(pathinfo((string)($file['name'] ?? ''), PATHINFO_EXTENSION));
+        if (in_array($extFromName, $audioExtList, true)) {
+            // 확장자 정규화 (3gpp → 3gp 등)
+            $audExt = ($extFromName === '3gpp') ? '3gp' : (($extFromName === 'mp4') ? 'm4a' : $extFromName);
+        }
+    }
+    if (!$audExt) {
+        jout(['status' => 'error', 'code' => 'unsupported_mime', 'message' => '지원하지 않는 오디오 형식입니다 (' . ($mime ?: 'unknown') . ').'], 415);
+    }
+
+    $audioMaxBytes = 50 * 1024 * 1024;
+    if ((int)$file['size'] > $audioMaxBytes) {
+        jout(['status' => 'error', 'code' => 'file_too_large', 'message' => '오디오 파일은 50MB 이하만 허용됩니다.'], 413);
+    }
+
+    // 날짜 디렉터리 — recorded_at(ISO8601) 기준, 없으면 서버 오늘 날짜.
+    $recordedAtIn = trim((string)($_POST['recorded_at'] ?? ''));
+    $dateSeg = '';
+    if ($recordedAtIn !== '') {
+        $ts = @strtotime($recordedAtIn);
+        if ($ts) $dateSeg = date('Y-m-d', $ts);
+    }
+    if ($dateSeg === '') $dateSeg = date('Y-m-d');
+    // 안전망: 날짜 세그먼트가 yyyy-mm-dd 패턴이 아니면 폴백.
+    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $dateSeg)) $dateSeg = date('Y-m-d');
+
+    // 경로: uploads/recordings/<userSeg>/<yyyy-mm-dd>/<uuid>.<ext>
+    $recRoot = $uploadsDir . '/recordings';
+    $recUserDir = $recRoot . '/' . $userSeg;
+    $recDateDir = $recUserDir . '/' . $dateSeg;
+    foreach ([$recRoot, $recUserDir, $recDateDir] as $d) {
+        if (!is_dir($d)) {
+            if (!@mkdir($d, 0755, true) && !is_dir($d)) {
+                jout(['status' => 'error', 'code' => 'upload_failed', 'message' => '디렉터리 생성 실패'], 500);
+            }
+        }
+    }
+    // .htaccess 보호 (recordings 루트 / 사용자 디렉터리 모두). PHP 실행 차단 + 디렉터리 인덱싱 차단.
+    foreach ([$recRoot . '/.htaccess', $recUserDir . '/.htaccess'] as $htPath) {
+        if (!is_file($htPath)) {
+            @file_put_contents($htPath,
+                "Options -Indexes\n"
+                . "<FilesMatch \"\\.(php|phtml|phar|cgi|pl|py|sh|inc|env)$\">\n"
+                . "  Require all denied\n"
+                . "</FilesMatch>\n"
+            );
+        }
+    }
+
+    // UUID v4 생성 (random_bytes 기반, version/variant 비트 강제)
+    try {
+        $u = random_bytes(16);
+        $u[6] = chr((ord($u[6]) & 0x0f) | 0x40);
+        $u[8] = chr((ord($u[8]) & 0x3f) | 0x80);
+        $hx = bin2hex($u);
+        $uuid = substr($hx, 0, 8) . '-' . substr($hx, 8, 4) . '-' . substr($hx, 12, 4)
+              . '-' . substr($hx, 16, 4) . '-' . substr($hx, 20, 12);
+    } catch (Throwable $e) {
+        $uuid = substr(sha1(uniqid('rec_', true)), 0, 36);
+    }
+
+    $audBasename = $uuid . '.' . $audExt;
+    $audDest = $recDateDir . '/' . $audBasename;
+
+    if (!@move_uploaded_file($file['tmp_name'], $audDest)) {
+        jout(['status' => 'error', 'code' => 'upload_failed', 'message' => '파일 저장 실패'], 500);
+    }
+    @chmod($audDest, 0600);   // 일반 업로드(0644)보다 더 좁게 — 오디오는 공개 링크 없음.
+
+    $storagePath = 'uploads/recordings/' . $userSeg . '/' . $dateSeg . '/' . $audBasename;
+    jout([
+        'status' => 'ok',
+        'storage_path' => $storagePath,
+        'bytes' => (int)$file['size'],
+        'mime' => $mime ?: 'application/octet-stream',
+    ]);
+}
+
 // 클라이언트 파일명에서 확장자 fallback (octet-stream 케이스 대응).
 $origExt = strtolower(pathinfo((string)($file['name'] ?? ''), PATHINFO_EXTENSION));
 

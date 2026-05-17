@@ -54,6 +54,7 @@ jobs:
           php -l api/lotto-recommend.php
           php -l api/ledger-mobile.php
           php -l api/crypto_helpers.php
+          php -l api/process-recording.php   # 통화 녹취 → Whisper → LLM → customer_log
           php -l api/sms/send-bulk.php
           php -l api/sms/balance.php
           php -l api/sms/providers/SmsProvider.php
@@ -102,6 +103,7 @@ jobs:
           cp api/lotto-recommend.php deploy/lotto-recommend.php
           cp api/ledger-mobile.php deploy/ledger-mobile.php
           cp api/crypto_helpers.php deploy/crypto_helpers.php   # PII AES-256-GCM 헬퍼 — records/ledger-mobile 이 require
+          cp api/process-recording.php deploy/process-recording.php   # 통화 녹취 → Whisper → LLM → customer_log
           # SMS 단체 발송 — 디렉토리 구조 유지 (sms/send-bulk.php + sms/providers/*)
           mkdir -p deploy/sms/providers
           cp api/sms/send-bulk.php deploy/sms/send-bulk.php
@@ -205,6 +207,8 @@ jobs:
           echo "  upload.php (GET list): ${ucode}  (expected 200)"
           lcode=$(curl -sk -o /dev/null -w "%{http_code}" "https://youngman-biz.com/lotto-recommend.php?cb=${CB}")
           echo "  lotto-recommend.php (GET): ${lcode}  (expected 405 — POST only)"
+          prcode=$(curl -sk -o /dev/null -w "%{http_code}" "https://youngman-biz.com/process-recording.php?cb=${CB}")
+          echo "  process-recording.php (GET): ${prcode}  (expected 405 — POST only)"
           ocode=$(curl -sk -o /dev/null -w "%{http_code}" "https://youngman-biz.com/lotto_offline_json_import.php?cb=${CB}")
           echo "  lotto_offline_json_import.php: ${ocode}  (expected 200)"
           jsize=$(curl -sk -o /dev/null -w "%{size_download}" "https://youngman-biz.com/lotto_numbers_all.json?cb=${CB}")

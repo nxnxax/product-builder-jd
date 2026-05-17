@@ -126,6 +126,7 @@ function normalize_resource($value) {
         'admin-bootstrap', 'admin-cleanup-orphans',
         'ledger-groups', 'ledger-records', 'ledger-records-bulk',
         'mobile-tokens',
+        'customer-log',
         'community-posts',
         'find-email', 'find-email-send-otp', 'find-email-verify-otp',
         'find-pwd-send-otp', 'find-pwd-verify-otp', 'find-pwd-reset',
@@ -907,6 +908,119 @@ function ledger_record_row(array $row): array {
         'source'     => $row['source'] ?? 'web',
         'createdAt'  => $row['created_at'] ?? null,
         'updatedAt'  => $row['updated_at'] ?? null,
+    ];
+}
+
+/* ============================================================
+   customer_log — 통화 녹취 AI 요약 (앱 자동 입력 + 웹 수동 편집)
+   ============================================================ */
+
+/** 무료 플랜 요약 횟수 한도. CALL_RECORDING_BACKEND.md §1 확정값. */
+function customer_log_free_quota(): int { return 5; }
+
+/**
+ * customer_log 테이블 자동 마이그레이션. 한 요청 내 한 번만 실행.
+ * 모든 PII 컬럼은 AES-256-GCM 으로 암호화 저장 (enc:v1: prefix).
+ */
+function ensure_customer_log_table(PDO $pdo): bool {
+    static $done = null;
+    if ($done !== null) return $done;
+    try {
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS customer_log (
+                id CHAR(36) NOT NULL PRIMARY KEY,
+                owner_email VARCHAR(255) NOT NULL,
+                customer_phone_lookup CHAR(64) NULL DEFAULT NULL,
+                customer_name VARCHAR(255) NULL DEFAULT NULL,
+                phone_number VARCHAR(255) NULL DEFAULT NULL,
+                summary TEXT NULL DEFAULT NULL,
+                interest TEXT NULL DEFAULT NULL,
+                inquiry TEXT NULL DEFAULT NULL,
+                budget_condition TEXT NULL DEFAULT NULL,
+                next_action TEXT NULL DEFAULT NULL,
+                agent_memo TEXT NULL DEFAULT NULL,
+                transcript LONGTEXT NULL DEFAULT NULL,
+                consult_at DATETIME NOT NULL,
+                audio_storage_path VARCHAR(512) NULL DEFAULT NULL,
+                audio_kept TINYINT(1) NOT NULL DEFAULT 0,
+                ai_model VARCHAR(64) NULL DEFAULT NULL,
+                ai_generated_at DATETIME NULL DEFAULT NULL,
+                source VARCHAR(32) NOT NULL DEFAULT 'app-auto',
+                client_request_id VARCHAR(64) NULL DEFAULT NULL,
+                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                INDEX idx_cl_owner_consult (owner_email, consult_at),
+                INDEX idx_cl_owner_phone (owner_email, customer_phone_lookup),
+                UNIQUE KEY uniq_cl_idempotency (owner_email, client_request_id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        ");
+        return $done = true;
+    } catch (Throwable $e) {
+        error_log('[records] ensure_customer_log_table failed: ' . $e->getMessage());
+        return $done = false;
+    }
+}
+
+/**
+ * members 테이블에 plan/free_summaries_used 컬럼이 없으면 추가.
+ * 기존 members 행은 default 값 ('free', 0) 으로 채워짐.
+ */
+function ensure_members_plan_columns(PDO $pdo): bool {
+    static $done = null;
+    if ($done !== null) return $done;
+    try {
+        $cols = table_columns($pdo, 'members');
+        if (!in_array('plan', $cols, true)) {
+            $pdo->exec("ALTER TABLE `members` ADD COLUMN `plan` VARCHAR(16) NOT NULL DEFAULT 'free'");
+        }
+        if (!in_array('free_summaries_used', $cols, true)) {
+            $pdo->exec("ALTER TABLE `members` ADD COLUMN `free_summaries_used` INT NOT NULL DEFAULT 0");
+        }
+        return $done = true;
+    } catch (Throwable $e) {
+        error_log('[records] ensure_members_plan_columns failed: ' . $e->getMessage());
+        return $done = false;
+    }
+}
+
+/**
+ * phone_number → 블라인드 인덱스 키 (PII 평문 노출 없이 lookup 가능).
+ * 마스터 키가 있으면 HMAC-SHA256, 없으면 plain SHA256 으로 폴백.
+ */
+function customer_phone_lookup_key(?string $phone): ?string {
+    if ($phone === null) return null;
+    $digits = preg_replace('/\D/', '', $phone);
+    if ($digits === '') return null;
+    $key = function_exists('youngman_master_key') ? youngman_master_key() : null;
+    return $key ? hash_hmac('sha256', $digits, $key) : hash('sha256', $digits);
+}
+
+/**
+ * customer_log row → 응답 형태 변환. PII 컬럼 모두 복호화 (평문도 호환).
+ * 앱은 평문만 받음.
+ */
+function customer_log_row(array $row): array {
+    return [
+        'id'                  => (string)$row['id'],
+        'owner_email'         => $row['owner_email'] ?? null,
+        'customer_name'       => youngman_decrypt($row['customer_name'] ?? null),
+        'phone_number'        => youngman_decrypt($row['phone_number'] ?? null),
+        'consult_at'          => $row['consult_at'] ?? null,
+        'summary'             => youngman_decrypt($row['summary'] ?? null),
+        'interest'            => youngman_decrypt($row['interest'] ?? null),
+        'inquiry'             => youngman_decrypt($row['inquiry'] ?? null),
+        'budget_condition'    => youngman_decrypt($row['budget_condition'] ?? null),
+        'next_action'         => youngman_decrypt($row['next_action'] ?? null),
+        'agent_memo'          => youngman_decrypt($row['agent_memo'] ?? null),
+        'audio_storage_path'  => $row['audio_storage_path'] ?? null,
+        'audio_kept'          => !empty($row['audio_kept']),
+        'transcript'          => youngman_decrypt($row['transcript'] ?? null),
+        'ai_model'            => $row['ai_model'] ?? null,
+        'ai_generated_at'     => $row['ai_generated_at'] ?? null,
+        'source'              => $row['source'] ?? 'app-auto',
+        'client_request_id'   => $row['client_request_id'] ?? null,
+        'created_at'          => $row['created_at'] ?? null,
+        'updated_at'          => $row['updated_at'] ?? null,
     ];
 }
 
@@ -2697,6 +2811,127 @@ try {
             $del->execute(array_merge($ids, [$owner]));
             respond(['ok' => true, 'deleted' => $del->rowCount()]);
         }
+    }
+
+    /* ============================================================
+       customer_log — 통화 녹취 AI 요약 (앱 자동 입력 + 웹 수동 편집)
+       Spec: CALL_RECORDING_BACKEND.md §6
+       ============================================================ */
+    if ($resource === 'customer-log') {
+        enforce_registered_member($pdo, $authUser);
+        if (!ensure_customer_log_table($pdo)) {
+            respond(['ok' => false, 'error' => 'customer_log 마이그레이션 실패 — 잠시 후 다시 시도'], 503);
+        }
+        ensure_members_plan_columns($pdo);
+        $owner = current_owner_email($authUser);
+        if ($owner === '') respond(['ok' => false, 'error' => '인증된 사용자 정보가 없습니다.'], 401);
+
+        $action = strtolower(trim((string)($body['action'] ?? $_GET['action'] ?? '')));
+
+        // ─── LIST (페이지네이션) ───
+        if ($action === 'customer_log_list') {
+            $limit = (int)($body['limit'] ?? $_GET['limit'] ?? 50);
+            if ($limit < 1) $limit = 50;
+            if ($limit > 200) $limit = 200;
+            $before = trim((string)($body['before'] ?? $_GET['before'] ?? ''));
+
+            $sql = 'SELECT * FROM customer_log WHERE owner_email = :o';
+            $params = [':o' => $owner];
+            if ($before !== '') {
+                $ts = @strtotime($before);
+                if ($ts) {
+                    $sql .= ' AND consult_at < :b';
+                    $params[':b'] = date('Y-m-d H:i:s', $ts);
+                }
+            }
+            $sql .= ' ORDER BY consult_at DESC, id DESC LIMIT ' . ($limit + 1);
+            $stmt = $pdo->prepare($sql);
+            $stmt->execute($params);
+            $rows = $stmt->fetchAll();
+
+            $hasMore = count($rows) > $limit;
+            if ($hasMore) array_pop($rows);
+            $nextBefore = ($hasMore && !empty($rows)) ? (string)end($rows)['consult_at'] : null;
+            reset($rows);
+
+            respond([
+                'ok' => true,
+                'items' => array_map('customer_log_row', $rows),
+                'next_before' => $nextBefore,
+            ]);
+        }
+
+        // ─── GET (단일 row) ───
+        if ($action === 'customer_log_get') {
+            $id = trim((string)($body['id'] ?? $_GET['id'] ?? ''));
+            if ($id === '') respond(['ok' => false, 'error' => 'id 가 필요합니다.'], 400);
+            $stmt = $pdo->prepare('SELECT * FROM customer_log WHERE id = :id AND owner_email = :o LIMIT 1');
+            $stmt->execute([':id' => $id, ':o' => $owner]);
+            $row = $stmt->fetch();
+            if (!$row) respond(['ok' => false, 'error' => '존재하지 않거나 권한이 없습니다.'], 404);
+            respond(['ok' => true, 'customer_log' => customer_log_row($row)]);
+        }
+
+        // ─── UPDATE (부분 patch) ───
+        if ($action === 'customer_log_update') {
+            $id = trim((string)($body['id'] ?? ''));
+            if ($id === '') respond(['ok' => false, 'error' => 'id 가 필요합니다.'], 400);
+            $patch = isset($body['patch']) && is_array($body['patch']) ? $body['patch'] : [];
+            if (!$patch) respond(['ok' => false, 'error' => 'patch 가 비어있습니다.'], 400);
+
+            // 소유권 확인.
+            $owns = $pdo->prepare('SELECT 1 FROM customer_log WHERE id = :id AND owner_email = :o LIMIT 1');
+            $owns->execute([':id' => $id, ':o' => $owner]);
+            if (!$owns->fetchColumn()) respond(['ok' => false, 'error' => '존재하지 않거나 권한이 없습니다.'], 404);
+
+            // 허용 컬럼 + 암호화 여부.
+            $piiFields = ['customer_name', 'phone_number', 'summary', 'interest', 'inquiry',
+                          'budget_condition', 'next_action', 'agent_memo', 'transcript'];
+            $plainFields = ['consult_at'];   // source/audio_kept 등은 사용자 수정 불가.
+
+            $assignments = [];
+            $params = [':id' => $id, ':o' => $owner];
+            foreach ($patch as $key => $value) {
+                if (in_array($key, $piiFields, true)) {
+                    $assignments[] = '`' . $key . '` = :' . $key;
+                    $params[':' . $key] = ($value === null || $value === '') ? null : youngman_encrypt((string)$value);
+                    if ($key === 'phone_number') {
+                        // 정규화된 phone hash 도 같이 업데이트.
+                        $assignments[] = 'customer_phone_lookup = :phlookup';
+                        $params[':phlookup'] = customer_phone_lookup_key(($value === null || $value === '') ? null : (string)$value);
+                    }
+                } elseif (in_array($key, $plainFields, true)) {
+                    if ($key === 'consult_at') {
+                        $ts = @strtotime((string)$value);
+                        if (!$ts) continue;
+                        $assignments[] = 'consult_at = :consult_at';
+                        $params[':consult_at'] = date('Y-m-d H:i:s', $ts);
+                    }
+                }
+            }
+            if (!$assignments) respond(['ok' => false, 'error' => '수정 가능한 필드가 없습니다.'], 400);
+
+            $upd = $pdo->prepare('UPDATE customer_log SET ' . implode(', ', $assignments)
+                                 . ' WHERE id = :id AND owner_email = :o');
+            $upd->execute($params);
+
+            $sel = $pdo->prepare('SELECT * FROM customer_log WHERE id = :id AND owner_email = :o LIMIT 1');
+            $sel->execute([':id' => $id, ':o' => $owner]);
+            $row = $sel->fetch();
+            respond(['ok' => true, 'customer_log' => $row ? customer_log_row($row) : null]);
+        }
+
+        // ─── DELETE ───
+        if ($action === 'customer_log_delete') {
+            $id = trim((string)($body['id'] ?? ''));
+            if ($id === '') respond(['ok' => false, 'error' => 'id 가 필요합니다.'], 400);
+            $del = $pdo->prepare('DELETE FROM customer_log WHERE id = :id AND owner_email = :o');
+            $del->execute([':id' => $id, ':o' => $owner]);
+            if ($del->rowCount() === 0) respond(['ok' => false, 'error' => '존재하지 않거나 권한이 없습니다.'], 404);
+            respond(['ok' => true]);
+        }
+
+        respond(['ok' => false, 'error' => '지원하지 않는 action 입니다.'], 400);
     }
 
     enforce_registered_member($pdo, $authUser);
