@@ -438,7 +438,30 @@ if ($sttResp === false) jerror('upstream_failed', 'Whisper 호출 실패: ' . $s
 $sttData = json_decode((string)$sttResp, true);
 if ($sttStatus < 200 || $sttStatus >= 300) {
     $msg = is_array($sttData) ? ($sttData['error']['message'] ?? json_encode($sttData)) : substr((string)$sttResp, 0, 300);
-    jerror('upstream_failed', 'Whisper ' . $sttStatus . ': ' . $msg, 502);
+    // 임시 진단 — 라운드 1 디버깅 후 제거 예정. fix_build 로 deploy 반영 여부 확인.
+    $diskMime = function_exists('mime_content_type') ? (@mime_content_type($realPath) ?: null) : null;
+    $sniffHex = '';
+    $fp = @fopen($realPath, 'rb');
+    if ($fp) {
+        $head = (string)@fread($fp, 16);
+        @fclose($fp);
+        $sniffHex = bin2hex($head);
+    }
+    jout([
+        'status' => 'error',
+        'code' => 'upstream_failed',
+        'message' => 'Whisper ' . $sttStatus . ': ' . $msg,
+        'debug' => [
+            'fix_build' => 'ad9d266+diag1',
+            'src_ext' => $srcExt,
+            'whisper_postname' => $whisperPostname,
+            'whisper_mime' => $whisperMime,
+            'disk_mime_detect' => $diskMime,
+            'real_path_basename' => basename($realPath),
+            'file_head_hex' => $sniffHex,
+            'audio_storage_path' => $storagePath,
+        ],
+    ], 502);
 }
 $transcript = trim((string)($sttData['text'] ?? ''));
 if ($transcript === '') jerror('upstream_failed', 'STT 결과가 비어있습니다.', 502);
