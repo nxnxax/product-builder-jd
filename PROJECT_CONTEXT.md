@@ -1,6 +1,6 @@
 # PROJECT_CONTEXT — youngman-biz.com
 
-*최종 갱신: 2026-05-21*
+*최종 갱신: 2026-05-17*
 
 ## 1. 사이트 목적
 
@@ -25,6 +25,17 @@ auth-shared.js                 — Supabase + 헤더/footer + 인증 전체 관�
                                  translateAuthError (영문 → 한국어 친화)
                                  openSharedLoginModal / openFindIdModal / openFindPasswordModal
                                  bindBackdropClose (pointerdown/up — 드래그 close 차단)
+                                 + bridge.js import → onAuthStateChange 자동 notifyLogin/Logout
+                                 + Google 로그인 isInApp 분기 — native SDK + signInWithIdToken
+
+bridge.js                      — RN Android WebView 앱 브리지 (window.YoungmanBridge / postMessage 채널)
+                                 web→app: auth.login / auth.logout / nav.openExternal / nav.share /
+                                          auth.googleSignIn.request / app.fcm.request / app.info.request /
+                                          app.statusBar / app.haptic
+                                 app→web: onReady / onAppInfo / onFcmToken / onPushOpen / onAppResume /
+                                          onBack(boolean) / onGoogleSignInResult
+                                 브라우저(앱 외부)에서 모든 호출 no-op — fallback 자동 보장
+BRIDGE_API.md                  — 앱 ↔ 웹 메시지 스펙 + RN 측 onMessage / injectJavaScript 스니펫
 
 logout.html                    — 단일 로그아웃 cleanup 페이지 (signOut scope:global + KEEP yman_nav_/userEmail.last)
 login-complete.html            — 단일 로그인 transition + 신규 Google 가입자 닉네임/약관 form
@@ -73,6 +84,12 @@ SMS_USER_GUIDE.txt             — 사용자 설명서
 
 ## 3. 현재 완성된 기능
 
+- ✅ **RN Android WebView 앱 브리지** — bridge.js 단일 모듈 (auth-shared 가 import 하므로 모든 페이지 자동 노출)
+  - 양방향 채널: web→app `window.ReactNativeWebView.postMessage(JSON.stringify(...))`, app→web `window.YoungmanBridge.<handler>(...)`
+  - 자동 송신: SIGNED_IN → `auth.login { accessToken, userId, email, expiresAt, ... }`, SIGNED_OUT → `auth.logout`, 외부 도메인/_blank 링크 클릭 → `nav.openExternal`
+  - logout.html 진입 시 navigation race 대비 명시적 `notifyLogout` 추가 호출
+  - 기본 `onBack` 핸들러 — 흔한 모달/드로어/시트 셀렉터 자동 닫고 true, 없으면 false (앱이 라우터 pop)
+  - **앱 안 Google 로그인** — accounts.google.com 의 disallowed_useragent 회피. raw nonce 생성 → SHA-256 hash 만 앱 전달 (`auth.googleSignIn.request { nonce }`) → 앱이 GoogleSignin SDK 호출 → idToken 반환 (`onGoogleSignInResult { idToken }`) → 웹이 `supabase.auth.signInWithIdToken({ provider:'google', token, nonce:rawNonce })` 직접 호출. **백엔드 검증 엔드포인트(`/api/auth/google`) 만들지 않음** — Supabase 가 직접 검증
 - ✅ Supabase Auth (이메일 + Google OAuth) + 회원가입 / 로그인 / 로그아웃 / 비밀번호 변경 (admin API)
 - ✅ **인증 일원화** — logout.html / login-complete.html 단일 transition 페이지
 - ✅ **고아 user 자동 복구** — 모든 페이지 boot 시 ensureMemberRowOnce 호출 → members 자동 보강
@@ -126,7 +143,7 @@ SMS_USER_GUIDE.txt             — 사용자 설명서
 - 시크릿 (필수): `CAFE24_FTP_PASSWORD`, `YOUNGMAN_CRYPTO_KEY` (PII 암호화), **`SUPABASE_SERVICE_KEY` (비밀번호 재설정)**
 - "배포/올려" 키워드 → push → trigger → verify 자동, per-step 확인 묻지 말 것
 - 검증: `curl -sk https://youngman-biz.com/<file>?cb=$(date +%s)`
-- 캐시 버스트 최신: `v=20260516-nickname-header`
+- 캐시 버스트 최신: `v=20260516-nickname-header` (auth-shared import 들), bridge.js 는 `v=20260517-bridge-v1`
 - **신규 페이지 추가 시** deploy.yml 의 Prepare deploy 의 cp 줄 + Validate test -f 둘 다 추가 (누락 시 라이브 404)
 
 ## 6. Cafe24/PHP 관련 주의사항
@@ -147,6 +164,9 @@ SMS_USER_GUIDE.txt             — 사용자 설명서
 ## 7. 최근 수정한 파일 (커밋 흐름)
 
 ```
+7dba625 feat(auth): in-app Google 로그인 — native SDK 경유 + signInWithIdToken
+b4d9323 feat(bridge): window.YoungmanBridge 에 web→app 헬퍼 노출 (DevTools 검증용)
+f681435 feat(bridge): RN Android WebView 앱 브리지 v1 — 인증/FCM/외부링크/뒤로가기 기본세트
 1df7e2c style(mobile-nav): 하단 고정 nav 배경 — 칙칙한 회색 → 물방울/유리 톤 (glass)
 8d4864b fix(search): 검색 input DOM 재생성 안 함 — 모바일 한글 IME 조합 깨짐 근본 fix
 8eae73f fix(mobile): 카드 toolbar — 검색바 + 행 추가 버튼 한 줄 정렬
@@ -168,6 +188,45 @@ fdae27a feat(auth): 모달 드래그 close fix + 이메일/닉네임 중복확�
 256684b feat(auth): 비밀번호 찾기 SMS 인증 + 새 비번 + Google 사용자 안내
 ... (이전: SMS UI 일원화, 인증 흐름 일원화, 모바일 hero, 단체문자 발송 등)
 ```
+
+### 2026-05-17 작업 요약 (RN Android WebView 앱 브리지 도입)
+
+- **bridge.js 신규 — 일반적인 WebView 앱 기본세트**
+  - 단일 ES module (~200 lines). 브라우저(앱 외부)에서 모든 호출 no-op fallback 보장
+  - `window.ReactNativeWebView.postMessage(JSON.stringify({type, payload, ts}))` 단일 송신 채널
+  - `window.YoungmanBridge.<handler>(...)` 수신 — 앱이 `injectJavaScript` 로 호출
+  - 외부 도메인 / `target="_blank"` 링크 클릭 자동 가로채기 → `nav.openExternal` 송신
+  - 기본 `onBack` 핸들러 — 모달/드로어/시트 닫고 true, 없으면 false (앱이 pop 처리)
+
+- **auth-shared.js — 인증 hook + Google 로그인 in-app 분기**
+  - `onAuthStateChange` SIGNED_IN/INITIAL_SESSION/TOKEN_REFRESHED → `notifyLogin(session)`, SIGNED_OUT → `notifyLogout()`
+  - 모든 페이지가 auth-shared 통해 자동 로드되므로 HTML 별 추가 작업 없음
+  - **Google 로그인 isInApp 분기** — WebView 안에서는 accounts.google.com 의 `disallowed_useragent` 차단 회피. 흐름:
+    1. 웹이 raw nonce 생성 (`crypto.randomUUID` 두 번 concat) → SHA-256 hash 계산
+    2. hash 만 `auth.googleSignIn.request { nonce: hash }` 로 앱 전송 (raw 는 웹만 보유)
+    3. 앱이 `GoogleSignin.signIn({ nonce: hash })` 호출 → idToken 안에 hash 가 포함됨
+    4. 앱이 `window.YoungmanBridge.handle('onGoogleSignInResult', { idToken })` inject
+    5. 웹이 `supabase.auth.signInWithIdToken({ provider:'google', token: idToken, nonce: rawNonce })` 호출
+    6. Supabase 가 raw nonce 를 hash 해서 token 안의 hash 와 비교 → 검증 통과 → 세션 set
+    7. 성공 시 login-complete.html 로 이동 → 기존 consent/ensure/redirect 흐름 그대로 재사용
+  - 브라우저(앱 외부)는 기존 signInWithOAuth redirect 흐름 그대로 — isInApp() 한 줄 분기
+
+- **logout.html — navigation race 대비**
+  - SIGNED_OUT 이벤트가 location.replace 와 race 해서 앱에 못 닿는 케이스 차단
+  - signOut 직전에 `import('./bridge.js').then(b => b.notifyLogout())` 명시 호출
+
+- **BRIDGE_API.md — RN 측 구현 스펙 + 코드 스니펫**
+  - 메시지 타입 표, app→web 핸들러 4종 + onGoogleSignInResult, RN 측 onMessage switch 풀스니펫
+  - GoogleSignin.configure webClientId 는 Supabase Dashboard Auth Providers Google "Authorized Client IDs" 와 일치해야 함
+
+- **deploy.yml — bridge.js 배포 추가**
+  - Prepare deploy folder 의 cp 줄에 `bridge.js` 누락 시 라이브 404 발생 → 명시 추가
+
+- **검증 시나리오 (앱팀 logcat 으로 확인 가능)**
+  1. 로그인 → `auth.login { accessToken, userId, email, expiresAt }` 도착
+  2. DevTools 콘솔에서 `window.YoungmanBridge.requestFcmToken()` → 앱이 `onFcmToken(token)` 으로 응답
+  3. profile.html 의 solapi.com 링크 클릭 → `nav.openExternal { url }` 도착
+  4. 앱에서 Google 로그인 버튼 클릭 → `auth.googleSignIn.request { nonce }` → 앱 SDK → `onGoogleSignInResult { idToken }` → `auth.login` 끊김 없이 연결
 
 ### 2026-05-21 작업 요약
 
@@ -234,6 +293,11 @@ fdae27a feat(auth): 모달 드래그 close fix + 이메일/닉네임 중복확�
 - 🔒 **mountAppHeader 의 currentSession 즉시 도출** — 제거 시 헤더 닉네임 "보였다 안 보였다" 회귀
 - 🔒 **apiRequest 호출 형식** — `apiRequest('xxx', { query: 'k=v' })`. URL 직접 X (인코딩 깨짐)
 - 🔒 **normalize_resource 화이트리스트** — 신규 resource 추가 시 $allowed 배열에도 추가 (안 그러면 400)
+- 🔒 **bridge.js 메시지 타입 이름** — `auth.login` / `auth.logout` / `auth.googleSignIn.request` / `onGoogleSignInResult` / `nav.openExternal` 등. 변경 시 RN 앱쪽 onMessage / injectJavaScript 동시 수정 필수 (단방향 회귀 = 앱 깨짐)
+- 🔒 **`window.YoungmanBridge` 전역 이름** — RN 앱의 injectJavaScript 가 이 이름 가정. rename / namespace 분리 금지
+- 🔒 **Google 로그인 in-app 분기: signInWithIdToken 직접 호출** — 백엔드 검증 엔드포인트(`/api/auth/google` 류) 만들지 말 것. Supabase v2 가 idToken + nonce 직접 검증. 백엔드 만들면 service_role 노출 표면적 늘고 동기화 부담만 증가
+- 🔒 **Google 로그인 nonce 처리** — raw nonce 는 웹만 보유, hash 만 앱에 전달. 앱이 raw 알게 되면 replay 보호 무력화. 흐름 변경 금지
+- 🔒 **deploy.yml 의 bridge.js cp** — 누락 시 라이브 404 → auth-shared.js import 실패 → 전체 페이지 깨짐
 
 ## 9. 다음에 이어서 해야 할 작업
 
@@ -244,6 +308,8 @@ fdae27a feat(auth): 모달 드래그 close fix + 이메일/닉네임 중복확�
 5. **Supabase Email Template 한글화** — Dashboard → Authentication → Email Templates 직접 수정 안내
 6. **로또 자동 갱신** — JSON 미러 cron 자동화 (현재 수동 + 토큰 코드만)
 7. **메인 페이지 추가 다듬기** — 사용자 추가 피드백 가능성
+8. **RN Android 앱 측 검증 마무리** (Codex 작업) — logcat 으로 `auth.login` / `onGoogleSignInResult` 도착 확인. `GoogleSignin.configure({ webClientId })` 는 Supabase Dashboard 의 Authorized Client IDs 와 정확히 일치해야 검증 통과. 토큰 영구 저장은 SecureStore (AsyncStorage 평문 X), FCM `onTokenRefresh` 구독 필요
+9. **Marketing.html 브리지 포함 검토** — 현재 auth-shared 미사용 (마케팅 공개 페이지). 앱에서 진입할 일 없으면 그대로 OK, 진입 가능하면 bridge.js 직접 include
 
 ---
 
@@ -252,7 +318,8 @@ fdae27a feat(auth): 모달 드래그 close fix + 이메일/닉네임 중복확�
 - `sessionStorage.erp.ensureError` : members 보강 실패 시 status/error/columns/table/sqlState JSON 저장
 - `sessionStorage.erp.memberEnsured = '1'` : 보강 성공 (session 당 1회)
 - `sessionStorage.erp.endSessionOnClose = '1'` : 로그인 유지 체크 해제 상태
-- 콘솔 prefix: `[auth submit]` / `[signIn]` / `[signUp]` / `[google oauth]` / `[ensure member auto]` / `[members POST]` / `[sms balance]`
+- 콘솔 prefix: `[auth submit]` / `[signIn]` / `[signUp]` / `[google oauth]` / `[google native]` / `[ensure member auto]` / `[members POST]` / `[sms balance]` / `[bridge]`
+- 브리지 디버깅 (DevTools 콘솔): `window.YoungmanBridge.isInApp()` / `.getAppInfo()` / `.getFcmToken()` / `.postToApp('debug.ping', {})` / `.version`
 
 ## 메모리 참조
 
@@ -260,4 +327,5 @@ fdae27a feat(auth): 모달 드래그 close fix + 이메일/닉네임 중복확�
 - `feedback_css_edit_sanity.md` — 큰 Edit 후 brace balance + 중복 selector + module top-level return 금지
 - `feedback_deploy_autonomy.md` — "배포/올려" 키워드 트리거
 - `feedback_no_proceed_prompts.md` — "Do you want to proceed?" 묻지 말 것
+- `project_app_bridge.md` — RN Android WebView 앱 연동 인프라 + Google 로그인 in-app 분기 (signInWithIdToken)
 - 기타 PII / ledger UX / 모바일 nav / 슬롯 nav 등
