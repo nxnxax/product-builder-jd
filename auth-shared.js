@@ -3,6 +3,9 @@
  * Keeps Supabase client initialization in one place.
  */
 
+// 네이티브 앱 (React Native WebView) 브리지 — 브라우저에서는 모든 호출 no-op.
+import { notifyLogin as _bridgeLogin, notifyLogout as _bridgeLogout } from './bridge.js?v=20260517-bridge-v1';
+
 const API_URL = 'records.php';
 
 let supabaseClient = null;
@@ -38,6 +41,8 @@ export async function initSupabase() {
             // 고아 user (supabase auth 만 있고 members 없음) 자동 복구 — 매 페이지 boot 시.
             try { ensureMemberRowOnce(); } catch {}
         }
+        // 초기 진입 시 이미 로그인 상태면 앱에 토큰 전달 (FCM 매핑/푸시 알림용)
+        if (currentSession?.access_token) { try { _bridgeLogin(currentSession); } catch {} }
         supabaseClient.auth.onAuthStateChange((event, session) => {
             const had = !!currentSession?.user;
             currentSession = session || null;
@@ -48,7 +53,9 @@ export async function initSupabase() {
             if (currentSession?.user && (event === 'SIGNED_IN' || event === 'INITIAL_SESSION' || event === 'TOKEN_REFRESHED' || !had)) {
                 try { refreshNavFormsCache(); } catch {}
                 try { ensureMemberRowOnce(); } catch {}
+                try { _bridgeLogin(currentSession); } catch {}
             }
+            if (event === 'SIGNED_OUT') { try { _bridgeLogout(); } catch {} }
         });
         return { client: supabaseClient, session: currentSession };
     })();

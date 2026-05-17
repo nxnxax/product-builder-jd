@@ -75,6 +75,7 @@ jobs:
           cp index.html style.css main.js Marketing.html kapp_premium.php lotto2233.html deploy/
           cp logo_main.png deploy/logo_main.png
           cp profile.html admin.html profile.js admin.js auth-shared.js deploy/
+          cp bridge.js deploy/bridge.js                          # RN WebView 앱 브리지 — auth-shared 가 import
           cp upload.html deploy/upload.html
           cp download.html deploy/download.html
           cp card-builder.html deploy/card-builder.html
