@@ -887,6 +887,9 @@ function ledger_group_row(array $row): array {
         'pageType'     => $row['page_type'],
         'name'         => $row['name'],
         'isDefault'    => (bool)$row['is_default'],
+        // is_main — 앱팀 요청 (통화종료 모달 chip picker 기본 선택용).
+        // 현재는 isDefault 의 snake_case alias. owner+page_type 내 1개만 true (PATCH 시 자동 분기).
+        'is_main'      => (bool)$row['is_default'],
         'sortOrder'    => (int)$row['sort_order'],
         'fieldSchema'  => !empty($row['field_schema_json']) ? youngman_decrypt_json($row['field_schema_json']) : null,
         'settings'     => !empty($row['settings_json'])     ? youngman_decrypt_json($row['settings_json'])     : null,

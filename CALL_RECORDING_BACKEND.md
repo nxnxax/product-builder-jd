@@ -79,6 +79,14 @@ POST /process-recording.php
 
 **앱 측 영향**: ApiError 핸들링 코드 spec §4 표준 기준이라 이번 변경으로 records.php 응답도 자연스럽게 처리됨 (이전엔 records.php 만 별도 분기 필요했을 것).
 
+### D-extra2. `is_main` 응답 필드 (앱팀 요청 — chip picker 기본 선택용)
+
+`ledger_group_row()` 응답에 `is_main: boolean` 추가. 현재는 `is_default` (camelCase `isDefault`) 의 snake_case alias. 같은 owner+page_type 내에서 1개만 true.
+
+- **읽기**: `GET /records.php?resource=ledger-groups&page_type=customer` 또는 `customer_log_send_to_group` 응답의 `group.is_main` 로 확인.
+- **변경**: 기존 PATCH endpoint 그대로 사용 — `POST /records.php?resource=ledger-groups` `{action 등 없이 body: {id, isDefault: true}}` (records.php 의 ledger-groups PATCH 분기). 보내면 자동으로 같은 owner+page_type 의 다른 그룹 `is_default` 가 0 으로 해제됨 (records.php 의 unset 쿼리 line 2762-2767).
+- **별개 의미 원하는 경우**: 현재 alias 라 단일 토글. 만약 `is_main` 과 `is_default` 를 분리하려면 (예: `is_default` = 시스템 자동 생성 마크, `is_main` = 사용자 명시 지정) 별도 컬럼 신설 필요. 앱팀 회신에서 합의 필요.
+
 ### D-extra. 옵션 D — 양식 전송 (customer_log → ledger_records mirror)
 
 앱팀 추가 요청 (Req 2/3) 통합 처리. customer_log 와 ledger 시스템이 분리된 구조라서 둘을 연결하는 명시적 transfer endpoint 추가.
