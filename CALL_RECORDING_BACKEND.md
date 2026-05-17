@@ -132,6 +132,56 @@ allowlist 는 records.php 의 `admin_email_allowlist()` 와 같은 패턴 (`['nx
 
 **Quick fix 병행:** 운영자가 phpMyAdmin 으로 `UPDATE members SET plan='premium', free_summaries_used=0 WHERE email='nxnxax@gmail.com'` 실행하면 기존 막힌 상태 즉시 해제. Long-term code fix 는 deploy 시점에 자동 적용.
 
+### F. Phase 2 — async + FCM 인프라 (Milestone 1: 토큰 등록 + 스키마)
+
+비동기 처리 + 푸시 알림을 위한 토대. **M1 은 schema + FCM 토큰 등록만**. async mode 분기 + FCM 발송 코드는 M2/M3 에서.
+
+#### M1 변경 사항
+
+**테이블:**
+- `user_fcm_tokens` — owner_email / token (UNIQUE) / device_id / platform / last_seen_at / created_at
+- `recording_jobs` — id(CHAR(36)) / owner_email / customer_log_id / status (queued|processing|completed|failed) / storage_path / client_request_id (UNIQUE per owner) / error_message / fcm_sent_at / started_at / completed_at / timestamps
+
+**resource:** `app-fcm-token` (records.php whitelist + selfAuthResources 등록 — customer-log 와 같은 self-auth + spec §4 응답 shape)
+
+**호출:**
+```
+POST https://youngman-biz.com/records.php?resource=app-fcm-token
+Authorization: Bearer <JWT>
+
+{ "action": "register",   "token": "<FCM 토큰>", "device_id"?: "...", "platform"?: "android"|"ios" }
+{ "action": "unregister", "token": "..." }
+{ "action": "list" }   // 사용자 본인 토큰 목록 (마스킹)
+```
+
+응답 (register/list):
+```json
+{ "status": "ok", "fcm_token": { "id", "token_masked", "device_id", "platform", "last_seen_at", "created_at" } }
+{ "status": "ok", "items": [{...}, ...] }
+{ "status": "ok", "deleted": 1 }
+```
+
+**UPSERT 동작**: 같은 token 이 다른 owner_email 로 재등록 시 owner 갱신 (계정 전환). last_seen_at 자동 touch.
+
+**보안**: token 응답에 마스킹 (`abcdef12...wxyz`). 평문 token 응답 안 함.
+
+#### 앱 측 통합
+
+bridge.js 의 FCM 토큰 수신 핸들러에서 `app-fcm-token register` 호출. SIGNED_IN 시 등록 / SIGNED_OUT 시 unregister / 토큰 refresh 시 재등록.
+
+#### M2 (다음 commit)
+- `process-recording.php?mode=async` 분기 → 즉시 `{status:"queued", job_id}` 응답
+- 백그라운드 처리 (PHP `fastcgi_finish_request` + `ignore_user_abort`)
+- recording_jobs row 생성/갱신 → 완료 시 customer_log row insert
+
+#### M3 (그 다음 commit)
+- FCM HTTP v1 API 호출 (Firebase service account JSON 으로 OAuth token 발급)
+- 작업 완료 시 user_fcm_tokens 의 owner 토큰들로 push
+- 사용자 작업 필요: Firebase 콘솔에서 service account JSON 다운로드 + GitHub Secret `FIREBASE_SERVICE_ACCOUNT_JSON` 등록
+
+#### M4 (별개)
+- cron 으로 24h 미정리 audio 파일 cleanup (실패 retry 윈도우용)
+
 ### D. e2e 1차 검증 결과 (2026-05-17)
 
 | 라운드 | 호출 | 결과 |

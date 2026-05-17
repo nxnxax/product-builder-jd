@@ -127,6 +127,7 @@ function normalize_resource($value) {
         'ledger-groups', 'ledger-records', 'ledger-records-bulk',
         'mobile-tokens',
         'customer-log',
+        'app-fcm-token',
         'community-posts',
         'find-email', 'find-email-send-otp', 'find-email-verify-otp',
         'find-pwd-send-otp', 'find-pwd-verify-otp', 'find-pwd-reset',
@@ -1090,6 +1091,86 @@ function ensure_customer_log_default_group(PDO $pdo, string $owner): ?array {
     }
 }
 
+/* ============================================================
+   Phase 2 — call-recording async + FCM 인프라
+   ============================================================ */
+
+/**
+ * FCM 푸시 토큰 테이블. 앱이 받은 토큰을 owner_email 별로 저장.
+ * 같은 토큰이 다른 owner 로 재등록되면 UNIQUE 충돌 → ON DUPLICATE KEY UPDATE 로 owner 갱신.
+ */
+function ensure_user_fcm_tokens_table(PDO $pdo): bool {
+    static $done = null;
+    if ($done !== null) return $done;
+    try {
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS user_fcm_tokens (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                owner_email VARCHAR(255) NOT NULL,
+                token VARCHAR(512) NOT NULL,
+                device_id VARCHAR(120) NULL DEFAULT NULL,
+                platform VARCHAR(16) NOT NULL DEFAULT 'android',
+                last_seen_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE KEY uniq_uft_token (token),
+                INDEX idx_uft_owner (owner_email)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        ");
+        return $done = true;
+    } catch (Throwable $e) {
+        error_log('[records] ensure_user_fcm_tokens_table failed: ' . $e->getMessage());
+        return $done = false;
+    }
+}
+
+/**
+ * 비동기 통화녹취 처리 작업 큐. async mode 호출 시 즉시 job_id 응답 + 백그라운드 처리.
+ * status: queued | processing | completed | failed
+ */
+function ensure_recording_jobs_table(PDO $pdo): bool {
+    static $done = null;
+    if ($done !== null) return $done;
+    try {
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS recording_jobs (
+                id CHAR(36) NOT NULL PRIMARY KEY,
+                owner_email VARCHAR(255) NOT NULL,
+                customer_log_id CHAR(36) NULL DEFAULT NULL,
+                status VARCHAR(16) NOT NULL DEFAULT 'queued',
+                storage_path VARCHAR(512) NULL DEFAULT NULL,
+                client_request_id VARCHAR(64) NULL DEFAULT NULL,
+                error_message TEXT NULL DEFAULT NULL,
+                fcm_sent_at DATETIME NULL DEFAULT NULL,
+                started_at DATETIME NULL DEFAULT NULL,
+                completed_at DATETIME NULL DEFAULT NULL,
+                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                INDEX idx_rj_owner_status (owner_email, status),
+                INDEX idx_rj_status_created (status, created_at),
+                UNIQUE KEY uniq_rj_idempotency (owner_email, client_request_id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        ");
+        return $done = true;
+    } catch (Throwable $e) {
+        error_log('[records] ensure_recording_jobs_table failed: ' . $e->getMessage());
+        return $done = false;
+    }
+}
+
+/** FCM 토큰 행 → 응답 형태. token 은 마스킹해서 반환 (앱 측 확인용). */
+function user_fcm_token_row(array $row): array {
+    $tok = (string)($row['token'] ?? '');
+    $masked = strlen($tok) > 16 ? (substr($tok, 0, 8) . '...' . substr($tok, -4)) : $tok;
+    return [
+        'id'         => (int)$row['id'],
+        'token_masked' => $masked,
+        'device_id'  => $row['device_id'] ?? null,
+        'platform'   => $row['platform'] ?? 'android',
+        'last_seen_at' => $row['last_seen_at'] ?? null,
+        'created_at' => $row['created_at'] ?? null,
+    ];
+}
+
 /** 모바일 API 토큰 테이블 자동 마이그레이션. */
 function ensure_mobile_tokens_table(PDO $pdo): bool {
     static $done = null;
@@ -1588,7 +1669,7 @@ try {
                         'find-pwd-send-otp', 'find-pwd-verify-otp', 'find-pwd-reset'];
     // self-auth resources — global verify_auth_token 우회, handler 안에서 단순 /auth/v1/user 패턴 + spec §4 응답 shape.
     // upload.php / process-recording.php 와 동일한 인증 흐름으로 통일.
-    $selfAuthResources = ['customer-log'];
+    $selfAuthResources = ['customer-log', 'app-fcm-token'];
     $peekedResource = strtolower(trim((string)($_GET['resource'] ?? '')));
     $isSkipGlobalAuth = in_array($peekedResource, $publicResources, true)
                       || in_array($peekedResource, $selfAuthResources, true);
@@ -3135,6 +3216,104 @@ try {
                 'customer_log' => $clRow2 ? customer_log_row($clRow2) : null,
                 'ledger_record' => $lrRow ? ledger_record_row($lrRow) : null,
                 'group' => ledger_group_row($gRow),
+            ]);
+        }
+
+        respond(['status' => 'error', 'code' => 'invalid_request', 'message' => '지원하지 않는 action 입니다.'], 400);
+    }
+
+    /* ============================================================
+       app-fcm-token — Phase 2: FCM 푸시 토큰 등록/해지/조회 (앱 측 사용)
+       customer-log 와 같은 self-auth (verify_auth_token 우회) + spec §4 표준 응답.
+       async mode 의 통화녹취 처리 완료 시 푸시 발송 대상 토큰 저장소.
+       ============================================================ */
+    if ($resource === 'app-fcm-token') {
+        $fcmHdr = read_authorization_header();
+        if (!preg_match('/^Bearer\s+(.+)$/i', $fcmHdr, $fcmM)) {
+            respond(['status' => 'error', 'code' => 'unauthorized', 'message' => '로그인이 필요합니다.'], 401);
+        }
+        $fcmTokenBearer = trim($fcmM[1]);
+        $fcmBase = !empty($auth['supabase_url']) ? rtrim((string)$auth['supabase_url'], '/') : '';
+        $fcmKey  = (string)($auth['anon_key'] ?? '');
+        if ($fcmBase === '' || $fcmKey === '') {
+            respond(['status' => 'error', 'code' => 'unauthorized', 'message' => '서버 인증 설정 누락 (supabase_url / anon_key).'], 500);
+        }
+        $fcmCh = curl_init($fcmBase . '/auth/v1/user');
+        curl_setopt_array($fcmCh, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_HTTPHEADER => ['Authorization: Bearer ' . $fcmTokenBearer, 'apikey: ' . $fcmKey],
+            CURLOPT_TIMEOUT => 8,
+            CURLOPT_CONNECTTIMEOUT => 5,
+        ]);
+        $fcmAuthResp = curl_exec($fcmCh);
+        $fcmAuthStatus = (int)curl_getinfo($fcmCh, CURLINFO_HTTP_CODE);
+        curl_close($fcmCh);
+        if ($fcmAuthStatus !== 200 || !$fcmAuthResp) {
+            respond(['status' => 'error', 'code' => 'unauthorized',
+                'message' => '토큰 검증 실패 (Supabase ' . $fcmAuthStatus . '). 다시 로그인해주세요.'], 401);
+        }
+        $fcmAuthData = json_decode((string)$fcmAuthResp, true);
+        $fcmOwnerEmail = strtolower(trim((string)($fcmAuthData['email'] ?? '')));
+        if ($fcmOwnerEmail === '') {
+            respond(['status' => 'error', 'code' => 'unauthorized', 'message' => '토큰에서 이메일 추출 실패.'], 401);
+        }
+
+        if (!ensure_user_fcm_tokens_table($pdo)) {
+            respond(['status' => 'error', 'code' => 'upstream_failed', 'message' => 'fcm_tokens 마이그레이션 실패.'], 503);
+        }
+
+        $owner = $fcmOwnerEmail;
+        $action = strtolower(trim((string)($body['action'] ?? $_GET['action'] ?? '')));
+
+        // ─── REGISTER (UPSERT) ───
+        if ($action === 'register') {
+            $tok = trim((string)($body['token'] ?? ''));
+            if ($tok === '') respond(['status' => 'error', 'code' => 'invalid_request', 'message' => 'token 이 필요합니다.'], 400);
+            if (strlen($tok) > 512) respond(['status' => 'error', 'code' => 'invalid_request', 'message' => 'token 길이 초과 (최대 512자).'], 400);
+            $devId = trim((string)($body['device_id'] ?? ''));
+            if (strlen($devId) > 120) $devId = substr($devId, 0, 120);
+            $plat = strtolower(trim((string)($body['platform'] ?? 'android')));
+            if (!in_array($plat, ['android', 'ios'], true)) $plat = 'android';
+
+            // 같은 token 이 다른 owner 로 재등록 = 계정 전환 케이스. owner_email 갱신 + last_seen_at touch.
+            $ins = $pdo->prepare("INSERT INTO user_fcm_tokens (owner_email, token, device_id, platform)
+                VALUES (:o, :t, :d, :p)
+                ON DUPLICATE KEY UPDATE
+                    owner_email = VALUES(owner_email),
+                    device_id = VALUES(device_id),
+                    platform = VALUES(platform),
+                    last_seen_at = CURRENT_TIMESTAMP");
+            $ins->execute([
+                ':o' => $owner,
+                ':t' => $tok,
+                ':d' => $devId !== '' ? $devId : null,
+                ':p' => $plat,
+            ]);
+            $sel = $pdo->prepare('SELECT * FROM user_fcm_tokens WHERE token = :t LIMIT 1');
+            $sel->execute([':t' => $tok]);
+            $row = $sel->fetch();
+            respond([
+                'status' => 'ok',
+                'fcm_token' => $row ? user_fcm_token_row($row) : null,
+            ]);
+        }
+
+        // ─── UNREGISTER ───
+        if ($action === 'unregister') {
+            $tok = trim((string)($body['token'] ?? ''));
+            if ($tok === '') respond(['status' => 'error', 'code' => 'invalid_request', 'message' => 'token 이 필요합니다.'], 400);
+            $del = $pdo->prepare('DELETE FROM user_fcm_tokens WHERE token = :t AND owner_email = :o');
+            $del->execute([':t' => $tok, ':o' => $owner]);
+            respond(['status' => 'ok', 'deleted' => (int)$del->rowCount()]);
+        }
+
+        // ─── LIST (디버그 / 사용자 본인 토큰 조회) ───
+        if ($action === 'list') {
+            $stmt = $pdo->prepare('SELECT * FROM user_fcm_tokens WHERE owner_email = :o ORDER BY id DESC');
+            $stmt->execute([':o' => $owner]);
+            respond([
+                'status' => 'ok',
+                'items' => array_map('user_fcm_token_row', $stmt->fetchAll()),
             ]);
         }
 
