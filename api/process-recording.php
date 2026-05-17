@@ -24,7 +24,7 @@ header('Cache-Control: no-store');
 header('X-Content-Type-Options: nosniff');
 
 // Whisper + LLM 호출 합산 시간이 cafe24 기본 30s 를 넘을 수 있음.
-@set_time_limit(180);
+@set_time_limit(240);   // ffmpeg transcode + Whisper + LLM 합산 여유.
 
 /* ========== 응답/입력 헬퍼 ========== */
 function jout(array $payload, int $code = 200): void {
@@ -391,6 +391,67 @@ if (!$uploadsReal || strpos($realPath, $uploadsReal . DIRECTORY_SEPARATOR) !== 0
 $apiKey = load_env_value('OPENAI_API_KEY');
 if ($apiKey === '') jerror('upstream_failed', 'OPENAI_API_KEY 미설정.', 500);
 
+/* ========== 컨테이너 호환성 검증 + 필요 시 ffmpeg transcode ==========
+ * Samsung T전화 등 일부 OEM 통화녹음은 .m4a 확장자지만 내부는 3gpp 컨테이너
+ * (ftyp major_brand = "3gp4") + AMR-NB/AMR-WB 코덱. Whisper 는 3gp/amr 미지원.
+ * → ftyp brand 읽어서 Whisper 호환 brand 아니면 ffmpeg 로 transcode (AAC/mp4).
+ * cafe24 PHP 환경에 ffmpeg 가용 여부도 같은 분기에서 확정.
+ */
+$realPathForWhisper = $realPath;
+$convertedPath = null;
+$transcodeDebug = null;
+
+$majorBrand = '';
+$fpDetect = @fopen($realPath, 'rb');
+if ($fpDetect) {
+    $head = (string)@fread($fpDetect, 16);
+    @fclose($fpDetect);
+    if (strlen($head) >= 12 && substr($head, 4, 4) === 'ftyp') {
+        $majorBrand = substr($head, 8, 4);
+    }
+}
+$whisperFriendlyBrands = ['M4A ', 'M4B ', 'M4P ', 'mp41', 'mp42', 'isom', 'iso2'];
+$needTranscode = ($majorBrand !== '' && !in_array($majorBrand, $whisperFriendlyBrands, true));
+
+if ($needTranscode) {
+    if (!function_exists('exec')) {
+        jout(['status' => 'error', 'code' => 'upstream_failed',
+              'message' => 'exec() 함수가 비활성화되어 ffmpeg 호출 불가. cafe24 PHP 설정 또는 대체 transcode 경로 필요.',
+              'debug' => ['major_brand' => $majorBrand, 'reason' => 'exec_disabled']], 502);
+    }
+    // ffmpeg 가용성 + 변환 한 번에 시도. fail 시 진단으로 가용성 보고.
+    $convertedPath = $realPath . '.whisper.m4a';
+    $cmd = 'ffmpeg -y -i ' . escapeshellarg($realPath)
+         . ' -vn -ac 1 -ar 16000 -c:a aac -b:a 64k '
+         . escapeshellarg($convertedPath) . ' 2>&1';
+    $ffmpegOut = [];
+    $ffmpegExit = 0;
+    @exec($cmd, $ffmpegOut, $ffmpegExit);
+
+    if ($ffmpegExit === 0 && is_file($convertedPath) && filesize($convertedPath) > 0) {
+        $realPathForWhisper = $convertedPath;
+        $transcodeDebug = ['major_brand' => $majorBrand, 'transcoded' => true,
+                           'src_bytes' => filesize($realPath),
+                           'out_bytes' => filesize($convertedPath)];
+    } else {
+        // ffmpeg not available or transcode fail.
+        $tail = implode("\n", array_slice($ffmpegOut, -10));
+        $notFound = ($ffmpegExit === 127)
+                    || stripos($tail, 'not found') !== false
+                    || stripos($tail, 'command not found') !== false;
+        jout(['status' => 'error', 'code' => 'upstream_failed',
+              'message' => $notFound
+                  ? 'ffmpeg 가 cafe24 환경에 설치되지 않은 것으로 보입니다 (exit=' . $ffmpegExit . '). 대체 transcode 경로 필요.'
+                  : 'ffmpeg transcode 실패 (exit=' . $ffmpegExit . '): ' . substr($tail, 0, 300),
+              'debug' => [
+                  'major_brand' => $majorBrand,
+                  'ffmpeg_exit' => $ffmpegExit,
+                  'ffmpeg_tail' => $tail,
+                  'ffmpeg_available' => !$notFound,
+              ]], 502);
+    }
+}
+
 // Whisper 는 multipart filename 확장자 또는 Content-Type 으로 포맷을 판단.
 // 우리 파일명은 UUID (예: 9f0e8d7c-1234-...-m4a) — 하이픈이 많아 일부 Whisper 파서가 확장자 인식 실패 → 400.
 // 또한 mime_content_type 이 'audio/x-m4a' 같은 변형 mime 을 반환하면 Whisper 가 거부.
@@ -423,7 +484,7 @@ curl_setopt_array($ch, [
     CURLOPT_POSTFIELDS => [
         'model' => 'whisper-1',
         'language' => 'ko',
-        'file' => new CURLFile($realPath, $whisperMime, $whisperPostname),
+        'file' => new CURLFile($realPathForWhisper, $whisperMime, $whisperPostname),
     ],
     CURLOPT_HTTPHEADER => ['Authorization: Bearer ' . $apiKey],
     CURLOPT_TIMEOUT => 120,
@@ -452,7 +513,7 @@ if ($sttStatus < 200 || $sttStatus >= 300) {
         'code' => 'upstream_failed',
         'message' => 'Whisper ' . $sttStatus . ': ' . $msg,
         'debug' => [
-            'fix_build' => 'ad9d266+diag1',
+            'fix_build' => 'ffmpeg+diag2',
             'src_ext' => $srcExt,
             'whisper_postname' => $whisperPostname,
             'whisper_mime' => $whisperMime,
@@ -460,6 +521,8 @@ if ($sttStatus < 200 || $sttStatus >= 300) {
             'real_path_basename' => basename($realPath),
             'file_head_hex' => $sniffHex,
             'audio_storage_path' => $storagePath,
+            'transcode' => $transcodeDebug,
+            'sent_to_whisper' => basename($realPathForWhisper),
         ],
     ], 502);
 }
@@ -601,6 +664,7 @@ if ($plan === 'free') {
 
 /* ========== 오디오 파일 즉시 삭제 (audio_kept = false) ========== */
 @unlink($realPath);
+if ($convertedPath !== null && is_file($convertedPath)) @unlink($convertedPath);
 // 디렉터리도 비어있으면 정리 — best-effort, 실패 무시.
 @rmdir(dirname($realPath));
 
