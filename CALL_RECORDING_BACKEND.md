@@ -244,8 +244,72 @@ Authorization: Bearer <JWT>
 - service account JSON 은 cafe24 `.env` 와 GitHub Secrets 에만. repo 에는 절대 commit 안 함.
 - `private_key` 는 cache 되지만 access_token 은 1시간 만료 자동 재발급.
 
-#### M4 (별개)
-- cron 으로 24h 미정리 audio 파일 cleanup (실패 retry 윈도우용)
+#### M4 — 24h 미정리 audio cron cleanup (ship 완료, cron 등록 후 활성)
+
+`process-recording.php` 가 정상 종료 시 audio 즉시 unlink 하지만, fail/timeout/fatal 케이스에서 disk 에 잔존하는 audio 를 정기 정리.
+
+**파일**: `api/audio_cleanup.php` (신규)
+
+**호출**:
+```
+GET https://youngman-biz.com/audio_cleanup.php?token=<AUDIO_CLEANUP_TOKEN>
+또는
+GET https://youngman-biz.com/audio_cleanup.php
+  Authorization: Bearer <AUDIO_CLEANUP_TOKEN>
+
+옵션 (query string):
+  ?dry_run=1            — 삭제 안 하고 listing 만 반환 (검증용)
+  ?max_age_hours=24     — N시간 이상 된 파일만 (default 24, 최대 720h=30d)
+  ?max_files=1000       — 한 호출 최대 처리 파일 수 (default 1000, max 10000)
+```
+
+**인증**: `hash_equals()` 으로 timing-safe token 비교. token 누락/불일치 → 401.
+
+**처리**:
+1. `uploads/recordings/` 디렉터리 재귀 walk (`RecursiveIteratorIterator`)
+2. audio 확장자 (`m4a/mp4/mp3/wav/ogg/opus/aac/3gp/3gpp/amr/flac/webm/mpga/oga`) 만 대상
+3. 각 파일에 대해:
+   - **path traversal 방어** — `realpath()` 가 webroot (`__DIR__`) 안에 있는지 확인
+   - **보존 마크 체크** — `customer_log.audio_kept=1` row 의 `audio_storage_path` 와 매칭되면 skip
+   - **mtime 체크** — `now - max_age_hours` 보다 오래된 파일만 unlink 대상
+4. live mode 면 `@unlink()` 호출, dry_run 면 카운트만
+5. 빈 디렉터리 best-effort `rmdir` (live mode)
+
+**응답**:
+```json
+{
+  "ok": true,
+  "mode": "live" | "dry_run",
+  "scanned": 42,
+  "deleted": 17,
+  "skipped": 25,
+  "empty_dirs_removed": 3,
+  "errors": [],
+  "sample_deleted": ["uploads/recordings/u_xxx/2026-05-15/...m4a", ...],
+  "max_age_hours": 24,
+  "max_files": 1000,
+  "kept_in_db": 0,
+  "started_at": "2026-05-17T...", "completed_at": "..."
+}
+```
+
+**전제 조건** (운영자 작업):
+
+1. **`AUDIO_CLEANUP_TOKEN` 생성** — 추측 불가능한 비밀 문자열. 권장: 32자 이상 hex/base64.
+   - 로컬에서 `openssl rand -hex 32` 또는 GitHub Secret 등록 폼의 generate 옵션.
+2. **GitHub Secret 등록**: Name `AUDIO_CLEANUP_TOKEN`, Value 위에서 생성한 토큰.
+3. **cafe24 cron 등록** — cafe24 control panel → 부가서비스 → 크론잡 → 등록:
+   - 실행 시각: 매일 새벽 4시 (예: `0 4 * * *`)
+   - 명령: `curl -sk "https://youngman-biz.com/audio_cleanup.php?token=<TOKEN>"`
+   - cafe24 cron 형식이 다를 수 있음 — `curl` 명령으로 외부 URL 호출 가능한 옵션 선택.
+
+**검증 (등록 직후)**:
+- dry_run 으로 1회 호출: `curl -sk "https://...?token=<TOKEN>&dry_run=1"` → `mode: dry_run`, `deleted` 가 예상 파일 수와 일치하는지 확인.
+- 실제 1회 호출 (dry_run 없이) → 결과 검토 → 자동 cron 가동.
+
+**관찰**:
+- 첫 실행에서 잔존 audio 가 많으면 분할 — `?max_files=100` 으로 시작, 점진 증가.
+- `errors` 배열에 unlink 실패가 누적되면 디렉터리 권한 점검.
 
 ### D. e2e 1차 검증 결과 (2026-05-17)
 

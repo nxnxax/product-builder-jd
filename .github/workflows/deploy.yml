@@ -56,6 +56,7 @@ jobs:
           php -l api/crypto_helpers.php
           php -l api/process-recording.php   # 통화 녹취 → Clova STT → LLM → customer_log
           php -l api/fcm_helpers.php         # FCM HTTP v1 발송 (Phase 2 M3)
+          php -l api/audio_cleanup.php       # 24h 미정리 audio cron (Phase 2 M4)
           php -l api/sms/send-bulk.php
           php -l api/sms/balance.php
           php -l api/sms/providers/SmsProvider.php
@@ -106,6 +107,7 @@ jobs:
           cp api/crypto_helpers.php deploy/crypto_helpers.php   # PII AES-256-GCM 헬퍼 — records/ledger-mobile 이 require
           cp api/process-recording.php deploy/process-recording.php   # 통화 녹취 → Clova STT → LLM → customer_log
           cp api/fcm_helpers.php deploy/fcm_helpers.php   # FCM HTTP v1 발송 — process-recording 이 async 완료 시 require
+          cp api/audio_cleanup.php deploy/audio_cleanup.php   # 24h 미정리 audio cron cleanup (M4)
           # SMS 단체 발송 — 디렉토리 구조 유지 (sms/send-bulk.php + sms/providers/*)
           mkdir -p deploy/sms/providers
           cp api/sms/send-bulk.php deploy/sms/send-bulk.php
@@ -147,6 +149,7 @@ jobs:
           NCP_CLOVA_INVOKE_URL: ${{ secrets.NCP_CLOVA_INVOKE_URL }}
           NCP_CLOVA_SECRET: ${{ secrets.NCP_CLOVA_SECRET }}
           FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+          AUDIO_CLEANUP_TOKEN: ${{ secrets.AUDIO_CLEANUP_TOKEN }}
           LOTTO_DB_HOST: ${{ secrets.LOTTO_DB_HOST }}
           LOTTO_DB_NAME: ${{ secrets.LOTTO_DB_NAME }}
           LOTTO_DB_USER: ${{ secrets.LOTTO_DB_USER }}
@@ -174,6 +177,7 @@ jobs:
             else
               echo "::warning::FIREBASE_SERVICE_ACCOUNT_JSON missing — async FCM 발송 비활성 (sync/폴링은 작동)"
             fi
+            [ -n "$AUDIO_CLEANUP_TOKEN" ] && echo "AUDIO_CLEANUP_TOKEN=$AUDIO_CLEANUP_TOKEN" || echo "::warning::AUDIO_CLEANUP_TOKEN missing — audio_cleanup.php 호출 시 500"
             [ -n "$LOTTO_DB_HOST" ] && echo "LOTTO_DB_HOST=$LOTTO_DB_HOST"     || echo "LOTTO_DB_HOST=localhost"
             [ -n "$LOTTO_DB_NAME" ] && echo "LOTTO_DB_NAME=$LOTTO_DB_NAME"     || echo "::warning::LOTTO_DB_NAME missing — 로또 DB 기능 비활성"
             [ -n "$LOTTO_DB_USER" ] && echo "LOTTO_DB_USER=$LOTTO_DB_USER"     || echo "::warning::LOTTO_DB_USER missing"
@@ -223,6 +227,8 @@ jobs:
           echo "  lotto-recommend.php (GET): ${lcode}  (expected 405 — POST only)"
           prcode=$(curl -sk -o /dev/null -w "%{http_code}" "https://youngman-biz.com/process-recording.php?cb=${CB}")
           echo "  process-recording.php (GET): ${prcode}  (expected 405 — POST only)"
+          accode=$(curl -sk -o /dev/null -w "%{http_code}" "https://youngman-biz.com/audio_cleanup.php?cb=${CB}")
+          echo "  audio_cleanup.php (GET no token): ${accode}  (expected 401 unauthorized)"
           ocode=$(curl -sk -o /dev/null -w "%{http_code}" "https://youngman-biz.com/lotto_offline_json_import.php?cb=${CB}")
           echo "  lotto_offline_json_import.php: ${ocode}  (expected 200)"
           jsize=$(curl -sk -o /dev/null -w "%{size_download}" "https://youngman-biz.com/lotto_numbers_all.json?cb=${CB}")
