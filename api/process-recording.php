@@ -153,6 +153,15 @@ function user_dir_segment(string $email): string {
 /* ========== customer_log 헬퍼 (records.php 와 동일 정의 — DRY 보다 standalone 우선) ========== */
 function customer_log_free_quota(): int { return 5; }
 
+/**
+ * admin allowlist — 운영자 계정은 free quota 우회.
+ * records.php 의 admin_email_allowlist() 와 같은 패턴.
+ * 추후 admin 추가 시 양쪽 모두 갱신.
+ */
+function is_admin_email_for_recording(string $email): bool {
+    return in_array(strtolower(trim($email)), ['nxnxax@gmail.com'], true);
+}
+
 function ensure_customer_log_table(PDO $pdo): bool {
     static $done = null;
     if ($done !== null) return $done;
@@ -185,6 +194,19 @@ function ensure_customer_log_table(PDO $pdo): bool {
                 UNIQUE KEY uniq_cl_idempotency (owner_email, client_request_id)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
         ");
+        // 옵션 D — records.php 와 동기화.
+        try {
+            $cols = $pdo->query("SHOW COLUMNS FROM customer_log")->fetchAll(PDO::FETCH_ASSOC);
+            $hasLink = false;
+            foreach ($cols as $c) { if (($c['Field'] ?? '') === 'linked_ledger_record_id') { $hasLink = true; break; } }
+            if (!$hasLink) {
+                $pdo->exec("ALTER TABLE customer_log
+                    ADD COLUMN linked_ledger_record_id INT NULL DEFAULT NULL,
+                    ADD INDEX idx_cl_linked (linked_ledger_record_id)");
+            }
+        } catch (Throwable $e) {
+            error_log('[process-recording] customer_log ALTER linked_ledger_record_id failed: ' . $e->getMessage());
+        }
         return $done = true;
     } catch (Throwable $e) {
         error_log('[process-recording] ensure_customer_log_table failed: ' . $e->getMessage());
@@ -242,6 +264,8 @@ function customer_log_row(array $row): array {
         'ai_generated_at'     => $row['ai_generated_at'] ?? null,
         'source'              => $row['source'] ?? 'app-auto',
         'client_request_id'   => $row['client_request_id'] ?? null,
+        'linked_ledger_record_id' => isset($row['linked_ledger_record_id']) && $row['linked_ledger_record_id'] !== null
+                                    ? (int)$row['linked_ledger_record_id'] : null,
         'created_at'          => $row['created_at'] ?? null,
         'updated_at'          => $row['updated_at'] ?? null,
     ];
@@ -368,7 +392,8 @@ try {
     $plan = 'free';
     $freeUsed = 0;
 }
-if ($plan === 'free' && $freeUsed >= customer_log_free_quota()) {
+$isAdminUser = is_admin_email_for_recording($ownerEmail);
+if (!$isAdminUser && $plan === 'free' && $freeUsed >= customer_log_free_quota()) {
     jerror('plan_required', '무료 체험 횟수가 끝났습니다. Premium 가입이 필요합니다.', 403);
 }
 
@@ -631,8 +656,8 @@ try {
     jerror('upstream_failed', 'DB 저장 실패.', 500);
 }
 
-/* ========== free_summaries_used 증가 (plan=free 일 때만) ========== */
-if ($plan === 'free') {
+/* ========== free_summaries_used 증가 (plan=free + non-admin 일 때만) ========== */
+if (!$isAdminUser && $plan === 'free') {
     try {
         $pdo->prepare('UPDATE members SET free_summaries_used = free_summaries_used + 1 WHERE email = :e')
             ->execute([':e' => $ownerEmail]);

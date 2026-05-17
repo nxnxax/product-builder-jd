@@ -79,6 +79,59 @@ POST /process-recording.php
 
 **앱 측 영향**: ApiError 핸들링 코드 spec §4 표준 기준이라 이번 변경으로 records.php 응답도 자연스럽게 처리됨 (이전엔 records.php 만 별도 분기 필요했을 것).
 
+### D-extra. 옵션 D — 양식 전송 (customer_log → ledger_records mirror)
+
+앱팀 추가 요청 (Req 2/3) 통합 처리. customer_log 와 ledger 시스템이 분리된 구조라서 둘을 연결하는 명시적 transfer endpoint 추가.
+
+**흐름:**
+```
+1. /process-recording.php → customer_log row 생성 (기존, 변경 없음)
+2. 앱 SummaryReview 모달에서 필요 시 customer_log_update 로 편집
+3. 앱이 "양식 전송" 버튼 → GET /records.php?resource=ledger-groups&page_type=customer 로 그룹 목록 조회
+4. 사용자가 그룹 선택 (0개면 모달이 "기본 그룹 자동 생성" 옵션 표시 또는 group_id=null 로 호출)
+5. 앱: POST /records.php?resource=customer-log
+   {
+     "action": "customer_log_send_to_group",
+     "id": "<customer_log_id>",
+     "group_id": <ledger_group_id | null>,
+     "override": { "customer_name": "...", "agent_memo": "..." }   // 선택, 사용자가 모달에서 수정한 값
+   }
+6. 백엔드:
+   - customer_log row owner 일치 + group_id owner+page_type='customer' 검증
+   - group_id null/invalid → 자동 default 그룹 생성 (제목 "그룹제목을 설정해주세요")
+   - customer_log 의 9필드 복호화 → override 적용 → data_json 으로 ledger_records insert
+   - customer_log.linked_ledger_record_id 컬럼에 새 ledger_records.id 저장
+7. 응답: { status: "ok", customer_log: {...}, ledger_record: {...}, group: {...} }
+```
+
+**Idempotency:** 같은 customer_log 가 이미 전송됐으면 (`linked_ledger_record_id` 존재) 새 ledger_record 만들지 않고 기존 것 반환 (`duplicate: true`).
+
+**자동 default 그룹 정의:**
+- `owner_email = current`, `page_type = 'customer'`, `name = '그룹제목을 설정해주세요'`, `is_default = 1`
+- `field_schema_json` (AES-256-GCM 암호화 저장) = 9필드 평행 매핑:
+  - `customer_name` (text, "고객명") / `phone_number` (text, "연락처") / `consult_at` (text, "상담 일시")
+  - `summary` (textarea, "요약") / `interest` (text, "관심 항목") / `inquiry` (textarea, "문의 내용")
+  - `budget_condition` (text, "예산/조건") / `next_action` (text, "다음 액션") / `agent_memo` (textarea, "내 메모")
+
+**스키마 변경:** `customer_log` 테이블에 `linked_ledger_record_id INT NULL` 컬럼 + 인덱스 추가. lazy ALTER (records.php / process-recording.php 양쪽 ensure 함수 동기화).
+
+**응답 `customer_log_row`:** `linked_ledger_record_id` 필드 노출 (앱이 양식 전송 여부 즉시 확인).
+
+### E. Admin quota bypass (Req 1)
+
+운영자 계정 (`nxnxax@gmail.com`) 은 통화 요약 quota 영구 우회. `process-recording.php` 의 plan 체크 + counter 증분 두 분기에서 `is_admin_email_for_recording()` 검사:
+
+```php
+$isAdminUser = is_admin_email_for_recording($ownerEmail);
+if (!$isAdminUser && $plan === 'free' && $freeUsed >= 5) { 403 plan_required }
+// ...
+if (!$isAdminUser && $plan === 'free') { UPDATE free_summaries_used += 1 }
+```
+
+allowlist 는 records.php 의 `admin_email_allowlist()` 와 같은 패턴 (`['nxnxax@gmail.com']`). 추후 admin 추가 시 두 곳 모두 갱신 필요 (admin 추가 빈도 낮아 trade-off 수용). `members.is_admin` 컬럼 도입 안 함.
+
+**Quick fix 병행:** 운영자가 phpMyAdmin 으로 `UPDATE members SET plan='premium', free_summaries_used=0 WHERE email='nxnxax@gmail.com'` 실행하면 기존 막힌 상태 즉시 해제. Long-term code fix 는 deploy 시점에 자동 적용.
+
 ### D. e2e 1차 검증 결과 (2026-05-17)
 
 | 라운드 | 호출 | 결과 |

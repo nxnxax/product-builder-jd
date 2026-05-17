@@ -954,6 +954,19 @@ function ensure_customer_log_table(PDO $pdo): bool {
                 UNIQUE KEY uniq_cl_idempotency (owner_email, client_request_id)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
         ");
+        // 옵션 D — 양식 전송 시 ledger_records 와 1:1 link. 기존 테이블에 없으면 ADD.
+        try {
+            $cols = $pdo->query("SHOW COLUMNS FROM customer_log")->fetchAll(PDO::FETCH_ASSOC);
+            $hasLink = false;
+            foreach ($cols as $c) { if (($c['Field'] ?? '') === 'linked_ledger_record_id') { $hasLink = true; break; } }
+            if (!$hasLink) {
+                $pdo->exec("ALTER TABLE customer_log
+                    ADD COLUMN linked_ledger_record_id INT NULL DEFAULT NULL,
+                    ADD INDEX idx_cl_linked (linked_ledger_record_id)");
+            }
+        } catch (Throwable $e) {
+            error_log('[records] customer_log ALTER linked_ledger_record_id failed: ' . $e->getMessage());
+        }
         return $done = true;
     } catch (Throwable $e) {
         error_log('[records] ensure_customer_log_table failed: ' . $e->getMessage());
@@ -1019,9 +1032,62 @@ function customer_log_row(array $row): array {
         'ai_generated_at'     => $row['ai_generated_at'] ?? null,
         'source'              => $row['source'] ?? 'app-auto',
         'client_request_id'   => $row['client_request_id'] ?? null,
+        'linked_ledger_record_id' => isset($row['linked_ledger_record_id']) && $row['linked_ledger_record_id'] !== null
+                                    ? (int)$row['linked_ledger_record_id'] : null,
         'created_at'          => $row['created_at'] ?? null,
         'updated_at'          => $row['updated_at'] ?? null,
     ];
+}
+
+/**
+ * 옵션 D — customer-log → ledger_records 전송용 기본 그룹의 field_schema.
+ * 9필드 평행 매핑. customers.html 의 ledger UI 가 이 schema 기반으로 컬럼 렌더.
+ */
+function customer_log_default_group_field_schema(): array {
+    return [
+        ['key' => 'customer_name',     'label' => '고객명',     'type' => 'text'],
+        ['key' => 'phone_number',      'label' => '연락처',     'type' => 'text'],
+        ['key' => 'consult_at',        'label' => '상담 일시',  'type' => 'text'],
+        ['key' => 'summary',           'label' => '요약',       'type' => 'textarea'],
+        ['key' => 'interest',          'label' => '관심 항목',  'type' => 'text'],
+        ['key' => 'inquiry',           'label' => '문의 내용',  'type' => 'textarea'],
+        ['key' => 'budget_condition',  'label' => '예산/조건',  'type' => 'text'],
+        ['key' => 'next_action',       'label' => '다음 액션',  'type' => 'text'],
+        ['key' => 'agent_memo',        'label' => '내 메모',    'type' => 'textarea'],
+    ];
+}
+
+/**
+ * 옵션 D — owner 의 customer page_type 그룹 중 default(또는 첫 번째) 반환.
+ * 없으면 자동 생성 (제목 "그룹제목을 설정해주세요", is_default=1, 9필드 schema).
+ */
+function ensure_customer_log_default_group(PDO $pdo, string $owner): ?array {
+    if (!ensure_ledger_tables($pdo)) return null;
+    try {
+        $stmt = $pdo->prepare("SELECT * FROM ledger_groups
+            WHERE owner_email = :o AND page_type = 'customer'
+            ORDER BY is_default DESC, id ASC LIMIT 1");
+        $stmt->execute([':o' => $owner]);
+        $existing = $stmt->fetch();
+        if ($existing) return $existing;
+
+        $schema = customer_log_default_group_field_schema();
+        $ins = $pdo->prepare("INSERT INTO ledger_groups
+            (owner_email, page_type, name, is_default, sort_order, field_schema_json, settings_json)
+            VALUES (:o, 'customer', :n, 1, 0, :fs, NULL)");
+        $ins->execute([
+            ':o'  => $owner,
+            ':n'  => '그룹제목을 설정해주세요',
+            ':fs' => youngman_encrypt_json($schema),
+        ]);
+        $newId = (int)$pdo->lastInsertId();
+        $sel = $pdo->prepare('SELECT * FROM ledger_groups WHERE id = :id LIMIT 1');
+        $sel->execute([':id' => $newId]);
+        return $sel->fetch() ?: null;
+    } catch (Throwable $e) {
+        error_log('[records] ensure_customer_log_default_group failed: ' . $e->getMessage());
+        return null;
+    }
 }
 
 /** 모바일 API 토큰 테이블 자동 마이그레이션. */
@@ -2968,6 +3034,108 @@ try {
             $del->execute([':id' => $id, ':o' => $owner]);
             if ($del->rowCount() === 0) respond(['status' => 'error', 'code' => 'not_found', 'message' => '존재하지 않거나 권한이 없습니다.'], 404);
             respond(['status' => 'ok']);
+        }
+
+        // ─── SEND TO GROUP (옵션 D — 양식 전송) ───
+        // customer_log row 1개를 사용자가 선택한 ledger_groups(page_type='customer') 의
+        // ledger_records 에 mirror. group_id 누락/invalid 시 default 그룹 자동 생성.
+        // override 파라미터로 사용자가 모달에서 편집한 필드 반영.
+        if ($action === 'customer_log_send_to_group') {
+            $cid = trim((string)($body['id'] ?? ''));
+            if ($cid === '') respond(['status' => 'error', 'code' => 'invalid_request', 'message' => 'id 가 필요합니다.'], 400);
+
+            // customer_log row 확인 (owner 격리).
+            $clStmt = $pdo->prepare('SELECT * FROM customer_log WHERE id = :id AND owner_email = :o LIMIT 1');
+            $clStmt->execute([':id' => $cid, ':o' => $owner]);
+            $clRow = $clStmt->fetch();
+            if (!$clRow) respond(['status' => 'error', 'code' => 'not_found', 'message' => 'customer_log 없거나 권한 없음.'], 404);
+
+            // 같은 customer_log 가 이미 전송됨 → idempotent: 기존 ledger_record 반환.
+            if (!empty($clRow['linked_ledger_record_id'])) {
+                $exLr = $pdo->prepare('SELECT * FROM ledger_records WHERE id = :id AND owner_email = :o LIMIT 1');
+                $exLr->execute([':id' => (int)$clRow['linked_ledger_record_id'], ':o' => $owner]);
+                $exLrRow = $exLr->fetch();
+                if ($exLrRow) {
+                    $exGr = $pdo->prepare('SELECT * FROM ledger_groups WHERE id = :id AND owner_email = :o LIMIT 1');
+                    $exGr->execute([':id' => (int)$exLrRow['group_id'], ':o' => $owner]);
+                    $exGrRow = $exGr->fetch();
+                    respond([
+                        'status' => 'ok',
+                        'duplicate' => true,
+                        'customer_log' => customer_log_row($clRow),
+                        'ledger_record' => ledger_record_row($exLrRow),
+                        'group' => $exGrRow ? ledger_group_row($exGrRow) : null,
+                    ]);
+                }
+            }
+
+            if (!ensure_ledger_tables($pdo)) {
+                respond(['status' => 'error', 'code' => 'upstream_failed', 'message' => 'ledger 마이그레이션 실패.'], 503);
+            }
+
+            // 그룹 결정: body.group_id 가 있으면 검증, 없거나 invalid 면 default 그룹 자동.
+            $gRow = null;
+            $gid = isset($body['group_id']) ? (int)$body['group_id'] : 0;
+            if ($gid > 0) {
+                $gStmt = $pdo->prepare("SELECT * FROM ledger_groups
+                    WHERE id = :id AND owner_email = :o AND page_type = 'customer' LIMIT 1");
+                $gStmt->execute([':id' => $gid, ':o' => $owner]);
+                $gRow = $gStmt->fetch() ?: null;
+            }
+            if (!$gRow) {
+                $gRow = ensure_customer_log_default_group($pdo, $owner);
+                if (!$gRow) respond(['status' => 'error', 'code' => 'upstream_failed', 'message' => '기본 그룹 자동 생성 실패.'], 503);
+            }
+
+            // data_json 구성: customer_log 9필드 복호화 + override 적용.
+            $piiKeys = ['customer_name', 'phone_number', 'summary', 'interest', 'inquiry',
+                        'budget_condition', 'next_action', 'agent_memo'];
+            $data = ['consult_at' => $clRow['consult_at'] ?? ''];
+            foreach ($piiKeys as $k) {
+                $data[$k] = (string)(youngman_decrypt($clRow[$k] ?? null) ?? '');
+            }
+            $override = (isset($body['override']) && is_array($body['override'])) ? $body['override'] : [];
+            foreach ($override as $k => $v) {
+                if (array_key_exists($k, $data)) {
+                    $data[$k] = (string)$v;
+                }
+            }
+
+            // sort_no 다음 값.
+            $nxt = $pdo->prepare('SELECT IFNULL(MAX(sort_no), 0) + 1 FROM ledger_records WHERE group_id = :g');
+            $nxt->execute([':g' => (int)$gRow['id']]);
+            $sortNo = (int)$nxt->fetchColumn();
+
+            $ins = $pdo->prepare('INSERT INTO ledger_records
+                (group_id, owner_email, sort_no, data_json, source)
+                VALUES (:g, :o, :sn, :d, :s)');
+            $ins->execute([
+                ':g'  => (int)$gRow['id'],
+                ':o'  => $owner,
+                ':sn' => $sortNo,
+                ':d'  => youngman_encrypt_json($data),
+                ':s'  => 'app-call-summary',
+            ]);
+            $newLrId = (int)$pdo->lastInsertId();
+
+            // customer_log 에 link 저장.
+            $pdo->prepare('UPDATE customer_log SET linked_ledger_record_id = :lr WHERE id = :id AND owner_email = :o')
+                ->execute([':lr' => $newLrId, ':id' => $cid, ':o' => $owner]);
+
+            // 최종 응답: 갱신된 customer_log + 새 ledger_record + 그룹.
+            $clStmt2 = $pdo->prepare('SELECT * FROM customer_log WHERE id = :id LIMIT 1');
+            $clStmt2->execute([':id' => $cid]);
+            $clRow2 = $clStmt2->fetch();
+            $lrStmt = $pdo->prepare('SELECT * FROM ledger_records WHERE id = :id LIMIT 1');
+            $lrStmt->execute([':id' => $newLrId]);
+            $lrRow = $lrStmt->fetch();
+
+            respond([
+                'status' => 'ok',
+                'customer_log' => $clRow2 ? customer_log_row($clRow2) : null,
+                'ledger_record' => $lrRow ? ledger_record_row($lrRow) : null,
+                'group' => ledger_group_row($gRow),
+            ]);
         }
 
         respond(['status' => 'error', 'code' => 'invalid_request', 'message' => '지원하지 않는 action 입니다.'], 400);
