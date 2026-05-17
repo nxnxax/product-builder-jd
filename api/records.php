@@ -1520,8 +1520,13 @@ try {
     // Public resources (no auth) — keep narrow.
     $publicResources = ['auth-availability', 'find-email', 'find-email-send-otp', 'find-email-verify-otp',
                         'find-pwd-send-otp', 'find-pwd-verify-otp', 'find-pwd-reset'];
+    // self-auth resources — global verify_auth_token 우회, handler 안에서 단순 /auth/v1/user 패턴 + spec §4 응답 shape.
+    // upload.php / process-recording.php 와 동일한 인증 흐름으로 통일.
+    $selfAuthResources = ['customer-log'];
     $peekedResource = strtolower(trim((string)($_GET['resource'] ?? '')));
-    $authUser = in_array($peekedResource, $publicResources, true) ? null : verify_auth_token($auth);
+    $isSkipGlobalAuth = in_array($peekedResource, $publicResources, true)
+                      || in_array($peekedResource, $selfAuthResources, true);
+    $authUser = $isSkipGlobalAuth ? null : verify_auth_token($auth);
 
     $pdo = new PDO(
         sprintf(
@@ -2815,16 +2820,53 @@ try {
 
     /* ============================================================
        customer_log — 통화 녹취 AI 요약 (앱 자동 입력 + 웹 수동 편집)
-       Spec: CALL_RECORDING_BACKEND.md §6
+       Spec: CALL_RECORDING_BACKEND.md §6.
+
+       글로벌 verify_auth_token 우회 ($selfAuthResources 에 등록) + 여기서
+       /auth/v1/user 단순 호출로 자체 인증 (upload.php / process-recording.php
+       와 동일한 검증된 패턴). 응답 shape 도 spec §4 표준
+       ({status:'ok',...} / {status:'error', code, message}) 으로 통일.
        ============================================================ */
     if ($resource === 'customer-log') {
-        enforce_registered_member($pdo, $authUser);
+        // ── 자체 인증 (Supabase /auth/v1/user 직접 호출 패턴) ──
+        $clHdr = read_authorization_header();
+        if (!preg_match('/^Bearer\s+(.+)$/i', $clHdr, $clM)) {
+            respond(['status' => 'error', 'code' => 'unauthorized', 'message' => '로그인이 필요합니다.'], 401);
+        }
+        $clToken = trim($clM[1]);
+        $clBase  = !empty($auth['supabase_url']) ? rtrim((string)$auth['supabase_url'], '/') : '';
+        $clKey   = (string)($auth['anon_key'] ?? '');
+        if ($clBase === '' || $clKey === '') {
+            respond(['status' => 'error', 'code' => 'unauthorized', 'message' => '서버 인증 설정 누락 (supabase_url / anon_key).'], 500);
+        }
+        $clCh = curl_init($clBase . '/auth/v1/user');
+        curl_setopt_array($clCh, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_HTTPHEADER => ['Authorization: Bearer ' . $clToken, 'apikey: ' . $clKey],
+            CURLOPT_TIMEOUT => 8,
+            CURLOPT_CONNECTTIMEOUT => 5,
+        ]);
+        $clResp = curl_exec($clCh);
+        $clStatus = (int)curl_getinfo($clCh, CURLINFO_HTTP_CODE);
+        curl_close($clCh);
+        if ($clStatus !== 200 || !$clResp) {
+            respond(['status' => 'error', 'code' => 'unauthorized',
+                'message' => '토큰 검증 실패 (Supabase ' . $clStatus . '). 다시 로그인해주세요.'], 401);
+        }
+        $clData = json_decode((string)$clResp, true);
+        $clEmail = strtolower(trim((string)($clData['email'] ?? '')));
+        if ($clEmail === '') {
+            respond(['status' => 'error', 'code' => 'unauthorized', 'message' => '토큰에서 이메일 추출 실패.'], 401);
+        }
+        $authUser = ['email' => $clEmail, 'sub' => $clData['id'] ?? null];
+
+        // ── 테이블/컬럼 보장 ──
         if (!ensure_customer_log_table($pdo)) {
-            respond(['ok' => false, 'error' => 'customer_log 마이그레이션 실패 — 잠시 후 다시 시도'], 503);
+            respond(['status' => 'error', 'code' => 'upstream_failed',
+                'message' => 'customer_log 마이그레이션 실패 — 잠시 후 다시 시도'], 503);
         }
         ensure_members_plan_columns($pdo);
-        $owner = current_owner_email($authUser);
-        if ($owner === '') respond(['ok' => false, 'error' => '인증된 사용자 정보가 없습니다.'], 401);
+        $owner = $clEmail;
 
         $action = strtolower(trim((string)($body['action'] ?? $_GET['action'] ?? '')));
 
@@ -2855,7 +2897,7 @@ try {
             reset($rows);
 
             respond([
-                'ok' => true,
+                'status' => 'ok',
                 'items' => array_map('customer_log_row', $rows),
                 'next_before' => $nextBefore,
             ]);
@@ -2864,30 +2906,28 @@ try {
         // ─── GET (단일 row) ───
         if ($action === 'customer_log_get') {
             $id = trim((string)($body['id'] ?? $_GET['id'] ?? ''));
-            if ($id === '') respond(['ok' => false, 'error' => 'id 가 필요합니다.'], 400);
+            if ($id === '') respond(['status' => 'error', 'code' => 'invalid_request', 'message' => 'id 가 필요합니다.'], 400);
             $stmt = $pdo->prepare('SELECT * FROM customer_log WHERE id = :id AND owner_email = :o LIMIT 1');
             $stmt->execute([':id' => $id, ':o' => $owner]);
             $row = $stmt->fetch();
-            if (!$row) respond(['ok' => false, 'error' => '존재하지 않거나 권한이 없습니다.'], 404);
-            respond(['ok' => true, 'customer_log' => customer_log_row($row)]);
+            if (!$row) respond(['status' => 'error', 'code' => 'not_found', 'message' => '존재하지 않거나 권한이 없습니다.'], 404);
+            respond(['status' => 'ok', 'customer_log' => customer_log_row($row)]);
         }
 
         // ─── UPDATE (부분 patch) ───
         if ($action === 'customer_log_update') {
             $id = trim((string)($body['id'] ?? ''));
-            if ($id === '') respond(['ok' => false, 'error' => 'id 가 필요합니다.'], 400);
+            if ($id === '') respond(['status' => 'error', 'code' => 'invalid_request', 'message' => 'id 가 필요합니다.'], 400);
             $patch = isset($body['patch']) && is_array($body['patch']) ? $body['patch'] : [];
-            if (!$patch) respond(['ok' => false, 'error' => 'patch 가 비어있습니다.'], 400);
+            if (!$patch) respond(['status' => 'error', 'code' => 'invalid_request', 'message' => 'patch 가 비어있습니다.'], 400);
 
-            // 소유권 확인.
             $owns = $pdo->prepare('SELECT 1 FROM customer_log WHERE id = :id AND owner_email = :o LIMIT 1');
             $owns->execute([':id' => $id, ':o' => $owner]);
-            if (!$owns->fetchColumn()) respond(['ok' => false, 'error' => '존재하지 않거나 권한이 없습니다.'], 404);
+            if (!$owns->fetchColumn()) respond(['status' => 'error', 'code' => 'not_found', 'message' => '존재하지 않거나 권한이 없습니다.'], 404);
 
-            // 허용 컬럼 + 암호화 여부.
             $piiFields = ['customer_name', 'phone_number', 'summary', 'interest', 'inquiry',
                           'budget_condition', 'next_action', 'agent_memo', 'transcript'];
-            $plainFields = ['consult_at'];   // source/audio_kept 등은 사용자 수정 불가.
+            $plainFields = ['consult_at'];
 
             $assignments = [];
             $params = [':id' => $id, ':o' => $owner];
@@ -2896,7 +2936,6 @@ try {
                     $assignments[] = '`' . $key . '` = :' . $key;
                     $params[':' . $key] = ($value === null || $value === '') ? null : youngman_encrypt((string)$value);
                     if ($key === 'phone_number') {
-                        // 정규화된 phone hash 도 같이 업데이트.
                         $assignments[] = 'customer_phone_lookup = :phlookup';
                         $params[':phlookup'] = customer_phone_lookup_key(($value === null || $value === '') ? null : (string)$value);
                     }
@@ -2909,7 +2948,7 @@ try {
                     }
                 }
             }
-            if (!$assignments) respond(['ok' => false, 'error' => '수정 가능한 필드가 없습니다.'], 400);
+            if (!$assignments) respond(['status' => 'error', 'code' => 'invalid_request', 'message' => '수정 가능한 필드가 없습니다.'], 400);
 
             $upd = $pdo->prepare('UPDATE customer_log SET ' . implode(', ', $assignments)
                                  . ' WHERE id = :id AND owner_email = :o');
@@ -2918,20 +2957,20 @@ try {
             $sel = $pdo->prepare('SELECT * FROM customer_log WHERE id = :id AND owner_email = :o LIMIT 1');
             $sel->execute([':id' => $id, ':o' => $owner]);
             $row = $sel->fetch();
-            respond(['ok' => true, 'customer_log' => $row ? customer_log_row($row) : null]);
+            respond(['status' => 'ok', 'customer_log' => $row ? customer_log_row($row) : null]);
         }
 
         // ─── DELETE ───
         if ($action === 'customer_log_delete') {
             $id = trim((string)($body['id'] ?? ''));
-            if ($id === '') respond(['ok' => false, 'error' => 'id 가 필요합니다.'], 400);
+            if ($id === '') respond(['status' => 'error', 'code' => 'invalid_request', 'message' => 'id 가 필요합니다.'], 400);
             $del = $pdo->prepare('DELETE FROM customer_log WHERE id = :id AND owner_email = :o');
             $del->execute([':id' => $id, ':o' => $owner]);
-            if ($del->rowCount() === 0) respond(['ok' => false, 'error' => '존재하지 않거나 권한이 없습니다.'], 404);
-            respond(['ok' => true]);
+            if ($del->rowCount() === 0) respond(['status' => 'error', 'code' => 'not_found', 'message' => '존재하지 않거나 권한이 없습니다.'], 404);
+            respond(['status' => 'ok']);
         }
 
-        respond(['ok' => false, 'error' => '지원하지 않는 action 입니다.'], 400);
+        respond(['status' => 'error', 'code' => 'invalid_request', 'message' => '지원하지 않는 action 입니다.'], 400);
     }
 
     enforce_registered_member($pdo, $authUser);
