@@ -9,6 +9,92 @@
 
 ---
 
+## Phase 1 변경 이력 (2026-05-17 e2e 1차 검증 완료 시점 반영)
+
+초기 spec 합의 후 e2e 테스트 라운드를 거치면서 확정된 변경 사항. 본문 §5/§6 등은 합의 시점 그대로 두고, 라이브 작동 사양은 이 섹션이 정본.
+
+### A. STT 엔진 변경 — OpenAI Whisper → Naver CLOVA Speech
+
+- **원인**: Samsung T전화 통화녹음 `.m4a` 가 실제로는 3gp4 컨테이너 (AMR-NB/AMR-WB 코덱). Whisper 지원 목록에 3gp 없음. cafe24 ffmpeg 미설치 (`exit=127`) 라 서버측 transcode 불가.
+- **결정**: STT 엔진 자체를 NCP CLOVA Speech (Long Sentence Recognition) 로 교체. 3gpp/AMR 네이티브 지원 + 한국어 정확도 우위.
+- **변경 endpoint**: `POST {NCP_CLOVA_INVOKE_URL}/recognizer/upload`, 헤더 `X-CLOVASPEECH-API-KEY`, multipart `media` + `params` (`language=ko-KR`, `completion=sync`, `fullText=true`, `diarization` 2명).
+- **secrets 추가**: GitHub Secrets `NCP_CLOVA_INVOKE_URL`, `NCP_CLOVA_SECRET` → `deploy.yml` `.env` assembly 에서 자동 주입.
+- **`ai_model` 컬럼 값**: `gpt-4o-mini` → `naver-clova-speech+gpt-4o-mini` (STT+요약 합산 표시).
+- **앱 측 영향**: 0 (response shape 동일).
+
+### B. LLM 요약 — `customer_name` 결정 룰 7단계 + `customer_name_hint` body 필드
+
+LLM 이 추측으로 customer_name 채우지 않도록 prompt 강화 + 앱 측 폰 contacts lookup 결과를 받을 수 있는 hint 필드 신설.
+
+**룰 우선순위** (백엔드에서 LLM 호출 결과 덮어쓰는 §1 포함):
+
+| 순위 | 조건 | customer_name 값 |
+|---|---|---|
+| §1 | request body 에 `customer_name_hint` 제공 (앱 측 contacts lookup 결과) | hint 값 그대로 (LLM 출력 무시) |
+| §2 | transcript 에 이름 명시 | "{이름}님" |
+| §3 | "사장님" 호칭 + 나이/연령대 명시 | "{연령대}대 남성" |
+| §4 | "사모님" 호칭 + 나이/연령대 명시 | "{연령대}대 여성" |
+| §5 | "사장님" 호칭만 (나이 없음) | "남성" |
+| §6 | "사모님" 호칭만 (나이 없음) | "여성" |
+| §7 | 정보 없음 | "고객" |
+
+금지: 음성 timbre / 어휘 / 말투로 성별·연령 추정. 영업측이 다른 사람을 부른 호칭은 적용 제외. Few-shot 테스트 케이스 prompt 안에 포함.
+
+**`customer_name_hint` body 필드 (NEW)**:
+
+```json
+POST /process-recording.php
+{
+  "storage_path": "...",
+  "client_request_id": "...",
+  "phone_number": "...",
+  "customer_name_hint": "string | null"   // NEW (선택, 최대 80자)
+}
+```
+
+서버 처리: `customer_name_hint` 가 비어있지 않으면 LLM 출력 무시하고 hint 값으로 강제 지정. 비어있거나 누락이면 LLM 출력 (§2~§7) 사용.
+
+**앱 측 영향**: hint 안 보내면 자동 폴백. 앱 측 READ_CONTACTS 권한 + native module 작업 끝나면 hint 보내기 시작하면 됨.
+
+### C. `records.php` customer-log resource — 자체 인증 + 응답 shape 통일
+
+**문제**: 같은 JWT 가 `upload.php` / `process-recording.php` 는 200 통과하는데 `records.php` 만 `"지원하지 않는 인증 토큰"` 401 떨굼. `verify_auth_token` 의 firebase/HS256/userinfo 다단계 검증 중 어느 단계에서 fail.
+
+**해결**:
+- `records.php` 의 `$selfAuthResources = ['customer-log']` 등록 → global `verify_auth_token` 우회.
+- `customer-log` resource handler 안에서 자체 `/auth/v1/user` 호출 (검증된 단순 패턴, `upload.php` 와 동일).
+- 다른 resource (admin/customers/forms 등 web 페이지가 의존) 의 인증 흐름은 그대로 유지 → 회귀 위험 0.
+
+**응답 shape 통일** — customer-log resource 의 모든 응답을 spec §4 표준으로:
+
+| 상황 | 이전 | 변경 후 |
+|---|---|---|
+| 성공 (단일) | `{ok:true, customer_log:{...}}` | `{status:"ok", customer_log:{...}}` |
+| 성공 (list) | `{ok:true, items:[...], next_before}` | `{status:"ok", items:[...], next_before}` |
+| 성공 (delete) | `{ok:true}` | `{status:"ok"}` |
+| 인증 실패 | `{ok:false, error:"..."}` | `{status:"error", code:"unauthorized", message:"..."}` |
+| id/patch 검증 실패 | `{ok:false, error:"..."}` | `{status:"error", code:"invalid_request", message:"..."}` |
+| 없거나 권한 없음 | `{ok:false, error:"..."}` | `{status:"error", code:"not_found", message:"..."}` |
+| 마이그레이션/upstream | `{ok:false, error:"..."}` | `{status:"error", code:"upstream_failed", message:"..."}` |
+
+**앱 측 영향**: ApiError 핸들링 코드 spec §4 표준 기준이라 이번 변경으로 records.php 응답도 자연스럽게 처리됨 (이전엔 records.php 만 별도 분기 필요했을 것).
+
+### D. e2e 1차 검증 결과 (2026-05-17)
+
+| 라운드 | 호출 | 결과 |
+|---|---|---|
+| R1 — upload | `POST /upload.php` (multipart) | 200 / `status:ok` / storage_path 반환 ✓ |
+| R1 — process | `POST /process-recording.php` | 200 / Clova STT + gpt-4o-mini 요약 / customer_log row 생성 ✓ |
+| R2 — update | `POST /records.php?resource=customer-log` action=update | 200 / patch 반영 / 다른 필드 무변경 ✓ |
+| R3 — delete × 2 | action=delete | 200 / `{status:"ok"}` × 2 ✓ |
+
+**검증 항목** (앱팀 라운드 1 응답 페이로드 기준):
+- `status: "ok"`, `id: CHAR(36) UUID`, `summary` 한국어 3문장, `transcript` Clova STT 정상, `audio_kept: false`, `ai_model: naver-clova-speech+gpt-4o-mini`, `customer_name: "고객"` (호칭 없는 짧은 통화 룰 §7 폴백) — 모두 spec 부합.
+
+**Idempotency 패턴 합의** (Phase 2 반영 예정): 앱 측이 `client_request_id` 를 audio file uri 기준 deterministic 으로 생성. 401/네트워크 에러 후 재시도 시 같은 id 그대로 → 서버 24h idempotency 분기로 같은 row 반환 (Clova/LLM 비용 0). 사용자 "다시 처리" 시에만 새 id.
+
+---
+
 ## 0. TL;DR — 앱 client 코드에 영향 있는 변경
 
 | 영역 | 원본 spec | 우리 구현 | 앱 client 영향 |

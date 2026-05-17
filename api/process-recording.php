@@ -445,7 +445,6 @@ curl_setopt_array($ch, [
 $sttResp = curl_exec($ch);
 $sttStatus = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
 $sttErr = curl_error($ch);
-$sttTimeMs = (int)(curl_getinfo($ch, CURLINFO_TOTAL_TIME) * 1000);
 curl_close($ch);
 
 if ($sttResp === false) jerror('upstream_failed', 'Clova 호출 실패: ' . $sttErr, 502);
@@ -453,30 +452,7 @@ $sttData = json_decode((string)$sttResp, true);
 
 if ($sttStatus < 200 || $sttStatus >= 300) {
     $msg = is_array($sttData) ? ($sttData['message'] ?? json_encode($sttData)) : substr((string)$sttResp, 0, 300);
-    // 임시 진단 — e2e 1회 성공 후 제거 예정.
-    $diskMime = function_exists('mime_content_type') ? (@mime_content_type($realPath) ?: null) : null;
-    $sniffHex = '';
-    $fp = @fopen($realPath, 'rb');
-    if ($fp) {
-        $head = (string)@fread($fp, 16);
-        @fclose($fp);
-        $sniffHex = bin2hex($head);
-    }
-    jout([
-        'status' => 'error',
-        'code' => 'upstream_failed',
-        'message' => 'Clova ' . $sttStatus . ': ' . $msg,
-        'debug' => [
-            'fix_build' => 'clova-v1',
-            'src_ext' => $srcExt,
-            'clova_postname' => $clovaPostname,
-            'clova_mime' => $clovaMime,
-            'disk_mime_detect' => $diskMime,
-            'file_head_hex' => $sniffHex,
-            'clova_time_ms' => $sttTimeMs,
-            'audio_storage_path' => $storagePath,
-        ],
-    ], 502);
+    jerror('upstream_failed', 'Clova ' . $sttStatus . ': ' . $msg, 502);
 }
 
 // transcript 추출: fullText=true 면 $sttData['text'] 에 합쳐진 결과 옴.
