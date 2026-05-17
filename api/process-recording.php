@@ -391,12 +391,30 @@ if (!$uploadsReal || strpos($realPath, $uploadsReal . DIRECTORY_SEPARATOR) !== 0
 $apiKey = load_env_value('OPENAI_API_KEY');
 if ($apiKey === '') jerror('upstream_failed', 'OPENAI_API_KEY 미설정.', 500);
 
-$audioMime = '';
-if (function_exists('mime_content_type')) {
-    $detected = @mime_content_type($realPath);
-    if (is_string($detected)) $audioMime = strtolower($detected);
-}
-if ($audioMime === '') $audioMime = 'audio/mp4';
+// Whisper 는 multipart filename 확장자 또는 Content-Type 으로 포맷을 판단.
+// 우리 파일명은 UUID (예: 9f0e8d7c-1234-...-m4a) — 하이픈이 많아 일부 Whisper 파서가 확장자 인식 실패 → 400.
+// 또한 mime_content_type 이 'audio/x-m4a' 같은 변형 mime 을 반환하면 Whisper 가 거부.
+// 해결: 디스크 확장자에서 정규화된 mime + 명시적 'audio.<ext>' postname 으로 전송.
+$srcExt = strtolower(pathinfo($realPath, PATHINFO_EXTENSION));
+$whisperMimeMap = [
+    'm4a'  => 'audio/mp4',
+    'mp4'  => 'audio/mp4',
+    'mp3'  => 'audio/mpeg',
+    'mpga' => 'audio/mpeg',
+    'wav'  => 'audio/wav',
+    'webm' => 'audio/webm',
+    'ogg'  => 'audio/ogg',
+    'oga'  => 'audio/ogg',
+    'opus' => 'audio/ogg',
+    'flac' => 'audio/flac',
+    '3gp'  => 'audio/mp4',
+    '3gpp' => 'audio/mp4',
+    'aac'  => 'audio/mp4',
+    'amr'  => 'audio/mp4',
+];
+$whisperExt  = isset($whisperMimeMap[$srcExt]) ? $srcExt : 'm4a';
+$whisperMime = $whisperMimeMap[$whisperExt];
+$whisperPostname = 'audio.' . $whisperExt;
 
 $ch = curl_init('https://api.openai.com/v1/audio/transcriptions');
 curl_setopt_array($ch, [
@@ -405,7 +423,7 @@ curl_setopt_array($ch, [
     CURLOPT_POSTFIELDS => [
         'model' => 'whisper-1',
         'language' => 'ko',
-        'file' => new CURLFile($realPath, $audioMime, basename($realPath)),
+        'file' => new CURLFile($realPath, $whisperMime, $whisperPostname),
     ],
     CURLOPT_HTTPHEADER => ['Authorization: Bearer ' . $apiKey],
     CURLOPT_TIMEOUT => 120,
