@@ -1046,19 +1046,21 @@ function customer_log_row(array $row): array {
 
 /**
  * 옵션 D — customer-log → ledger_records 전송용 기본 그룹의 field_schema.
- * 9필드 평행 매핑. customers.html 의 ledger UI 가 이 schema 기반으로 컬럼 렌더.
+ * 5필드 매핑 (앱팀 요청 — customers.html ledger UI 가 인식하는 key 명):
+ *   customer ← customer_name
+ *   phone    ← phone_number
+ *   date     ← consult_at
+ *   content  ← summary + interest + inquiry (라벨로 구분, 줄바꿈)
+ *   memo     ← agent_memo
+ * (budget_condition / next_action / transcript 는 매핑 미적용 — 추후 합의 따라 content 에 추가 가능)
  */
 function customer_log_default_group_field_schema(): array {
     return [
-        ['key' => 'customer_name',     'label' => '고객명',     'type' => 'text'],
-        ['key' => 'phone_number',      'label' => '연락처',     'type' => 'text'],
-        ['key' => 'consult_at',        'label' => '상담 일시',  'type' => 'text'],
-        ['key' => 'summary',           'label' => '요약',       'type' => 'textarea'],
-        ['key' => 'interest',          'label' => '관심 항목',  'type' => 'text'],
-        ['key' => 'inquiry',           'label' => '문의 내용',  'type' => 'textarea'],
-        ['key' => 'budget_condition',  'label' => '예산/조건',  'type' => 'text'],
-        ['key' => 'next_action',       'label' => '다음 액션',  'type' => 'text'],
-        ['key' => 'agent_memo',        'label' => '내 메모',    'type' => 'textarea'],
+        ['key' => 'customer', 'label' => '고객',       'type' => 'text'],
+        ['key' => 'phone',    'label' => '연락처',     'type' => 'text'],
+        ['key' => 'date',     'label' => '상담일시',   'type' => 'text'],
+        ['key' => 'content',  'label' => '상담 내용',  'type' => 'textarea'],
+        ['key' => 'memo',     'label' => '내 메모',    'type' => 'textarea'],
     ];
 }
 
@@ -1074,8 +1076,24 @@ function ensure_customer_log_default_group(PDO $pdo, string $owner): ?array {
             ORDER BY is_default DESC, id ASC LIMIT 1");
         $stmt->execute([':o' => $owner]);
         $existing = $stmt->fetch();
-        if ($existing) return $existing;
 
+        if ($existing) {
+            // Lazy 마이그레이션 — 라운드 4 자동 생성된 옛 9필드 schema 면 새 5필드로 자동 갱신.
+            // 판별: field_schema_json 첫 element key 가 'customer_name' 이면 옛 형식.
+            $rawSchema = !empty($existing['field_schema_json']) ? youngman_decrypt_json($existing['field_schema_json']) : null;
+            if (is_array($rawSchema) && !empty($rawSchema[0]) && is_array($rawSchema[0])
+                && ($rawSchema[0]['key'] ?? '') === 'customer_name') {
+                $newSchema = customer_log_default_group_field_schema();
+                $pdo->prepare('UPDATE ledger_groups SET field_schema_json = :fs WHERE id = :id AND owner_email = :o')
+                    ->execute([':fs' => youngman_encrypt_json($newSchema), ':id' => (int)$existing['id'], ':o' => $owner]);
+                $sel = $pdo->prepare('SELECT * FROM ledger_groups WHERE id = :id LIMIT 1');
+                $sel->execute([':id' => (int)$existing['id']]);
+                return $sel->fetch() ?: $existing;
+            }
+            return $existing;
+        }
+
+        // 새 그룹 — 5필드 schema.
         $schema = customer_log_default_group_field_schema();
         $ins = $pdo->prepare("INSERT INTO ledger_groups
             (owner_email, page_type, name, is_default, sort_order, field_schema_json, settings_json)
@@ -3172,13 +3190,33 @@ try {
                 if (!$gRow) respond(['status' => 'error', 'code' => 'upstream_failed', 'message' => '기본 그룹 자동 생성 실패.'], 503);
             }
 
-            // data_json 구성: customer_log 9필드 복호화 + override 적용.
-            $piiKeys = ['customer_name', 'phone_number', 'summary', 'interest', 'inquiry',
-                        'budget_condition', 'next_action', 'agent_memo'];
-            $data = ['consult_at' => $clRow['consult_at'] ?? ''];
-            foreach ($piiKeys as $k) {
-                $data[$k] = (string)(youngman_decrypt($clRow[$k] ?? null) ?? '');
-            }
+            // data_json 구성: customer_log → ledger 5필드 매핑 (앱팀 요청).
+            //   customer ← customer_name
+            //   phone    ← phone_number
+            //   date     ← consult_at
+            //   content  ← summary + interest + inquiry (라벨 + 줄바꿈)
+            //   memo     ← agent_memo
+            $clName    = trim((string)(youngman_decrypt($clRow['customer_name'] ?? '') ?? ''));
+            $clPhone   = trim((string)(youngman_decrypt($clRow['phone_number'] ?? '') ?? ''));
+            $clSummary = trim((string)(youngman_decrypt($clRow['summary'] ?? '') ?? ''));
+            $clIntr    = trim((string)(youngman_decrypt($clRow['interest'] ?? '') ?? ''));
+            $clInq     = trim((string)(youngman_decrypt($clRow['inquiry'] ?? '') ?? ''));
+            $clMemo    = trim((string)(youngman_decrypt($clRow['agent_memo'] ?? '') ?? ''));
+
+            $contentParts = [];
+            if ($clSummary !== '') $contentParts[] = $clSummary;
+            if ($clIntr    !== '') $contentParts[] = '관심: ' . $clIntr;
+            if ($clInq     !== '') $contentParts[] = '문의: ' . $clInq;
+
+            $data = [
+                'customer' => $clName,
+                'phone'    => $clPhone,
+                'date'     => (string)($clRow['consult_at'] ?? ''),
+                'content'  => implode("\n\n", $contentParts),
+                'memo'     => $clMemo,
+            ];
+
+            // override — 앱 측이 모달에서 편집한 값. key 는 5필드 (customer/phone/date/content/memo) 사용.
             $override = (isset($body['override']) && is_array($body['override'])) ? $body['override'] : [];
             foreach ($override as $k => $v) {
                 if (array_key_exists($k, $data)) {

@@ -114,12 +114,22 @@ POST /process-recording.php
 
 **Idempotency:** 같은 customer_log 가 이미 전송됐으면 (`linked_ledger_record_id` 존재) 새 ledger_record 만들지 않고 기존 것 반환 (`duplicate: true`).
 
-**자동 default 그룹 정의:**
+**자동 default 그룹 정의** (앱팀 요청 매핑 — 2026-05-17 갱신):
 - `owner_email = current`, `page_type = 'customer'`, `name = '그룹제목을 설정해주세요'`, `is_default = 1`
-- `field_schema_json` (AES-256-GCM 암호화 저장) = 9필드 평행 매핑:
-  - `customer_name` (text, "고객명") / `phone_number` (text, "연락처") / `consult_at` (text, "상담 일시")
-  - `summary` (textarea, "요약") / `interest` (text, "관심 항목") / `inquiry` (textarea, "문의 내용")
-  - `budget_condition` (text, "예산/조건") / `next_action` (text, "다음 액션") / `agent_memo` (textarea, "내 메모")
+- `field_schema_json` (AES-256-GCM 암호화 저장) = **5필드 매핑** (customers.html ledger UI 인식 key):
+
+| ledger key | label | type | customer_log 매핑 |
+|---|---|---|---|
+| `customer` | 고객 | text | `customer_name` |
+| `phone` | 연락처 | text | `phone_number` |
+| `date` | 상담일시 | text | `consult_at` |
+| `content` | 상담 내용 | textarea | `summary` + (`관심: ` + `interest`) + (`문의: ` + `inquiry`) — 라벨+줄바꿈 |
+| `memo` | 내 메모 | textarea | `agent_memo` |
+
+- `budget_condition` / `next_action` / `transcript` — 매핑 미적용. content 에 추가 필요하면 앱팀 회신.
+- **override 필드 key 도 5필드** — 앱이 모달에서 편집한 값을 `customer`/`phone`/`date`/`content`/`memo` key 로 보냄.
+
+**Lazy 마이그레이션:** `ensure_customer_log_default_group()` 이 기존 그룹 발견 시 `field_schema_json` 첫 element key 가 `customer_name` (옛 9필드) 이면 자동으로 새 5필드 schema 로 갱신. 라운드 4 초기 자동 생성된 그룹 자동 정리.
 
 **스키마 변경:** `customer_log` 테이블에 `linked_ledger_record_id INT NULL` 컬럼 + 인덱스 추가. lazy ALTER (records.php / process-recording.php 양쪽 ensure 함수 동기화).
 
