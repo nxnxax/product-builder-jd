@@ -23,9 +23,18 @@
 const BRIDGE_VERSION = '1.1.0';
 
 function isInApp() {
-    return typeof window !== 'undefined'
-        && !!window.ReactNativeWebView
-        && typeof window.ReactNativeWebView.postMessage === 'function';
+    if (typeof window === 'undefined') return false;
+    // ① RN WebView 표준 — ReactNativeWebView.postMessage 존재 시 즉시 true.
+    if (window.ReactNativeWebView && typeof window.ReactNativeWebView.postMessage === 'function') {
+        return true;
+    }
+    // ② user-agent fallback — 앱 빌드가 UA 끝에 'YoungmanApp' 키워드 부착.
+    //    RN WebView 의 ReactNativeWebView.postMessage inject 가 timing/플랫폼 차이로
+    //    nav 첫 렌더 시점에 아직 안 들어와있을 수 있음 → UA 가 안전한 보조 신호.
+    try {
+        if (/YoungmanApp/.test(navigator.userAgent || '')) return true;
+    } catch {}
+    return false;
 }
 
 function postToApp(type, payload) {
