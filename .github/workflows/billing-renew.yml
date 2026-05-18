@@ -1,0 +1,78 @@
+name: Billing Renew (daily cron)
+
+# 매일 KST 03:00 (UTC 18:00) cron-renew.php 호출.
+# PortOne V2 빌링키 정기결제 자동 갱신 + 해지 강등 + past_due 재시도.
+# Polar/Stripe 같이 PG 자체 정기결제 없이 우리 cron 이 빌링키 결제 호출.
+#
+# 작동 조건:
+#   - GitHub Secret AUDIO_CLEANUP_TOKEN 등록 (cron-renew.php 가 같은 시크릿으로 인증)
+#   - 그리고 PORTONE_API_SECRET 등 결제 시크릿이 cafe24 .env 에 있어야 (deploy.yml 자동 동기화)
+#
+# 수동 실행: Actions 탭 → "Billing Renew (daily cron)" → Run workflow.
+# dry_run=true 모드로 영향 없이 대상만 확인 가능.
+
+on:
+  schedule:
+    # cron 표기 (UTC). '0 18 * * *' = UTC 18:00 = KST 다음날 03:00.
+    - cron: '0 18 * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run mode (결제 시도 없이 대상만 조회)'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
+
+concurrency:
+  group: billing-renew
+  cancel-in-progress: false
+
+jobs:
+  renew:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify cron token secret
+        env:
+          TOKEN: ${{ secrets.AUDIO_CLEANUP_TOKEN }}
+        run: |
+          if [ -z "$TOKEN" ]; then
+            echo "::error::AUDIO_CLEANUP_TOKEN secret 미등록. 등록 필요."
+            exit 1
+          fi
+          echo "Token secret OK (length=${#TOKEN})"
+
+      - name: Call cron-renew.php
+        env:
+          TOKEN: ${{ secrets.AUDIO_CLEANUP_TOKEN }}
+          DRY_RUN: ${{ inputs.dry_run || 'false' }}
+        run: |
+          set -e
+          URL="https://youngman-biz.com/billing/cron-renew.php?token=$TOKEN"
+          if [ "$DRY_RUN" = "true" ]; then
+            URL="$URL&dry_run=true"
+            echo "Mode: dry_run (실제 결제 안 함)"
+          else
+            echo "Mode: live"
+          fi
+
+          RESPONSE=$(curl -sk -w "\n__HTTP_CODE__%{http_code}" "$URL")
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n1 | sed 's/__HTTP_CODE__//')
+          BODY=$(echo "$RESPONSE" | sed '$d')
+
+          echo "── Response ($HTTP_CODE) ──"
+          echo "$BODY"
+          echo "──────────────"
+
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "::error::HTTP $HTTP_CODE — cron-renew.php 호출 실패"
+            exit 1
+          fi
+          if ! echo "$BODY" | grep -q '"status":"ok"'; then
+            echo "::error::응답에 status:ok 없음"
+            exit 1
+          fi
+
+          echo "Billing renew 정상 완료."
