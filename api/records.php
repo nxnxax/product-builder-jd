@@ -3276,16 +3276,110 @@ try {
             if ($clInq     !== '') $contentParts[] = '【문의】 ' . $clInq;
             if ($clBudg    !== '') $contentParts[] = '【예산/조건】 ' . $clBudg;
             if ($clNext    !== '') $contentParts[] = '【AI 관리 추천】 ' . $clNext;
+            $newSectionContent = implode("\n\n", $contentParts);
+            $todayDate = (string)($clRow['consult_at'] ?? '');
 
+            // ─── Phone 정규화 기반 기존 row 탐색 ───
+            // 같은 group 내 같은 phone 가진 row 가 있으면 INSERT 대신 UPDATE merge.
+            // 핵심: 하나의 phone = 하나의 row. 새 통화 정보는 기존 row 에 누적되어 시계열 관리.
+            $normalizedPhone = preg_replace('/[^0-9]/', '', (string)$clPhone);
+            $existingLrRow = null;
+            if ($normalizedPhone !== '') {
+                $findStmt = $pdo->prepare('SELECT * FROM ledger_records WHERE group_id = :g AND owner_email = :o ORDER BY sort_no ASC, id ASC');
+                $findStmt->execute([':g' => (int)$gRow['id'], ':o' => $owner]);
+                while ($r = $findStmt->fetch()) {
+                    $d = !empty($r['data_json']) ? youngman_decrypt_json($r['data_json']) : null;
+                    if (is_array($d)) {
+                        $p = preg_replace('/[^0-9]/', '', (string)($d['phone'] ?? ''));
+                        if ($p !== '' && $p === $normalizedPhone) {
+                            $existingLrRow = $r;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if ($existingLrRow) {
+                // ═══ MERGE 분기 — 기존 row 누적 갱신 ═══
+                $existingData = !empty($existingLrRow['data_json']) ? youngman_decrypt_json($existingLrRow['data_json']) : [];
+                if (!is_array($existingData)) $existingData = [];
+
+                // call_count = 기존 +1.
+                $prevCount = (int)($existingData['call_count'] ?? 0);
+                if ($prevCount < 1) $prevCount = 1;
+                $newCallCount = $prevCount + 1;
+
+                // content append — 최신이 위쪽. 회차 separator 마커.
+                $newSection = "──── {$todayDate} 통화 ({$newCallCount}회차) ────\n\n" . $newSectionContent;
+                $existingContent = (string)($existingData['content'] ?? '');
+                $mergedContent = $existingContent !== ''
+                    ? $newSection . "\n\n" . $existingContent
+                    : $newSection;
+
+                // agent_memo append — 최신 위, 빈 메모는 추가 안 함.
+                $existingMemo = (string)($existingData['agent_memo'] ?? '');
+                $mergedMemo = $existingMemo;
+                if ($clAgentMemo !== '') {
+                    $memoSection = "──── {$todayDate} ────\n" . $clAgentMemo;
+                    $mergedMemo = $existingMemo !== ''
+                        ? $memoSection . "\n\n" . $existingMemo
+                        : $memoSection;
+                }
+
+                $mergedData = $existingData;
+                $mergedData['date']       = $todayDate;  // 최근 통화 날짜 갱신
+                $mergedData['customer']   = $clName !== '' ? $clName : (string)($existingData['customer'] ?? '');
+                $mergedData['phone']      = $clPhone !== '' ? $clPhone : (string)($existingData['phone'] ?? '');
+                $mergedData['call_count'] = $newCallCount;
+                $mergedData['content']    = $mergedContent;
+                $mergedData['agent_memo'] = $mergedMemo;
+                // managed: 기존 그대로 유지 (사용자가 의도적으로 비관리 토글한 경우 보존).
+                // 옛 schema (managed 키 자체 없음) 면 true 로 보정.
+                if (!array_key_exists('managed', $mergedData)) $mergedData['managed'] = true;
+                // memo (비고): 기존 그대로 — 사용자 직접 입력 자유 필드.
+
+                // override 적용 (call_count 제외).
+                $override = (isset($body['override']) && is_array($body['override'])) ? $body['override'] : [];
+                foreach ($override as $k => $v) {
+                    if ($k === 'call_count') continue;
+                    if (array_key_exists($k, $mergedData)) {
+                        $mergedData[$k] = (string)$v;
+                    }
+                }
+
+                $pdo->prepare('UPDATE ledger_records SET data_json = :d WHERE id = :id AND owner_email = :o')
+                    ->execute([':d' => youngman_encrypt_json($mergedData), ':id' => (int)$existingLrRow['id'], ':o' => $owner]);
+
+                // customer_log link → 기존 ledger_record 가리키도록.
+                $pdo->prepare('UPDATE customer_log SET linked_ledger_record_id = :lr WHERE id = :id AND owner_email = :o')
+                    ->execute([':lr' => (int)$existingLrRow['id'], ':id' => $cid, ':o' => $owner]);
+
+                $clStmt2 = $pdo->prepare('SELECT * FROM customer_log WHERE id = :id LIMIT 1');
+                $clStmt2->execute([':id' => $cid]);
+                $clRow2 = $clStmt2->fetch();
+                $lrStmt = $pdo->prepare('SELECT * FROM ledger_records WHERE id = :id LIMIT 1');
+                $lrStmt->execute([':id' => (int)$existingLrRow['id']]);
+                $lrRow = $lrStmt->fetch();
+
+                respond([
+                    'status' => 'ok',
+                    'merged' => true,
+                    'customer_log'  => $clRow2 ? customer_log_row($clRow2) : null,
+                    'ledger_record' => $lrRow  ? ledger_record_row($lrRow) : null,
+                    'group' => ledger_group_row($gRow),
+                ]);
+            }
+
+            // ═══ INSERT 분기 (신규 phone 또는 phone 없음) ═══
             $callCount = calculate_call_count($pdo, (int)$gRow['id'], $owner, $clPhone);
 
             $data = [
                 'managed'    => true,
-                'date'       => (string)($clRow['consult_at'] ?? ''),
+                'date'       => $todayDate,
                 'customer'   => $clName,
                 'phone'      => $clPhone,
                 'call_count' => $callCount,
-                'content'    => implode("\n\n", $contentParts),
+                'content'    => $newSectionContent,
                 'agent_memo' => $clAgentMemo,
                 'memo'       => '',
             ];

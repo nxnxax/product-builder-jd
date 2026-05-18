@@ -114,6 +114,17 @@ POST /process-recording.php
 
 **Idempotency:** 같은 customer_log 가 이미 전송됐으면 (`linked_ledger_record_id` 존재) 새 ledger_record 만들지 않고 기존 것 반환 (`duplicate: true`).
 
+**Phone 기반 merge (2026-05-18):** customer_log 가 새로 전송되더라도 같은 그룹 내에 정규화된 phone (숫자만 추출) 이 일치하는 기존 ledger_record 가 있으면 INSERT 대신 UPDATE 로 기존 row 누적:
+- `content`: 최신 통화가 위쪽에 `──── {date} 통화 ({N}회차) ────` separator 와 함께 prepend
+- `agent_memo`: 같은 방식으로 최신 위 prepend (빈 메모는 추가 안 함)
+- `call_count`: 기존 값 +1
+- `date`: 최근 통화 날짜로 갱신
+- `customer`/`phone`: 새 값으로 갱신 (빈 값이면 기존 유지)
+- `managed`: 기존 값 유지 (사용자가 비관리로 토글했을 수 있음 보존). 옛 schema 라 키 자체 없으면 `true`.
+- `memo` (비고): 기존 그대로 (사용자 직접 입력 자유 필드)
+
+응답에 `merged: true` 플래그. 앱 UI 가 "행 추가" vs "기존 행 누적" 구분 가능. **핵심: 하나의 phone = 하나의 row, 시계열 시계열 누적 관리.**
+
 **자동 default 그룹 정의** (앱팀 요청 매핑 — 2026-05-18 8필드 갱신):
 - `owner_email = current`, `page_type = 'customer'`, `name = '그룹제목을 설정해주세요'`, `is_default = 1`
 - `field_schema_json` (AES-256-GCM 암호화 저장) = **8필드 매핑** (customers.html ledger UI 인식 key):
