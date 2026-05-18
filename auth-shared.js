@@ -433,6 +433,7 @@ const ICON = {
     megaphone: SVG('<path d="M3 11l18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/>'),
     chat:      SVG('<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>'),
     help:      SVG('<circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/>'),
+    settings:  SVG('<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>'),
 };
 
 // 모바일 하단 nav — 헤더 / 외부 다운로드 페이지 양쪽에서 공유.
@@ -484,6 +485,11 @@ function renderBottomNav(activeKey) {
         slot1Item,
         slot2Item,
     ];
+    // 앱 (RN WebView) 일 때만 최우측 '설정' 추가 — 앱 전용 설정 페이지.
+    // 웹 브라우저에는 노출 안 함 (window.YoungmanBridge 없음).
+    if (_bridgeIsInApp()) {
+        items.push({ key: 'app-settings.html', label: '설정', href: 'app-settings.html', icon: ICON.settings });
+    }
     const html = items.map(item => {
         const isHome = item.key === 'index.html' && (path === '' || path === 'index.html');
         const isActive = isHome || path === item.key;
@@ -500,6 +506,8 @@ function renderBottomNav(activeKey) {
     nav.className = 'mobile-bottom-nav';
     nav.setAttribute('aria-label', '주요 메뉴');
     nav.setAttribute('data-yman-bottom-nav', '');
+    // items 개수에 맞춰 grid-template 동적 (CSS 기본 4탭 → 앱은 5탭).
+    nav.style.gridTemplateColumns = `repeat(${items.length}, minmax(0, 1fr))`;
     nav.innerHTML = html;
     document.body.appendChild(nav);
 }

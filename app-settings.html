@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>앱 설정 · YOUNGMAN</title>
+    <link rel="icon" type="image/png" href="logo_main.png">
+    <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
+    <link rel="stylesheet" href="style.css?v=20260518-app-settings">
+
+    <style>
+        .app-settings-shell {
+            max-width: 720px;
+            margin: 0 auto;
+            padding: 24px 20px 40px;
+        }
+        .app-settings-header {
+            margin-bottom: 18px;
+        }
+        .app-settings-header h1 {
+            font-size: 22px;
+            letter-spacing: -0.02em;
+            margin: 0 0 4px;
+        }
+        .app-settings-header p {
+            color: var(--fg-tertiary);
+            font-size: 14px;
+            margin: 0;
+        }
+        .app-only-notice {
+            display: none;
+            background: rgba(200, 54, 44, 0.06);
+            border: 1px solid rgba(200, 54, 44, 0.22);
+            color: #8b261d;
+            padding: 14px 16px;
+            border-radius: 10px;
+            font-size: 14px;
+            line-height: 1.55;
+            margin-bottom: 18px;
+        }
+        body[data-runtime="web"] .app-only-notice {
+            display: block;
+        }
+        body[data-runtime="web"] .app-settings-card {
+            opacity: 0.5;
+            pointer-events: none;
+        }
+        .app-settings-card {
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 14px;
+        }
+        .app-settings-card h3 {
+            font-size: 15px;
+            margin: 0 0 4px;
+            letter-spacing: -0.01em;
+        }
+        .app-settings-card p {
+            color: var(--fg-tertiary);
+            font-size: 13.5px;
+            line-height: 1.55;
+            margin: 0 0 14px;
+        }
+        .app-settings-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 14px;
+            padding: 10px 0;
+            border-top: 1px solid var(--border);
+        }
+        .app-settings-row:first-child {
+            border-top: 0;
+        }
+        .app-settings-row-label {
+            font-size: 14px;
+            color: var(--fg);
+            font-weight: 500;
+        }
+        .app-settings-row-hint {
+            font-size: 12px;
+            color: var(--fg-tertiary);
+            margin-top: 2px;
+            line-height: 1.5;
+        }
+        .placeholder-empty {
+            color: var(--fg-quaternary, #a3a39a);
+            font-size: 13px;
+            font-style: italic;
+        }
+    </style>
+</head>
+<body>
+    <header id="app-header" class="app-header"></header>
+
+    <main class="app-settings-shell">
+        <div class="app-settings-header">
+            <h1>앱 설정</h1>
+            <p>YOUNGMAN 앱에서만 사용되는 설정입니다.</p>
+        </div>
+
+        <div class="app-only-notice">
+            이 페이지는 모바일 앱(영맨 Android/iOS) 에서만 동작합니다. 웹 브라우저에서는 설정을 변경할 수 없으니 앱에서 열어주세요.
+        </div>
+
+        <section class="app-settings-card">
+            <h3>통화 녹취</h3>
+            <p>앱이 자동으로 통화 종료 후 녹취 파일을 업로드하고 AI 가 요약합니다.</p>
+            <div id="app-settings-recording" class="placeholder-empty">
+                준비 중 — 앱이 항목을 inject 합니다.
+            </div>
+        </section>
+
+        <section class="app-settings-card">
+            <h3>알림</h3>
+            <p>요약 완료 / 미전송 catch-up 등 푸시 알림 설정입니다.</p>
+            <div id="app-settings-notification" class="placeholder-empty">
+                준비 중 — 앱이 항목을 inject 합니다.
+            </div>
+        </section>
+
+        <section class="app-settings-card">
+            <h3>일반</h3>
+            <p>앱 일반 설정.</p>
+            <div id="app-settings-general" class="placeholder-empty">
+                준비 중 — 앱이 항목을 inject 합니다.
+            </div>
+        </section>
+
+        <section class="app-settings-card" id="app-settings-info">
+            <h3>앱 정보</h3>
+            <p>버전 / 빌드 등 진단 정보.</p>
+            <div class="app-settings-row">
+                <div>
+                    <div class="app-settings-row-label">앱 버전</div>
+                    <div class="app-settings-row-hint" id="app-info-version">—</div>
+                </div>
+            </div>
+            <div class="app-settings-row">
+                <div>
+                    <div class="app-settings-row-label">실행 환경</div>
+                    <div class="app-settings-row-hint" id="app-info-runtime">—</div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <script type="module">
+        import { mountAppHeader, mountAppFooter, initSupabase } from './auth-shared.js?v=20260517-session-persist';
+
+        // 앱/웹 분기 — body 에 runtime marker 부여 (CSS 가 안내 + 비활성 처리에 사용).
+        const isInApp = (() => {
+            try { return window.YoungmanBridge?.isInApp() === true; } catch { return false; }
+        })();
+        document.body.dataset.runtime = isInApp ? 'app' : 'web';
+
+        mountAppHeader();
+        mountAppFooter();
+        initSupabase();
+
+        // 앱 정보 — bridge 가 제공하는 메타데이터 표시.
+        const versionEl = document.getElementById('app-info-version');
+        const runtimeEl = document.getElementById('app-info-runtime');
+        runtimeEl.textContent = isInApp ? '앱 (WebView)' : '웹 브라우저';
+        if (isInApp) {
+            try {
+                const info = window.YoungmanBridge?.getAppInfo?.() || {};
+                versionEl.textContent = info.version ? `v${info.version}${info.build ? ` (${info.build})` : ''}` : '확인 불가';
+            } catch {
+                versionEl.textContent = '확인 불가';
+            }
+        } else {
+            versionEl.textContent = '—';
+        }
+    </script>
+</body>
+</html>

@@ -43,6 +43,7 @@ jobs:
           test -f logo_main.png
           test -f logout.html             # 단일 로그아웃 transition 페이지 — 누락 시 헤더 로그아웃 깨짐
           test -f login-complete.html     # 단일 로그인 transition 페이지 — 누락 시 로그인 후 redirect 깨짐
+          test -f app-settings.html       # 앱 전용 설정 페이지 (모바일 하단 nav 최우측, 앱일 때만 노출)
           grep -q 'auth-shared.js?v=' index.html   # 새 랜딩은 main.js 대신 auth-shared 만 import
           grep -q 'profile.js?v=' profile.html
           grep -q 'admin.js?v=' admin.html
@@ -97,6 +98,7 @@ jobs:
           cp forms.js deploy/forms.js
           cp logout.html deploy/logout.html                      # 단일 로그아웃 cleanup 페이지
           cp login-complete.html deploy/login-complete.html      # 단일 로그인 transition 페이지
+          cp app-settings.html deploy/app-settings.html          # 앱 전용 설정 페이지 (앱 하단 nav 최우측)
           cp api/analyze.php deploy/analyze.php
           cp api/records.php deploy/records.php
           cp api/upload.php deploy/upload.php
