@@ -1047,9 +1047,11 @@ function customer_log_row(array $row): array {
 /**
  * 옵션 D — customer-log → ledger_records 전송용 기본 그룹의 field_schema.
  * 5필드 매핑 (앱팀 요청 — customers.html ledger UI 가 인식하는 key 명):
+ *   managed     ← true (앱 측은 항상 관리중으로 시작 — 사용자가 웹 ledger 에서 수동 해제 가능)
+ *   date        ← consult_at
  *   customer    ← customer_name
  *   phone       ← phone_number
- *   date        ← consult_at
+ *   call_count  ← 자동 계산 (같은 group 내 정규화된 phone 매칭 카운트 + 1)
  *   content     ← summary + interest + inquiry (라벨로 구분, 줄바꿈)
  *   agent_memo  ← agent_memo (앱 SummaryReview 모달의 "담당자 메모" 입력값)
  *   memo        ← '' (비고 — 사용자가 웹 ledger 에서 직접 입력하는 자유 메모)
@@ -1057,13 +1059,41 @@ function customer_log_row(array $row): array {
  */
 function customer_log_default_group_field_schema(): array {
     return [
-        ['key' => 'customer',   'label' => '고객',         'type' => 'text'],
+        ['key' => 'managed',    'label' => '관리',         'type' => 'manage_switch'],
+        ['key' => 'date',       'label' => '날짜',         'type' => 'date'],
+        ['key' => 'customer',   'label' => '고객명',       'type' => 'text'],
         ['key' => 'phone',      'label' => '연락처',       'type' => 'text'],
-        ['key' => 'date',       'label' => '상담일시',     'type' => 'text'],
+        ['key' => 'call_count', 'label' => '통화수',       'type' => 'call_count'],
         ['key' => 'content',    'label' => '상담 내용',    'type' => 'textarea'],
         ['key' => 'agent_memo', 'label' => '담당자 메모',  'type' => 'textarea'],
         ['key' => 'memo',       'label' => '비고',         'type' => 'text'],
     ];
+}
+
+/**
+ * 같은 group 내에서 정규화된 phone (숫자만) 이 일치하는 ledger_records 카운트 + 1.
+ * data_json AES-256-GCM 복호화 후 phone 정규화 비교. 같은 사람과의 N번째 통화 표시용.
+ * phone 빈 값이면 1 반환 (단독 row).
+ */
+function calculate_call_count(PDO $pdo, int $groupId, string $ownerEmail, string $phone): int {
+    $normalized = preg_replace('/[^0-9]/', '', (string)$phone);
+    if ($normalized === '') return 1;
+    try {
+        $stmt = $pdo->prepare('SELECT data_json FROM ledger_records WHERE group_id = :g AND owner_email = :o');
+        $stmt->execute([':g' => $groupId, ':o' => $ownerEmail]);
+        $count = 1;
+        while ($row = $stmt->fetch()) {
+            $d = !empty($row['data_json']) ? youngman_decrypt_json($row['data_json']) : null;
+            if (is_array($d)) {
+                $p = preg_replace('/[^0-9]/', '', (string)($d['phone'] ?? ''));
+                if ($p !== '' && $p === $normalized) $count++;
+            }
+        }
+        return $count;
+    } catch (Throwable $e) {
+        error_log('[records] calculate_call_count failed: ' . $e->getMessage());
+        return 1;
+    }
 }
 
 /**
@@ -1081,19 +1111,14 @@ function ensure_customer_log_default_group(PDO $pdo, string $owner): ?array {
 
         if ($existing) {
             // Lazy 마이그레이션 — 옛 schema 자동 갱신.
-            //  (a) 옛 9필드: 첫 element key 가 'customer_name' (라운드 4 초기 자동 생성)
-            //  (b) 옛 5필드: 'agent_memo' key 가 없는 customer/phone/date/content/memo schema
-            //  → 새 6필드 (customer/phone/date/content/agent_memo/memo) 로 자동 갱신
+            // 판별: field_schema_json 에 'call_count' key 가 없으면 모든 구버전 (옛 9 / 5 / 6 필드)
+            // → 새 8필드 (managed/date/customer/phone/call_count/content/agent_memo/memo) 로 자동 갱신.
             $rawSchema = !empty($existing['field_schema_json']) ? youngman_decrypt_json($existing['field_schema_json']) : null;
             $needsMigration = false;
-            if (is_array($rawSchema) && !empty($rawSchema[0]) && is_array($rawSchema[0])) {
-                if (($rawSchema[0]['key'] ?? '') === 'customer_name') {
+            if (is_array($rawSchema) && !empty($rawSchema[0])) {
+                $existingKeys = array_map(fn($f) => is_array($f) ? ($f['key'] ?? '') : '', $rawSchema);
+                if (!in_array('call_count', $existingKeys, true)) {
                     $needsMigration = true;
-                } else {
-                    $existingKeys = array_map(fn($f) => is_array($f) ? ($f['key'] ?? '') : '', $rawSchema);
-                    if (in_array('memo', $existingKeys, true) && !in_array('agent_memo', $existingKeys, true)) {
-                        $needsMigration = true;
-                    }
                 }
             }
             if ($needsMigration) {
@@ -2864,6 +2889,28 @@ try {
                 $source  = trim((string)($body['source'] ?? 'web'));
                 if (strlen($source) > 40) $source = substr($source, 0, 40);
 
+                // page_type='customer' 그룹의 새 row 자동 보강:
+                //  - managed: 명시적으로 false 가 아니면 true (기본 관리중)
+                //  - call_count: 비어있고 phone 있으면 같은 group + 동일 phone 카운트 + 1
+                $pageType = '';
+                try {
+                    $pt = $pdo->prepare('SELECT page_type FROM ledger_groups WHERE id = :g LIMIT 1');
+                    $pt->execute([':g' => $groupId]);
+                    $pageType = (string)($pt->fetchColumn() ?: '');
+                } catch (Throwable $e) {}
+                if ($pageType === 'customer') {
+                    if (!array_key_exists('managed', $data) || $data['managed'] === '' || $data['managed'] === null) {
+                        $data['managed'] = true;
+                    }
+                    $existingCallCount = $data['call_count'] ?? '';
+                    if ($existingCallCount === '' || $existingCallCount === null || (int)$existingCallCount < 1) {
+                        $phoneRaw = (string)($data['phone'] ?? '');
+                        if ($phoneRaw !== '') {
+                            $data['call_count'] = calculate_call_count($pdo, $groupId, $owner, $phoneRaw);
+                        }
+                    }
+                }
+
                 // 멱등성: 같은 owner_email + idempotency_key 가 이미 있으면 그 row 반환.
                 if ($idemKey !== '') {
                     $existing = $pdo->prepare('SELECT id FROM ledger_records WHERE owner_email = :o AND client_idempotency_key = :k LIMIT 1');
@@ -3204,10 +3251,12 @@ try {
                 if (!$gRow) respond(['status' => 'error', 'code' => 'upstream_failed', 'message' => '기본 그룹 자동 생성 실패.'], 503);
             }
 
-            // data_json 구성: customer_log → ledger 6필드 매핑.
+            // data_json 구성: customer_log → ledger 8필드 매핑.
+            //   managed    ← true (기본 관리중, 사용자가 웹 ledger 에서 수동 해제 가능)
+            //   date       ← consult_at
             //   customer   ← customer_name
             //   phone      ← phone_number
-            //   date       ← consult_at
+            //   call_count ← 같은 group + 동일 phone 카운트 + 1 (자동)
             //   content    ← summary + interest + inquiry (라벨 + 줄바꿈)
             //   agent_memo ← agent_memo (앱 SummaryReview 모달의 "담당자 메모" 입력값)
             //   memo       ← '' (비고 — 사용자가 웹 ledger 에서 직접 입력)
@@ -3223,18 +3272,24 @@ try {
             if ($clIntr    !== '') $contentParts[] = '관심: ' . $clIntr;
             if ($clInq     !== '') $contentParts[] = '문의: ' . $clInq;
 
+            $callCount = calculate_call_count($pdo, (int)$gRow['id'], $owner, $clPhone);
+
             $data = [
+                'managed'    => true,
+                'date'       => (string)($clRow['consult_at'] ?? ''),
                 'customer'   => $clName,
                 'phone'      => $clPhone,
-                'date'       => (string)($clRow['consult_at'] ?? ''),
+                'call_count' => $callCount,
                 'content'    => implode("\n\n", $contentParts),
                 'agent_memo' => $clAgentMemo,
                 'memo'       => '',
             ];
 
-            // override — 앱 측이 모달에서 편집한 값. key 는 6필드 (customer/phone/date/content/agent_memo/memo) 사용.
+            // override — 앱 측이 모달에서 편집한 값. key 는 8필드 사용.
+            // call_count 는 자동 계산값이라 override 받아도 무시 (백엔드 truth 유지).
             $override = (isset($body['override']) && is_array($body['override'])) ? $body['override'] : [];
             foreach ($override as $k => $v) {
+                if ($k === 'call_count') continue;
                 if (array_key_exists($k, $data)) {
                     $data[$k] = (string)$v;
                 }

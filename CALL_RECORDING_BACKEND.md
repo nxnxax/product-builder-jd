@@ -114,25 +114,35 @@ POST /process-recording.php
 
 **Idempotency:** 같은 customer_log 가 이미 전송됐으면 (`linked_ledger_record_id` 존재) 새 ledger_record 만들지 않고 기존 것 반환 (`duplicate: true`).
 
-**자동 default 그룹 정의** (앱팀 요청 매핑 — 2026-05-18 6필드 갱신):
+**자동 default 그룹 정의** (앱팀 요청 매핑 — 2026-05-18 8필드 갱신):
 - `owner_email = current`, `page_type = 'customer'`, `name = '그룹제목을 설정해주세요'`, `is_default = 1`
-- `field_schema_json` (AES-256-GCM 암호화 저장) = **6필드 매핑** (customers.html ledger UI 인식 key):
+- `field_schema_json` (AES-256-GCM 암호화 저장) = **8필드 매핑** (customers.html ledger UI 인식 key):
 
 | ledger key | label | type | customer_log 매핑 |
 |---|---|---|---|
-| `customer` | 고객 | text | `customer_name` |
+| `managed` | 관리 | manage_switch | `true` (기본 관리중 — 사용자가 웹 ledger 에서 토글로 해제 가능) |
+| `date` | 날짜 | date | `consult_at` |
+| `customer` | 고객명 | text | `customer_name` |
 | `phone` | 연락처 | text | `phone_number` |
-| `date` | 상담일시 | text | `consult_at` |
+| `call_count` | 통화수 | call_count | `calculate_call_count()` 자동 — 같은 group 내 정규화 phone 매칭 카운트 + 1 |
 | `content` | 상담 내용 | textarea | `summary` + (`관심: ` + `interest`) + (`문의: ` + `inquiry`) — 라벨+줄바꿈 |
 | `agent_memo` | 담당자 메모 | textarea | `agent_memo` (앱 SummaryReview 모달의 "담당자 메모" 입력값) |
 | `memo` | 비고 | text | `''` (사용자가 웹 ledger 에서 직접 입력하는 자유 메모) |
 
+- `level` 필드 제거 (2026-05-18) — 사용도 낮고 통화수가 대체.
 - `budget_condition` / `next_action` / `transcript` — 매핑 미적용. content 에 추가 필요하면 앱팀 회신.
-- **override 필드 key 도 6필드** — 앱이 모달에서 편집한 값을 `customer`/`phone`/`date`/`content`/`agent_memo`/`memo` key 로 보냄.
+- **override 필드 key 는 8필드 중 7개** — `managed`/`date`/`customer`/`phone`/`content`/`agent_memo`/`memo`. `call_count` 는 백엔드 자동 계산이라 override 받아도 무시.
 
-**Lazy 마이그레이션:** `ensure_customer_log_default_group()` 이 기존 그룹 발견 시 자동 갱신:
-  - (a) 첫 element key 가 `customer_name` (옛 9필드) → 새 6필드
-  - (b) `agent_memo` key 가 없는 옛 5필드 → 새 6필드 (`agent_memo` 컬럼 추가)
+**`calculate_call_count()` 로직** (records.php):
+1. `phone` 정규화 = `preg_replace('/[^0-9]/', '', $phone)` (숫자만)
+2. 정규화된 phone 이 빈 문자열이면 `1` 반환 (단독 row)
+3. 같은 `group_id` + 같은 `owner_email` 의 모든 `ledger_records` 복호화
+4. 각 row 의 `data.phone` 정규화 후 일치하는 것 카운트
+5. 새 row 이므로 카운트 + 1 반환
+
+같은 `ledger-records POST` (사용자가 웹 ledger 에서 직접 추가) 시에도 `page_type='customer'` 면 동일 logic 자동 적용 + `managed` 누락 시 `true` default.
+
+**Lazy 마이그레이션:** `ensure_customer_log_default_group()` 이 기존 그룹 발견 시 `field_schema_json` 에 `call_count` key 가 없으면 (= 옛 9 / 5 / 6 필드) → 새 8필드로 자동 갱신.
 
 **스키마 변경:** `customer_log` 테이블에 `linked_ledger_record_id INT NULL` 컬럼 + 인덱스 추가. lazy ALTER (records.php / process-recording.php 양쪽 ensure 함수 동기화).
 

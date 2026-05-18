@@ -21,32 +21,30 @@ const MOBILE_PRIMARY_KEYS = ['customer', 'phone', 'date'];
 
 const PAGE_TYPE = 'customer';
 
-const LEVEL_OPTIONS = ['계약예정', '관심도 상', '관심도 중', '관심도 하'];
-
 const DEFAULT_FIELDS = [
-    { key: 'no',       label: 'NO',     type: 'auto_number',  filterable: false, width: 48 },
-    { key: 'managed',  label: '관리',   type: 'manage_switch',filterable: true,  width: 80 },
-    { key: 'date',     label: '날짜',   type: 'date',         filterable: true,  width: 130 },
-    { key: 'level',    label: '레벨',   type: 'level_select', filterable: true,  width: 110 },
-    { key: 'customer', label: '고객명', type: 'text',         filterable: true,  width: 110 },
-    { key: 'phone',    label: '연락처', type: 'tel',          filterable: false, width: 130 },
-    { key: 'region',   label: '거주지역',type:'text',          filterable: true,  width: 130 },
-    { key: 'content',  label: '내용',   type: 'textarea',     filterable: true,  width: 280 },
-    { key: 'agent_memo', label: '담당자 메모', type: 'textarea', filterable: true, width: 200 },
-    { key: 'memo',     label: '비고',   type: 'text',         filterable: false, width: 140 },
+    { key: 'no',         label: 'NO',          type: 'auto_number',  filterable: false, width: 48 },
+    { key: 'managed',    label: '관리',        type: 'manage_switch',filterable: true,  width: 80 },
+    { key: 'date',       label: '날짜',        type: 'date',         filterable: true,  width: 130 },
+    { key: 'customer',   label: '고객명',      type: 'text',         filterable: true,  width: 110 },
+    { key: 'phone',      label: '연락처',      type: 'tel',          filterable: false, width: 130 },
+    { key: 'call_count', label: '통화수',      type: 'call_count',   filterable: true,  width: 80 },
+    { key: 'region',     label: '거주지역',    type: 'text',         filterable: true,  width: 130 },
+    { key: 'content',    label: '내용',        type: 'textarea',     filterable: true,  width: 280 },
+    { key: 'agent_memo', label: '담당자 메모', type: 'textarea',     filterable: true,  width: 200 },
+    { key: 'memo',       label: '비고',        type: 'text',         filterable: false, width: 140 },
 ];
 
 // 엑셀 헤더 → 우리 필드 매칭용 한국어 동의어 사전. 매핑 안 되는 컬럼은 fallbackKey 로 합쳐짐.
 const FIELD_SYNONYMS = {
-    managed:  ['관리', '관리상태', '관리여부'],
-    date:     ['날짜', '일자', '등록일', '상담일', '통화일', '접수일', '문의일'],
-    level:    ['레벨', '등급', '관심도', '관심', '단계'],
-    customer: ['고객명', '고객', '성명', '이름', '의뢰인', '문의자'],
-    phone:    ['연락처', '휴대폰', '휴대폰번호', '핸드폰', '핸드폰번호', '전화번호', '전화', '모바일', 'HP', 'tel', 'phone', '번호'],
-    region:   ['거주지역', '거주지', '주소', '지역', '사는곳', 'address'],
-    content:  ['내용', '상담내용', '통화내용', '상담', '문의내용', '메모내용'],
+    managed:    ['관리', '관리상태', '관리여부'],
+    date:       ['날짜', '일자', '등록일', '상담일', '통화일', '접수일', '문의일'],
+    customer:   ['고객명', '고객', '성명', '이름', '의뢰인', '문의자'],
+    phone:      ['연락처', '휴대폰', '휴대폰번호', '핸드폰', '핸드폰번호', '전화번호', '전화', '모바일', 'HP', 'tel', 'phone', '번호'],
+    call_count: ['통화수', '통화횟수', '연락횟수', '회차', '몇번째'],
+    region:     ['거주지역', '거주지', '주소', '지역', '사는곳', 'address'],
+    content:    ['내용', '상담내용', '통화내용', '상담', '문의내용', '메모내용'],
     agent_memo: ['담당자메모', '담당자 메모', '영업메모', '상담자메모', 'agent_memo'],
-    memo:     ['비고', '메모', '특이사항', '참고', '기타', 'note', 'remarks'],
+    memo:       ['비고', '메모', '특이사항', '참고', '기타', 'note', 'remarks'],
 };
 const FALLBACK_FIELD_KEY = 'content';
 
@@ -573,11 +571,13 @@ function renderCell(f, r, d, displayNo) {
                 <span class="toggle-label">${on ? '관리중' : '비관리중'}</span>
             </label>`;
     }
-    if (f.type === 'level_select') {
-        const text = v || '계약예정';
-        // 셀 클릭 → LEVEL_OPTIONS 순환 ('계약예정' → '관심도 상' → '중' → '하' → '계약예정').
-        const opts = escapeAttr(JSON.stringify(LEVEL_OPTIONS));
-        return `<span class="cell-text level-pill" data-cell-cycle data-id="${id}" data-field="level" data-value="${escapeAttr(text)}" data-cycle-options='${opts}' title="클릭하여 다음 레벨로">${escapeHtml(text)}</span>`;
+    if (f.type === 'call_count') {
+        // 통화수 — 같은 phone 으로 들어온 횟수 자동 계산 (records.php 가 저장 시 채움).
+        const num = parseInt(v, 10);
+        if (Number.isFinite(num) && num >= 1) {
+            return `<span class="cell-text" style="font-variant-numeric:tabular-nums;font-weight:600;">${num}회</span>`;
+        }
+        return `<span class="cell-empty">-</span>`;
     }
     if (f.type === 'textarea') {
         return v ? `<span class="cell-text cell-multiline">${escapeHtml(v)}</span>` : `<span class="cell-empty">-</span>`;
@@ -692,7 +692,7 @@ function addRow(gid) {
     openRowAddModal({
         title: '새 고객 추가',
         fields: getEffectiveFields(group, DEFAULT_FIELDS),
-        defaults: { date: today, managed: true, level: '계약예정' },
+        defaults: { date: today, managed: true },
         customRender: customerCustomRender,
         onSubmit: async (data) => {
             await api('ledger-records', { method: 'POST', body: { groupId: gid, data, source: 'web' } });
@@ -726,12 +726,13 @@ function customerCustomRender(f, defaults) {
             <input type="checkbox" data-field="managed" ${checked} style="width:auto;accent-color:#c8362c;"> 관리 대상 (체크 해제 시 비관리)
         </label></div></div>`;
     }
-    if (f.type === 'level_select') {
-        const v = defaults.level || '';
-        const opts = ['<option value="">-</option>']
-            .concat(LEVEL_OPTIONS.map(o => `<option value="${escapeAttr(o)}" ${v === o ? 'selected' : ''}>${escapeHtml(o)}</option>`))
-            .join('');
-        return `<div class="modal-row">${lbl}<div class="row-control"><select data-field="level">${opts}</select></div></div>`;
+    if (f.type === 'call_count') {
+        // 통화수 자동 계산 — 사용자 입력 X. defaults 값 그대로 유지 (data-readonly).
+        const v = defaults.call_count;
+        const display = (v !== undefined && v !== null && v !== '')
+            ? (escapeHtml(String(v)) + '회')
+            : '<i style="color:#a3a39a;">저장 시 자동 계산</i>';
+        return `<div class="modal-row">${lbl}<div class="row-control"><span class="row-static" data-field="call_count" data-readonly>${display}</span></div></div>`;
     }
     return null;
 }
