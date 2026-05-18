@@ -39,8 +39,8 @@ function get_bearer_token_cancel(): string {
 $token = get_bearer_token_cancel();
 if ($token === '') portone_response(['status' => 'error', 'code' => 'unauthorized'], 401);
 
-$supabaseUrl = rtrim((string)(getenv('VITE_SUPABASE_URL') ?: ''), '/');
-$anonKey = (string)(getenv('VITE_SUPABASE_ANON_KEY') ?: '');
+$supabaseUrl = rtrim((string)(billing_load_env_value('VITE_SUPABASE_URL') ?: getenv('VITE_SUPABASE_URL') ?: ''), '/');
+$anonKey = (string)(billing_load_env_value('VITE_SUPABASE_ANON_KEY') ?: getenv('VITE_SUPABASE_ANON_KEY') ?: '');
 $ch = curl_init($supabaseUrl . '/auth/v1/user');
 curl_setopt_array($ch, [
     CURLOPT_RETURNTRANSFER => true,

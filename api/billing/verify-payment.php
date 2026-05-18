@@ -56,8 +56,8 @@ function get_bearer_token_billing(): string {
 $token = get_bearer_token_billing();
 if ($token === '') portone_response(['status' => 'error', 'code' => 'unauthorized', 'message' => '로그인이 필요합니다.'], 401);
 
-$supabaseUrl = rtrim((string)(getenv('VITE_SUPABASE_URL') ?: ''), '/');
-$anonKey = (string)(getenv('VITE_SUPABASE_ANON_KEY') ?: '');
+$supabaseUrl = rtrim((string)(billing_load_env_value('VITE_SUPABASE_URL') ?: getenv('VITE_SUPABASE_URL') ?: ''), '/');
+$anonKey = (string)(billing_load_env_value('VITE_SUPABASE_ANON_KEY') ?: getenv('VITE_SUPABASE_ANON_KEY') ?: '');
 if ($supabaseUrl === '' || $anonKey === '') {
     portone_response(['status' => 'error', 'code' => 'config', 'message' => '서버 인증 설정 누락.'], 500);
 }

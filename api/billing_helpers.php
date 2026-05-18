@@ -14,15 +14,37 @@
  * 환경변수 누락 시 모든 함수는 throw — endpoint 가 503 으로 응답해야 함.
  */
 
+if (!function_exists('billing_load_env_value')) {
+    /**
+     * cafe24 의 PHP 는 .env 자동 로드 X. process-recording.php 의 load_env_value 패턴
+     * 그대로 — webroot 의 .env 파일을 직접 파싱해서 값 반환.
+     */
+    function billing_load_env_value(string $key): string {
+        foreach ([__DIR__, dirname(__DIR__)] as $dir) {
+            $path = $dir . '/.env';
+            if (!is_file($path)) continue;
+            foreach (file($path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as $line) {
+                if (preg_match('/^\s*(?:export\s+)?([A-Z0-9_]+)\s*=\s*(.*)$/i', $line, $m)) {
+                    if (strcasecmp($m[1], $key) === 0) return trim($m[2], "\"' \t\r\n");
+                }
+            }
+        }
+        return '';
+    }
+}
+
 if (!function_exists('portone_env')) {
     function portone_env(string $key): string {
+        // 1. getenv (Apache 환경변수 또는 process env)
         $v = getenv($key);
-        if ($v === false || $v === '') {
-            $env = $_ENV[$key] ?? null;
-            if ($env !== null && $env !== '') return (string)$env;
-            throw new RuntimeException("PortOne 환경변수 누락: {$key}");
-        }
-        return $v;
+        if ($v !== false && $v !== '') return $v;
+        // 2. $_ENV superglobal
+        $env = $_ENV[$key] ?? null;
+        if ($env !== null && $env !== '') return (string)$env;
+        // 3. webroot 의 .env 파일 직접 파싱 (cafe24 PHP 환경)
+        $fromFile = billing_load_env_value($key);
+        if ($fromFile !== '') return $fromFile;
+        throw new RuntimeException("PortOne 환경변수 누락: {$key}");
     }
 }
 

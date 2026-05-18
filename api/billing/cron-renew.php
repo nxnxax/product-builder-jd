@@ -33,7 +33,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST' && ($_SERVER['REQUEST_METHOD']
 }
 
 // 토큰 검증 — audio_cleanup 과 동일한 시크릿 재사용. timing-safe 비교.
-$expectedToken = getenv('AUDIO_CLEANUP_TOKEN') ?: '';
+$expectedToken = billing_load_env_value('AUDIO_CLEANUP_TOKEN') ?: (getenv('AUDIO_CLEANUP_TOKEN') ?: '');
 if ($expectedToken === '') {
     portone_response(['status' => 'error', 'code' => 'config', 'message' => 'cron token 미설정'], 503);
 }
