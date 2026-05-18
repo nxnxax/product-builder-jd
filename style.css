@@ -4187,10 +4187,11 @@ select:focus {
         flex: 0 0 auto;
         white-space: nowrap;
         min-height: 40px;
-        padding: 8px 14px !important;
-        font-size: 13.5px !important;
+        /* "+ 새 고객 추가" 8자 텍스트도 한 줄 확보 — padding/letter-spacing 좁힘. */
+        padding: 8px 12px !important;
+        font-size: 13px !important;
         font-weight: 700 !important;
-        letter-spacing: -0.01em;
+        letter-spacing: -0.02em;
     }
 
     /* 그룹 헤더 — 모바일에선 제목 한 줄 + 액션 버튼 다음 줄에 wrap. 글자 세로로 깨지지 않게 */

@@ -396,7 +396,7 @@ function renderTable(group, rows) {
                 <input type="search" class="ledger-search-input" data-search-gid="${group.id}" value="${q}" placeholder="🔍 행 안에서 검색…" autocomplete="off">
                 ${q ? `<button type="button" class="ledger-search-clear" data-search-clear-gid="${group.id}" aria-label="검색 지우기">×</button>` : ''}
             </div>
-            <button class="tiny-btn primary" type="button" data-add-row data-gid="${group.id}">+ 행 추가</button>
+            <button class="tiny-btn primary" type="button" data-add-row data-gid="${group.id}">+ 새 고객 추가</button>
         </div>
         <div class="tbl-wrap">
             <table class="ledger-tbl">
@@ -428,7 +428,7 @@ function renderMobileCards(group, rows) {
                 <input type="search" class="ledger-search-input" data-search-gid="${group.id}" value="${q}" placeholder="🔍 행 안에서 검색…" autocomplete="off">
                 ${q ? `<button type="button" class="ledger-search-clear" data-search-clear-gid="${group.id}" aria-label="검색 지우기">×</button>` : ''}
             </div>
-            <button class="tiny-btn primary" type="button" data-add-row data-gid="${group.id}">+ 행 추가</button>
+            <button class="tiny-btn primary" type="button" data-add-row data-gid="${group.id}">+ 새 고객 추가</button>
         </div>
         <div class="ledger-cards">${cardsHtml}</div>`;
 }
