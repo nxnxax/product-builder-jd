@@ -3378,8 +3378,14 @@ try {
                     }
                 }
 
-                $pdo->prepare('UPDATE ledger_records SET data_json = :d WHERE id = :id AND owner_email = :o')
-                    ->execute([':d' => youngman_encrypt_json($mergedData), ':id' => (int)$existingLrRow['id'], ':o' => $owner]);
+                // 가장 최근 통화가 그룹 최상단에 오도록 sort_no 도 갱신 (자기 제외 MIN - 1).
+                // ledger-records GET 은 sort_no ASC 정렬이라 가장 작은 값이 위쪽.
+                $minStmt = $pdo->prepare('SELECT IFNULL(MIN(sort_no), 1) - 1 FROM ledger_records WHERE group_id = :g AND owner_email = :o AND id != :id');
+                $minStmt->execute([':g' => (int)$gRow['id'], ':o' => $owner, ':id' => (int)$existingLrRow['id']]);
+                $newTopSort = (int)$minStmt->fetchColumn();
+
+                $pdo->prepare('UPDATE ledger_records SET data_json = :d, sort_no = :s WHERE id = :id AND owner_email = :o')
+                    ->execute([':d' => youngman_encrypt_json($mergedData), ':s' => $newTopSort, ':id' => (int)$existingLrRow['id'], ':o' => $owner]);
 
                 // customer_log link → 기존 ledger_record 가리키도록.
                 $pdo->prepare('UPDATE customer_log SET linked_ledger_record_id = :lr WHERE id = :id AND owner_email = :o')
@@ -3429,8 +3435,9 @@ try {
                 }
             }
 
-            // sort_no 다음 값.
-            $nxt = $pdo->prepare('SELECT IFNULL(MAX(sort_no), 0) + 1 FROM ledger_records WHERE group_id = :g');
+            // 가장 최근 통화가 그룹 최상단에 오도록 sort_no = MIN - 1 (다른 row 들 위쪽).
+            // 빈 그룹이면 IFNULL 로 0 ((1) - 1). ledger-records GET 은 sort_no ASC 정렬.
+            $nxt = $pdo->prepare('SELECT IFNULL(MIN(sort_no), 1) - 1 FROM ledger_records WHERE group_id = :g');
             $nxt->execute([':g' => (int)$gRow['id']]);
             $sortNo = (int)$nxt->fetchColumn();
 
