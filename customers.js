@@ -22,16 +22,16 @@ const MOBILE_PRIMARY_KEYS = ['customer', 'phone', 'date'];
 const PAGE_TYPE = 'customer';
 
 const DEFAULT_FIELDS = [
-    { key: 'no',         label: 'NO',          type: 'auto_number',  filterable: false, width: 48 },
-    { key: 'managed',    label: '관리',        type: 'manage_switch',filterable: true,  width: 80 },
-    { key: 'date',       label: '날짜',        type: 'date',         filterable: true,  width: 130 },
-    { key: 'call_count', label: '통화수',      type: 'call_count',   filterable: true,  width: 80 },
-    { key: 'customer',   label: '고객명',      type: 'text',         filterable: true,  width: 110 },
-    { key: 'phone',      label: '연락처',      type: 'tel',          filterable: false, width: 130 },
-    { key: 'region',     label: '거주지역',    type: 'text',         filterable: true,  width: 130 },
-    { key: 'content',    label: '내용',        type: 'textarea',     filterable: true,  width: 280 },
-    { key: 'agent_memo', label: '담당자 메모', type: 'textarea',     filterable: true,  width: 200 },
-    { key: 'memo',       label: '비고',        type: 'text',         filterable: false, width: 140 },
+    { key: 'no',         label: 'NO',          type: 'auto_number',  filterable: false, width: 44 },
+    { key: 'managed',    label: '관리',        type: 'manage_switch',filterable: true,  width: 76 },
+    { key: 'date',       label: '날짜',        type: 'date',         filterable: true,  width: 78 },
+    { key: 'call_count', label: '통화수',      type: 'call_count',   filterable: true,  width: 58 },
+    { key: 'customer',   label: '고객명',      type: 'text',         filterable: true,  width: 96 },
+    { key: 'phone',      label: '연락처',      type: 'tel',          filterable: false, width: 116 },
+    { key: 'region',     label: '지역',        type: 'text',         filterable: true,  width: 84 },
+    { key: 'content',    label: '내용',        type: 'textarea',     filterable: true,  width: 240 },
+    { key: 'agent_memo', label: '담당자 메모', type: 'textarea',     filterable: true,  width: 160 },
+    { key: 'memo',       label: '비고',        type: 'text',         filterable: false, width: 100 },
 ];
 
 // 엑셀 헤더 → 우리 필드 매칭용 한국어 동의어 사전. 매핑 안 되는 컬럼은 fallbackKey 로 합쳐짐.
@@ -445,7 +445,13 @@ function renderMobileCard(r, displayNo, group, fields) {
         const f = fields.find(x => x.key === k);
         if (!f) return '';
         const v = d[k];
-        const display = (!v) ? '-' : (f.type === 'date' ? String(v).replace(/-/g, '.') : String(v));
+        let display;
+        if (!v) display = '-';
+        else if (f.type === 'date') {
+            const m = String(v).match(/^(\d{4})-(\d{2})-(\d{2})/);
+            display = m ? `${m[1].slice(2)}.${m[2]}.${m[3]}` : String(v).replace(/-/g, '.');
+        }
+        else display = String(v);
         return `
             <div class="ledger-card-sub-item">
                 <span class="ledger-card-sub-label">${escapeHtml(f.label || '')}</span>
@@ -602,8 +608,11 @@ function renderCell(f, r, d, displayNo) {
 
 function formatDateDisplay(v) {
     if (!v) return '';
-    // YYYY-MM-DD → YYYY.MM.DD (있으면 그대로 표시)
-    return escapeHtml(String(v).replace(/-/g, '.'));
+    // YYYY-MM-DD → YY.MM.DD (6자리, 컬럼 가로폭 절약)
+    const s = String(v);
+    const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (m) return escapeHtml(`${m[1].slice(2)}.${m[2]}.${m[3]}`);
+    return escapeHtml(s.replace(/-/g, '.'));
 }
 
 function bindTableEvents() {
