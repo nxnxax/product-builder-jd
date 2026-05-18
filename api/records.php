@@ -3305,20 +3305,21 @@ try {
                 if ($prevCount < 1) $prevCount = 1;
                 $newCallCount = $prevCount + 1;
 
-                // content append — 최신이 위쪽. 회차 separator 마커.
-                $newSection = "──── {$todayDate} 통화 ({$newCallCount}회차) ────\n\n" . $newSectionContent;
+                // content append — 최신이 위쪽. 회차 separator 마커 시각적으로 명확히
+                // (옛 통화 내용과 새 통화 내용을 사용자가 한눈에 구분할 수 있도록).
+                $newSection = "📞 ━━━━━━━━━━ {$todayDate} 통화 ({$newCallCount}회차) ━━━━━━━━━━\n\n" . $newSectionContent;
                 $existingContent = (string)($existingData['content'] ?? '');
                 $mergedContent = $existingContent !== ''
-                    ? $newSection . "\n\n" . $existingContent
+                    ? $newSection . "\n\n\n" . $existingContent
                     : $newSection;
 
                 // agent_memo append — 최신 위, 빈 메모는 추가 안 함.
                 $existingMemo = (string)($existingData['agent_memo'] ?? '');
                 $mergedMemo = $existingMemo;
                 if ($clAgentMemo !== '') {
-                    $memoSection = "──── {$todayDate} ────\n" . $clAgentMemo;
+                    $memoSection = "📝 ━━━ {$todayDate} ━━━\n" . $clAgentMemo;
                     $mergedMemo = $existingMemo !== ''
-                        ? $memoSection . "\n\n" . $existingMemo
+                        ? $memoSection . "\n\n\n" . $existingMemo
                         : $memoSection;
                 }
 

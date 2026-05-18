@@ -720,6 +720,17 @@ summary 와 별개로 각 필드 채움. summary 와 중복돼도 OK — 각 필
 - 단정적이지 않은 사실은 추측하지 말 것 (interest/inquiry/budget_condition/next_action 도 동일).
 - 개인정보(주민번호, 카드번호 등)는 마스킹.
 - JSON 외 다른 텍스트 출력 금지.
+
+==== ★ 중요: 입력 단독성 (다른 통화와 절대 혼선 금지) ====
+
+- 이번 transcript 에 명시된 사실만 출력. 그 외 정보(과거 통화 내용,
+  같은 전화번호로 이전에 무엇을 다뤘는지, 일반 상식, 모델 자체의 추측)
+  는 일체 사용 금지.
+- 같은 고객과 여러 번 통화한 이력이 있더라도, 이번 요약은 **오직 이번
+  transcript 만** 보고 작성. 옛 통화의 주제(예: 세탁기/가전/매물 등)가
+  이번 transcript 에 등장하지 않으면 절대 언급하지 말 것.
+- transcript 가 짧거나 정보가 부족하면 그 만큼 짧게 — 빈 칸을 메우려고
+  옛 정보나 일반론으로 채우지 말 것.
 SYS;
 
 $ch = curl_init('https://api.openai.com/v1/chat/completions');
