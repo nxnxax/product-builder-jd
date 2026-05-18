@@ -426,7 +426,16 @@
         const button = document.querySelector(`[data-pay-plan="${planKey}"]`);
         const originalText = button ? button.textContent : '';
         try {
-            if (button) { button.disabled = true; button.textContent = '결제창 준비 중…'; }
+            if (button) { button.disabled = true; button.textContent = '세션 확인 중…'; }
+            // 토큰 만료 가능성 — 결제 전 세션 새로 확인. Supabase JS 가 autoRefreshToken=true 이면
+            // getSession() 호출이 만료 임박 토큰을 자동 refresh. 없거나 짧은 토큰이면 차단.
+            const sessionCheck = getSession();
+            if (!sessionCheck?.access_token) {
+                alert('로그인 세션이 만료되었습니다. 페이지를 새로고침한 후 다시 로그인해 주세요.');
+                window.location.reload();
+                return;
+            }
+            if (button) button.textContent = '결제창 준비 중…';
             const [config] = await Promise.all([ensurePayConfig(), ensureSdk()]);
             const planInfo = config.plans[planKey];
             if (!planInfo) throw new Error('알 수 없는 plan: ' + planKey);
@@ -466,12 +475,18 @@
 
             // Step 2 — 서버에 빌링키 전달, 서버가 PortOne API 로 첫 결제 실행 + DB 갱신.
             if (button) button.textContent = '결제 처리 중…';
+            // 빌링키 발급 동안 토큰 만료 가능 — 다시 fresh session.
             const session = getSession();
+            if (!session?.access_token) {
+                alert('세션이 만료되었습니다. 빌링키는 발급됐으니 페이지 새로고침 후 다시 결제 버튼을 누르거나, 관리자에게 카드 등록 ID 를 알려주세요:\n' + issueId);
+                window.location.reload();
+                return;
+            }
             const verify = await fetch('/billing/verify-payment.php', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': 'Bearer ' + (session?.access_token || ''),
+                    'Authorization': 'Bearer ' + session.access_token,
                 },
                 body: JSON.stringify({ billingKey, issueId, plan: planKey }),
             });

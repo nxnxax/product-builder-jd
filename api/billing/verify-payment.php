@@ -70,7 +70,24 @@ $authResp = curl_exec($ch);
 $authStatus = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
 curl_close($ch);
 if ($authStatus !== 200 || !$authResp) {
-    portone_response(['status' => 'error', 'code' => 'unauthorized', 'message' => '토큰 검증 실패.'], 401);
+    // 진단 정보 — 토큰 만료(401) vs 설정 누락(500) 구분.
+    $diag = [
+        'auth_status' => $authStatus,
+        'supabase_url_set' => $supabaseUrl !== '',
+        'anon_key_set' => $anonKey !== '',
+        'token_len' => strlen($token),
+    ];
+    $hint = '';
+    if ($supabaseUrl === '' || $anonKey === '') $hint = '서버 .env 에 Supabase 키 누락.';
+    elseif ($authStatus === 401) $hint = '세션이 만료되었습니다. 페이지를 새로고침한 후 다시 시도해주세요.';
+    elseif ($authStatus === 0) $hint = 'Supabase 호출 실패. 네트워크 확인.';
+    else $hint = 'Supabase ' . $authStatus . ' 응답.';
+    portone_response([
+        'status' => 'error',
+        'code' => 'unauthorized',
+        'message' => '토큰 검증 실패. ' . $hint,
+        'debug' => $diag,
+    ], 401);
 }
 $authData = json_decode((string)$authResp, true);
 $ownerEmail = strtolower(trim((string)($authData['email'] ?? '')));
