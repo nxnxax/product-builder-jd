@@ -493,7 +493,14 @@
             const result = await verify.json();
             if (result.status !== 'ok') {
                 if (button) { button.disabled = false; button.textContent = originalText; }
-                alert('결제 처리 실패: ' + (result.message || result.code) + (result.payment_id ? '\n결제 ID: ' + result.payment_id : ''));
+                // 진단용 — 콘솔에 raw 응답 dump (PortOne schema 분석용)
+                try { console.error('[subscribe] verify-payment 실패 응답', result); } catch {}
+                let msg = '결제 처리 실패: ' + (result.message || result.code);
+                if (result.payment_id) msg += '\n결제 ID: ' + result.payment_id;
+                if (result.debug && result.debug.response_keys) {
+                    msg += '\n응답 keys: ' + result.debug.response_keys.join(', ');
+                }
+                alert(msg);
                 return;
             }
 

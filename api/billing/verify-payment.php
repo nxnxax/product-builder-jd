@@ -117,18 +117,62 @@ if ($resp['status'] < 200 || $resp['status'] >= 300 || !is_array($resp['body']))
 }
 $payment = $resp['body'];
 
-// 결제 상태 + 금액 검증
-$paymentStatus = strtoupper((string)($payment['status'] ?? ''));
+// 결제 상태 — PortOne V2 의 응답 schema 가 nested 일 수 있어 여러 위치에서 시도.
+$paymentStatus = strtoupper((string)(
+    $payment['status']
+    ?? $payment['payment']['status']
+    ?? $payment['transaction']['status']
+    ?? $payment['data']['status']
+    ?? ''
+));
+
+// 응답이 즉시 PAID 가 아니더라도 PortOne 가 비동기 처리 중일 수 있음. 1초 대기 후 GET 으로 재확인.
 if ($paymentStatus !== 'PAID') {
-    portone_response(['status' => 'error', 'code' => 'payment_not_paid', 'message' => '결제가 완료되지 않음: ' . $paymentStatus, 'payment_status' => $paymentStatus, 'payment_id' => $paymentId], 400);
+    sleep(1);
+    try {
+        $getResp = portone_api_call('GET', '/payments/' . urlencode($paymentId));
+        if ($getResp['status'] >= 200 && $getResp['status'] < 300 && is_array($getResp['body'])) {
+            $payment = $getResp['body'];
+            $paymentStatus = strtoupper((string)(
+                $payment['status']
+                ?? $payment['payment']['status']
+                ?? $payment['transaction']['status']
+                ?? $payment['data']['status']
+                ?? ''
+            ));
+        }
+    } catch (Throwable $e) { /* 무시 — 아래에서 payment_not_paid 응답 */ }
 }
-$paidAmount = (int)($payment['amount']['total'] ?? 0);
+
+if ($paymentStatus !== 'PAID') {
+    portone_response([
+        'status' => 'error',
+        'code' => 'payment_not_paid',
+        'message' => '결제가 완료되지 않음: ' . ($paymentStatus !== '' ? $paymentStatus : '(status 필드 없음)'),
+        'payment_status' => $paymentStatus,
+        'payment_id' => $paymentId,
+        'debug' => [
+            'http_status' => $resp['status'],
+            'response_keys' => is_array($payment) ? array_keys($payment) : [],
+            'response_sample' => array_slice((array)$payment, 0, 8, true),  // 키 8개 까지만
+        ],
+    ], 400);
+}
+
+// 금액 추출 — schema 위치 여러 곳에서 시도.
+$paidAmount = (int)(
+    $payment['amount']['total']
+    ?? $payment['amount']
+    ?? $payment['payment']['amount']['total']
+    ?? $payment['data']['amount']['total']
+    ?? 0
+);
 if ($paidAmount !== $amount) {
-    portone_response(['status' => 'error', 'code' => 'amount_mismatch', 'message' => '결제 금액 불일치: ' . $paidAmount . ' vs ' . $amount, 'payment_id' => $paymentId], 400);
+    portone_response(['status' => 'error', 'code' => 'amount_mismatch', 'message' => '결제 금액 불일치: ' . $paidAmount . ' vs ' . $amount, 'payment_id' => $paymentId, 'debug' => ['paid' => $paidAmount, 'expected' => $amount]], 400);
 }
 
 // customerId 가 응답에 있으면 저장, 없으면 issueId 또는 ownerEmail 사용.
-$customerId = (string)($payment['customer']['id'] ?? $issueId);
+$customerId = (string)($payment['customer']['id'] ?? $payment['payment']['customer']['id'] ?? $issueId);
 
 // DB 갱신
 require_once __DIR__ . '/../db_config.php';
