@@ -1,6 +1,6 @@
 # PROJECT_CONTEXT — youngman-biz.com
 
-*최종 갱신: 2026-05-17 (call-recording Phase 2 + 옵션 D 5필드 매핑 fix 까지 반영)*
+*최종 갱신: 2026-05-18 (옵션 D 라운드 4 사이클 완성 — phone merge + backfill catch-up + 고객관리대장 UI 통일)*
 
 ## 1. 사이트 목적
 
@@ -91,15 +91,18 @@ CALL_RECORDING_BACKEND.md — 통화 녹취 → AI 요약 백엔드 spec (앱팀
 - **Phase 2 M2**: `process-recording.php` body `mode:"async"` 분기 — HTTP 202 + fastcgi_finish_request + ignore_user_abort + register_shutdown_function failsafe + `recording-job` 폴링 endpoint
 - **Phase 2 M3**: FCM HTTP v1 발송 (fcm_helpers.php — RS256 self-signed JWT + OAuth + send-to-token + stale 토큰 자동 정리), async 완료 시 자동 푸시
 - **Phase 2 M4**: audio_cleanup.php — 24h 미정리 audio cron, GitHub Actions schedule 매일 KST 04:00, dry_run / max_age_hours / max_files 옵션, AUDIO_CLEANUP_TOKEN hash_equals 인증, audio_kept=1 보존
-- **옵션 D**: customer_log_send_to_group action — 5필드 매핑 (customer/phone/date/content/memo, content = summary+관심+문의 라벨조립) + 자동 default 그룹 생성("그룹제목을 설정해주세요") + lazy schema 마이그레이션 + linked_ledger_record_id 컬럼 + Idempotency
+- **옵션 D**: customer_log_send_to_group action — **8필드 매핑** (managed/date/call_count/customer/phone/content/agent_memo/memo, content = summary+관심+문의 라벨조립) + 자동 default 그룹 생성 + lazy schema 마이그레이션 + linked_ledger_record_id 컬럼 + Idempotency. **2026-05-18 라운드 4 완성**:
+  - `managed: true` 자동 (사용자가 ledger 토글로 비관리 가능, 백엔드는 항상 default true)
+  - `call_count` 자동 계산 (`calculate_call_count()` — 같은 group 내 정규화 phone 매칭 카운트 + 1)
+  - **phone merge** — send_to_group 호출 시 같은 group + 정규화된 phone 일치하는 기존 ledger_record 가 있으면 INSERT 대신 UPDATE. content/agent_memo 최신이 위쪽 prepend. 회차 marker `📞 {date} 통화 ({N}회차)`. 응답에 `merged: true`.
+  - **backfill catch-up** (`backfill_same_phone_links()`) — send_to_group 시 같은 owner_email + 같은 정규화 phone 의 모든 unlinked customer_log 도 batch UPDATE 로 link 갱신. 응답에 `backfilled_count: N`. 한 건만 양식 전송해도 같은 phone 의 미전송 row 자동 청산.
 - **is_main 응답 필드** — `ledger_group_row()` 에 isDefault snake_case alias (앱 chip picker 기본 선택용)
+- **고객관리대장 UI 통일** (2026-05-18): 모든 텍스트 셀 (text/textarea) 2줄 clamp + 가운데 정렬, tel nowrap, 행 크기 고정. 클릭 시 상세 모달 (관리 → 고객명 → ... 순). 가로 스크롤 제거 (컬럼 width 1052px), 날짜 6자리(YY.MM.DD), 모바일 카드 접힘 시 "강동원 (3)번 통화함" 자연어 태그.
 
 ## 4. 아직 미완성인 기능
 
-- ⏳ **call-recording 라운드 4 재시도 결과 확인** — 5필드 매핑 fix 후 ledger_records 정상 들어가는지 (앱팀 응답 대기)
-- ⏳ **GitHub Actions M4 dry_run 결과** — 사용자가 workflow_dispatch 트리거 후 결과 확인
-- ⏳ **`budget_condition` / `next_action` content 포함 여부** — 앱팀 회신 (현재 미매핑)
-- ⏳ **NCP Secret Key 재발급** — 채팅 평문 노출 (사용자 명시 후순위)
+- ⏳ **GitHub Actions M4 dry_run 결과** — 사용자가 workflow_dispatch 트리거 후 결과 확인 (여전히 미트리거)
+- ⏳ **AI 요약 두 모드 분기** — 대화형(legacy) / 요약정리형(PPT) 사용자 설정 분기. profile.html 라디오 + members.ai_summary_mode + process-recording.php prompt 분기. PPT prompt 는 `37fca8b` 에 보존. budget_condition/next_action 매핑 정책도 함께 재검토.
 - ⏳ **card-builder UX** — Recraft overlay primary + AI/템플릿 토글
 - ⏳ **profile/admin 디자인 일관성 감사**
 - ⏳ **forms 수식 inline help** — 함수 카탈로그 모달
@@ -146,19 +149,20 @@ CALL_RECORDING_BACKEND.md — 통화 녹취 → AI 요약 백엔드 spec (앱팀
 ## 7. 최근 수정한 파일 (커밋 흐름)
 
 ```
+5900869 fix(customers): 모든 텍스트 셀 행 크기 고정 + 가운데 정렬 specificity 강화
+7f01404 feat(call-recording): send_to_group 시 같은 phone 의 unlinked customer_log 일괄 link (catch-up)
+706b4f9 fix(customers): 가운데 정렬 실제 적용 + 옛 데이터 ━ 구분선 display-time 제거
+489bb4d ui(customers): 셀 가운데 정렬 + 모달 reorder + 회차 구분선 제거
+812bc11 ui(customers/mobile): 카드 접힘 시 이름 옆에 "(N)번 통화함" 자연어 태그
+baac51d ui(customers): 가로 스크롤 제거 — 컬럼 너비 축소 + 날짜 6자리 표시
+674618d fix(call-recording): 옛/새 통화 혼선 차단 — prompt 안전망 + separator 강화
+09dc0f5 fix(call-recording): summary 말투 변경 — 보고서식 (~했음/~임/관심 필요)
+a61ca49 fix(call-recording): summary 분량 제한 해제 + 맥락 누락 절대 금지 강화
+62c5834 revert+feat: PPT 톤 롤백 + 고객관리대장 행 고정/상세 모달
+37fca8b feat(call-recording): AI 요약 톤/구조 변경 — 보고서식 PPT 형식 (★ git history 보존)
+9057db9 feat(call-recording): phone 기반 row merge + customers.js cache 무효화
+39b8969 feat(customers): level → 통화수 자동 카운팅 + managed default true
 d80c9f5 fix(call-recording): customer_log_send_to_group 데이터 매핑 — 5필드 (앱팀 요청)
-ee18253 chore: AUDIO_CLEANUP_TOKEN secret 반영 재배포
-546b338 ci(call-recording): GitHub Actions schedule — M4 audio_cleanup 매일 KST 04:00
-f9035b3 feat(call-recording): Phase 2 M4 — 24h audio cron cleanup
-8dab819 feat(call-recording): ledger_group_row 응답에 is_main 필드 추가 (앱팀 요청)
-8236d64 feat(call-recording): Phase 2 M3 — FCM HTTP v1 발송 (async 완료 hook)
-cbea9b4 feat(call-recording): Phase 2 M2 — async mode 분기 + recording-job 폴링 endpoint
-4d62bbb feat(call-recording): Phase 2 M1 — FCM 토큰 등록 + recording_jobs/user_fcm_tokens 스키마
-ce92640 fix(call-recording): records.php customer-log 401 — 자체 인증 + spec §4 응답 shape 통일
-7b06d97 feat(call-recording): 옵션 D — customer_log 양식 전송 + admin quota bypass
-57a0756 prompt(call-recording): customer_name 룰 7단계로 확정 + customer_name_hint body 필드
-8400859 fix(call-recording): STT 엔진 OpenAI Whisper → Naver CLOVA Speech 교체
-9740b69 feat(call-recording): 통화 녹취 → Whisper → LLM 요약 → customer_log (Phase 1)
 ```
 
 **미커밋:** `SMS_USER_GUIDE.txt` (untracked, 5/15 추가)
@@ -206,24 +210,21 @@ ce92640 fix(call-recording): records.php customer-log 401 — 자체 인증 + sp
 
 ## 9. 다음에 이어서 해야 할 작업
 
-### 진행 중 / 결과 대기 (call-recording)
+### 미완 항목 (call-recording 관련)
 
-1. **앱팀 라운드 4 재시도 결과** — 5필드 매핑 fix(`d80c9f5`) 후 ledger_records 정상 들어가는지 검증. 응답 페이로드 (customer_log + ledger_record.data + group.field_schema) 받아 ack
-2. **GitHub Actions M4 audio-cleanup workflow_dispatch dry_run** — 사용자가 Actions 탭에서 수동 트리거 (https://github.com/nxnxax/product-builder-jd/actions/workflows/audio-cleanup-schedule.yml). 응답 `{ok:true, scanned, deleted, skipped, ...}` 확인 → 매일 KST 04:00 자동 cron 가동 시작
-3. **NCP Secret Key 재발급** (사용자 명시 후순위) — NCP 콘솔 → CLOVA Speech 도메인 → 호출 정보 → 재발급 → GitHub Secret `NCP_CLOVA_SECRET` 갱신 → 빈 commit 재배포
-4. **`budget_condition` / `next_action` content 포함 여부** — 앱팀 결정 받으면 반영 (현재 매핑 미적용)
+1. **GitHub Actions M4 audio-cleanup workflow_dispatch dry_run** — 사용자가 Actions 탭에서 수동 트리거 (https://github.com/nxnxax/product-builder-jd/actions/workflows/audio-cleanup-schedule.yml). 응답 `{ok:true, scanned, deleted, skipped, ...}` 확인 → 매일 KST 04:00 자동 cron 가동 시작. (여전히 미트리거)
+2. **AI 요약 두 모드 분기 작업** — 사용자 명시 보존 요청. [[project_ai_summary_modes]]. profile.html 라디오 + `members.ai_summary_mode` 컬럼 + `process-recording.php` prompt 분기 + content 매핑 정책 동시 결정. PPT prompt 는 `37fca8b` 에 보존, 대화형 prompt 는 현재 HEAD.
 
 ### 기존 backlog
 
-5. **SMS_USER_GUIDE.txt 처리** — 커밋 / .gitignore / 그대로
-6. **card-builder UX** — Recraft overlay primary + AI/템플릿 토글
-7. **PII 평문 → 암호문 backfill 스크립트** (lazy 외 일괄)
-8. **forms 수식 inline help** — 함수/path 카탈로그 모달
-9. **profile/admin 디자인 일관성 감사**
-10. **Supabase Email Template 한글화** (Dashboard 수동)
-11. **로또 자동 갱신** — JSON 미러 cron
-12. **RN Android 앱 측 검증 마무리** — logcat
-13. **Marketing.html 브리지 포함 검토**
+3. **SMS_USER_GUIDE.txt 처리** — 커밋 / .gitignore / 그대로
+4. **card-builder UX** — Recraft overlay primary + AI/템플릿 토글
+5. **PII 평문 → 암호문 backfill 스크립트** (lazy 외 일괄)
+6. **forms 수식 inline help** — 함수/path 카탈로그 모달
+7. **profile/admin 디자인 일관성 감사**
+8. **Supabase Email Template 한글화** (Dashboard 수동)
+9. **로또 자동 갱신** — JSON 미러 cron
+10. **Marketing.html 브리지 포함 검토**
 
 ---
 
