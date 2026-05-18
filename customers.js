@@ -593,7 +593,8 @@ function renderCell(f, r, d, displayNo) {
     if (f.type === 'textarea') {
         if (!v) return `<span class="cell-empty">-</span>`;
         // 행 크기 고정 — 2줄까지만 보이고 클릭 시 상세 모달.
-        return `<span class="cell-text cell-multiline cell-multiline-clamp" data-cell-detail data-id="${id}" title="클릭하여 상세 보기">${escapeHtml(v)}</span>`;
+        // 옛 데이터의 ━ 구분선은 display-time 으로 제거 (저장된 raw 데이터는 그대로).
+        return `<span class="cell-text cell-multiline cell-multiline-clamp" data-cell-detail data-id="${id}" title="클릭하여 상세 보기">${escapeHtml(sanitizeContent(v))}</span>`;
     }
     if (f.type === 'date') {
         return v ? `<span class="cell-text">${formatDateDisplay(v)}</span>` : `<span class="cell-empty">-</span>`;
@@ -786,7 +787,7 @@ function openRowDetailModal(rec, group, fields) {
         } else if (f.type === 'date') {
             display = escapeHtml(String(v).replace(/-/g, '.'));
         } else if (f.type === 'textarea') {
-            display = `<div class="row-detail-textarea">${escapeHtml(String(v))}</div>`;
+            display = `<div class="row-detail-textarea">${escapeHtml(sanitizeContent(v))}</div>`;
         } else {
             display = escapeHtml(String(v));
         }
@@ -1007,6 +1008,10 @@ function updateBulkBar() {
 /* ============== Utils ============== */
 function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
 function escapeHtml(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+// 옛 데이터의 ━ 구분선 제거 (저장된 raw 는 그대로, 표시만 정리).
+function sanitizeContent(s) {
+    return String(s ?? '').replace(/[━─]+/g, '').replace(/ {2,}/g, ' ').replace(/\n{4,}/g, '\n\n\n');
+}
 function escapeAttr(s) { return String(s ?? '').replace(/"/g, '&quot;'); }
 function formatPhoneDisplay(p) {
     const digits = String(p ?? '').replace(/\D/g, '');

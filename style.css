@@ -2503,7 +2503,8 @@ select:focus {
     transition: background 120ms ease;
     padding: 2px 4px;
     border-radius: 4px;
-    text-align: center;
+    /* .cell-multiline 의 text-align: left !important 를 override 하기 위해 !important 필요. */
+    text-align: center !important;
     width: 100%;
 }
 .cell-multiline-clamp:hover {
