@@ -8,6 +8,7 @@
     <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
     <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
     <link rel="stylesheet" href="style.css?v=20260518-subscribe">
+    <script src="https://cdn.portone.io/v2/browser-sdk.js" defer></script>
 
     <style>
         .sub-shell {
@@ -326,8 +327,8 @@
                 // 유료 플랜 사용자가 free 로 다운그레이드 — billing 페이지에서 해지로 처리.
                 ctaHtml = `<a class="plan-cta secondary" href="billing.html">관리 페이지에서 해지</a>`;
             } else {
-                // 결제 진행 — PortOne 결합 전 임시 disabled.
-                ctaHtml = `<button class="plan-cta disabled" type="button" data-plan="${plan.key}" disabled title="PortOne 결제 시스템 결합 후 활성화됩니다">${escapeHtml(plan.cta.label)} (준비 중)</button>`;
+                // 결제 진행 — PortOne JS SDK 호출 (data-pay-plan 으로 click handler 가 잡음).
+                ctaHtml = `<button class="plan-cta primary" type="button" data-pay-plan="${plan.key}">${escapeHtml(plan.cta.label)}</button>`;
             }
 
             return `
@@ -389,6 +390,104 @@
         return `<div class="plan-grid">${html}</div>`;
     }
 
+    // PortOne 결제 흐름 — SDK 로드 + config 가져오기 + 결제창 호출.
+    let _payConfig = null;
+    let _payInProgress = false;
+
+    async function ensurePayConfig() {
+        if (_payConfig) return _payConfig;
+        const r = await fetch('/billing/config.php', { credentials: 'omit' });
+        if (!r.ok) throw new Error('결제 설정을 불러올 수 없습니다 (HTTP ' + r.status + ')');
+        const data = await r.json();
+        if (data.status !== 'ok') throw new Error(data.message || '결제 설정 오류');
+        _payConfig = data;
+        return data;
+    }
+
+    async function ensureSdk() {
+        // browser-sdk.js 가 defer 로딩됨 — window.PortOne 가 준비될 때까지 대기.
+        for (let i = 0; i < 60; i++) {
+            if (window.PortOne && typeof window.PortOne.requestIssueBillingKeyAndPay === 'function') return;
+            await new Promise(r => setTimeout(r, 100));
+        }
+        throw new Error('PortOne SDK 로드 실패');
+    }
+
+    function genId(prefix) {
+        const uuid = (crypto && crypto.randomUUID) ? crypto.randomUUID() : (Date.now() + '-' + Math.random().toString(36).slice(2));
+        return prefix + '-' + uuid;
+    }
+
+    async function startPayment(planKey, profile) {
+        if (_payInProgress) return;
+        _payInProgress = true;
+        const button = document.querySelector(`[data-pay-plan="${planKey}"]`);
+        const originalText = button ? button.textContent : '';
+        try {
+            if (button) { button.disabled = true; button.textContent = '결제창 준비 중…'; }
+            const [config] = await Promise.all([ensurePayConfig(), ensureSdk()]);
+            const planInfo = config.plans[planKey];
+            if (!planInfo) throw new Error('알 수 없는 plan: ' + planKey);
+
+            const paymentId = genId('pay');
+            const issueId = genId('iss');
+            const customerEmail = profile.email || '';
+
+            if (button) button.textContent = '결제창 열기…';
+            const resp = await window.PortOne.requestIssueBillingKeyAndPay({
+                storeId: config.storeId,
+                channelKey: config.channelKey,
+                billingKeyMethod: 'CARD',
+                issueId,
+                issueName: planInfo.label + ' 정기결제 등록',
+                paymentId,
+                orderName: planInfo.label,
+                totalAmount: planInfo.amount,
+                currency: config.currency || 'KRW',
+                customer: {
+                    customerId: customerEmail,
+                    email: customerEmail,
+                    fullName: profile.name || customerEmail,
+                },
+            });
+
+            if (resp && resp.code) {
+                // 사용자 취소 또는 결제 실패
+                if (button) { button.disabled = false; button.textContent = originalText; }
+                if (resp.code !== 'PORTONE_USER_CANCEL') {
+                    alert('결제 실패: ' + (resp.message || resp.code));
+                }
+                return;
+            }
+
+            // 서버 검증 → DB 갱신
+            if (button) button.textContent = '결제 확인 중…';
+            const session = getSession();
+            const verify = await fetch('/billing/verify-payment.php', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': 'Bearer ' + (session?.access_token || ''),
+                },
+                body: JSON.stringify({ paymentId, plan: planKey }),
+            });
+            const result = await verify.json();
+            if (result.status !== 'ok') {
+                if (button) { button.disabled = false; button.textContent = originalText; }
+                alert('결제는 완료됐으나 서버 확인 실패: ' + (result.message || result.code) + '\n관리자에게 결제 ID 를 알려주세요: ' + paymentId);
+                return;
+            }
+
+            window.location.href = '/billing.html?success=1';
+        } catch (e) {
+            if (button) { button.disabled = false; button.textContent = originalText; }
+            console.error('[subscribe] payment error', e);
+            alert('결제 진행 중 오류: ' + (e?.message || e));
+        } finally {
+            _payInProgress = false;
+        }
+    }
+
     (async function boot() {
         mountAppHeader();
         mountAppFooter();
@@ -398,16 +497,21 @@
             renderAnon();
             return;
         }
+        let currentProfile = { email: session.user.email, plan: 'trialing', plan_status: 'trialing', name: '' };
         try {
             const res = await apiRequest('auth-profile');
-            const profile = res?.profile || {};
-            const plan = (profile.plan || 'trialing').toLowerCase();
-            const planStatus = (profile.plan_status || 'trialing').toLowerCase();
+            currentProfile = Object.assign(currentProfile, res?.profile || {});
+            const plan = (currentProfile.plan || 'trialing').toLowerCase();
+            const planStatus = (currentProfile.plan_status || 'trialing').toLowerCase();
             renderPlans(plan, planStatus);
         } catch (e) {
             console.warn('[subscribe] profile fetch failed', e);
             renderPlans('trialing', 'trialing');
         }
+        // 결제 버튼 click handler.
+        document.querySelectorAll('[data-pay-plan]').forEach(btn => {
+            btn.addEventListener('click', () => startPayment(btn.dataset.payPlan, currentProfile));
+        });
     })();
 </script>
 

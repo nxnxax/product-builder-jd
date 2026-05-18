@@ -65,6 +65,7 @@ jobs:
           php -l api/billing/verify-payment.php       # 결제 검증 + 구독 활성화
           php -l api/billing/webhook-portone.php      # Webhook 수신 (Standard Webhooks)
           php -l api/billing/cancel-subscription.php  # 구독 해지 (cancel_at_period_end)
+          php -l api/billing/config.php               # storeId/channelKey publishable config
           php -l api/sms/send-bulk.php
           php -l api/sms/balance.php
           php -l api/sms/providers/SmsProvider.php
@@ -126,6 +127,7 @@ jobs:
           cp api/billing/verify-payment.php deploy/billing/verify-payment.php
           cp api/billing/webhook-portone.php deploy/billing/webhook-portone.php
           cp api/billing/cancel-subscription.php deploy/billing/cancel-subscription.php
+          cp api/billing/config.php deploy/billing/config.php
           # SMS 단체 발송 — 디렉토리 구조 유지 (sms/send-bulk.php + sms/providers/*)
           mkdir -p deploy/sms/providers
           cp api/sms/send-bulk.php deploy/sms/send-bulk.php

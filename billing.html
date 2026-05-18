@@ -194,7 +194,7 @@
         const isPastDue = planStatus === 'past_due';
 
         const cancelBtn = isCancellable
-            ? `<button class="billing-btn danger disabled" type="button" disabled title="PortOne 결합 후 활성화">구독 해지 (준비 중)</button>`
+            ? `<button class="billing-btn danger" type="button" data-cancel-subscription>구독 해지</button>`
             : '';
 
         const planSection = `
@@ -263,6 +263,40 @@
         `;
 
         document.getElementById('billing-content').innerHTML = planSection + usageSection + paymentSection + historySection + policyLine;
+
+        // 구독 해지 click handler.
+        const cancelBtnEl = document.querySelector('[data-cancel-subscription]');
+        if (cancelBtnEl) {
+            cancelBtnEl.addEventListener('click', async () => {
+                if (!confirm('구독을 해지하시겠습니까?\n\n다음 결제일까지는 계속 이용 가능하며, 자동결제만 중단됩니다.')) return;
+                const orig = cancelBtnEl.textContent;
+                cancelBtnEl.disabled = true;
+                cancelBtnEl.textContent = '해지 처리 중…';
+                try {
+                    const session = getSession();
+                    const r = await fetch('/billing/cancel-subscription.php', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': 'Bearer ' + (session?.access_token || ''),
+                        },
+                    });
+                    const data = await r.json();
+                    if (data.status !== 'ok') {
+                        cancelBtnEl.disabled = false;
+                        cancelBtnEl.textContent = orig;
+                        alert('해지 처리 실패: ' + (data.message || data.code));
+                        return;
+                    }
+                    alert('구독이 해지되었습니다.\n' + (data.access_until ? formatDate(data.access_until) + ' 까지 이용 가능합니다.' : '다음 결제일까지 이용 가능합니다.'));
+                    window.location.reload();
+                } catch (e) {
+                    cancelBtnEl.disabled = false;
+                    cancelBtnEl.textContent = orig;
+                    alert('해지 처리 중 오류: ' + (e?.message || e));
+                }
+            });
+        }
     }
 
     function renderAnon() {
