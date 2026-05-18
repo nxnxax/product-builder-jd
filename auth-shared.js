@@ -1959,21 +1959,31 @@ function openSharedLoginModal(initialMode = 'login') {
         }
 
         // 카카오톡/페이스북 등 third-party in-app browser — Google OAuth 가 403
-        // disallowed_useragent 로 차단함. 외부 브라우저 사용 안내 + Android 에서는
-        // Chrome 으로 강제 open 시도.
+        // disallowed_useragent 로 차단함 (Google 보안 정책, 우회 불가).
+        // Android 는 intent:// scheme 으로 Chrome 자동 transition,
+        // iOS 는 외부 redirect 자체를 막아서 사용자 안내만.
         if (_isUnsupportedInAppBrowser()) {
-            console.log('[google oauth] unsupported in-app browser — guide user to external browser');
-            msgEl.style.color = '#c8362c';
             const isAndroid = /Android/i.test(navigator.userAgent || '');
             const host = window.location.host;
-            msgEl.innerHTML = isAndroid
-                ? '카카오톡·페이스북 등 앱 안 브라우저에서는 Google 로그인이 차단됩니다.<br>' +
-                  `<a href="intent://${host}${window.location.pathname}${window.location.search}#Intent;scheme=https;package=com.android.chrome;end" ` +
-                  'style="color:#c8362c;text-decoration:underline;font-weight:600;">Chrome 으로 열기</a> ' +
-                  '또는 우측 상단 메뉴 → 다른 브라우저로 열기를 사용해주세요.'
-                : '카카오톡·페이스북 등 앱 안 브라우저에서는 Google 로그인이 차단됩니다.<br>' +
-                  'Safari 등 외부 브라우저에서 <b>youngman-biz.com</b> 으로 다시 접속해주세요.<br>' +
-                  '(우측 상단 메뉴 → Safari 에서 열기)';
+            const path = window.location.pathname + window.location.search;
+            if (isAndroid) {
+                console.log('[google oauth] in-app browser — auto-transition to Chrome');
+                msgEl.style.color = 'var(--fg-secondary, #6e655c)';
+                msgEl.textContent = 'Chrome 으로 이동해 Google 로그인을 진행합니다…';
+                // 짧은 지연으로 메시지 인지할 시간 부여 후 강제 Chrome open.
+                setTimeout(() => {
+                    window.location.href = `intent://${host}${path}#Intent;scheme=https;package=com.android.chrome;end`;
+                }, 250);
+                return;
+            }
+            // iOS — Safari 등 외부 브라우저로 직접 redirect 불가능 (iOS 정책).
+            // 사용자에게 명확히 안내 + 이메일 로그인도 가능함을 알림.
+            console.log('[google oauth] iOS in-app browser — guide to Safari');
+            msgEl.style.color = '#c8362c';
+            msgEl.innerHTML =
+                'Google 정책상 카카오톡·페이스북 등 앱 안 브라우저에서는 Google 로그인이 차단됩니다.<br>' +
+                'Safari 에서 <b>youngman-biz.com</b> 으로 다시 접속해주세요.<br>' +
+                '<span style="color:var(--fg-tertiary);font-size:12px;">(우측 상단 ⋯ 메뉴 → Safari 에서 열기) — 또는 이메일 로그인을 사용해주세요.</span>';
             googleBtn.disabled = false;
             return;
         }
