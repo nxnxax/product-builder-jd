@@ -729,6 +729,8 @@ function renderAppFooter() {
             <nav class="app-footer-links" aria-label="법적 고지">
                 <a href="terms.html">이용약관</a>
                 <a href="privacy.html">개인정보처리방침</a>
+                <a href="refund.html">환불정책</a>
+                <a href="auto-billing.html">자동결제 안내</a>
             </nav>
         </div>
     `;

@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>자동결제 안내 · YOUNGMAN</title>
+    <link rel="icon" type="image/png" href="logo_main.png">
+    <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+    <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
+    <link rel="stylesheet" href="style.css?v=20260518-billing-policy">
+</head>
+<body>
+
+<header id="app-header" class="app-header"></header>
+<script type="module">
+    import { mountAppHeader, mountAppFooter } from './auth-shared.js?v=20260517-session-persist';
+    mountAppHeader();
+    mountAppFooter();
+</script>
+
+<main class="policy-page">
+    <article class="policy-doc">
+        <header class="policy-head">
+            <h1>자동결제 안내</h1>
+            <p class="policy-meta">시행일: 2026년 5월 18일</p>
+        </header>
+
+        <section class="policy-section">
+            <h2>제1조 (개요)</h2>
+            <p><b>어센트라(Ascentra)</b>가 운영하는 <b>YOUNGMAN(영맨)</b> 유료 구독은 매월 자동으로 결제되는 정기결제 방식으로 제공됩니다. 본 안내는 회원이 자동결제의 내용과 절차를 충분히 이해한 후 동의·이용할 수 있도록 안내합니다.</p>
+        </section>
+
+        <section class="policy-section">
+            <h2>제2조 (자동결제 등록)</h2>
+            <ol>
+                <li>회원이 Plus 또는 Pro 플랜을 결제하면, 결제 대행사(PortOne 및 토스페이먼츠)를 통해 <b>빌링키(BillingKey)</b>가 발급됩니다.</li>
+                <li>빌링키는 카드 정보를 토큰화한 식별자이며, 실제 카드번호·유효기간·CVC 등 민감 정보는 회사 서버에 저장되지 않습니다.</li>
+                <li>빌링키는 회사 서버에 안전하게 보관되며, 결제 대행사가 정한 방식으로만 사용됩니다.</li>
+            </ol>
+        </section>
+
+        <section class="policy-section">
+            <h2>제3조 (결제 주기 및 금액)</h2>
+            <ol>
+                <li>자동결제는 최초 결제일을 기준으로 <b>매월 동일한 날짜</b>에 진행됩니다 (해당 일자가 없는 달은 해당 월의 마지막 날에 결제).</li>
+                <li>결제 금액은 회원이 선택한 플랜에 따라 다음과 같습니다 (VAT 포함).
+                    <ul>
+                        <li>Plus — 월 19,000원</li>
+                        <li>Pro — 월 39,000원</li>
+                    </ul>
+                </li>
+                <li>요금이 변경되는 경우 회사는 회원에게 사전 고지하며, 회원은 동의하지 않을 권리가 있습니다.</li>
+            </ol>
+        </section>
+
+        <section class="policy-section">
+            <h2>제4조 (결제 수단)</h2>
+            <p>본 자동결제는 다음 수단으로 진행될 수 있습니다.</p>
+            <ul>
+                <li>신용카드</li>
+                <li>체크카드</li>
+                <li>토스페이</li>
+                <li>카카오페이</li>
+                <li>네이버페이 (도입 예정)</li>
+            </ul>
+        </section>
+
+        <section class="policy-section">
+            <h2>제5조 (결제 실패 시 처리)</h2>
+            <ol>
+                <li>등록된 결제 수단으로 결제가 실패한 경우, 회사는 <b>최대 7일간 자동으로 재시도</b>합니다.</li>
+                <li>재시도 기간 내에도 결제가 완료되지 않으면 구독이 <b>일시 정지(past_due)</b> 상태로 전환되며, 유료 기능 이용이 제한됩니다.</li>
+                <li>회원은 서비스 내 <b>구독 관리</b> 메뉴에서 결제 수단을 갱신하여 즉시 구독을 복구할 수 있습니다.</li>
+                <li>일시 정지 후 30일 이상 결제가 미정상화되면 구독은 자동 해지될 수 있습니다.</li>
+            </ol>
+        </section>
+
+        <section class="policy-section">
+            <h2>제6조 (자동결제 해지)</h2>
+            <ol>
+                <li>회원은 서비스 내 <b>구독 관리</b> 메뉴에서 <b>언제든 자동결제를 해지</b>할 수 있습니다.</li>
+                <li>해지 신청 시 다음 결제일부터 자동결제가 중단되며, 이미 결제된 기간이 종료될 때까지는 유료 기능을 계속 이용할 수 있습니다.</li>
+                <li>해지 후 회원의 빌링키는 회사 서버에서 즉시 삭제되거나 비활성화 처리됩니다.</li>
+            </ol>
+        </section>
+
+        <section class="policy-section">
+            <h2>제7조 (개인정보 및 결제 정보 보호)</h2>
+            <ol>
+                <li>회사는 회원의 결제 정보를 결제 대행사(PortOne, 토스페이먼츠)의 시스템을 통해서만 처리합니다.</li>
+                <li>회사 서버에 저장되는 결제 관련 정보는 빌링키(BillingKey)와 결제 이력 메타데이터에 한하며, 카드번호·CVC 등 민감 정보는 저장하지 않습니다.</li>
+                <li>회사가 보관하는 빌링키는 서버 환경변수로 격리된 시크릿으로만 호출 가능한 비공개 자산이며, 클라이언트(웹/앱)에는 노출되지 않습니다.</li>
+                <li>자세한 개인정보 처리 사항은 <a href="privacy.html">개인정보처리방침</a>을 참고해 주세요.</li>
+            </ol>
+        </section>
+
+        <section class="policy-section">
+            <h2>제8조 (환불)</h2>
+            <p>자동결제로 발생한 결제 건의 환불은 <a href="refund.html">환불정책</a>에 따라 처리됩니다.</p>
+        </section>
+
+        <section class="policy-section">
+            <h2>제9조 (회원의 권리)</h2>
+            <ol>
+                <li>회원은 다음 권리를 가집니다.
+                    <ul>
+                        <li>자동결제 동의 철회 (해지)</li>
+                        <li>결제 정보 수정 / 결제 수단 변경</li>
+                        <li>결제 내역 조회</li>
+                        <li>환불 신청 (환불정책 기준)</li>
+                    </ul>
+                </li>
+                <li>위 권리 행사 또는 문의는 서비스 내 메뉴 또는 이메일을 통해 가능합니다.</li>
+            </ol>
+        </section>
+
+        <section class="policy-section">
+            <h2>제10조 (문의처)</h2>
+            <ul>
+                <li>운영사: 어센트라(Ascentra)</li>
+                <li>대표: 장동훈</li>
+                <li>사업자등록번호: 393-39-01518</li>
+                <li>주소: 경기도 화성시 효행로 30, 202호</li>
+                <li>이메일: <a href="mailto:nxnxax@gmail.com">nxnxax@gmail.com</a></li>
+            </ul>
+        </section>
+
+        <p class="policy-foot">본 자동결제 안내는 2026년 5월 18일부터 시행됩니다.</p>
+    </article>
+</main>
+
+</body>
+</html>

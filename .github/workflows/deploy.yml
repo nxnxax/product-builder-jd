@@ -43,6 +43,8 @@ jobs:
           test -f logo_main.png
           test -f logout.html             # 단일 로그아웃 transition 페이지 — 누락 시 헤더 로그아웃 깨짐
           test -f login-complete.html     # 단일 로그인 transition 페이지 — 누락 시 로그인 후 redirect 깨짐
+          test -f refund.html             # 환불정책 (PortOne/Toss 심사 필수)
+          test -f auto-billing.html       # 자동결제 안내 (PortOne/Toss 심사 필수)
           grep -q 'auth-shared.js?v=' index.html   # 새 랜딩은 main.js 대신 auth-shared 만 import
           grep -q 'profile.js?v=' profile.html
           grep -q 'admin.js?v=' admin.html
@@ -97,6 +99,8 @@ jobs:
           cp forms.js deploy/forms.js
           cp logout.html deploy/logout.html                      # 단일 로그아웃 cleanup 페이지
           cp login-complete.html deploy/login-complete.html      # 단일 로그인 transition 페이지
+          cp refund.html deploy/refund.html                      # 환불정책 (구독 결제 정책 페이지)
+          cp auto-billing.html deploy/auto-billing.html          # 자동결제 안내 (구독 결제 정책 페이지)
           cp api/analyze.php deploy/analyze.php
           cp api/records.php deploy/records.php
           cp api/upload.php deploy/upload.php
