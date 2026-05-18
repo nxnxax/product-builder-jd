@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>구독 관리 · YOUNGMAN</title>
+    <link rel="icon" type="image/png" href="logo_main.png">
+    <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+    <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
+    <link rel="stylesheet" href="style.css?v=20260518-billing">
+
+    <style>
+        .billing-shell {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 32px 20px 64px;
+        }
+        .billing-header {
+            margin-bottom: 24px;
+        }
+        .billing-header h1 {
+            font-size: 24px;
+            letter-spacing: -0.025em;
+            margin: 0 0 6px;
+        }
+        .billing-header p {
+            color: var(--fg-tertiary);
+            font-size: 14px;
+            margin: 0;
+        }
+        .billing-card {
+            background: var(--bg, #fff);
+            border: 1px solid var(--border, #ebe8e0);
+            border-radius: 14px;
+            padding: 22px;
+            margin-bottom: 16px;
+        }
+        .billing-card h3 {
+            font-size: 15px;
+            margin: 0 0 14px;
+            letter-spacing: -0.01em;
+        }
+        .billing-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 14px;
+            padding: 12px 0;
+            border-top: 1px solid var(--border);
+        }
+        .billing-row:first-of-type { border-top: 0; padding-top: 4px; }
+        .billing-row-label {
+            font-size: 13px;
+            color: var(--fg-tertiary, #908a82);
+            flex: 0 0 130px;
+        }
+        .billing-row-value {
+            font-size: 14px;
+            color: var(--fg, #1a1611);
+            text-align: right;
+            font-weight: 600;
+            flex: 1 1 auto;
+        }
+        .billing-pill {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 999px;
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: -0.005em;
+        }
+        .billing-pill.active { background: #dcfce7; color: #15803d; }
+        .billing-pill.trialing { background: #fef3c7; color: #92400e; }
+        .billing-pill.past_due { background: #fee2e2; color: #b91c1c; }
+        .billing-pill.cancelled { background: #f1f5f9; color: #64748b; }
+
+        .usage-bar-wrap {
+            margin-top: 8px;
+            height: 8px;
+            background: var(--bg-muted, #f5f3ee);
+            border-radius: 999px;
+            overflow: hidden;
+        }
+        .usage-bar-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--accent, #c8362c), #ff7a5c);
+            transition: width 240ms ease;
+        }
+        .usage-bar-fill.over { background: #ef4444; }
+
+        .billing-actions {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-top: 8px;
+        }
+        .billing-btn {
+            padding: 10px 16px;
+            border-radius: 8px;
+            font-size: 13.5px;
+            font-weight: 700;
+            cursor: pointer;
+            border: 1px solid transparent;
+            text-decoration: none;
+            display: inline-block;
+        }
+        .billing-btn.primary { background: var(--accent, #c8362c); color: #fff; }
+        .billing-btn.primary:hover { background: #b02e25; }
+        .billing-btn.secondary { background: var(--bg-muted, #f5f3ee); color: var(--fg, #1a1611); border-color: var(--border, #ebe8e0); }
+        .billing-btn.danger { background: #fff; color: #b91c1c; border-color: #fecaca; }
+        .billing-btn.danger:hover { background: #fef2f2; }
+        .billing-btn.disabled { background: var(--bg-subtle, #faf9f5); color: var(--fg-quaternary, #a3a39a); cursor: not-allowed; border: 1px dashed var(--border, #ebe8e0); }
+
+        .billing-empty {
+            text-align: center;
+            padding: 40px 20px;
+            color: var(--fg-tertiary, #908a82);
+            font-size: 14px;
+        }
+        .billing-empty a {
+            color: var(--accent, #c8362c);
+            font-weight: 600;
+        }
+
+        .billing-info-line {
+            font-size: 12.5px;
+            color: var(--fg-tertiary);
+            line-height: 1.6;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+
+<header id="app-header" class="app-header"></header>
+
+<main class="billing-shell">
+    <div class="billing-header">
+        <h1>구독 관리</h1>
+        <p>현재 플랜과 사용량을 확인하고 구독을 관리합니다.</p>
+    </div>
+
+    <div id="billing-content"></div>
+</main>
+
+<script type="module">
+    import { initSupabase, apiRequest, getSession, mountAppHeader, mountAppFooter } from './auth-shared.js?v=20260517-session-persist';
+
+    const PLAN_LABEL = { free: 'Free', plus: 'Plus', pro: 'Pro', trialing: '신규 체험' };
+    const STATUS_LABEL = { active: '활성', trialing: '체험중', past_due: '결제 실패', cancelled: '해지됨' };
+    const PLAN_LIMITS = { free: 0, trialing: 5, plus: 20, pro: null };
+    const PLAN_PRICE = { free: 0, trialing: 0, plus: 19000, pro: 39000 };
+
+    function escapeHtml(s) {
+        return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    }
+    function formatDate(s) {
+        if (!s) return '—';
+        const m = String(s).match(/^(\d{4})-(\d{2})-(\d{2})/);
+        return m ? `${m[1]}.${m[2]}.${m[3]}` : s;
+    }
+    function formatPrice(n) {
+        if (!n) return '무료';
+        return '₩' + Number(n).toLocaleString('ko-KR') + ' / 월';
+    }
+
+    function renderBilling(profile) {
+        const plan = (profile.plan || 'trialing').toLowerCase();
+        const planStatus = (profile.plan_status || 'trialing').toLowerCase();
+        const used = profile.summary_used || 0;
+        const limit = profile.summary_limit != null ? profile.summary_limit : (PLAN_LIMITS[plan] ?? null);
+        const periodEnd = profile.current_period_end;
+
+        let usageHtml;
+        if (limit === null) {
+            usageHtml = `<span class="billing-row-value" style="color:#15803d;">무제한</span>`;
+        } else if (limit === 0) {
+            usageHtml = `<span class="billing-row-value" style="color:var(--fg-tertiary);">사용 불가 (구독 필요)</span>`;
+        } else {
+            const pct = Math.min(100, Math.round((used / limit) * 100));
+            const overCls = used >= limit ? 'over' : '';
+            usageHtml = `
+                <div style="flex:1 1 auto;">
+                    <div style="display:flex;justify-content:space-between;align-items:baseline;">
+                        <span style="font-size:14px;font-weight:600;">${used} / ${limit}회</span>
+                        <span style="font-size:12px;color:var(--fg-tertiary);">${pct}%</span>
+                    </div>
+                    <div class="usage-bar-wrap"><div class="usage-bar-fill ${overCls}" style="width:${pct}%;"></div></div>
+                </div>
+            `;
+        }
+
+        const isCancellable = plan !== 'free' && planStatus === 'active';
+        const isPastDue = planStatus === 'past_due';
+
+        const cancelBtn = isCancellable
+            ? `<button class="billing-btn danger disabled" type="button" disabled title="PortOne 결합 후 활성화">구독 해지 (준비 중)</button>`
+            : '';
+
+        const planSection = `
+            <section class="billing-card">
+                <h3>플랜 정보</h3>
+                <div class="billing-row">
+                    <div class="billing-row-label">현재 플랜</div>
+                    <div class="billing-row-value">${escapeHtml(PLAN_LABEL[plan] || plan)} <span style="font-weight:500;color:var(--fg-tertiary);">— ${formatPrice(PLAN_PRICE[plan])}</span></div>
+                </div>
+                <div class="billing-row">
+                    <div class="billing-row-label">상태</div>
+                    <div class="billing-row-value"><span class="billing-pill ${planStatus}">${escapeHtml(STATUS_LABEL[planStatus] || planStatus)}</span></div>
+                </div>
+                ${periodEnd ? `
+                <div class="billing-row">
+                    <div class="billing-row-label">다음 결제일</div>
+                    <div class="billing-row-value">${escapeHtml(formatDate(periodEnd))}</div>
+                </div>` : ''}
+                <div class="billing-actions">
+                    <a class="billing-btn primary" href="subscribe.html">${plan === 'free' || plan === 'trialing' ? '플랜 시작하기' : '플랜 변경'}</a>
+                    ${cancelBtn}
+                </div>
+                ${isPastDue ? `<p class="billing-info-line" style="color:#b91c1c;">⚠ 결제가 처리되지 않았습니다. 결제 정보를 업데이트해 주세요.</p>` : ''}
+            </section>
+        `;
+
+        const usageSection = `
+            <section class="billing-card">
+                <h3>이번 달 사용량 (AI 통화 요약)</h3>
+                <div class="billing-row">
+                    <div class="billing-row-label">사용량</div>
+                    ${usageHtml}
+                </div>
+                <p class="billing-info-line">매월 결제 갱신 시 0으로 초기화됩니다. AI 요약 1회 = 통화녹음 → 요약 → 고객관리대장 저장 전체 과정 한 사이클.</p>
+            </section>
+        `;
+
+        const paymentSection = `
+            <section class="billing-card">
+                <h3>결제 정보</h3>
+                <div class="billing-row">
+                    <div class="billing-row-label">결제 수단</div>
+                    <div class="billing-row-value" style="color:var(--fg-tertiary);font-weight:500;">${plan === 'free' || plan === 'trialing' ? '등록된 결제 수단 없음' : '카드 결제 (등록됨)'}</div>
+                </div>
+                <div class="billing-actions">
+                    <button class="billing-btn secondary disabled" type="button" disabled title="PortOne 결합 후 활성화">결제 수단 변경 (준비 중)</button>
+                </div>
+            </section>
+        `;
+
+        const historySection = `
+            <section class="billing-card">
+                <h3>결제 내역</h3>
+                <div class="billing-empty">
+                    아직 결제 내역이 없습니다.
+                </div>
+            </section>
+        `;
+
+        const policyLine = `
+            <p class="billing-info-line" style="text-align:center;margin-top:18px;">
+                <a href="auto-billing.html" style="color:var(--accent);">자동결제 안내</a> ·
+                <a href="refund.html" style="color:var(--accent);">환불정책</a> ·
+                <a href="terms.html" style="color:var(--accent);">이용약관</a>
+            </p>
+        `;
+
+        document.getElementById('billing-content').innerHTML = planSection + usageSection + paymentSection + historySection + policyLine;
+    }
+
+    function renderAnon() {
+        document.getElementById('billing-content').innerHTML = `
+            <section class="billing-card">
+                <div class="billing-empty">
+                    <p style="font-size:16px;margin-bottom:12px;color:var(--fg);">로그인이 필요합니다.</p>
+                    <p style="font-size:13px;">구독 관리는 로그인 후 이용 가능합니다.</p>
+                    <a href="index.html" style="display:inline-block;margin-top:16px;padding:10px 18px;background:var(--accent);color:#fff;border-radius:8px;font-weight:700;font-size:13.5px;">홈으로 이동</a>
+                </div>
+            </section>
+        `;
+    }
+
+    (async function boot() {
+        mountAppHeader();
+        mountAppFooter();
+        try { await initSupabase(); } catch {}
+        const session = getSession();
+        if (!session?.user) { renderAnon(); return; }
+        try {
+            const res = await apiRequest('auth-profile');
+            renderBilling(res?.profile || {});
+        } catch (e) {
+            console.warn('[billing] profile fetch failed', e);
+            renderBilling({ plan: 'trialing', plan_status: 'trialing' });
+        }
+    })();
+</script>
+
+</body>
+</html>
