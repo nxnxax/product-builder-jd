@@ -54,7 +54,9 @@ function get_bearer_token_billing(): string {
 $token = get_bearer_token_billing();
 if ($token === '') portone_response(['status' => 'error', 'code' => 'unauthorized', 'message' => '로그인이 필요합니다.'], 401);
 
-$supabaseUrl = rtrim((string)(billing_load_env_value('VITE_SUPABASE_URL') ?: getenv('VITE_SUPABASE_URL') ?: ''), '/');
+$supabaseUrlRaw = (string)(billing_load_env_value('VITE_SUPABASE_URL') ?: getenv('VITE_SUPABASE_URL') ?: '');
+// .env 의 VITE_SUPABASE_URL 이 'https://xxx.supabase.co/rest/v1/' 형태 — /rest/v1 또는 /auth/v1 제거하고 root 만 추출.
+$supabaseUrl = rtrim((string)preg_replace('#/(rest|auth)/v1/?.*$#', '', $supabaseUrlRaw), '/');
 $anonKey = (string)(billing_load_env_value('VITE_SUPABASE_ANON_KEY') ?: getenv('VITE_SUPABASE_ANON_KEY') ?: '');
 if ($supabaseUrl === '' || $anonKey === '') {
     portone_response(['status' => 'error', 'code' => 'config', 'message' => '서버 인증 설정 누락.'], 500);
