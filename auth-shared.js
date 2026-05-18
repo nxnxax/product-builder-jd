@@ -21,6 +21,21 @@ function _bridgeIsInApp() {
 function _bridgePostToApp(type, payload) {
     try { return window.YoungmanBridge?.postToApp(type, payload); } catch { return false; }
 }
+/**
+ * Google OAuth 가 차단하는 third-party in-app browser 감지.
+ * 영맨 native 앱 (YoungmanApp UA) 은 자체 native Google SDK 를 쓰므로 false.
+ * 카카오톡/페이스북/인스타그램/네이버/라인 등의 in-app WebView 만 true.
+ *
+ * Why: 사용자가 카카오톡 메시지 링크 등으로 사이트 접속 시 OAuth 페이지가
+ * 'disallowed_useragent' 403 으로 차단됨. Google 보안 정책 (third-party
+ * WebView 에서 OAuth 금지). Chrome/Safari 같은 외부 브라우저 사용 안내 필요.
+ */
+function _isUnsupportedInAppBrowser() {
+    if (typeof navigator === 'undefined') return false;
+    const ua = navigator.userAgent || '';
+    if (/YoungmanApp/i.test(ua)) return false;     // 영맨앱 — native SDK 사용
+    return /KAKAOTALK|KAKAOSTORY|NAVER\(inapp|FBAN|FBAV|Instagram|Line\/|Daum\/|Whale\/|Snapchat|Pinterest|; wv\)/i.test(ua);
+}
 function _generateRawNonce() {
     try { if (crypto?.randomUUID) return crypto.randomUUID() + '-' + crypto.randomUUID(); } catch {}
     const arr = new Uint8Array(32);
@@ -1940,6 +1955,26 @@ function openSharedLoginModal(initialMode = 'login') {
                 googleBtn.disabled = false;
                 _pendingGoogleUI = null;
             });
+            return;
+        }
+
+        // 카카오톡/페이스북 등 third-party in-app browser — Google OAuth 가 403
+        // disallowed_useragent 로 차단함. 외부 브라우저 사용 안내 + Android 에서는
+        // Chrome 으로 강제 open 시도.
+        if (_isUnsupportedInAppBrowser()) {
+            console.log('[google oauth] unsupported in-app browser — guide user to external browser');
+            msgEl.style.color = '#c8362c';
+            const isAndroid = /Android/i.test(navigator.userAgent || '');
+            const host = window.location.host;
+            msgEl.innerHTML = isAndroid
+                ? '카카오톡·페이스북 등 앱 안 브라우저에서는 Google 로그인이 차단됩니다.<br>' +
+                  `<a href="intent://${host}${window.location.pathname}${window.location.search}#Intent;scheme=https;package=com.android.chrome;end" ` +
+                  'style="color:#c8362c;text-decoration:underline;font-weight:600;">Chrome 으로 열기</a> ' +
+                  '또는 우측 상단 메뉴 → 다른 브라우저로 열기를 사용해주세요.'
+                : '카카오톡·페이스북 등 앱 안 브라우저에서는 Google 로그인이 차단됩니다.<br>' +
+                  'Safari 등 외부 브라우저에서 <b>youngman-biz.com</b> 으로 다시 접속해주세요.<br>' +
+                  '(우측 상단 메뉴 → Safari 에서 열기)';
+            googleBtn.disabled = false;
             return;
         }
 
