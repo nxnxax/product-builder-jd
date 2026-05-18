@@ -593,8 +593,8 @@ function renderCell(f, r, d, displayNo) {
     if (f.type === 'textarea' || f.type === 'text') {
         if (!v) return `<span class="cell-empty">-</span>`;
         // 모든 텍스트 입력 셀 — 행 크기 고정 (2줄 clamp + 가운데 정렬) + 클릭 시 상세 모달.
-        // 옛 데이터의 ━ 구분선은 display-time 으로 제거 (저장된 raw 는 그대로).
-        return `<span class="cell-text cell-multiline cell-multiline-clamp" data-cell-detail data-id="${id}" title="클릭하여 상세 보기">${escapeHtml(sanitizeContent(v))}</span>`;
+        // 셀 미리보기는 previewContent — 날짜/회차 header 라인 제거하고 summary 만 (2줄 보장).
+        return `<span class="cell-text cell-multiline cell-multiline-clamp" data-cell-detail data-id="${id}" title="클릭하여 상세 보기">${escapeHtml(previewContent(v))}</span>`;
     }
     if (f.type === 'tel') {
         if (!v) return `<span class="cell-empty">-</span>`;
@@ -1014,8 +1014,21 @@ function updateBulkBar() {
 function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
 function escapeHtml(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 // 옛 데이터의 ━ 구분선 제거 (저장된 raw 는 그대로, 표시만 정리).
+// 상세 모달용 — 회차 header 마커는 유지.
 function sanitizeContent(s) {
     return String(s ?? '').replace(/[━─]+/g, '').replace(/ {2,}/g, ' ').replace(/\n{4,}/g, '\n\n\n');
+}
+// 셀 미리보기용 — 날짜/회차 header 라인까지 제거하여 요약 내용만 노출.
+// "📞 2026-05-18 19:10:17 통화 (23회차)" 같은 라인은 미리보기에서 불필요
+// (날짜는 별도 컬럼, cell 폭이 좁으면 header 만 wrap 되어 summary 안 보임).
+function previewContent(s) {
+    return String(s ?? '')
+        .replace(/^[ \t]*📞[^\n]*\n+/gm, '')
+        .replace(/^[ \t]*📝[^\n]*\n+/gm, '')
+        .replace(/[━─]+/g, '')
+        .replace(/ {2,}/g, ' ')
+        .replace(/\n{2,}/g, '\n')
+        .trim();
 }
 function escapeAttr(s) { return String(s ?? '').replace(/"/g, '&quot;'); }
 function formatPhoneDisplay(p) {
