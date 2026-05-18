@@ -154,6 +154,30 @@
         .cta svg { transition: transform 220ms; }
         .cta:hover svg { transform: translateX(3px); }
 
+        /* AI 통화요약 서비스 신청 CTA — 강조 색 + 텍스트가 길어 max-width 보장 */
+        .hero-cta-subscribe {
+            margin-top: 6px;
+            animation: fadeUp 700ms 780ms ease-out forwards;
+        }
+        .cta-subscribe {
+            background: linear-gradient(135deg, #c8362c 0%, #ff7a5c 100%);
+            color: #fff;
+            box-shadow: 0 10px 24px rgba(200, 54, 44, .28);
+            padding: 14px 22px;
+            font-size: 14.5px;
+            white-space: normal;
+            text-align: center;
+            line-height: 1.35;
+            max-width: 100%;
+        }
+        .cta-subscribe:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 16px 30px rgba(200, 54, 44, .42);
+            background: linear-gradient(135deg, #b02e25 0%, #ee6748 100%);
+        }
+        .cta-subscribe-emoji { font-size: 16px; flex: 0 0 auto; }
+        .cta-subscribe-text { letter-spacing: -0.01em; }
+
         /* hero 일러스트 */
         .hero-stage-art {
             position: relative;
@@ -517,6 +541,15 @@
                             </svg>
                         </a>
                         <a class="cta cta-ghost" href="#more">기능 더 보기</a>
+                    </div>
+                    <div class="hero-cta-row hero-cta-subscribe">
+                        <a class="cta cta-subscribe" href="subscribe.html">
+                            <span class="cta-subscribe-emoji">📞</span>
+                            <span class="cta-subscribe-text">AI 통화 요약 + 고객관리 원터치 전송 서비스 신청</span>
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M5 12h14M13 5l7 7-7 7"/>
+                            </svg>
+                        </a>
                     </div>
                 </div>
                 <div class="hero-stage-art" aria-hidden="true">
