@@ -61,6 +61,10 @@ jobs:
           php -l api/process-recording.php   # 통화 녹취 → Clova STT → LLM → customer_log
           php -l api/fcm_helpers.php         # FCM HTTP v1 발송 (Phase 2 M3)
           php -l api/audio_cleanup.php       # 24h 미정리 audio cron (Phase 2 M4)
+          php -l api/billing_helpers.php     # PortOne V2 API 헬퍼
+          php -l api/billing/verify-payment.php       # 결제 검증 + 구독 활성화
+          php -l api/billing/webhook-portone.php      # Webhook 수신 (Standard Webhooks)
+          php -l api/billing/cancel-subscription.php  # 구독 해지 (cancel_at_period_end)
           php -l api/sms/send-bulk.php
           php -l api/sms/balance.php
           php -l api/sms/providers/SmsProvider.php
@@ -116,6 +120,12 @@ jobs:
           cp api/process-recording.php deploy/process-recording.php   # 통화 녹취 → Clova STT → LLM → customer_log
           cp api/fcm_helpers.php deploy/fcm_helpers.php   # FCM HTTP v1 발송 — process-recording 이 async 완료 시 require
           cp api/audio_cleanup.php deploy/audio_cleanup.php   # 24h 미정리 audio cron cleanup (M4)
+          # 구독 결제 (PortOne V2 + 토스페이먼츠)
+          cp api/billing_helpers.php deploy/billing_helpers.php
+          mkdir -p deploy/billing
+          cp api/billing/verify-payment.php deploy/billing/verify-payment.php
+          cp api/billing/webhook-portone.php deploy/billing/webhook-portone.php
+          cp api/billing/cancel-subscription.php deploy/billing/cancel-subscription.php
           # SMS 단체 발송 — 디렉토리 구조 유지 (sms/send-bulk.php + sms/providers/*)
           mkdir -p deploy/sms/providers
           cp api/sms/send-bulk.php deploy/sms/send-bulk.php
@@ -165,6 +175,10 @@ jobs:
           LOTTO_CRON_TOKEN: ${{ secrets.LOTTO_CRON_TOKEN }}
           CRYPTO_KEY: ${{ secrets.YOUNGMAN_CRYPTO_KEY }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          PORTONE_STORE_ID: ${{ secrets.PORTONE_STORE_ID }}
+          PORTONE_API_SECRET: ${{ secrets.PORTONE_API_SECRET }}
+          PORTONE_WEBHOOK_SECRET: ${{ secrets.PORTONE_WEBHOOK_SECRET }}
+          PORTONE_CHANNEL_KEY_TOSS: ${{ secrets.PORTONE_CHANNEL_KEY_TOSS }}
         run: |
           set -e
           {
@@ -191,6 +205,11 @@ jobs:
             [ -n "$LOTTO_DB_USER" ] && echo "LOTTO_DB_USER=$LOTTO_DB_USER"     || echo "::warning::LOTTO_DB_USER missing"
             [ -n "$LOTTO_DB_PASS" ] && echo "LOTTO_DB_PASS=$LOTTO_DB_PASS"     || echo "::warning::LOTTO_DB_PASS missing"
             [ -n "$LOTTO_CRON_TOKEN" ] && echo "LOTTO_CRON_TOKEN=$LOTTO_CRON_TOKEN" || true
+            # PortOne + 토스페이먼츠 — 구독 결제 시스템
+            [ -n "$PORTONE_STORE_ID" ] && echo "PORTONE_STORE_ID=$PORTONE_STORE_ID" || echo "::warning::PORTONE_STORE_ID missing — 결제 endpoint 503"
+            [ -n "$PORTONE_API_SECRET" ] && echo "PORTONE_API_SECRET=$PORTONE_API_SECRET" || echo "::warning::PORTONE_API_SECRET missing — 결제 API 호출 503"
+            [ -n "$PORTONE_WEBHOOK_SECRET" ] && echo "PORTONE_WEBHOOK_SECRET=$PORTONE_WEBHOOK_SECRET" || echo "::warning::PORTONE_WEBHOOK_SECRET missing — webhook 검증 503"
+            [ -n "$PORTONE_CHANNEL_KEY_TOSS" ] && echo "PORTONE_CHANNEL_KEY_TOSS=$PORTONE_CHANNEL_KEY_TOSS" || echo "::warning::PORTONE_CHANNEL_KEY_TOSS missing — 토스 결제창 비활성"
           } > deploy/.env
           [ -n "$OPENAI_KEY" ]    && echo "OPENAI_API_KEY len=${#OPENAI_KEY}, prefix=$(printf '%s' "$OPENAI_KEY" | head -c6)…"     || true
           [ -n "$RECRAFT_KEY" ]   && echo "RECRAFT_API_KEY len=${#RECRAFT_KEY}, prefix=$(printf '%s' "$RECRAFT_KEY" | head -c6)…"   || true
