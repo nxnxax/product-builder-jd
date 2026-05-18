@@ -443,9 +443,15 @@
             const issueId = genId('iss');
             const customerEmail = profile.email || '';
 
-            // Step 1 — 빌링키만 발급 (토스페이먼츠는 requestIssueBillingKeyAndPay 미지원).
-            if (button) button.textContent = '카드 등록 창 여는 중…';
-            const resp = await window.PortOne.requestIssueBillingKey({
+            // 모바일은 IFRAME modal 이 화면 폭 벗어남 → REDIRECTION 모드 사용
+            // (토스 페이지 전체 화면으로 이동 후 결제 완료 시 우리 페이지로 복귀).
+            const isMobile = window.matchMedia('(max-width: 820px)').matches;
+            // localStorage 에 pending plan 임시 저장 — redirect 후 복귀 시 사용.
+            try {
+                localStorage.setItem('billing_pending', JSON.stringify({ plan: planKey, issueId, ts: Date.now() }));
+            } catch {}
+
+            const issueParams = {
                 storeId: config.storeId,
                 channelKey: config.channelKey,
                 billingKeyMethod: 'CARD',
@@ -456,7 +462,19 @@
                     email: customerEmail,
                     fullName: profile.name || customerEmail,
                 },
-            });
+            };
+            if (isMobile) {
+                issueParams.redirectUrl = window.location.origin + '/subscribe.html?billing_return=1';
+                // PortOne V2 의 모바일 windowType — redirection 강제.
+                issueParams.windowType = { pc: 'IFRAME', mobile: 'REDIRECTION' };
+            }
+
+            // Step 1 — 빌링키만 발급 (토스페이먼츠는 requestIssueBillingKeyAndPay 미지원).
+            if (button) button.textContent = isMobile ? '결제 페이지로 이동…' : '카드 등록 창 여는 중…';
+            const resp = await window.PortOne.requestIssueBillingKey(issueParams);
+
+            // REDIRECTION 모드는 페이지 navigate 됨 — 아래 코드 도달 안 함 (성공 시).
+            // 이 아래는 PC IFRAME 모드의 성공/실패 응답 처리.
 
             if (resp && resp.code) {
                 if (button) { button.disabled = false; button.textContent = originalText; }
@@ -514,10 +532,62 @@
         }
     }
 
+    // 모바일 REDIRECTION 모드로 결제 후 복귀 — query string 에서 billingKey 받음.
+    async function handleBillingReturn() {
+        const url = new URL(window.location.href);
+        if (url.searchParams.get('billing_return') !== '1') return false;
+        const billingKey = url.searchParams.get('billingKey') || url.searchParams.get('billing_key') || '';
+        const errCode = url.searchParams.get('code');
+        const errMsg = url.searchParams.get('message');
+        // 임시 저장된 plan / issueId 복원
+        let pending = null;
+        try {
+            const raw = localStorage.getItem('billing_pending');
+            if (raw) pending = JSON.parse(raw);
+        } catch {}
+        // 사용 후 정리 + URL 깨끗이.
+        try { localStorage.removeItem('billing_pending'); } catch {}
+        history.replaceState(null, '', window.location.pathname);
+
+        if (errCode || !billingKey || !pending?.plan) {
+            if (errCode) alert('결제 취소/실패: ' + (errMsg || errCode));
+            return false;
+        }
+        // verify-payment 서버 호출
+        try {
+            await initSupabase();
+            const session = getSession();
+            if (!session?.access_token) {
+                alert('세션이 만료되었습니다. 다시 로그인 후 결제 페이지에서 재시도해 주세요.');
+                return false;
+            }
+            const verify = await fetch('/billing/verify-payment.php', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': 'Bearer ' + session.access_token,
+                },
+                body: JSON.stringify({ billingKey, issueId: pending.issueId, plan: pending.plan }),
+            });
+            const result = await verify.json();
+            if (result.status !== 'ok') {
+                alert('결제 처리 실패: ' + (result.message || result.code) + (result.payment_id ? '\n결제 ID: ' + result.payment_id : ''));
+                return false;
+            }
+            window.location.href = '/billing.html?success=1';
+            return true;
+        } catch (e) {
+            alert('결제 확인 중 오류: ' + (e?.message || e));
+            return false;
+        }
+    }
+
     (async function boot() {
         mountAppHeader();
         mountAppFooter();
         try { await initSupabase(); } catch {}
+        // 모바일 결제 후 복귀 처리 (페이지 일반 렌더 전).
+        if (await handleBillingReturn()) return;
         const session = getSession();
         if (!session?.user) {
             renderAnon();
