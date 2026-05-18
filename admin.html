@@ -101,6 +101,9 @@
                                 <th>가입 방식</th>
                                 <th>권한</th>
                                 <th>상태</th>
+                                <th>플랜</th>
+                                <th>사용량</th>
+                                <th>다음 결제일</th>
                                 <th>가입일</th>
                                 <th></th>
                             </tr>
@@ -168,6 +171,18 @@
                         <span id="cleanup-message" class="form-help" style="margin-right:auto;"></span>
                         <button type="button" class="secondary-btn" id="cleanup-orphans-btn" style="border-color:#c8362c;color:#c8362c;">소유자 없는 레거시 행 삭제</button>
                     </div>
+                </div>
+
+                <div class="card" style="margin-top:24px;">
+                    <h3>로또 번호 갱신</h3>
+                    <p class="card-subtitle">매주 신규 회차가 추가된 <code>lotto_numbers_all.json</code> 을 DB 에 적재합니다. JSON 파일이 deploy 로 갱신되면 아래 버튼을 눌러 DB 동기화. 직접 IP 차단된 dhlottery 호출 X — 미러 JSON 만 import.</p>
+                    <div class="form-actions" style="margin-top:14px;">
+                        <a href="lotto_offline_json_import.php" target="_blank" rel="noopener" class="primary-btn" style="text-decoration:none;display:inline-flex;align-items:center;gap:6px;">
+                            로또 갱신 페이지 열기
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17L17 7M17 7H8M17 7v9"/></svg>
+                        </a>
+                    </div>
+                    <p class="form-help" style="margin-top:8px;font-size:11.5px;">새 탭에서 열림. "DB 테이블 생성" → "JSON 파일 DB 저장" 두 버튼 순서대로 누름. 일주일에 한 번 정도 권장 (매주 토요일 추첨 후).</p>
                 </div>
             </section>
 
@@ -270,6 +285,6 @@
         </form>
     </div>
 
-    <script src="admin.js?v=20260518-period-end" type="module"></script>
+    <script src="admin.js?v=20260519-sub-columns" type="module"></script>
 </body>
 </html>

@@ -154,29 +154,69 @@
         .cta svg { transition: transform 220ms; }
         .cta:hover svg { transform: translateX(3px); }
 
-        /* AI 통화요약 서비스 신청 CTA — 강조 색 + 텍스트가 길어 max-width 보장 */
-        .hero-cta-subscribe {
-            margin-top: 6px;
-            animation: fadeUp 700ms 780ms ease-out forwards;
-        }
-        .cta-subscribe {
-            background: linear-gradient(135deg, #c8362c 0%, #ff7a5c 100%);
+        /* ════ FLAGSHIP CTA — 매출 최우선 (AI 요약 + 원터치 전송) ════
+           파란 그라디언트 + 살짝 둥근 사각 + 윤기 + 그림자 강조.
+           PC: hero-title 직후. 모바일: 스마트폰 SVG 와 eyebrow 사이. */
+        .hero-flagship-cta {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            justify-content: center;
+            background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 45%, #3b82f6 100%);
             color: #fff;
-            box-shadow: 0 10px 24px rgba(200, 54, 44, .28);
-            padding: 14px 22px;
-            font-size: 14.5px;
+            font-weight: 800;
+            letter-spacing: -0.012em;
+            line-height: 1.35;
+            text-decoration: none;
+            border: 1.5px solid rgba(255, 255, 255, 0.35);
+            border-radius: 14px;     /* 사각 살짝 둥근 */
+            cursor: pointer;
+            position: relative;
+            overflow: hidden;
+            transition: transform 240ms, box-shadow 240ms, background 240ms;
+            opacity: 0;
+            transform: translateY(12px);
+            animation: fadeUp 700ms 320ms ease-out forwards;
             white-space: normal;
             text-align: center;
-            line-height: 1.35;
-            max-width: 100%;
         }
-        .cta-subscribe:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 16px 30px rgba(200, 54, 44, .42);
-            background: linear-gradient(135deg, #b02e25 0%, #ee6748 100%);
+        /* 윗면 윤기 효과 */
+        .hero-flagship-cta::before {
+            content: '';
+            position: absolute;
+            inset: 0 0 50% 0;
+            background: linear-gradient(180deg, rgba(255,255,255,0.22) 0%, rgba(255,255,255,0) 100%);
+            pointer-events: none;
+            border-radius: 14px 14px 0 0;
         }
-        .cta-subscribe-emoji { font-size: 16px; flex: 0 0 auto; }
-        .cta-subscribe-text { letter-spacing: -0.01em; }
+        /* 외곽 윤기 — 살짝 라이트 글로우 */
+        .hero-flagship-cta {
+            box-shadow:
+                0 12px 28px rgba(30, 64, 175, 0.32),
+                0 0 0 1.5px rgba(96, 165, 250, 0.25),
+                inset 0 1px 0 rgba(255, 255, 255, 0.45);
+        }
+        .hero-flagship-cta:hover {
+            transform: translateY(-3px);
+            box-shadow:
+                0 18px 36px rgba(30, 64, 175, 0.45),
+                0 0 0 1.5px rgba(96, 165, 250, 0.4),
+                inset 0 1px 0 rgba(255, 255, 255, 0.55);
+            background: linear-gradient(135deg, #1d4ed8 0%, #2563eb 45%, #60a5fa 100%);
+        }
+        .hero-flagship-cta svg { transition: transform 220ms; flex: 0 0 auto; }
+        .hero-flagship-cta:hover svg { transform: translateX(4px); }
+
+        /* PC 위치: 'transform 만 하세요' 직후. 큰 글씨 + 풍부한 padding. */
+        .hero-flagship-cta-pc {
+            display: inline-flex;
+            font-size: 18px;
+            padding: 18px 32px;
+            margin: 4px 0 22px;
+            max-width: 560px;
+        }
+        /* 모바일 위치: hero-stage-art 와 eyebrow 사이 — JS/CSS order 로 조절 */
+        .hero-flagship-cta-mobile { display: none; }
 
         /* hero 일러스트 */
         .hero-stage-art {
@@ -410,9 +450,22 @@
             .hero { padding-top: clamp(16px, 2.5vh, 32px); padding-bottom: 24px; min-height: auto; }
             .hero-inner { grid-template-columns: 1fr; gap: 10px; }
             .hero-stage-art {
-                max-width: 280px; margin: 0 auto; justify-self: center; order: -1;
+                max-width: 280px; margin: 0 auto; justify-self: center; order: -2;
                 aspect-ratio: 1;
                 animation: fadeUp 900ms 200ms cubic-bezier(.22,.61,.36,1) forwards, mobile-float 5.5s ease-in-out 1s infinite;
+            }
+            /* 모바일 flagship CTA — 스마트폰 SVG 와 eyebrow 사이 정중앙 */
+            .hero-flagship-cta-pc { display: none !important; }
+            .hero-flagship-cta-mobile {
+                display: inline-flex !important;
+                order: -1;
+                justify-self: center;
+                align-self: center;
+                font-size: 15px;
+                padding: 14px 22px;
+                margin: 4px auto 14px;
+                max-width: calc(100vw - 36px);
+                width: auto;
             }
             @keyframes mobile-float {
                 0%, 100% { transform: translateY(0) rotate(-0.5deg); }
@@ -518,12 +571,26 @@
         <!-- ================== HERO (1단락 — AI 고객관리) ================== -->
         <section class="hero floating-host" id="features">
             <div class="hero-inner">
+                <a class="hero-flagship-cta hero-flagship-cta-mobile" href="subscribe.html" data-plan-cta>
+                    <span class="flagship-emoji">📞</span>
+                    <span class="flagship-text">AI 통화 요약 + 고객관리 원터치 전송 서비스 신청</span>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M5 12h14M13 5l7 7-7 7"/>
+                    </svg>
+                </a>
                 <div class="hero-copy">
                     <span class="hero-eyebrow">YOUNGMAN · AI 고객관리 플랫폼</span>
                     <h1 class="hero-title">
                         고객관리, 이제<br>
                         <span class="accent">전화만 하세요.</span>
                     </h1>
+                    <a class="hero-flagship-cta hero-flagship-cta-pc" href="subscribe.html" data-plan-cta>
+                        <span class="flagship-emoji">📞</span>
+                        <span class="flagship-text">AI 통화 요약 + 고객관리 원터치 전송 서비스 신청</span>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M5 12h14M13 5l7 7-7 7"/>
+                        </svg>
+                    </a>
                     <p class="hero-lead">
                         통화 후 <strong>AI 가 고객과의 대화내용을 사람보다 더 꼼꼼하게</strong> 정리해드립니다.<br>
                         중요한 상담내용, 메모, 고객 성향, 요청사항까지 — <strong>통화 후 전송버튼 하나로 고객관리대장에 자동저장</strong>.
@@ -541,15 +608,6 @@
                             </svg>
                         </a>
                         <a class="cta cta-ghost" href="#more">기능 더 보기</a>
-                    </div>
-                    <div class="hero-cta-row hero-cta-subscribe">
-                        <a class="cta cta-subscribe" href="subscribe.html">
-                            <span class="cta-subscribe-emoji">📞</span>
-                            <span class="cta-subscribe-text">AI 통화 요약 + 고객관리 원터치 전송 서비스 신청</span>
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                                <path d="M5 12h14M13 5l7 7-7 7"/>
-                            </svg>
-                        </a>
                     </div>
                 </div>
                 <div class="hero-stage-art" aria-hidden="true">
@@ -938,10 +996,44 @@
     </main>
 
     <script type="module">
-        import { mountAppHeader, mountAppFooter, initSupabase } from './auth-shared.js?v=20260517-session-persist';
+        import { mountAppHeader, mountAppFooter, initSupabase, apiRequest, getSession } from './auth-shared.js?v=20260517-session-persist';
         mountAppHeader();
         mountAppFooter();
-        initSupabase();
+
+        // Hero flagship CTA — plan 별 텍스트/링크/표시 분기.
+        //   비로그인 / free / trialing → 신청 (subscribe.html)
+        //   plus / premium → 업그레이드 (billing.html)
+        //   pro → 숨김
+        async function updateFlagshipCta() {
+            const els = document.querySelectorAll('[data-plan-cta]');
+            if (!els.length) return;
+            let plan = '';
+            try {
+                await initSupabase();
+                if (getSession()?.user) {
+                    const res = await apiRequest('auth-profile');
+                    plan = String(res?.profile?.plan || '').toLowerCase();
+                }
+            } catch {}
+            const norm = (plan === 'premium') ? 'plus' : plan;
+            els.forEach(el => {
+                const textEl = el.querySelector('.flagship-text');
+                const emojiEl = el.querySelector('.flagship-emoji');
+                if (norm === 'pro') {
+                    el.style.display = 'none';
+                } else if (norm === 'plus') {
+                    if (textEl) textEl.textContent = 'AI 요약 무제한을 원하신다면 — 플랜 업그레이드';
+                    if (emojiEl) emojiEl.textContent = '⬆️';
+                    el.setAttribute('href', 'billing.html');
+                } else {
+                    // free / trialing / 비로그인 / 그 외 — default 신청 텍스트
+                    if (textEl) textEl.textContent = 'AI 통화 요약 + 고객관리 원터치 전송 서비스 신청';
+                    if (emojiEl) emojiEl.textContent = '📞';
+                    el.setAttribute('href', 'subscribe.html');
+                }
+            });
+        }
+        updateFlagshipCta();
 
         // 홀수 단락 floating-bg 아이콘 inject (불규칙 배치/순서)
         const FB_ICONS = ['ic-doc','ic-phone','ic-bubble','ic-lock','ic-chart','ic-folder','ic-check','ic-tag','ic-user','ic-mail','ic-calendar','ic-coin'];

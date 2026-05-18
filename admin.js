@@ -120,9 +120,33 @@ function renderMembers() {
     }
     membersEmpty.classList.add('hidden');
 
+    const PLAN_DISPLAY = {
+        free: { label: 'Free', cls: '' },
+        trialing: { label: '체험', cls: 'pill-trialing' },
+        plus: { label: 'Plus', cls: 'pill-plus' },
+        premium: { label: 'Plus', cls: 'pill-plus' },
+        pro: { label: 'Pro', cls: 'pill-pro' },
+    };
+    const PLAN_STATUS_DISPLAY = {
+        active: { label: '활성', cls: 'active' },
+        trialing: { label: '체험', cls: 'pill-trialing' },
+        past_due: { label: '결제실패', cls: 'suspended' },
+        cancelled: { label: '해지', cls: '' },
+    };
+
     filtered.forEach(member => {
         const tr = document.createElement('tr');
         const initial = escape(getInitial(member.name, member.email));
+        const planKey = (member.plan || 'free').toLowerCase();
+        const planInfo = PLAN_DISPLAY[planKey] || { label: planKey, cls: '' };
+        const statusKey = (member.plan_status || 'trialing').toLowerCase();
+        const statusInfo = PLAN_STATUS_DISPLAY[statusKey] || { label: statusKey, cls: '' };
+        const used = Number.isFinite(+member.summary_used) ? +member.summary_used : 0;
+        const limitVal = member.summary_limit;
+        const limitStr = (limitVal == null) ? '∞' : String(limitVal);
+        const usageColor = (limitVal != null && limitVal > 0 && used >= limitVal) ? '#b91c1c' : 'inherit';
+        const periodEnd = member.current_period_end ? escape(member.current_period_end) : '—';
+
         tr.innerHTML = `
             <td data-label="회원">
                 <div style="display:flex;align-items:center;gap:10px;">
@@ -136,6 +160,14 @@ function renderMembers() {
             <td data-label="가입 방식">${escape(member.provider === 'google' ? 'Google' : '이메일')}</td>
             <td data-label="권한"><span class="pill ${member.role === 'admin' || member.role === 'owner' ? 'admin' : ''}">${escape(ROLE_LABEL[member.role] || '일반회원')}</span></td>
             <td data-label="상태"><span class="pill ${member.status === 'active' ? 'active' : member.status === 'suspended' ? 'suspended' : ''}">${escape(STATUS_LABEL[member.status] || '활성')}</span></td>
+            <td data-label="플랜">
+                <div style="display:flex;flex-direction:column;gap:3px;align-items:flex-start;">
+                    <span class="pill ${planInfo.cls}" style="font-size:11px;">${escape(planInfo.label)}</span>
+                    <span class="pill ${statusInfo.cls}" style="font-size:10.5px;">${escape(statusInfo.label)}</span>
+                </div>
+            </td>
+            <td data-label="사용량" style="color:${usageColor};font-variant-numeric:tabular-nums;">${used} / ${escape(limitStr)}</td>
+            <td data-label="다음 결제일">${periodEnd}</td>
             <td data-label="가입일">${escape(member.createdAt || '—')}</td>
             <td class="action-btns" data-label="">
                 <button class="edit-btn" data-email="${escape(member.email)}">편집</button>
