@@ -297,7 +297,9 @@
         },
     ];
 
-    const PLAN_LABEL = { free: 'Free', plus: 'Plus', pro: 'Pro', trialing: '신규 체험' };
+    // premium = Phase 1 legacy plan, Plus 와 동일 권한 (백엔드 마이그레이션 적용 후 사라짐).
+    const PLAN_LABEL = { free: 'Free', plus: 'Plus', pro: 'Pro', trialing: '신규 체험', premium: 'Plus' };
+    function normalizePlan(p) { return (p === 'premium') ? 'plus' : p; }
 
     function formatPrice(n) {
         if (!n) return '무료';
@@ -501,7 +503,7 @@
         try {
             const res = await apiRequest('auth-profile');
             currentProfile = Object.assign(currentProfile, res?.profile || {});
-            const plan = (currentProfile.plan || 'trialing').toLowerCase();
+            const plan = normalizePlan((currentProfile.plan || 'trialing').toLowerCase());
             const planStatus = (currentProfile.plan_status || 'trialing').toLowerCase();
             renderPlans(plan, planStatus);
         } catch (e) {

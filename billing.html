@@ -146,10 +146,12 @@
 <script type="module">
     import { initSupabase, apiRequest, getSession, mountAppHeader, mountAppFooter } from './auth-shared.js?v=20260517-session-persist';
 
-    const PLAN_LABEL = { free: 'Free', plus: 'Plus', pro: 'Pro', trialing: '신규 체험' };
+    // premium = Phase 1 legacy plan, Plus 와 동일 권한 (백엔드 마이그레이션 적용 후 사라짐).
+    const PLAN_LABEL = { free: 'Free', plus: 'Plus', pro: 'Pro', trialing: '신규 체험', premium: 'Plus' };
     const STATUS_LABEL = { active: '활성', trialing: '체험중', past_due: '결제 실패', cancelled: '해지됨' };
-    const PLAN_LIMITS = { free: 0, trialing: 5, plus: 20, pro: null };
-    const PLAN_PRICE = { free: 0, trialing: 0, plus: 19000, pro: 39000 };
+    const PLAN_LIMITS = { free: 0, trialing: 5, plus: 20, pro: null, premium: 20 };
+    const PLAN_PRICE = { free: 0, trialing: 0, plus: 19000, pro: 39000, premium: 19000 };
+    function normalizePlan(p) { return (p === 'premium') ? 'plus' : p; }
 
     function escapeHtml(s) {
         return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -165,7 +167,7 @@
     }
 
     function renderBilling(profile) {
-        const plan = (profile.plan || 'trialing').toLowerCase();
+        const plan = normalizePlan((profile.plan || 'trialing').toLowerCase());
         const planStatus = (profile.plan_status || 'trialing').toLowerCase();
         const used = profile.summary_used || 0;
         const limit = profile.summary_limit != null ? profile.summary_limit : (PLAN_LIMITS[plan] ?? null);

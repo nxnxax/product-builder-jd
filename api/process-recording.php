@@ -273,6 +273,13 @@ function ensure_members_plan_columns(PDO $pdo): bool {
         if (!in_array('last_usage_reset_at', $existing, true)) {
             $pdo->exec("ALTER TABLE `members` ADD COLUMN `last_usage_reset_at` DATETIME NULL DEFAULT NULL");
         }
+        // Phase 1 lazy 마이그레이션 — 옛 plan='premium' (Phase 1 단순 구조) → 'plus' 로 정규화.
+        // idempotent: 두 번째 호출부터는 영향 받는 row 0개.
+        try {
+            $pdo->exec("UPDATE `members` SET `plan` = 'plus' WHERE `plan` = 'premium'");
+        } catch (Throwable $e) {
+            error_log('[process-recording] premium → plus migration: ' . $e->getMessage());
+        }
         return $done = true;
     } catch (Throwable $e) {
         error_log('[process-recording] ensure_members_plan_columns failed: ' . $e->getMessage());
@@ -298,7 +305,8 @@ function resolve_summary_limit(?string $plan, $columnValue): ?int {
     }
     switch (strtolower((string)$plan)) {
         case 'pro':       return null;
-        case 'plus':      return 20;
+        case 'plus':
+        case 'premium':   return 20;  // 옛 Phase 1 plan='premium' 안전망 — Plus 와 동일 권한
         case 'trialing':  return 5;
         case 'free':
         default:          return 0;
