@@ -485,10 +485,11 @@ function renderBottomNav(activeKey) {
         slot1Item,
         slot2Item,
     ];
-    // 앱 (RN WebView) 일 때만 최우측 '설정' 추가 — 앱 전용 설정 페이지.
-    // 웹 브라우저에는 노출 안 함 (window.YoungmanBridge 없음).
+    // 앱 (RN WebView) 일 때만 최우측 '설정' 추가 — deep link 로 RN native
+    // Settings 모달 호출 (모달 닫힘 시간 / 알림음 / 빈도 / 실시간 감지 4항목).
+    // 웹 브라우저에는 노출 안 함 (window.YoungmanBridge 없음 + UA 미매칭).
     if (_bridgeIsInApp()) {
-        items.push({ key: 'app-settings.html', label: '설정', href: 'app-settings.html', icon: ICON.settings });
+        items.push({ key: 'youngman://record/settings', label: '설정', href: 'youngman://record/settings', icon: ICON.settings });
     }
     const html = items.map(item => {
         const isHome = item.key === 'index.html' && (path === '' || path === 'index.html');
