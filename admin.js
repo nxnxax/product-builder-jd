@@ -53,6 +53,7 @@ const memberStatusInput = document.getElementById('member-status');
 const memberPlanInput = document.getElementById('member-plan');
 const memberPlanStatusInput = document.getElementById('member-plan-status');
 const memberSummaryUsedInput = document.getElementById('member-summary-used');
+const memberPeriodEndInput = document.getElementById('member-period-end');
 const memberMessage = document.getElementById('member-message');
 const memberSave = document.getElementById('member-save');
 
@@ -165,9 +166,30 @@ function openMemberEdit(email) {
     if (memberSummaryUsedInput) {
         memberSummaryUsedInput.value = (member.summary_used != null && Number.isFinite(+member.summary_used)) ? String(member.summary_used) : '0';
     }
+    if (memberPeriodEndInput) {
+        // member.current_period_end 가 "YYYY-MM-DD HH:MM:SS" 또는 "YYYY.MM.DD" 형태일 수 있음 → YYYY-MM-DD 추출.
+        const raw = String(member.current_period_end || '');
+        const m = raw.match(/^(\d{4})[-.](\d{2})[-.](\d{2})/);
+        memberPeriodEndInput.value = m ? `${m[1]}-${m[2]}-${m[3]}` : '';
+    }
     memberMessage.textContent = '';
     memberMessage.className = 'form-help';
     memberModal.classList.remove('hidden');
+}
+
+// 만료일 빠른 버튼 (open 시점에 한 번만 bind — modal 은 재사용이라 안전)
+if (memberPeriodEndInput) {
+    document.querySelectorAll('[data-period-quick]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const days = parseInt(btn.dataset.periodQuick, 10) || 0;
+            const d = new Date();
+            d.setDate(d.getDate() + days);
+            memberPeriodEndInput.value = d.toISOString().slice(0, 10);
+        });
+    });
+    document.querySelectorAll('[data-period-clear]').forEach(btn => {
+        btn.addEventListener('click', () => { memberPeriodEndInput.value = ''; });
+    });
 }
 
 function closeMemberEdit() {
@@ -200,6 +222,12 @@ memberForm.addEventListener('submit', async (event) => {
         if (memberSummaryUsedInput && memberSummaryUsedInput.value !== '') {
             const n = parseInt(memberSummaryUsedInput.value, 10);
             if (Number.isFinite(n) && n >= 0) body.summary_used = n;
+        }
+        if (memberPeriodEndInput) {
+            // 빈 값이면 null 보내서 서버가 NULL 로 reset.
+            const v = memberPeriodEndInput.value;
+            if (v === '') body.current_period_end = null;
+            else if (/^\d{4}-\d{2}-\d{2}$/.test(v)) body.current_period_end = v + ' 23:59:59';
         }
         await apiRequest('admin-members', {
             method: 'PATCH',

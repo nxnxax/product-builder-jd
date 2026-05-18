@@ -246,6 +246,21 @@
                         <p class="form-help" style="margin-top:6px;font-size:11.5px;">AI 통화 요약 사용 횟수. 신규 결제 갱신 또는 관리자 수동 reset 시 0.</p>
                     </div>
                 </div>
+                <div class="modal-row">
+                    <label class="row-label" for="member-period-end">만료일 (다음 결제일)</label>
+                    <div class="row-control">
+                        <input type="date" id="member-period-end" style="width:170px;">
+                        <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;">
+                            <button type="button" class="tiny-btn" data-period-quick="7">+7일</button>
+                            <button type="button" class="tiny-btn" data-period-quick="14">+14일</button>
+                            <button type="button" class="tiny-btn" data-period-quick="30">+30일</button>
+                            <button type="button" class="tiny-btn" data-period-quick="90">+90일</button>
+                            <button type="button" class="tiny-btn" data-period-quick="365">+1년</button>
+                            <button type="button" class="tiny-btn" data-period-clear>지우기</button>
+                        </div>
+                        <p class="form-help" style="margin-top:6px;font-size:11.5px;">현금/오프라인 결제 시 또는 테스터 무료 체험 기간 지정용. 이 날짜까지 plan 의 유료 기능이 활성. cron 갱신 시 자동 +30일.</p>
+                    </div>
+                </div>
             </div>
             <footer class="modal-footer">
                 <span id="member-message" class="form-help modal-footer-spacer"></span>
@@ -255,6 +270,6 @@
         </form>
     </div>
 
-    <script src="admin.js?v=20260518-plan-edit" type="module"></script>
+    <script src="admin.js?v=20260518-period-end" type="module"></script>
 </body>
 </html>

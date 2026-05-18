@@ -2633,6 +2633,21 @@ try {
                 $assignments[] = quote_identifier($summaryUsedCol) . ' = :summary_used';
                 $params[':summary_used'] = $usedVal;
             }
+            // 만료일 (current_period_end) — 관리자 수동 변경 (오프라인/현금 결제 또는 테스터 무료 체험 기간).
+            $periodEndCol = first_existing_column($cols, ['current_period_end']);
+            if ($periodEndCol && array_key_exists('current_period_end', $body)) {
+                $peVal = $body['current_period_end'];
+                if ($peVal === null || $peVal === '') {
+                    $assignments[] = quote_identifier($periodEndCol) . ' = NULL';
+                } else {
+                    // 형식 검증 — YYYY-MM-DD 또는 YYYY-MM-DD HH:MM:SS
+                    if (!preg_match('/^\d{4}-\d{2}-\d{2}( \d{2}:\d{2}:\d{2})?$/', (string)$peVal)) {
+                        respond(['ok' => false, 'error' => '만료일 형식 오류 (YYYY-MM-DD 필요).'], 400);
+                    }
+                    $assignments[] = quote_identifier($periodEndCol) . ' = :period_end';
+                    $params[':period_end'] = (string)$peVal;
+                }
+            }
 
             if (empty($assignments)) respond(['ok' => false, 'error' => '수정할 필드가 없습니다.'], 400);
 
