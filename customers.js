@@ -580,7 +580,9 @@ function renderCell(f, r, d, displayNo) {
         return `<span class="cell-empty">-</span>`;
     }
     if (f.type === 'textarea') {
-        return v ? `<span class="cell-text cell-multiline">${escapeHtml(v)}</span>` : `<span class="cell-empty">-</span>`;
+        if (!v) return `<span class="cell-empty">-</span>`;
+        // 행 크기 고정 — 2줄까지만 보이고 클릭 시 상세 모달.
+        return `<span class="cell-text cell-multiline cell-multiline-clamp" data-cell-detail data-id="${id}" title="클릭하여 상세 보기">${escapeHtml(v)}</span>`;
     }
     if (f.type === 'date') {
         return v ? `<span class="cell-text">${formatDateDisplay(v)}</span>` : `<span class="cell-empty">-</span>`;
@@ -629,6 +631,18 @@ function bindTableEvents() {
     });
     document.querySelectorAll('[data-manage-switch]').forEach(b => {
         b.addEventListener('click', (e) => { e.preventDefault(); toggleManaged(parseInt(b.dataset.id, 10)); });
+    });
+    // textarea 셀 (내용 / 담당자 메모 등) — 2줄 truncate 표시 + 클릭 시 상세 모달.
+    document.querySelectorAll('[data-cell-detail]').forEach(el => {
+        el.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const id = parseInt(el.dataset.id, 10);
+            const r = records.find(x => x.id === id);
+            if (!r) return;
+            const group = groups.find(g => g.id === r.groupId);
+            const fields = getEffectiveFields(group, DEFAULT_FIELDS);
+            openRowDetailModal(r, group, fields);
+        });
     });
     // 그룹별 검색 입력 — DOM 재생성 없이 기존 행만 hide/show. IME(한글) 조합 보존 핵심.
     document.querySelectorAll('[data-search-gid]').forEach(input => {
@@ -716,6 +730,70 @@ function editRow(id) {
             await loadRecords();
         },
     });
+}
+
+/**
+ * 행 상세 보기 모달 — read-only. 긴 텍스트 셀 클릭 시 호출.
+ * 모든 필드를 라벨/값 쌍으로 정렬해 표시. 텍스트 영역은 전체 펼침.
+ * 푸터의 "수정" 버튼은 기존 editRow 모달로 전환.
+ */
+function openRowDetailModal(rec, group, fields) {
+    closeRowDetailModal();
+    const d = rec.data || {};
+    const visible = (fields || []).filter(f => f.type !== 'auto_number');
+    const rowsHtml = visible.map(f => {
+        const v = d[f.key];
+        let display = '';
+        if (v === undefined || v === null || v === '') {
+            display = '<span class="row-detail-empty">-</span>';
+        } else if (f.type === 'manage_switch') {
+            display = v
+                ? '<span class="row-detail-pill on">관리중</span>'
+                : '<span class="row-detail-pill off">비관리중</span>';
+        } else if (f.type === 'call_count') {
+            const n = parseInt(v, 10);
+            display = Number.isFinite(n) && n >= 1
+                ? `<span class="row-detail-num">${n}회</span>`
+                : '<span class="row-detail-empty">-</span>';
+        } else if (f.type === 'date') {
+            display = escapeHtml(String(v).replace(/-/g, '.'));
+        } else if (f.type === 'textarea') {
+            display = `<div class="row-detail-textarea">${escapeHtml(String(v))}</div>`;
+        } else {
+            display = escapeHtml(String(v));
+        }
+        return `<div class="row-detail-row">
+            <span class="row-detail-label">${escapeHtml(f.label || '')}</span>
+            <div class="row-detail-value">${display}</div>
+        </div>`;
+    }).join('');
+
+    const md = document.createElement('div');
+    md.className = 'modal-backdrop row-detail-modal';
+    md.style.zIndex = '350';
+    md.innerHTML = `
+        <div class="modal-panel">
+            <header class="modal-header">
+                <div>
+                    <h2>상세 정보</h2>
+                    <p class="modal-subtitle">${escapeHtml(group?.name || '')}</p>
+                </div>
+            </header>
+            <div class="modal-body">${rowsHtml}</div>
+            <footer class="modal-footer">
+                <button class="tiny-btn" type="button" data-close>닫기</button>
+                <button class="tiny-btn primary" type="button" data-edit>수정</button>
+            </footer>
+        </div>`;
+    document.body.appendChild(md);
+    const close = () => closeRowDetailModal();
+    md.querySelector('[data-close]').addEventListener('click', close);
+    md.querySelector('[data-edit]').addEventListener('click', () => { close(); editRow(rec.id); });
+    md.addEventListener('click', (e) => { if (e.target === md) close(); });
+}
+
+function closeRowDetailModal() {
+    document.querySelectorAll('.row-detail-modal').forEach(m => m.remove());
 }
 
 function customerCustomRender(f, defaults) {

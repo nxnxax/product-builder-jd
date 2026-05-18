@@ -136,14 +136,13 @@ POST /process-recording.php
 | `customer` | 고객명 | text | `customer_name` |
 | `phone` | 연락처 | text | `phone_number` |
 | `call_count` | 통화수 | call_count | `calculate_call_count()` 자동 — 같은 group 내 정규화 phone 매칭 카운트 + 1 |
-| `content` | 상담 내용 | textarea | `summary` + (`【관심】 ` + `interest`) + (`【문의】 ` + `inquiry`) + (`【예산/조건】 ` + `budget_condition`) + (`【AI 관리 추천】 ` + `next_action`) — 라벨+줄바꿈, 놓치는 정보 없도록 모두 합침 |
+| `content` | 상담 내용 | textarea | `summary` + (`관심: ` + `interest`) + (`문의: ` + `inquiry`) — 라벨+줄바꿈 |
 | `agent_memo` | 담당자 메모 | textarea | `agent_memo` (앱 SummaryReview 모달의 "담당자 메모" 입력값) |
 | `memo` | 비고 | text | `''` (사용자가 웹 ledger 에서 직접 입력하는 자유 메모) |
 
 - `level` 필드 제거 (2026-05-18) — 사용도 낮고 통화수가 대체.
-- `budget_condition` / `next_action` — 2026-05-18 부터 content 에 합쳐서 표시 (놓치는 정보 없도록).
-  `next_action` 은 prompt 갱신으로 "AI 관리 추천 한마디" 의미로 변경됨.
-- `transcript` — 매핑 미적용. 필요하면 별도 detail view 에서 customer_log_get 응답 사용.
+- `budget_condition` / `next_action` / `transcript` — 매핑 미적용 (customer_log 컬럼에는 보존).
+  content 합산 시 정보 누락 부각 우려로 2026-05-18 롤백 — 추후 두 가지 요약 모드 (대화형 / 요약정리형) 분기 작업 시 정책 재검토 예정. [[project_ai_summary_modes]]
 - **override 필드 key 는 8필드 중 7개** — `managed`/`date`/`customer`/`phone`/`content`/`agent_memo`/`memo`. `call_count` 는 백엔드 자동 계산이라 override 받아도 무시.
 
 **`calculate_call_count()` 로직** (records.php):

@@ -3257,25 +3257,21 @@ try {
             //   customer   ← customer_name
             //   phone      ← phone_number
             //   call_count ← 같은 group + 동일 phone 카운트 + 1 (자동)
-            //   content    ← summary + interest + inquiry + budget_condition + next_action
-            //                  (놓치는 정보 없도록 모두 합침, summary 는 PPT 식 핵심/과정/결론)
+            //   content    ← summary + interest + inquiry (라벨 + 줄바꿈)
             //   agent_memo ← agent_memo (앱 SummaryReview 모달의 "담당자 메모" 입력값)
             //   memo       ← '' (비고 — 사용자가 웹 ledger 에서 직접 입력)
+            // (budget_condition / next_action 는 customer_log 컬럼에 보존되지만 content 매핑 미적용)
             $clName    = trim((string)(youngman_decrypt($clRow['customer_name'] ?? '') ?? ''));
             $clPhone   = trim((string)(youngman_decrypt($clRow['phone_number'] ?? '') ?? ''));
             $clSummary = trim((string)(youngman_decrypt($clRow['summary'] ?? '') ?? ''));
             $clIntr    = trim((string)(youngman_decrypt($clRow['interest'] ?? '') ?? ''));
             $clInq     = trim((string)(youngman_decrypt($clRow['inquiry'] ?? '') ?? ''));
-            $clBudg    = trim((string)(youngman_decrypt($clRow['budget_condition'] ?? '') ?? ''));
-            $clNext    = trim((string)(youngman_decrypt($clRow['next_action'] ?? '') ?? ''));
             $clAgentMemo = trim((string)(youngman_decrypt($clRow['agent_memo'] ?? '') ?? ''));
 
             $contentParts = [];
             if ($clSummary !== '') $contentParts[] = $clSummary;
-            if ($clIntr    !== '') $contentParts[] = '【관심】 ' . $clIntr;
-            if ($clInq     !== '') $contentParts[] = '【문의】 ' . $clInq;
-            if ($clBudg    !== '') $contentParts[] = '【예산/조건】 ' . $clBudg;
-            if ($clNext    !== '') $contentParts[] = '【AI 관리 추천】 ' . $clNext;
+            if ($clIntr    !== '') $contentParts[] = '관심: ' . $clIntr;
+            if ($clInq     !== '') $contentParts[] = '문의: ' . $clInq;
             $newSectionContent = implode("\n\n", $contentParts);
             $todayDate = (string)($clRow['consult_at'] ?? '');
 
