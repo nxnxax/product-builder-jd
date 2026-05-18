@@ -48,15 +48,10 @@ if (!hash_equals($expectedToken, $providedToken)) {
 // 옵션 — dry_run 이면 실제 결제 안 함, 대상 row 만 조회.
 $dryRun = isset($_GET['dry_run']) && $_GET['dry_run'] === 'true';
 
-// DB
-require_once __DIR__ . '/../db_config.php';
 try {
-    $pdo = new PDO("mysql:host={$DB_HOST};dbname={$DB_NAME};charset=utf8mb4", $DB_USER, $DB_PASS, [
-        PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-        PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-    ]);
+    $pdo = billing_pdo();
 } catch (Throwable $e) {
-    portone_response(['status' => 'error', 'code' => 'db', 'message' => 'DB 연결 실패'], 500);
+    portone_response(['status' => 'error', 'code' => 'db', 'message' => 'DB 연결 실패: ' . $e->getMessage()], 500);
 }
 
 $now = date('Y-m-d H:i:s');
@@ -141,7 +136,7 @@ foreach ($rows as $row) {
     }
 
     $ok = ($resp['status'] >= 200 && $resp['status'] < 300);
-    $paymentStatus = strtoupper((string)($resp['body']['status'] ?? ''));
+    $paymentStatus = is_array($resp['body']) ? portone_extract_status($resp['body']) : '';
 
     if ($ok && $paymentStatus === 'PAID') {
         $newPeriodEnd = date('Y-m-d H:i:s', strtotime('+30 days'));

@@ -151,3 +151,129 @@ if (!function_exists('portone_response')) {
         exit;
     }
 }
+
+if (!function_exists('billing_pdo')) {
+    /**
+     * cafe24 db_config.php 표준 — `return [host=>..., port=>..., database=>...,
+     * user=>..., password=>...]` array 반환 패턴. process-recording / records 와 동일.
+     */
+    function billing_pdo(): PDO {
+        $candidates = [
+            __DIR__ . '/db_config.php',          // api/billing 의 부모 (api/)
+            dirname(__DIR__) . '/db_config.php', // webroot
+        ];
+        // __DIR__ 이 billing/ 서브디렉토리이면 한 단계 더.
+        $candidates[] = dirname(__DIR__, 1) . '/db_config.php';
+        $candidates[] = dirname(__DIR__, 2) . '/db_config.php';
+        $dbConfigPath = null;
+        foreach ($candidates as $p) {
+            if (is_file($p)) { $dbConfigPath = $p; break; }
+        }
+        if ($dbConfigPath === null) {
+            throw new RuntimeException('db_config.php 위치를 찾을 수 없음.');
+        }
+        $db = require $dbConfigPath;
+        if (!is_array($db)) {
+            throw new RuntimeException('db_config.php 가 array 반환 안 함.');
+        }
+        $dsn = sprintf('mysql:host=%s;port=%d;dbname=%s;charset=utf8mb4',
+            $db['host'] ?? 'localhost',
+            (int)($db['port'] ?? 3306),
+            $db['database'] ?? '');
+        return new PDO($dsn, $db['user'] ?? '', $db['password'] ?? '', [
+            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+            PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+        ]);
+    }
+}
+
+if (!function_exists('billing_supabase_url')) {
+    /**
+     * .env 의 VITE_SUPABASE_URL 이 `https://xxx.supabase.co/rest/v1/` 형태 — root 만 추출.
+     */
+    function billing_supabase_url(): string {
+        $raw = billing_load_env_value('VITE_SUPABASE_URL') ?: (getenv('VITE_SUPABASE_URL') ?: '');
+        return rtrim((string)preg_replace('#/(rest|auth)/v1/?.*$#', '', $raw), '/');
+    }
+}
+
+if (!function_exists('billing_anon_key')) {
+    function billing_anon_key(): string {
+        return (string)(billing_load_env_value('VITE_SUPABASE_ANON_KEY') ?: (getenv('VITE_SUPABASE_ANON_KEY') ?: ''));
+    }
+}
+
+if (!function_exists('billing_require_bearer_email')) {
+    /**
+     * Authorization Bearer 추출 + Supabase /auth/v1/user 검증 + email 반환.
+     * 실패 시 portone_response 로 401 응답 (debug 동봉).
+     */
+    function billing_require_bearer_email(): string {
+        // 헤더에서 Bearer 추출
+        $h = '';
+        if (function_exists('getallheaders')) {
+            $hdrs = getallheaders();
+            if (is_array($hdrs)) {
+                foreach ($hdrs as $k => $v) { if (strcasecmp((string)$k, 'authorization') === 0) { $h = (string)$v; break; } }
+            }
+        }
+        if ($h === '' && isset($_SERVER['HTTP_AUTHORIZATION'])) $h = (string)$_SERVER['HTTP_AUTHORIZATION'];
+        $token = '';
+        if (preg_match('/Bearer\s+(.+)/i', $h, $m)) $token = trim($m[1]);
+        if ($token === '') {
+            portone_response(['status' => 'error', 'code' => 'unauthorized', 'message' => '로그인 필요 (Bearer 없음).', 'debug' => ['stage' => 'no_bearer']], 401);
+        }
+        $supabaseUrl = billing_supabase_url();
+        $anonKey = billing_anon_key();
+        if ($supabaseUrl === '' || $anonKey === '') {
+            portone_response(['status' => 'error', 'code' => 'config', 'message' => '서버 인증 설정 누락 (.env Supabase URL/Key).', 'debug' => ['url_set' => $supabaseUrl !== '', 'key_set' => $anonKey !== '']], 500);
+        }
+        $ch = curl_init($supabaseUrl . '/auth/v1/user');
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_HTTPHEADER => ['Authorization: Bearer ' . $token, 'apikey: ' . $anonKey],
+            CURLOPT_TIMEOUT => 8,
+            CURLOPT_CONNECTTIMEOUT => 5,
+        ]);
+        $resp = curl_exec($ch);
+        $status = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+        if ($status !== 200 || !$resp) {
+            $hint = $status === 401 ? '세션 만료 — 페이지 새로고침/재로그인 후 다시 시도.' :
+                    ($status === 404 ? 'Supabase URL 경로 오류.' :
+                    ($status === 0 ? 'Supabase 네트워크 실패.' : 'Supabase 응답 ' . $status));
+            portone_response(['status' => 'error', 'code' => 'unauthorized', 'message' => '토큰 검증 실패. ' . $hint, 'debug' => ['stage' => 'supabase_call', 'auth_status' => $status, 'token_len' => strlen($token)]], 401);
+        }
+        $data = json_decode((string)$resp, true);
+        $email = strtolower(trim((string)($data['email'] ?? '')));
+        if ($email === '') {
+            portone_response(['status' => 'error', 'code' => 'unauthorized', 'message' => '이메일 추출 실패.'], 401);
+        }
+        return $email;
+    }
+}
+
+if (!function_exists('portone_extract_status')) {
+    /** PortOne V2 응답에서 결제 상태를 여러 nested 위치에서 시도해 추출. */
+    function portone_extract_status(array $payment): string {
+        return strtoupper((string)(
+            $payment['status']
+            ?? $payment['payment']['status']
+            ?? $payment['transaction']['status']
+            ?? $payment['data']['status']
+            ?? ''
+        ));
+    }
+}
+
+if (!function_exists('portone_extract_amount')) {
+    function portone_extract_amount(array $payment): int {
+        return (int)(
+            $payment['amount']['total']
+            ?? $payment['amount']
+            ?? $payment['payment']['amount']['total']
+            ?? $payment['data']['amount']['total']
+            ?? 0
+        );
+    }
+}
