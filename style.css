@@ -1002,10 +1002,17 @@ select:focus {
     font-weight: 600;
 }
 
+/* desktop 의 table-cell 이어야 column width 계산이 일관됨. flex 로 바꾸면
+   각 row 의 .action-btns td 가 일반 cell 처럼 layout 되지 않아서 column
+   정렬이 미세하게 어긋남 (admin 회원 관리 사진 보고). 우측 정렬만 필요하므로
+   text-align: right 로 충분. 여러 버튼일 때 사이 간격은 + 선택자로.
+   모바일 (max-width <767px) 에서는 td 가 이미 block+flex 로 바뀌어
+   justify-content: flex-end 가 그대로 동작 — 영향 없음. */
 .action-btns {
-    display: flex;
-    gap: 4px;
-    justify-content: flex-end;
+    text-align: right;
+}
+.action-btns > * + * {
+    margin-left: 4px;
 }
 
 .edit-btn,
