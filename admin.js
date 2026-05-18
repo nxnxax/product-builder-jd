@@ -50,6 +50,9 @@ const memberForm = document.getElementById('member-form');
 const memberEmailDisplay = document.getElementById('member-email-display');
 const memberRoleInput = document.getElementById('member-role');
 const memberStatusInput = document.getElementById('member-status');
+const memberPlanInput = document.getElementById('member-plan');
+const memberPlanStatusInput = document.getElementById('member-plan-status');
+const memberSummaryUsedInput = document.getElementById('member-summary-used');
 const memberMessage = document.getElementById('member-message');
 const memberSave = document.getElementById('member-save');
 
@@ -152,6 +155,16 @@ function openMemberEdit(email) {
     memberEmailDisplay.textContent = member.email;
     memberRoleInput.value = member.role === 'admin' || member.role === 'owner' ? 'admin' : 'member';
     memberStatusInput.value = ['active', 'suspended', 'banned'].includes(member.status) ? member.status : 'active';
+    // 구독 결제 필드 — 응답에 있으면 채움, 없으면 default.
+    if (memberPlanInput) {
+        memberPlanInput.value = ['trialing', 'free', 'plus', 'pro'].includes(member.plan) ? member.plan : 'trialing';
+    }
+    if (memberPlanStatusInput) {
+        memberPlanStatusInput.value = ['trialing', 'active', 'past_due', 'cancelled'].includes(member.plan_status) ? member.plan_status : 'trialing';
+    }
+    if (memberSummaryUsedInput) {
+        memberSummaryUsedInput.value = (member.summary_used != null && Number.isFinite(+member.summary_used)) ? String(member.summary_used) : '0';
+    }
     memberMessage.textContent = '';
     memberMessage.className = 'form-help';
     memberModal.classList.remove('hidden');
@@ -175,14 +188,22 @@ memberForm.addEventListener('submit', async (event) => {
     memberMessage.textContent = '저장 중…';
     memberMessage.className = 'form-help';
     try {
+        const body = {
+            resource: 'admin-members',
+            email: editingMember.email,
+            role: memberRoleInput.value,
+            status: memberStatusInput.value,
+        };
+        // 구독 결제 필드 — 입력값이 있을 때만 포함 (관리자 수동 변경 의도 명시).
+        if (memberPlanInput && memberPlanInput.value) body.plan = memberPlanInput.value;
+        if (memberPlanStatusInput && memberPlanStatusInput.value) body.plan_status = memberPlanStatusInput.value;
+        if (memberSummaryUsedInput && memberSummaryUsedInput.value !== '') {
+            const n = parseInt(memberSummaryUsedInput.value, 10);
+            if (Number.isFinite(n) && n >= 0) body.summary_used = n;
+        }
         await apiRequest('admin-members', {
             method: 'PATCH',
-            body: JSON.stringify({
-                resource: 'admin-members',
-                email: editingMember.email,
-                role: memberRoleInput.value,
-                status: memberStatusInput.value,
-            }),
+            body: JSON.stringify(body),
         });
         closeMemberEdit();
         await loadMembers();

@@ -692,6 +692,13 @@ function member_row_from_store($store, $row) {
     $decName  = $nameCol  ? youngman_decrypt($row[$nameCol]  ?? '') : '';
     $decPhone = $phoneCol ? youngman_decrypt($row[$phoneCol] ?? '') : '';
 
+    // 구독 결제 — 컬럼 있으면 응답에 포함 (admin 편집 모달 prefill 용).
+    $planCol = first_existing_column($cols, ['plan']);
+    $planStatusCol = first_existing_column($cols, ['plan_status']);
+    $summaryUsedCol = first_existing_column($cols, ['free_summaries_used', 'summary_used']);
+    $summaryLimitCol = first_existing_column($cols, ['summary_limit']);
+    $periodEndCol = first_existing_column($cols, ['current_period_end']);
+
     return [
         'email' => $row[$emailCol] ?? '',
         'name' => $decName,
@@ -700,6 +707,11 @@ function member_row_from_store($store, $row) {
         'provider' => $providerCol ? ($row[$providerCol] ?? 'email') : 'email',
         'status' => $status === '' ? 'active' : strtolower($status),
         'role' => $role === '' ? 'member' : strtolower($role),
+        'plan' => $planCol ? (string)($row[$planCol] ?? 'trialing') : 'trialing',
+        'plan_status' => $planStatusCol ? (string)($row[$planStatusCol] ?? 'trialing') : 'trialing',
+        'summary_used' => $summaryUsedCol ? (int)($row[$summaryUsedCol] ?? 0) : 0,
+        'summary_limit' => $summaryLimitCol ? ($row[$summaryLimitCol] === null ? null : (int)$row[$summaryLimitCol]) : null,
+        'current_period_end' => $periodEndCol ? format_date($row[$periodEndCol] ?? '') : '',
         'createdAt' => $createdCol ? format_date($row[$createdCol] ?? '') : '',
         'updatedAt' => $updatedCol ? format_date($row[$updatedCol] ?? '') : '',
         'lastLoginAt' => $lastLoginCol ? format_date($row[$lastLoginCol] ?? '') : '',
@@ -1248,6 +1260,107 @@ function ensure_recording_jobs_table(PDO $pdo): bool {
         return $done = true;
     } catch (Throwable $e) {
         error_log('[records] ensure_recording_jobs_table failed: ' . $e->getMessage());
+        return $done = false;
+    }
+}
+
+/* ============================================================
+   구독 결제 시스템 (PortOne + 토스페이먼츠)
+   subscriptions / payments / usage_logs — lazy CREATE.
+   ============================================================ */
+
+/**
+ * 구독 row — 한 사용자가 활성 구독 1개 (active/past_due/cancelled).
+ * 결제 webhook 또는 cron 갱신 시 status / period 만 UPDATE.
+ */
+function ensure_subscriptions_table(PDO $pdo): bool {
+    static $done = null;
+    if ($done !== null) return $done;
+    try {
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS subscriptions (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                owner_email VARCHAR(255) NOT NULL,
+                plan VARCHAR(16) NOT NULL DEFAULT 'plus',
+                status VARCHAR(16) NOT NULL DEFAULT 'active',
+                portone_customer_id VARCHAR(64) NULL DEFAULT NULL,
+                portone_billing_key VARCHAR(128) NULL DEFAULT NULL,
+                portone_subscription_id VARCHAR(64) NULL DEFAULT NULL,
+                current_period_start DATETIME NULL DEFAULT NULL,
+                current_period_end DATETIME NULL DEFAULT NULL,
+                cancel_at_period_end TINYINT(1) NOT NULL DEFAULT 0,
+                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                INDEX idx_sub_owner (owner_email),
+                INDEX idx_sub_status (status),
+                INDEX idx_sub_period_end (current_period_end)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        ");
+        return $done = true;
+    } catch (Throwable $e) {
+        error_log('[records] ensure_subscriptions_table failed: ' . $e->getMessage());
+        return $done = false;
+    }
+}
+
+/**
+ * 결제 row — PortOne 결제 시도 1건. webhook 이벤트마다 INSERT.
+ * raw_event_json 으로 webhook payload 원본 보존 (감사용).
+ */
+function ensure_payments_table(PDO $pdo): bool {
+    static $done = null;
+    if ($done !== null) return $done;
+    try {
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS payments (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                owner_email VARCHAR(255) NOT NULL,
+                portone_payment_id VARCHAR(64) NULL DEFAULT NULL,
+                portone_transaction_id VARCHAR(64) NULL DEFAULT NULL,
+                portone_subscription_id VARCHAR(64) NULL DEFAULT NULL,
+                amount INT NOT NULL DEFAULT 0,
+                currency VARCHAR(8) NOT NULL DEFAULT 'KRW',
+                status VARCHAR(16) NOT NULL DEFAULT 'pending',
+                paid_at DATETIME NULL DEFAULT NULL,
+                raw_event_json LONGTEXT NULL DEFAULT NULL,
+                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_pay_owner (owner_email),
+                INDEX idx_pay_payment_id (portone_payment_id),
+                INDEX idx_pay_status (status)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        ");
+        return $done = true;
+    } catch (Throwable $e) {
+        error_log('[records] ensure_payments_table failed: ' . $e->getMessage());
+        return $done = false;
+    }
+}
+
+/**
+ * 사용량 로그 — AI 요약 등 quota-차감 기능 사용 시마다 INSERT.
+ * 월별 reset 후에도 원본 기록 유지 (감사 + 통계).
+ */
+function ensure_usage_logs_table(PDO $pdo): bool {
+    static $done = null;
+    if ($done !== null) return $done;
+    try {
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS usage_logs (
+                id BIGINT AUTO_INCREMENT PRIMARY KEY,
+                owner_email VARCHAR(255) NOT NULL,
+                feature VARCHAR(40) NOT NULL,
+                amount INT NOT NULL DEFAULT 1,
+                plan VARCHAR(16) NULL DEFAULT NULL,
+                metadata_json TEXT NULL DEFAULT NULL,
+                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_usage_owner (owner_email),
+                INDEX idx_usage_feature (feature),
+                INDEX idx_usage_created (created_at)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        ");
+        return $done = true;
+    } catch (Throwable $e) {
+        error_log('[records] ensure_usage_logs_table failed: ' . $e->getMessage());
         return $done = false;
     }
 }
@@ -2491,6 +2604,34 @@ try {
                 }
                 $assignments[] = quote_identifier($roleCol) . ' = :role';
                 $params[':role'] = $role;
+            }
+
+            // 구독 결제 — 관리자 수동 변경 (PortOne 결합 전 권한 로직 검증용).
+            $planCol = first_existing_column($cols, ['plan']);
+            if ($planCol && isset($body['plan'])) {
+                $planVal = strtolower(trim((string)$body['plan']));
+                if (!in_array($planVal, ['trialing', 'free', 'plus', 'pro'], true)) {
+                    respond(['ok' => false, 'error' => '허용되지 않는 plan 값입니다.'], 400);
+                }
+                $assignments[] = quote_identifier($planCol) . ' = :plan';
+                $params[':plan'] = $planVal;
+            }
+            $planStatusCol = first_existing_column($cols, ['plan_status']);
+            if ($planStatusCol && isset($body['plan_status'])) {
+                $psVal = strtolower(trim((string)$body['plan_status']));
+                if (!in_array($psVal, ['trialing', 'active', 'past_due', 'cancelled'], true)) {
+                    respond(['ok' => false, 'error' => '허용되지 않는 plan_status 값입니다.'], 400);
+                }
+                $assignments[] = quote_identifier($planStatusCol) . ' = :plan_status';
+                $params[':plan_status'] = $psVal;
+            }
+            // summary_used 는 옛 컬럼명 free_summaries_used 사용
+            $summaryUsedCol = first_existing_column($cols, ['free_summaries_used', 'summary_used']);
+            if ($summaryUsedCol && isset($body['summary_used'])) {
+                $usedVal = (int)$body['summary_used'];
+                if ($usedVal < 0) $usedVal = 0;
+                $assignments[] = quote_identifier($summaryUsedCol) . ' = :summary_used';
+                $params[':summary_used'] = $usedVal;
             }
 
             if (empty($assignments)) respond(['ok' => false, 'error' => '수정할 필드가 없습니다.'], 400);

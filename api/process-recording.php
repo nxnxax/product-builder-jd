@@ -232,16 +232,76 @@ function ensure_members_plan_columns(PDO $pdo): bool {
         foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $col) {
             $existing[] = $col['Field'];
         }
+        // 옛 컬럼 (Phase 1)
         if (!in_array('plan', $existing, true)) {
-            $pdo->exec("ALTER TABLE `members` ADD COLUMN `plan` VARCHAR(16) NOT NULL DEFAULT 'free'");
+            // 새 default: 'trialing' — 신규 가입자 5회 무료 체험. 기존 row 는 'free' 유지.
+            $pdo->exec("ALTER TABLE `members` ADD COLUMN `plan` VARCHAR(16) NOT NULL DEFAULT 'trialing'");
         }
         if (!in_array('free_summaries_used', $existing, true)) {
             $pdo->exec("ALTER TABLE `members` ADD COLUMN `free_summaries_used` INT NOT NULL DEFAULT 0");
+        }
+        // 신규 컬럼 (구독 결제 시스템 — PortOne + 토스페이먼츠)
+        // trialing(5회) → active(plus 20회 / pro 무제한) → past_due → cancelled
+        if (!in_array('plan_status', $existing, true)) {
+            $pdo->exec("ALTER TABLE `members` ADD COLUMN `plan_status` VARCHAR(16) NOT NULL DEFAULT 'trialing'");
+        }
+        if (!in_array('portone_customer_id', $existing, true)) {
+            $pdo->exec("ALTER TABLE `members` ADD COLUMN `portone_customer_id` VARCHAR(64) NULL DEFAULT NULL");
+        }
+        // 빌링키 — 정기결제용. PortOne BillingKey API 로 발급 (카드 정보 토큰화).
+        if (!in_array('portone_billing_key', $existing, true)) {
+            $pdo->exec("ALTER TABLE `members` ADD COLUMN `portone_billing_key` VARCHAR(128) NULL DEFAULT NULL");
+        }
+        // 현재 active subscription id (subscriptions 테이블 ref)
+        if (!in_array('portone_subscription_id', $existing, true)) {
+            $pdo->exec("ALTER TABLE `members` ADD COLUMN `portone_subscription_id` VARCHAR(64) NULL DEFAULT NULL");
+        }
+        if (!in_array('current_period_start', $existing, true)) {
+            $pdo->exec("ALTER TABLE `members` ADD COLUMN `current_period_start` DATETIME NULL DEFAULT NULL");
+        }
+        if (!in_array('current_period_end', $existing, true)) {
+            $pdo->exec("ALTER TABLE `members` ADD COLUMN `current_period_end` DATETIME NULL DEFAULT NULL");
+        }
+        if (!in_array('cancel_at_period_end', $existing, true)) {
+            $pdo->exec("ALTER TABLE `members` ADD COLUMN `cancel_at_period_end` TINYINT(1) NOT NULL DEFAULT 0");
+        }
+        // summary_limit: NULL = 무제한 (pro), 0 = 차단 (free), 5 = trialing, 20 = plus
+        if (!in_array('summary_limit', $existing, true)) {
+            $pdo->exec("ALTER TABLE `members` ADD COLUMN `summary_limit` INT NULL DEFAULT 5");
+        }
+        // last_usage_reset_at: 매월 결제 갱신 시 free_summaries_used=0 으로 reset 한 시점
+        if (!in_array('last_usage_reset_at', $existing, true)) {
+            $pdo->exec("ALTER TABLE `members` ADD COLUMN `last_usage_reset_at` DATETIME NULL DEFAULT NULL");
         }
         return $done = true;
     } catch (Throwable $e) {
         error_log('[process-recording] ensure_members_plan_columns failed: ' . $e->getMessage());
         return $done = false;
+    }
+}
+
+/**
+ * plan 별 월 사용 한도 결정.
+ * - 사용자의 summary_limit 컬럼이 명시되어 있으면 그 값 (관리자 수동 override 가능).
+ * - 그렇지 않으면 plan 별 기본값:
+ *     pro      → null (무제한)
+ *     plus     → 20
+ *     trialing → 5  (신규 가입 5회 무료 체험)
+ *     free     → 0  (차단)
+ */
+function resolve_summary_limit(?string $plan, $columnValue): ?int {
+    // 컬럼 명시값 우선 (관리자가 admin 에서 직접 변경한 경우)
+    if ($columnValue !== null && $columnValue !== '') {
+        $n = (int)$columnValue;
+        if ($n < 0) return null;   // 음수 = 무제한 (admin 안전망)
+        return $n;
+    }
+    switch (strtolower((string)$plan)) {
+        case 'pro':       return null;
+        case 'plus':      return 20;
+        case 'trialing':  return 5;
+        case 'free':
+        default:          return 0;
     }
 }
 
@@ -505,25 +565,57 @@ if ($asyncMode) {
     } catch (Throwable $e) { /* 무시 */ }
 }
 
-/* ========== Plan check ========== */
-$plan = 'free';
+/* ========== Plan check ==========
+ * 구독 plan 별 quota:
+ *   pro      → 무제한 (summary_limit = NULL)
+ *   plus     → 월 20회
+ *   trialing → 5회 (신규 가입자 체험)
+ *   free     → 0 (차단)
+ * + plan_status 검사 — past_due / cancelled 면 차단 (active / trialing 만 통과).
+ * + admin allowlist 는 모든 검사 우회.
+ */
+$plan = 'trialing';
+$planStatus = 'trialing';
 $freeUsed = 0;
+$summaryLimitColumn = null;
 try {
-    $ps = $pdo->prepare('SELECT plan, free_summaries_used FROM members WHERE email = :e LIMIT 1');
+    $ps = $pdo->prepare('SELECT plan, plan_status, free_summaries_used, summary_limit FROM members WHERE email = :e LIMIT 1');
     $ps->execute([':e' => $ownerEmail]);
     $row = $ps->fetch();
     if ($row) {
-        $plan = (string)($row['plan'] ?? 'free');
+        $plan = (string)($row['plan'] ?? 'trialing');
+        $planStatus = (string)($row['plan_status'] ?? 'trialing');
         $freeUsed = (int)($row['free_summaries_used'] ?? 0);
+        $summaryLimitColumn = $row['summary_limit'] ?? null;
     }
 } catch (Throwable $e) {
-    // plan 컬럼이 아직 없으면 free 로 간주.
-    $plan = 'free';
+    // 컬럼이 아직 없으면 trialing 으로 간주 (5회 무료 — 안전).
+    $plan = 'trialing';
+    $planStatus = 'trialing';
     $freeUsed = 0;
 }
 $isAdminUser = is_admin_email_for_recording($ownerEmail);
-if (!$isAdminUser && $plan === 'free' && $freeUsed >= customer_log_free_quota()) {
-    jerror('plan_required', '무료 체험 횟수가 끝났습니다. Premium 가입이 필요합니다.', 403);
+
+if (!$isAdminUser) {
+    // plan_status 검사 — past_due / cancelled 는 즉시 차단.
+    $statusLc = strtolower($planStatus);
+    if ($statusLc === 'past_due') {
+        jerror('plan_required', '결제 정보를 확인해 주세요. 결제가 처리되지 않아 일시 정지되었습니다.', 403);
+    }
+    if ($statusLc === 'cancelled') {
+        jerror('plan_required', '구독이 해지되어 통화 AI 요약을 사용할 수 없습니다.', 403);
+    }
+    // plan 별 한도 검사.
+    $effectiveLimit = resolve_summary_limit($plan, $summaryLimitColumn);
+    if ($effectiveLimit !== null && $freeUsed >= $effectiveLimit) {
+        if ($plan === 'free') {
+            jerror('plan_required', '무료 플랜은 통화 AI 요약을 사용할 수 없습니다. Plus 또는 Pro 구독이 필요합니다.', 403);
+        } elseif ($plan === 'trialing') {
+            jerror('plan_required', '신규 가입 무료 체험 5회를 모두 사용했습니다. Plus 또는 Pro 구독을 시작해 주세요.', 403);
+        } else {
+            jerror('plan_required', '이번 달 ' . $effectiveLimit . '회 한도를 모두 사용했습니다. 다음 결제일까지 기다리거나 Pro 로 업그레이드해 주세요.', 403);
+        }
+    }
 }
 
 /* ========== storage_path 검증 (owner 격리 + 경로 traversal 차단) ========== */
@@ -831,14 +923,32 @@ try {
     jerror('upstream_failed', 'DB 저장 실패.', 500);
 }
 
-/* ========== free_summaries_used 증가 (plan=free + non-admin 일 때만) ========== */
-if (!$isAdminUser && $plan === 'free') {
+/* ========== 사용량 카운트 ==========
+ *   - admin allowlist: 카운트 안 함
+ *   - pro: 카운트 안 함 (무제한)
+ *   - 그 외 (free / trialing / plus): summary 처리 성공 후 +1
+ *   - usage_logs 에도 row 추가 (감사 / 통계)
+ */
+if (!$isAdminUser && strtolower($plan) !== 'pro') {
     try {
         $pdo->prepare('UPDATE members SET free_summaries_used = free_summaries_used + 1 WHERE email = :e')
             ->execute([':e' => $ownerEmail]);
         $freeUsed += 1;
     } catch (Throwable $e) {
-        // plan 컬럼이 아직 없으면 무시 (다음 호출 시 ensure 후 정상 동작).
+        // 컬럼이 아직 없으면 무시 (다음 호출 시 ensure 후 정상 동작).
+    }
+    // usage_logs 기록 (best-effort)
+    try {
+        // 같은 lazy CREATE 트릭 — usage_logs 없으면 records.php 의 ensure 가 트리거되어 있어야.
+        $pdo->prepare('INSERT INTO usage_logs (owner_email, feature, amount, plan, metadata_json) VALUES (:o, :f, 1, :p, :m)')
+            ->execute([
+                ':o' => $ownerEmail,
+                ':f' => 'call_summary',
+                ':p' => $plan,
+                ':m' => json_encode(['customer_log_id' => $rowId], JSON_UNESCAPED_UNICODE),
+            ]);
+    } catch (Throwable $e) {
+        // 테이블 없으면 무시 — 다음 deploy 후 정상.
     }
 }
 
