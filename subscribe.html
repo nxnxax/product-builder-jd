@@ -439,7 +439,9 @@
             const resp = await window.PortOne.requestIssueBillingKeyAndPay({
                 storeId: config.storeId,
                 channelKey: config.channelKey,
-                billingKeyMethod: 'CARD',
+                // PortOne V2 의 requestIssueBillingKeyAndPay 는 단일 method 필드명 'billingKeyAndPayMethod' 사용
+                // (requestIssueBillingKey 의 'billingKeyMethod' 와 다름).
+                billingKeyAndPayMethod: 'CARD',
                 issueId,
                 issueName: planInfo.label + ' 정기결제 등록',
                 paymentId,
