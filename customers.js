@@ -590,11 +590,16 @@ function renderCell(f, r, d, displayNo) {
         }
         return `<span class="cell-empty">-</span>`;
     }
-    if (f.type === 'textarea') {
+    if (f.type === 'textarea' || f.type === 'text') {
         if (!v) return `<span class="cell-empty">-</span>`;
-        // 행 크기 고정 — 2줄까지만 보이고 클릭 시 상세 모달.
-        // 옛 데이터의 ━ 구분선은 display-time 으로 제거 (저장된 raw 데이터는 그대로).
+        // 모든 텍스트 입력 셀 — 행 크기 고정 (2줄 clamp + 가운데 정렬) + 클릭 시 상세 모달.
+        // 옛 데이터의 ━ 구분선은 display-time 으로 제거 (저장된 raw 는 그대로).
         return `<span class="cell-text cell-multiline cell-multiline-clamp" data-cell-detail data-id="${id}" title="클릭하여 상세 보기">${escapeHtml(sanitizeContent(v))}</span>`;
+    }
+    if (f.type === 'tel') {
+        if (!v) return `<span class="cell-empty">-</span>`;
+        // tel 은 1줄 nowrap + ellipsis 로 wrap 차단 (010-xxxx-xxxx 가 - 에서 줄바꿈되는 문제 회피).
+        return `<span class="cell-text cell-tel-nowrap" data-cell-detail data-id="${id}" title="클릭하여 상세 보기">${escapeHtml(v)}</span>`;
     }
     if (f.type === 'date') {
         return v ? `<span class="cell-text">${formatDateDisplay(v)}</span>` : `<span class="cell-empty">-</span>`;

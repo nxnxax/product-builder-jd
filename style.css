@@ -2503,9 +2503,13 @@ select:focus {
     transition: background 120ms ease;
     padding: 2px 4px;
     border-radius: 4px;
-    /* .cell-multiline 의 text-align: left !important 를 override 하기 위해 !important 필요. */
-    text-align: center !important;
     width: 100%;
+}
+/* .ledger-tbl tbody td .cell-multiline 의 text-align:left !important 가 같은 specificity
+   라 위 단독 selector 만으로는 override 안 됨. ledger-tbl/모바일카드 컨텍스트에서 명시. */
+.ledger-tbl tbody td .cell-multiline-clamp,
+.ledger-card-value .cell-multiline-clamp {
+    text-align: center !important;
 }
 .cell-multiline-clamp:hover {
     background: rgba(200, 54, 44, 0.06);
@@ -2515,6 +2519,22 @@ select:focus {
     line-clamp: 2;
     max-height: 3.2em;
     font-size: 17.5px;
+}
+/* tel 셀 — wrap 차단 + 가운데 + 클릭 가능. */
+.cell-tel-nowrap {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: block;
+    text-align: center !important;
+    cursor: pointer;
+    padding: 2px 4px;
+    border-radius: 4px;
+    transition: background 120ms ease;
+    width: 100%;
+}
+.cell-tel-nowrap:hover {
+    background: rgba(200, 54, 44, 0.06);
 }
 
 /* ─────────── 행 상세 보기 모달 (customers.html) ─────────── */
