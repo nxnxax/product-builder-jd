@@ -2608,6 +2608,9 @@ try {
 
             // 구독 결제 — 관리자 수동 변경 (PortOne 결합 전 권한 로직 검증용).
             $planCol = first_existing_column($cols, ['plan']);
+            $summaryLimitCol = first_existing_column($cols, ['summary_limit']);
+            $planChanged = false;
+            $newPlanVal = null;
             if ($planCol && isset($body['plan'])) {
                 $planVal = strtolower(trim((string)$body['plan']));
                 if (!in_array($planVal, ['trialing', 'free', 'plus', 'pro'], true)) {
@@ -2615,6 +2618,25 @@ try {
                 }
                 $assignments[] = quote_identifier($planCol) . ' = :plan';
                 $params[':plan'] = $planVal;
+                $planChanged = true;
+                $newPlanVal = $planVal;
+            }
+            // plan 변경 시 summary_limit 도 자동 동기화 (사용자가 명시적으로 summary_limit 안 보낸 경우).
+            // plus=20 / pro=NULL(무제한) / trialing=5 / free=0.
+            if ($planChanged && $summaryLimitCol && !isset($body['summary_limit'])) {
+                $autoLimit = null;
+                switch ($newPlanVal) {
+                    case 'pro':       $autoLimit = null; break;
+                    case 'plus':      $autoLimit = 20;   break;
+                    case 'trialing':  $autoLimit = 5;    break;
+                    case 'free':      $autoLimit = 0;    break;
+                }
+                if ($autoLimit === null) {
+                    $assignments[] = quote_identifier($summaryLimitCol) . ' = NULL';
+                } else {
+                    $assignments[] = quote_identifier($summaryLimitCol) . ' = :auto_limit';
+                    $params[':auto_limit'] = $autoLimit;
+                }
             }
             $planStatusCol = first_existing_column($cols, ['plan_status']);
             if ($planStatusCol && isset($body['plan_status'])) {

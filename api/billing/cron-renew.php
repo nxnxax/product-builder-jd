@@ -141,14 +141,16 @@ foreach ($rows as $row) {
     if ($ok && $paymentStatus === 'PAID') {
         $newPeriodEnd = date('Y-m-d H:i:s', strtotime('+30 days'));
         try {
+            $newLimit = plan_default_summary_limit($plan);
             $pdo->prepare("UPDATE members SET
                     plan_status = 'active',
                     current_period_start = :ps,
                     current_period_end = :pe,
                     free_summaries_used = 0,
-                    last_usage_reset_at = :now
+                    last_usage_reset_at = :now,
+                    summary_limit = :slim
                 WHERE email = :e")
-                ->execute([':ps' => $now, ':pe' => $newPeriodEnd, ':now' => $now, ':e' => $email]);
+                ->execute([':ps' => $now, ':pe' => $newPeriodEnd, ':now' => $now, ':slim' => $newLimit, ':e' => $email]);
             $pdo->prepare("UPDATE subscriptions SET
                     status = 'active',
                     current_period_start = :ps,

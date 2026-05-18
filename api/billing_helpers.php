@@ -133,6 +133,24 @@ if (!function_exists('portone_plan_amount')) {
     }
 }
 
+if (!function_exists('plan_default_summary_limit')) {
+    /**
+     * plan 별 default summary_limit. null = 무제한 (pro).
+     * verify-payment / cron-renew / admin-members PATCH 가 plan 변경 시
+     * 이 함수로 summary_limit 도 동기화.
+     */
+    function plan_default_summary_limit(string $plan): ?int {
+        switch (strtolower($plan)) {
+            case 'pro':       return null;  // 무제한
+            case 'plus':
+            case 'premium':   return 20;
+            case 'trialing':  return 5;
+            case 'free':
+            default:          return 0;
+        }
+    }
+}
+
 if (!function_exists('portone_plan_label')) {
     function portone_plan_label(string $plan): string {
         switch (strtolower($plan)) {
@@ -267,6 +285,15 @@ if (!function_exists('billing_ensure_tables')) {
                     try { $pdo->exec("ALTER TABLE members ADD COLUMN `{$col}` {$def}"); }
                     catch (Throwable $e) { error_log('[billing_ensure_tables] ALTER ' . $col . ': ' . $e->getMessage()); }
                 }
+            }
+            // 일괄 마이그레이션 — 옛 trialing default(5) 가 plus/pro 에 잘못 남은 케이스 정리.
+            // plan 별 의도된 default 와 다른 경우만 보정 (admin 명시 override 추정 안 함).
+            try {
+                $pdo->exec("UPDATE members SET summary_limit = 20 WHERE plan = 'plus' AND summary_limit = 5");
+                $pdo->exec("UPDATE members SET summary_limit = NULL WHERE plan = 'pro' AND summary_limit IS NOT NULL AND summary_limit <= 20");
+                $pdo->exec("UPDATE members SET summary_limit = 0 WHERE plan = 'free' AND summary_limit = 5");
+            } catch (Throwable $e) {
+                error_log('[billing_ensure_tables] limit migration: ' . $e->getMessage());
             }
             $done = true;
         } catch (Throwable $e) {

@@ -103,6 +103,8 @@ $periodStart = $now;
 $periodEnd = date('Y-m-d H:i:s', strtotime('+30 days'));
 
 try {
+    // plan 별 default summary_limit 도 동기화 (plus 20 / pro NULL / 그 외 5)
+    $newLimit = plan_default_summary_limit($planRequested);
     $pdo->prepare("UPDATE members SET
             plan = :plan,
             plan_status = 'active',
@@ -113,7 +115,8 @@ try {
             current_period_end = :pe,
             cancel_at_period_end = 0,
             free_summaries_used = 0,
-            last_usage_reset_at = :now
+            last_usage_reset_at = :now,
+            summary_limit = :slim
         WHERE email = :email")
         ->execute([
             ':plan' => $planRequested,
@@ -122,6 +125,7 @@ try {
             ':ps' => $periodStart,
             ':pe' => $periodEnd,
             ':now' => $now,
+            ':slim' => $newLimit,
             ':email' => $ownerEmail,
         ]);
 
