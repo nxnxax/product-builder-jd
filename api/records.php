@@ -3305,9 +3305,9 @@ try {
                 if ($prevCount < 1) $prevCount = 1;
                 $newCallCount = $prevCount + 1;
 
-                // content append — 최신이 위쪽. 회차 separator 마커 시각적으로 명확히
-                // (옛 통화 내용과 새 통화 내용을 사용자가 한눈에 구분할 수 있도록).
-                $newSection = "📞 ━━━━━━━━━━ {$todayDate} 통화 ({$newCallCount}회차) ━━━━━━━━━━\n\n" . $newSectionContent;
+                // content append — 최신이 위쪽. 회차 마커는 간결한 텍스트만 (━ 구분선 제거 —
+                // 모달 word-wrap 환경에서 깨져 보이는 문제 회피). 회차 사이 빈 줄 3개로 분리.
+                $newSection = "📞 {$todayDate} 통화 ({$newCallCount}회차)\n\n" . $newSectionContent;
                 $existingContent = (string)($existingData['content'] ?? '');
                 $mergedContent = $existingContent !== ''
                     ? $newSection . "\n\n\n" . $existingContent
@@ -3317,7 +3317,7 @@ try {
                 $existingMemo = (string)($existingData['agent_memo'] ?? '');
                 $mergedMemo = $existingMemo;
                 if ($clAgentMemo !== '') {
-                    $memoSection = "📝 ━━━ {$todayDate} ━━━\n" . $clAgentMemo;
+                    $memoSection = "📝 {$todayDate}\n" . $clAgentMemo;
                     $mergedMemo = $existingMemo !== ''
                         ? $memoSection . "\n\n\n" . $existingMemo
                         : $memoSection;

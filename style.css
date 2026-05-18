@@ -2488,7 +2488,8 @@ select:focus {
     color: var(--fg-secondary);
 }
 /* 긴 텍스트 셀(고객관리대장 내용/담당자 메모) — 행 높이 고정용 2줄 truncate.
-   추가 텍스트는 클릭하면 row-detail-modal 에서 전체 표시. */
+   추가 텍스트는 클릭하면 row-detail-modal 에서 전체 표시.
+   2줄 truncate 상태에서는 가운데 정렬해서 깔끔하게 표시. */
 .cell-multiline-clamp {
     display: -webkit-box !important;
     -webkit-line-clamp: 2;
@@ -2502,6 +2503,8 @@ select:focus {
     transition: background 120ms ease;
     padding: 2px 4px;
     border-radius: 4px;
+    text-align: center;
+    width: 100%;
 }
 .cell-multiline-clamp:hover {
     background: rgba(200, 54, 44, 0.06);

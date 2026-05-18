@@ -754,7 +754,21 @@ function editRow(id) {
 function openRowDetailModal(rec, group, fields) {
     closeRowDetailModal();
     const d = rec.data || {};
-    const visible = (fields || []).filter(f => f.type !== 'auto_number');
+    // 모달은 고객 정체성 우선 — '고객명' 을 '관리' 바로 다음으로 reorder.
+    // 그 외 필드는 DEFAULT_FIELDS 순서 그대로.
+    const allVisible = (fields || []).filter(f => f.type !== 'auto_number');
+    const customerField = allVisible.find(f => f.key === 'customer');
+    const visible = [];
+    let customerInserted = false;
+    allVisible.forEach(f => {
+        if (f.key === 'customer') return;
+        visible.push(f);
+        if (f.key === 'managed' && customerField) {
+            visible.push(customerField);
+            customerInserted = true;
+        }
+    });
+    if (customerField && !customerInserted) visible.unshift(customerField);
     const rowsHtml = visible.map(f => {
         const v = d[f.key];
         let display = '';
