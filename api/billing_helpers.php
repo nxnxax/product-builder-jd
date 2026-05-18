@@ -156,13 +156,13 @@ if (!function_exists('billing_pdo')) {
     /**
      * cafe24 db_config.php 표준 — `return [host=>..., port=>..., database=>...,
      * user=>..., password=>...]` array 반환 패턴. process-recording / records 와 동일.
+     * 첫 호출 시 billing 관련 테이블 (subscriptions/payments/usage_logs) lazy CREATE.
      */
     function billing_pdo(): PDO {
         $candidates = [
             __DIR__ . '/db_config.php',          // api/billing 의 부모 (api/)
             dirname(__DIR__) . '/db_config.php', // webroot
         ];
-        // __DIR__ 이 billing/ 서브디렉토리이면 한 단계 더.
         $candidates[] = dirname(__DIR__, 1) . '/db_config.php';
         $candidates[] = dirname(__DIR__, 2) . '/db_config.php';
         $dbConfigPath = null;
@@ -180,10 +180,99 @@ if (!function_exists('billing_pdo')) {
             $db['host'] ?? 'localhost',
             (int)($db['port'] ?? 3306),
             $db['database'] ?? '');
-        return new PDO($dsn, $db['user'] ?? '', $db['password'] ?? '', [
+        $pdo = new PDO($dsn, $db['user'] ?? '', $db['password'] ?? '', [
             PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
             PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
         ]);
+        // billing 관련 테이블 자동 CREATE — records.php 의 ensure_* 함수 미경유 endpoint 안전망.
+        billing_ensure_tables($pdo);
+        return $pdo;
+    }
+}
+
+if (!function_exists('billing_ensure_tables')) {
+    function billing_ensure_tables(PDO $pdo): void {
+        static $done = false;
+        if ($done) return;
+        try {
+            $pdo->exec("
+                CREATE TABLE IF NOT EXISTS subscriptions (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    owner_email VARCHAR(255) NOT NULL,
+                    plan VARCHAR(16) NOT NULL DEFAULT 'plus',
+                    status VARCHAR(16) NOT NULL DEFAULT 'active',
+                    portone_customer_id VARCHAR(64) NULL DEFAULT NULL,
+                    portone_billing_key VARCHAR(128) NULL DEFAULT NULL,
+                    portone_subscription_id VARCHAR(64) NULL DEFAULT NULL,
+                    current_period_start DATETIME NULL DEFAULT NULL,
+                    current_period_end DATETIME NULL DEFAULT NULL,
+                    cancel_at_period_end TINYINT(1) NOT NULL DEFAULT 0,
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    INDEX idx_sub_owner (owner_email),
+                    INDEX idx_sub_status (status),
+                    INDEX idx_sub_period_end (current_period_end)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+            ");
+            $pdo->exec("
+                CREATE TABLE IF NOT EXISTS payments (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    owner_email VARCHAR(255) NOT NULL,
+                    portone_payment_id VARCHAR(64) NULL DEFAULT NULL,
+                    portone_transaction_id VARCHAR(64) NULL DEFAULT NULL,
+                    portone_subscription_id VARCHAR(64) NULL DEFAULT NULL,
+                    amount INT NOT NULL DEFAULT 0,
+                    currency VARCHAR(8) NOT NULL DEFAULT 'KRW',
+                    status VARCHAR(32) NOT NULL DEFAULT 'pending',
+                    paid_at DATETIME NULL DEFAULT NULL,
+                    raw_event_json LONGTEXT NULL DEFAULT NULL,
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    INDEX idx_pay_owner (owner_email),
+                    INDEX idx_pay_payment_id (portone_payment_id),
+                    INDEX idx_pay_status (status)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+            ");
+            $pdo->exec("
+                CREATE TABLE IF NOT EXISTS usage_logs (
+                    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+                    owner_email VARCHAR(255) NOT NULL,
+                    feature VARCHAR(40) NOT NULL,
+                    amount INT NOT NULL DEFAULT 1,
+                    plan VARCHAR(16) NULL DEFAULT NULL,
+                    metadata_json TEXT NULL DEFAULT NULL,
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    INDEX idx_usage_owner (owner_email),
+                    INDEX idx_usage_feature (feature),
+                    INDEX idx_usage_created (created_at)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+            ");
+            // members 의 결제 컬럼들도 안전망 lazy ALTER (process-recording 의 ensure 미경유 케이스).
+            $cols = [];
+            try {
+                foreach ($pdo->query("SHOW COLUMNS FROM members")->fetchAll() as $c) $cols[] = $c['Field'];
+            } catch (Throwable $e) { /* members 자체 없는 환경 — 무시 */ }
+            $addColumns = [
+                'plan_status'              => "VARCHAR(16) NOT NULL DEFAULT 'trialing'",
+                'portone_customer_id'      => 'VARCHAR(64) NULL DEFAULT NULL',
+                'portone_billing_key'      => 'VARCHAR(128) NULL DEFAULT NULL',
+                'portone_subscription_id'  => 'VARCHAR(64) NULL DEFAULT NULL',
+                'current_period_start'     => 'DATETIME NULL DEFAULT NULL',
+                'current_period_end'       => 'DATETIME NULL DEFAULT NULL',
+                'cancel_at_period_end'     => 'TINYINT(1) NOT NULL DEFAULT 0',
+                'summary_limit'            => 'INT NULL DEFAULT 5',
+                'last_usage_reset_at'      => 'DATETIME NULL DEFAULT NULL',
+            ];
+            foreach ($addColumns as $col => $def) {
+                if (!empty($cols) && !in_array($col, $cols, true)) {
+                    try { $pdo->exec("ALTER TABLE members ADD COLUMN `{$col}` {$def}"); }
+                    catch (Throwable $e) { error_log('[billing_ensure_tables] ALTER ' . $col . ': ' . $e->getMessage()); }
+                }
+            }
+            $done = true;
+        } catch (Throwable $e) {
+            error_log('[billing_ensure_tables] failed: ' . $e->getMessage());
+            // 다음 호출에서 재시도 가능하도록 $done 그대로.
+        }
     }
 }
 
