@@ -125,6 +125,8 @@ POST /process-recording.php
 
 응답에 `merged: true` 플래그. 앱 UI 가 "행 추가" vs "기존 행 누적" 구분 가능. **핵심: 하나의 phone = 하나의 row, 시계열 시계열 누적 관리.**
 
+**Catch-up backfill (2026-05-18):** `send_to_group` 호출 시 (merge / INSERT 분기 모두) 해당 ledger_record id 가 확정된 직후, **같은 `owner_email` + 같은 정규화 phone 의 모든 unlinked `customer_log` row 들의 `linked_ledger_record_id` 를 한 번에 갱신** (`backfill_same_phone_links()`). 한 건만 양식 전송해도 같은 전화번호의 미전송 row 들이 모두 자동 청산 → 앱의 미전송 모달이 빈 상태로 정리됨. content 누적은 명시적으로 호출한 customer_log 만 (중복 통화 같은 내용 반복 누적 방지). 응답에 `backfilled_count: N` 포함 (앱이 catch-up 모달 새로고침 시 참고).
+
 **자동 default 그룹 정의** (앱팀 요청 매핑 — 2026-05-18 8필드 갱신):
 - `owner_email = current`, `page_type = 'customer'`, `name = '그룹제목을 설정해주세요'`, `is_default = 1`
 - `field_schema_json` (AES-256-GCM 암호화 저장) = **8필드 매핑** (customers.html ledger UI 인식 key):

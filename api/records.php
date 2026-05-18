@@ -1071,6 +1071,40 @@ function customer_log_default_group_field_schema(): array {
 }
 
 /**
+ * 같은 owner_email + 정규화 phone 의 unlinked customer_log 들을 batch 로 link 갱신.
+ * send_to_group 호출 시 catch-up — 한 row 가 ledger 에 미러되면 같은 phone 의
+ * 다른 미전송 row 들도 같은 ledger_record 로 자동 연결 (앱의 미전송 모달 정리용).
+ * 본인 customer_log id 는 제외 (이미 별도 UPDATE 됨).
+ * 반환: 새로 link 갱신된 row 수.
+ */
+function backfill_same_phone_links(PDO $pdo, string $ownerEmail, string $normalizedPhone, int $ledgerRecordId, string $currentCustomerLogId): int {
+    if ($normalizedPhone === '' || $ledgerRecordId <= 0) return 0;
+    try {
+        $stmt = $pdo->prepare("SELECT id, phone_number FROM customer_log
+            WHERE owner_email = :o AND linked_ledger_record_id IS NULL");
+        $stmt->execute([':o' => $ownerEmail]);
+        $matchIds = [];
+        while ($r = $stmt->fetch()) {
+            $p = youngman_decrypt($r['phone_number'] ?? '');
+            $pn = preg_replace('/[^0-9]/', '', (string)$p);
+            if ($pn !== '' && $pn === $normalizedPhone && (string)$r['id'] !== $currentCustomerLogId) {
+                $matchIds[] = (string)$r['id'];
+            }
+        }
+        if (empty($matchIds)) return 0;
+        $placeholders = implode(',', array_fill(0, count($matchIds), '?'));
+        $upd = $pdo->prepare("UPDATE customer_log
+            SET linked_ledger_record_id = ?
+            WHERE id IN ($placeholders) AND owner_email = ? AND linked_ledger_record_id IS NULL");
+        $upd->execute(array_merge([$ledgerRecordId], $matchIds, [$ownerEmail]));
+        return (int)$upd->rowCount();
+    } catch (Throwable $e) {
+        error_log('[records] backfill_same_phone_links failed: ' . $e->getMessage());
+        return 0;
+    }
+}
+
+/**
  * 같은 group 내에서 정규화된 phone (숫자만) 이 일치하는 ledger_records 카운트 + 1.
  * data_json AES-256-GCM 복호화 후 phone 정규화 비교. 같은 사람과의 N번째 통화 표시용.
  * phone 빈 값이면 1 반환 (단독 row).
@@ -3351,6 +3385,9 @@ try {
                 $pdo->prepare('UPDATE customer_log SET linked_ledger_record_id = :lr WHERE id = :id AND owner_email = :o')
                     ->execute([':lr' => (int)$existingLrRow['id'], ':id' => $cid, ':o' => $owner]);
 
+                // catch-up: 같은 phone 의 다른 unlinked customer_log 도 함께 link.
+                $backfilled = backfill_same_phone_links($pdo, $owner, $normalizedPhone, (int)$existingLrRow['id'], (string)$cid);
+
                 $clStmt2 = $pdo->prepare('SELECT * FROM customer_log WHERE id = :id LIMIT 1');
                 $clStmt2->execute([':id' => $cid]);
                 $clRow2 = $clStmt2->fetch();
@@ -3361,6 +3398,7 @@ try {
                 respond([
                     'status' => 'ok',
                     'merged' => true,
+                    'backfilled_count' => $backfilled,
                     'customer_log'  => $clRow2 ? customer_log_row($clRow2) : null,
                     'ledger_record' => $lrRow  ? ledger_record_row($lrRow) : null,
                     'group' => ledger_group_row($gRow),
@@ -3412,6 +3450,9 @@ try {
             $pdo->prepare('UPDATE customer_log SET linked_ledger_record_id = :lr WHERE id = :id AND owner_email = :o')
                 ->execute([':lr' => $newLrId, ':id' => $cid, ':o' => $owner]);
 
+            // catch-up: 같은 phone 의 다른 unlinked customer_log 도 함께 link.
+            $backfilled = backfill_same_phone_links($pdo, $owner, $normalizedPhone, $newLrId, (string)$cid);
+
             // 최종 응답: 갱신된 customer_log + 새 ledger_record + 그룹.
             $clStmt2 = $pdo->prepare('SELECT * FROM customer_log WHERE id = :id LIMIT 1');
             $clStmt2->execute([':id' => $cid]);
@@ -3422,6 +3463,7 @@ try {
 
             respond([
                 'status' => 'ok',
+                'backfilled_count' => $backfilled,
                 'customer_log' => $clRow2 ? customer_log_row($clRow2) : null,
                 'ledger_record' => $lrRow ? ledger_record_row($lrRow) : null,
                 'group' => ledger_group_row($gRow),
