@@ -32,8 +32,8 @@ function jout(array $payload, int $code = 200): void {
     echo json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
     exit;
 }
-function jerror(string $code, string $message, int $status): void {
-    jout(['status' => 'error', 'code' => $code, 'message' => $message], $status);
+function jerror(string $code, string $message, int $status, array $extra = []): void {
+    jout(array_merge(['status' => 'error', 'code' => $code, 'message' => $message], $extra), $status);
 }
 function load_env_value(string $key): string {
     foreach ([__DIR__, dirname(__DIR__)] as $dir) {
@@ -123,9 +123,17 @@ function get_bearer_token(): string {
     return '';
 }
 
-function fetch_user_email_via_supabase(string $token, array $auth): string {
+function fetch_user_email_via_supabase(string $token, array $auth, ?array &$diagOut = null): string {
     $url = rtrim((string)($auth['supabase_url'] ?? ''), '/');
     $key = (string)($auth['anon_key'] ?? '');
+    if ($diagOut !== null) {
+        $diagOut = [
+            'url_set'    => $url !== '',
+            'key_set'    => $key !== '',
+            'token_len'  => strlen($token),
+            'auth_status' => 0,
+        ];
+    }
     if (!$url || !$key || !$token) return '';
     $ch = curl_init($url . '/auth/v1/user');
     curl_setopt_array($ch, [
@@ -137,6 +145,7 @@ function fetch_user_email_via_supabase(string $token, array $auth): string {
     $resp = curl_exec($ch);
     $status = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
     curl_close($ch);
+    if ($diagOut !== null) $diagOut['auth_status'] = $status;
     if ($status !== 200 || !$resp) return '';
     $data = json_decode((string)$resp, true);
     return strtolower(trim((string)($data['email'] ?? '')));
@@ -144,13 +153,27 @@ function fetch_user_email_via_supabase(string $token, array $auth): string {
 
 function require_auth_email(): string {
     $token = get_bearer_token();
-    if (!$token) jerror('unauthorized', '로그인이 필요합니다.', 401);
+    if (!$token) jerror('unauthorized', '로그인이 필요합니다. 헤더 Authorization Bearer 없음.', 401, [
+        'debug' => ['stage' => 'no_bearer'],
+    ]);
     $auth = load_supabase_auth();
     if (empty($auth['supabase_url']) || empty($auth['anon_key'])) {
-        jerror('unauthorized', '서버 인증 설정 누락.', 500);
+        jerror('unauthorized', '서버 인증 설정 누락 (.env 의 Supabase URL/Anon Key).', 500, [
+            'debug' => ['stage' => 'env_missing', 'url_set' => !empty($auth['supabase_url']), 'key_set' => !empty($auth['anon_key'])],
+        ]);
     }
-    $email = fetch_user_email_via_supabase($token, $auth);
-    if (!$email) jerror('unauthorized', '토큰 검증 실패. 다시 로그인해주세요.', 401);
+    $diag = null;
+    $email = fetch_user_email_via_supabase($token, $auth, $diag);
+    if (!$email) {
+        $st = $diag['auth_status'] ?? 0;
+        $hint = $st === 401 ? '세션이 만료되었습니다. 앱에서 다시 로그인하거나 새로고침 후 시도해주세요.'
+              : ($st === 404 ? 'Supabase URL 설정 오류 (path 잘못).'
+              : ($st === 0   ? 'Supabase 호출 네트워크 실패.'
+              : 'Supabase 응답 ' . $st . '.'));
+        jerror('unauthorized', '토큰 검증 실패. ' . $hint, 401, [
+            'debug' => array_merge(['stage' => 'supabase_call'], (array)$diag),
+        ]);
+    }
     return $email;
 }
 
