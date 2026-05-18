@@ -32,6 +32,7 @@ const DEFAULT_FIELDS = [
     { key: 'phone',    label: '연락처', type: 'tel',          filterable: false, width: 130 },
     { key: 'region',   label: '거주지역',type:'text',          filterable: true,  width: 130 },
     { key: 'content',  label: '내용',   type: 'textarea',     filterable: true,  width: 280 },
+    { key: 'agent_memo', label: '담당자 메모', type: 'textarea', filterable: true, width: 200 },
     { key: 'memo',     label: '비고',   type: 'text',         filterable: false, width: 140 },
 ];
 
@@ -44,6 +45,7 @@ const FIELD_SYNONYMS = {
     phone:    ['연락처', '휴대폰', '휴대폰번호', '핸드폰', '핸드폰번호', '전화번호', '전화', '모바일', 'HP', 'tel', 'phone', '번호'],
     region:   ['거주지역', '거주지', '주소', '지역', '사는곳', 'address'],
     content:  ['내용', '상담내용', '통화내용', '상담', '문의내용', '메모내용'],
+    agent_memo: ['담당자메모', '담당자 메모', '영업메모', '상담자메모', 'agent_memo'],
     memo:     ['비고', '메모', '특이사항', '참고', '기타', 'note', 'remarks'],
 };
 const FALLBACK_FIELD_KEY = 'content';

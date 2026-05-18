@@ -1047,20 +1047,22 @@ function customer_log_row(array $row): array {
 /**
  * 옵션 D — customer-log → ledger_records 전송용 기본 그룹의 field_schema.
  * 5필드 매핑 (앱팀 요청 — customers.html ledger UI 가 인식하는 key 명):
- *   customer ← customer_name
- *   phone    ← phone_number
- *   date     ← consult_at
- *   content  ← summary + interest + inquiry (라벨로 구분, 줄바꿈)
- *   memo     ← agent_memo
+ *   customer    ← customer_name
+ *   phone       ← phone_number
+ *   date        ← consult_at
+ *   content     ← summary + interest + inquiry (라벨로 구분, 줄바꿈)
+ *   agent_memo  ← agent_memo (앱 SummaryReview 모달의 "담당자 메모" 입력값)
+ *   memo        ← '' (비고 — 사용자가 웹 ledger 에서 직접 입력하는 자유 메모)
  * (budget_condition / next_action / transcript 는 매핑 미적용 — 추후 합의 따라 content 에 추가 가능)
  */
 function customer_log_default_group_field_schema(): array {
     return [
-        ['key' => 'customer', 'label' => '고객',       'type' => 'text'],
-        ['key' => 'phone',    'label' => '연락처',     'type' => 'text'],
-        ['key' => 'date',     'label' => '상담일시',   'type' => 'text'],
-        ['key' => 'content',  'label' => '상담 내용',  'type' => 'textarea'],
-        ['key' => 'memo',     'label' => '내 메모',    'type' => 'textarea'],
+        ['key' => 'customer',   'label' => '고객',         'type' => 'text'],
+        ['key' => 'phone',      'label' => '연락처',       'type' => 'text'],
+        ['key' => 'date',       'label' => '상담일시',     'type' => 'text'],
+        ['key' => 'content',    'label' => '상담 내용',    'type' => 'textarea'],
+        ['key' => 'agent_memo', 'label' => '담당자 메모',  'type' => 'textarea'],
+        ['key' => 'memo',       'label' => '비고',         'type' => 'text'],
     ];
 }
 
@@ -1078,11 +1080,23 @@ function ensure_customer_log_default_group(PDO $pdo, string $owner): ?array {
         $existing = $stmt->fetch();
 
         if ($existing) {
-            // Lazy 마이그레이션 — 라운드 4 자동 생성된 옛 9필드 schema 면 새 5필드로 자동 갱신.
-            // 판별: field_schema_json 첫 element key 가 'customer_name' 이면 옛 형식.
+            // Lazy 마이그레이션 — 옛 schema 자동 갱신.
+            //  (a) 옛 9필드: 첫 element key 가 'customer_name' (라운드 4 초기 자동 생성)
+            //  (b) 옛 5필드: 'agent_memo' key 가 없는 customer/phone/date/content/memo schema
+            //  → 새 6필드 (customer/phone/date/content/agent_memo/memo) 로 자동 갱신
             $rawSchema = !empty($existing['field_schema_json']) ? youngman_decrypt_json($existing['field_schema_json']) : null;
-            if (is_array($rawSchema) && !empty($rawSchema[0]) && is_array($rawSchema[0])
-                && ($rawSchema[0]['key'] ?? '') === 'customer_name') {
+            $needsMigration = false;
+            if (is_array($rawSchema) && !empty($rawSchema[0]) && is_array($rawSchema[0])) {
+                if (($rawSchema[0]['key'] ?? '') === 'customer_name') {
+                    $needsMigration = true;
+                } else {
+                    $existingKeys = array_map(fn($f) => is_array($f) ? ($f['key'] ?? '') : '', $rawSchema);
+                    if (in_array('memo', $existingKeys, true) && !in_array('agent_memo', $existingKeys, true)) {
+                        $needsMigration = true;
+                    }
+                }
+            }
+            if ($needsMigration) {
                 $newSchema = customer_log_default_group_field_schema();
                 $pdo->prepare('UPDATE ledger_groups SET field_schema_json = :fs WHERE id = :id AND owner_email = :o')
                     ->execute([':fs' => youngman_encrypt_json($newSchema), ':id' => (int)$existing['id'], ':o' => $owner]);
@@ -3190,18 +3204,19 @@ try {
                 if (!$gRow) respond(['status' => 'error', 'code' => 'upstream_failed', 'message' => '기본 그룹 자동 생성 실패.'], 503);
             }
 
-            // data_json 구성: customer_log → ledger 5필드 매핑 (앱팀 요청).
-            //   customer ← customer_name
-            //   phone    ← phone_number
-            //   date     ← consult_at
-            //   content  ← summary + interest + inquiry (라벨 + 줄바꿈)
-            //   memo     ← agent_memo
+            // data_json 구성: customer_log → ledger 6필드 매핑.
+            //   customer   ← customer_name
+            //   phone      ← phone_number
+            //   date       ← consult_at
+            //   content    ← summary + interest + inquiry (라벨 + 줄바꿈)
+            //   agent_memo ← agent_memo (앱 SummaryReview 모달의 "담당자 메모" 입력값)
+            //   memo       ← '' (비고 — 사용자가 웹 ledger 에서 직접 입력)
             $clName    = trim((string)(youngman_decrypt($clRow['customer_name'] ?? '') ?? ''));
             $clPhone   = trim((string)(youngman_decrypt($clRow['phone_number'] ?? '') ?? ''));
             $clSummary = trim((string)(youngman_decrypt($clRow['summary'] ?? '') ?? ''));
             $clIntr    = trim((string)(youngman_decrypt($clRow['interest'] ?? '') ?? ''));
             $clInq     = trim((string)(youngman_decrypt($clRow['inquiry'] ?? '') ?? ''));
-            $clMemo    = trim((string)(youngman_decrypt($clRow['agent_memo'] ?? '') ?? ''));
+            $clAgentMemo = trim((string)(youngman_decrypt($clRow['agent_memo'] ?? '') ?? ''));
 
             $contentParts = [];
             if ($clSummary !== '') $contentParts[] = $clSummary;
@@ -3209,14 +3224,15 @@ try {
             if ($clInq     !== '') $contentParts[] = '문의: ' . $clInq;
 
             $data = [
-                'customer' => $clName,
-                'phone'    => $clPhone,
-                'date'     => (string)($clRow['consult_at'] ?? ''),
-                'content'  => implode("\n\n", $contentParts),
-                'memo'     => $clMemo,
+                'customer'   => $clName,
+                'phone'      => $clPhone,
+                'date'       => (string)($clRow['consult_at'] ?? ''),
+                'content'    => implode("\n\n", $contentParts),
+                'agent_memo' => $clAgentMemo,
+                'memo'       => '',
             ];
 
-            // override — 앱 측이 모달에서 편집한 값. key 는 5필드 (customer/phone/date/content/memo) 사용.
+            // override — 앱 측이 모달에서 편집한 값. key 는 6필드 (customer/phone/date/content/agent_memo/memo) 사용.
             $override = (isset($body['override']) && is_array($body['override'])) ? $body['override'] : [];
             foreach ($override as $k => $v) {
                 if (array_key_exists($k, $data)) {

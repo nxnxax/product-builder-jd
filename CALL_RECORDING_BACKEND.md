@@ -102,7 +102,7 @@ POST /process-recording.php
      "action": "customer_log_send_to_group",
      "id": "<customer_log_id>",
      "group_id": <ledger_group_id | null>,
-     "override": { "customer_name": "...", "agent_memo": "..." }   // 선택, 사용자가 모달에서 수정한 값
+     "override": { "customer": "...", "agent_memo": "..." }   // 선택, 사용자가 모달에서 수정한 값 (ledger key 사용)
    }
 6. 백엔드:
    - customer_log row owner 일치 + group_id owner+page_type='customer' 검증
@@ -114,9 +114,9 @@ POST /process-recording.php
 
 **Idempotency:** 같은 customer_log 가 이미 전송됐으면 (`linked_ledger_record_id` 존재) 새 ledger_record 만들지 않고 기존 것 반환 (`duplicate: true`).
 
-**자동 default 그룹 정의** (앱팀 요청 매핑 — 2026-05-17 갱신):
+**자동 default 그룹 정의** (앱팀 요청 매핑 — 2026-05-18 6필드 갱신):
 - `owner_email = current`, `page_type = 'customer'`, `name = '그룹제목을 설정해주세요'`, `is_default = 1`
-- `field_schema_json` (AES-256-GCM 암호화 저장) = **5필드 매핑** (customers.html ledger UI 인식 key):
+- `field_schema_json` (AES-256-GCM 암호화 저장) = **6필드 매핑** (customers.html ledger UI 인식 key):
 
 | ledger key | label | type | customer_log 매핑 |
 |---|---|---|---|
@@ -124,12 +124,15 @@ POST /process-recording.php
 | `phone` | 연락처 | text | `phone_number` |
 | `date` | 상담일시 | text | `consult_at` |
 | `content` | 상담 내용 | textarea | `summary` + (`관심: ` + `interest`) + (`문의: ` + `inquiry`) — 라벨+줄바꿈 |
-| `memo` | 내 메모 | textarea | `agent_memo` |
+| `agent_memo` | 담당자 메모 | textarea | `agent_memo` (앱 SummaryReview 모달의 "담당자 메모" 입력값) |
+| `memo` | 비고 | text | `''` (사용자가 웹 ledger 에서 직접 입력하는 자유 메모) |
 
 - `budget_condition` / `next_action` / `transcript` — 매핑 미적용. content 에 추가 필요하면 앱팀 회신.
-- **override 필드 key 도 5필드** — 앱이 모달에서 편집한 값을 `customer`/`phone`/`date`/`content`/`memo` key 로 보냄.
+- **override 필드 key 도 6필드** — 앱이 모달에서 편집한 값을 `customer`/`phone`/`date`/`content`/`agent_memo`/`memo` key 로 보냄.
 
-**Lazy 마이그레이션:** `ensure_customer_log_default_group()` 이 기존 그룹 발견 시 `field_schema_json` 첫 element key 가 `customer_name` (옛 9필드) 이면 자동으로 새 5필드 schema 로 갱신. 라운드 4 초기 자동 생성된 그룹 자동 정리.
+**Lazy 마이그레이션:** `ensure_customer_log_default_group()` 이 기존 그룹 발견 시 자동 갱신:
+  - (a) 첫 element key 가 `customer_name` (옛 9필드) → 새 6필드
+  - (b) `agent_memo` key 가 없는 옛 5필드 → 새 6필드 (`agent_memo` 컬럼 추가)
 
 **스키마 변경:** `customer_log` 테이블에 `linked_ledger_record_id INT NULL` 컬럼 + 인덱스 추가. lazy ALTER (records.php / process-recording.php 양쪽 ensure 함수 동기화).
 
