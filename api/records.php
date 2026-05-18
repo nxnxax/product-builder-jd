@@ -1061,9 +1061,9 @@ function customer_log_default_group_field_schema(): array {
     return [
         ['key' => 'managed',    'label' => '관리',         'type' => 'manage_switch'],
         ['key' => 'date',       'label' => '날짜',         'type' => 'date'],
+        ['key' => 'call_count', 'label' => '통화수',       'type' => 'call_count'],
         ['key' => 'customer',   'label' => '고객명',       'type' => 'text'],
         ['key' => 'phone',      'label' => '연락처',       'type' => 'text'],
-        ['key' => 'call_count', 'label' => '통화수',       'type' => 'call_count'],
         ['key' => 'content',    'label' => '상담 내용',    'type' => 'textarea'],
         ['key' => 'agent_memo', 'label' => '담당자 메모',  'type' => 'textarea'],
         ['key' => 'memo',       'label' => '비고',         'type' => 'text'],
