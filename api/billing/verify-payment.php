@@ -1,15 +1,12 @@
 <?php
 /**
- * PortOne V2 결제 검증 + 구독 활성화.
+ * PortOne V2 빌링키 결제 + 구독 활성화.
  *
  * 클라이언트 흐름:
- *   1. subscribe.html 에서 PortOne SDK 의 requestIssueBillingKeyAndPay()
- *      또는 requestPayment() 호출 → 성공 시 paymentId 받음
- *   2. 이 endpoint 에 POST: { paymentId, plan }
- *   3. 서버: PortOne API 로 검증 + 빌링키 저장 + members.plan 갱신
- *
- * Webhook 이 최종 truth — 이 endpoint 는 즉시 UX 응답용 (사용자가 결제 완료
- * 후 바로 plan 상태를 보고 다음 행동 가능하게).
+ *   1. subscribe.html 에서 PortOne SDK 의 requestIssueBillingKey() 호출
+ *      → 빌링키만 발급 (토스페이먼츠는 IssueBillingKeyAndPay 미지원)
+ *   2. 이 endpoint 에 POST: { billingKey, issueId, plan }
+ *   3. 서버: PortOne API 로 첫 결제 호출 + DB 갱신
  */
 
 declare(strict_types=1);
@@ -25,11 +22,12 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
 
 $body = json_decode((string)file_get_contents('php://input'), true);
 if (!is_array($body)) $body = [];
-$paymentId = trim((string)($body['paymentId'] ?? ''));
+$billingKey = trim((string)($body['billingKey'] ?? ''));
+$issueId = trim((string)($body['issueId'] ?? ''));
 $planRequested = strtolower(trim((string)($body['plan'] ?? '')));
 
-if ($paymentId === '') {
-    portone_response(['status' => 'error', 'code' => 'invalid_request', 'message' => 'paymentId 누락.'], 400);
+if ($billingKey === '') {
+    portone_response(['status' => 'error', 'code' => 'invalid_request', 'message' => 'billingKey 누락.'], 400);
 }
 if (!in_array($planRequested, ['plus', 'pro'], true)) {
     portone_response(['status' => 'error', 'code' => 'invalid_request', 'message' => 'plan 은 plus 또는 pro 만 허용.'], 400);
@@ -78,31 +76,40 @@ $authData = json_decode((string)$authResp, true);
 $ownerEmail = strtolower(trim((string)($authData['email'] ?? '')));
 if ($ownerEmail === '') portone_response(['status' => 'error', 'code' => 'unauthorized', 'message' => '이메일 추출 실패.'], 401);
 
-// PortOne API — 결제 검증
+// PortOne API — 빌링키로 첫 결제 실행
+$amount = portone_plan_amount($planRequested);
+$orderName = portone_plan_label($planRequested);
+$paymentId = 'first-' . date('Ymd') . '-' . substr(md5($ownerEmail . '|' . $billingKey), 0, 12);
+
 try {
-    $resp = portone_api_call('GET', '/payments/' . urlencode($paymentId));
+    $resp = portone_api_call('POST', '/payments/' . urlencode($paymentId) . '/billing-key', [
+        'billingKey' => $billingKey,
+        'orderName' => $orderName,
+        'amount' => ['total' => $amount],
+        'currency' => 'KRW',
+        'customer' => ['id' => $ownerEmail, 'email' => $ownerEmail],
+    ]);
 } catch (Throwable $e) {
-    portone_response(['status' => 'error', 'code' => 'upstream_failed', 'message' => 'PortOne 호출 실패: ' . $e->getMessage()], 502);
+    portone_response(['status' => 'error', 'code' => 'upstream_failed', 'message' => 'PortOne 호출 실패: ' . $e->getMessage(), 'payment_id' => $paymentId], 502);
 }
 if ($resp['status'] < 200 || $resp['status'] >= 300 || !is_array($resp['body'])) {
-    portone_response(['status' => 'error', 'code' => 'upstream_failed', 'message' => 'PortOne 응답 오류 ' . $resp['status']], 502);
+    $msg = is_array($resp['body']) ? ($resp['body']['message'] ?? $resp['body']['type'] ?? '') : '';
+    portone_response(['status' => 'error', 'code' => 'upstream_failed', 'message' => 'PortOne 결제 호출 실패 (' . $resp['status'] . '): ' . $msg, 'payment_id' => $paymentId, 'detail' => $resp['body']], 502);
 }
 $payment = $resp['body'];
 
 // 결제 상태 + 금액 검증
 $paymentStatus = strtoupper((string)($payment['status'] ?? ''));
 if ($paymentStatus !== 'PAID') {
-    portone_response(['status' => 'error', 'code' => 'payment_not_paid', 'message' => '결제가 완료되지 않음: ' . $paymentStatus, 'payment_status' => $paymentStatus], 400);
+    portone_response(['status' => 'error', 'code' => 'payment_not_paid', 'message' => '결제가 완료되지 않음: ' . $paymentStatus, 'payment_status' => $paymentStatus, 'payment_id' => $paymentId], 400);
 }
 $paidAmount = (int)($payment['amount']['total'] ?? 0);
-$expectedAmount = portone_plan_amount($planRequested);
-if ($paidAmount !== $expectedAmount) {
-    portone_response(['status' => 'error', 'code' => 'amount_mismatch', 'message' => '결제 금액 불일치: ' . $paidAmount . ' vs ' . $expectedAmount], 400);
+if ($paidAmount !== $amount) {
+    portone_response(['status' => 'error', 'code' => 'amount_mismatch', 'message' => '결제 금액 불일치: ' . $paidAmount . ' vs ' . $amount, 'payment_id' => $paymentId], 400);
 }
 
-// 빌링키 — paymentMethod 또는 billingKey 필드에서 추출 (PortOne 응답 schema 따라).
-$billingKey = (string)($payment['billingKey'] ?? $payment['method']['billingKey'] ?? '');
-$customerId = (string)($payment['customer']['id'] ?? '');
+// customerId 가 응답에 있으면 저장, 없으면 issueId 또는 ownerEmail 사용.
+$customerId = (string)($payment['customer']['id'] ?? $issueId);
 
 // DB 갱신
 require_once __DIR__ . '/../db_config.php';

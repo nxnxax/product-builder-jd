@@ -409,7 +409,7 @@
     async function ensureSdk() {
         // browser-sdk.js 가 defer 로딩됨 — window.PortOne 가 준비될 때까지 대기.
         for (let i = 0; i < 60; i++) {
-            if (window.PortOne && typeof window.PortOne.requestIssueBillingKeyAndPay === 'function') return;
+            if (window.PortOne && typeof window.PortOne.requestIssueBillingKey === 'function') return;
             await new Promise(r => setTimeout(r, 100));
         }
         throw new Error('PortOne SDK 로드 실패');
@@ -431,23 +431,17 @@
             const planInfo = config.plans[planKey];
             if (!planInfo) throw new Error('알 수 없는 plan: ' + planKey);
 
-            const paymentId = genId('pay');
             const issueId = genId('iss');
             const customerEmail = profile.email || '';
 
-            if (button) button.textContent = '결제창 열기…';
-            const resp = await window.PortOne.requestIssueBillingKeyAndPay({
+            // Step 1 — 빌링키만 발급 (토스페이먼츠는 requestIssueBillingKeyAndPay 미지원).
+            if (button) button.textContent = '카드 등록 창 여는 중…';
+            const resp = await window.PortOne.requestIssueBillingKey({
                 storeId: config.storeId,
                 channelKey: config.channelKey,
-                // PortOne V2 의 requestIssueBillingKeyAndPay 는 단일 method 필드명 'billingKeyAndPayMethod' 사용
-                // (requestIssueBillingKey 의 'billingKeyMethod' 와 다름).
-                billingKeyAndPayMethod: 'CARD',
+                billingKeyMethod: 'CARD',
                 issueId,
                 issueName: planInfo.label + ' 정기결제 등록',
-                paymentId,
-                orderName: planInfo.label,
-                totalAmount: planInfo.amount,
-                currency: config.currency || 'KRW',
                 customer: {
                     customerId: customerEmail,
                     email: customerEmail,
@@ -456,16 +450,22 @@
             });
 
             if (resp && resp.code) {
-                // 사용자 취소 또는 결제 실패
                 if (button) { button.disabled = false; button.textContent = originalText; }
                 if (resp.code !== 'PORTONE_USER_CANCEL') {
-                    alert('결제 실패: ' + (resp.message || resp.code));
+                    alert('카드 등록 실패: ' + (resp.message || resp.code));
                 }
                 return;
             }
 
-            // 서버 검증 → DB 갱신
-            if (button) button.textContent = '결제 확인 중…';
+            const billingKey = resp && resp.billingKey ? resp.billingKey : '';
+            if (!billingKey) {
+                if (button) { button.disabled = false; button.textContent = originalText; }
+                alert('빌링키 발급 응답이 비어있습니다. 다시 시도해 주세요.');
+                return;
+            }
+
+            // Step 2 — 서버에 빌링키 전달, 서버가 PortOne API 로 첫 결제 실행 + DB 갱신.
+            if (button) button.textContent = '결제 처리 중…';
             const session = getSession();
             const verify = await fetch('/billing/verify-payment.php', {
                 method: 'POST',
@@ -473,12 +473,12 @@
                     'Content-Type': 'application/json',
                     'Authorization': 'Bearer ' + (session?.access_token || ''),
                 },
-                body: JSON.stringify({ paymentId, plan: planKey }),
+                body: JSON.stringify({ billingKey, issueId, plan: planKey }),
             });
             const result = await verify.json();
             if (result.status !== 'ok') {
                 if (button) { button.disabled = false; button.textContent = originalText; }
-                alert('결제는 완료됐으나 서버 확인 실패: ' + (result.message || result.code) + '\n관리자에게 결제 ID 를 알려주세요: ' + paymentId);
+                alert('결제 처리 실패: ' + (result.message || result.code) + (result.payment_id ? '\n결제 ID: ' + result.payment_id : ''));
                 return;
             }
 
