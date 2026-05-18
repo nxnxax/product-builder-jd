@@ -440,6 +440,11 @@ function renderMobileCard(r, displayNo, group, fields) {
     // 핵심 정보 (접힘 시 표시)
     const primaryField = fields.find(f => f.key === 'customer') || fields.find(f => f.type !== 'auto_number');
     const titleVal = primaryField ? (d[primaryField.key] || '-') : '-';
+    // 통화수 — 1회 이상이면 이름 옆에 "(N)번 통화함" 자연어 형식으로 노출.
+    const callCountNum = parseInt(d.call_count, 10);
+    const callCountTag = (Number.isFinite(callCountNum) && callCountNum >= 1)
+        ? ` <span class="ledger-card-call-tag">(${callCountNum})번 통화함</span>`
+        : '';
     const subFieldKeys = MOBILE_PRIMARY_KEYS.filter(k => k !== (primaryField?.key));
     const subParts = subFieldKeys.map(k => {
         const f = fields.find(x => x.key === k);
@@ -471,7 +476,7 @@ function renderMobileCard(r, displayNo, group, fields) {
             <div class="ledger-card-head">
                 <input type="checkbox" class="ledger-card-check" data-select="${r.id}" ${selectedIds.has(r.id) ? 'checked' : ''}>
                 <div class="ledger-card-summary">
-                    <div class="ledger-card-title">${escapeHtml(titleVal)}</div>
+                    <div class="ledger-card-title">${escapeHtml(titleVal)}${callCountTag}</div>
                     ${subParts ? `<div class="ledger-card-sub">${subParts}</div>` : ''}
                 </div>
                 <button class="ledger-card-toggle" type="button" aria-label="펼치기/접기"><span class="toggle-label-open">펼치기</span><span class="toggle-label-close">접기</span></button>

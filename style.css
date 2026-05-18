@@ -3992,6 +3992,14 @@ select:focus {
         text-overflow: ellipsis;
         white-space: nowrap;
     }
+    /* "(N)번 통화함" — 카드 접힘 시 customer 이름 옆에 자연어로 노출. */
+    .ledger-card-call-tag {
+        font-size: 13.5px;
+        font-weight: 600;
+        color: var(--accent, #c8362c);
+        margin-left: 6px;
+        letter-spacing: -0.005em;
+    }
     .ledger-card-sub {
         display: flex;
         flex-direction: column;
