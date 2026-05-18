@@ -1,6 +1,6 @@
 # PROJECT_CONTEXT — youngman-biz.com
 
-*최종 갱신: 2026-05-18 (옵션 D 라운드 4 사이클 완성 — phone merge + backfill catch-up + 고객관리대장 UI 통일)*
+*최종 갱신: 2026-05-19 (PortOne + 토스페이먼츠 구독 결제 시스템 풀스택 ship + flagship CTA + admin 강화)*
 
 ## 1. 사이트 목적
 
@@ -9,7 +9,7 @@
 - 한국 캘리그라피 + 인장(seal-red #c8362c), Apple/Linear 미니멀 톤
 - 라이브: https://youngman-biz.com (Cafe24 호스팅 + Supabase Auth + MariaDB + PHP API)
 - 인증: Supabase Cloud + JWT (sb_publishable_ 키, **PHP session 안 씀**)
-- 최근 추가: RN Android WebView 앱 브리지 + **통화 녹취 → AI 요약 → CRM (Phase 1+2 전체 라이브)**
+- 최근 추가: RN Android WebView 앱 브리지 + 통화 녹취 → AI 요약 → CRM + **구독 결제 (PortOne V2 + 토스페이먼츠)**
 
 ## 2. 주요 파일 구조
 
@@ -21,156 +21,192 @@ org.html(.js) / contracts.html(.js) / customers.html(.js)
 forms.html(.js) / board.html(.js) / card-builder.html / lotto2233.html
 Marketing.html / kapp_premium.php
 terms.html / privacy.html
+refund.html / auto-billing.html       — 정책 (PortOne 심사 통과 필수)
+subscribe.html / billing.html          — 구독 결제 UI
 
 [공통 JS]
 auth-shared.js          — Supabase + 헤더/footer + 인증 + bridge.js import
 bridge.js               — RN Android WebView 앱 브리지 (window.YoungmanBridge)
 ledger-shared.js        — 관리대장 공통
-main.js                 — 사용 안 함 (백업)
 
-[PHP API — cafe24 webroot 에 flat 배포]
-api/records.php         — 모든 CRUD (customers/employees/ledger-*/admin-*/auth-*/find-*/sms-*/
-                          mobile-tokens/customer-log/app-fcm-token/recording-job)
-api/process-recording.php — 통화 녹취 → CLOVA STT → gpt-4o-mini 요약 → customer_log insert
-                            sync + async mode 둘 다 지원 (mode body 필드)
-api/fcm_helpers.php     — Firebase Cloud Messaging HTTP v1 발송 (Phase 2 M3)
-api/audio_cleanup.php   — 24h 미정리 audio cron cleanup (Phase 2 M4)
-api/sms/send-bulk.php / balance.php / providers/   — SMS
+[PHP API — cafe24 webroot 평면 배포]
+api/records.php         — 모든 CRUD (customers/employees/ledger-*/admin-*/auth-*/
+                          find-*/sms-*/mobile-tokens/customer-log/app-fcm-token/recording-job)
+api/process-recording.php — 통화 녹취 → CLOVA STT → gpt-4o-mini 요약 → customer_log
+api/fcm_helpers.php     — FCM HTTP v1
+api/audio_cleanup.php   — 24h audio cron cleanup
+api/sms/...             — SMS 발송
 api/crypto_helpers.php  — AES-256-GCM (enc:v1: prefix)
 api/ledger-mobile.php   — 모바일 앱 Bearer 토큰
-api/upload.php          — 파일 업로드 (kind=recording 분기 시 audio 전용 디렉터리)
+api/upload.php          — 파일 업로드
+api/billing_helpers.php — PortOne V2 헬퍼 (billing_pdo / portone_api_call /
+                          billing_require_bearer_email / portone_extract_status 등)
+api/billing/verify-payment.php       — 빌링키로 첫 결제 + DB 갱신
+api/billing/webhook-portone.php      — Webhook 수신 (Standard Webhooks 검증)
+api/billing/cancel-subscription.php  — 해지 (cancel_at_period_end=1)
+api/billing/cron-renew.php           — 매일 KST 03:00 정기결제 cron
+api/billing/config.php               — storeId/channelKey publishable
 
 [디자인 / 자산 / 문서]
 style.css / logo_main.png
 BRIDGE_API.md             — 앱 ↔ 웹 메시지 스펙
-CALL_RECORDING_BACKEND.md — 통화 녹취 → AI 요약 백엔드 spec (앱팀 contract + 변경 이력)
+CALL_RECORDING_BACKEND.md — 통화 녹취 → AI 요약 백엔드 spec
 
 [CI]
 .github/workflows/deploy.yml                  — FTP 배포 + .env 어셈블
-.github/workflows/audio-cleanup-schedule.yml  — 매일 KST 04:00 audio cleanup (cafe24 cron 대체)
+.github/workflows/audio-cleanup-schedule.yml  — 매일 KST 04:00 audio cleanup
+.github/workflows/billing-renew.yml           — 매일 KST 03:00 빌링키 자동결제 cron
 ```
 
 ## 3. 현재 완성된 기능
 
-- ✅ RN Android WebView 앱 브리지 (bridge.js 단일 모듈)
-- ✅ 앱 안 Google 로그인 (native SDK + signInWithIdToken + nonce hash)
 - ✅ Supabase Auth (이메일 + Google OAuth, 회원가입/로그인/로그아웃/비번 변경)
 - ✅ 인증 일원화 (logout.html / login-complete.html 단일 transition)
 - ✅ 고아 user 자동 복구 (ensureMemberRowOnce)
 - ✅ 로그인 유지 체크박스 (pagehide/beforeunload 자동 sb-* 삭제)
-- ✅ 아이디 찾기 / 비밀번호 찾기 (SMS 인증)
-- ✅ 이메일/닉네임 중복확인 + Google 신규 가입자 모달
-- ✅ 모바일 백그라운드 후 토큰 만료 자동 refresh + 401 retry
-- ✅ 헤더 닉네임 즉시 표시 + Solapi 미연동 안내 모달
-- ✅ 검색 input 한글 IME 조합 깨짐 fix
+- ✅ 아이디/비밀번호 찾기 (SMS 인증)
+- ✅ RN Android 앱 브리지 (bridge.js, isInApp 2단계 신호: ReactNativeWebView + UA 'YoungmanApp')
+- ✅ 앱 안 Google 로그인 (native SDK + signInWithIdToken + nonce hash)
+- ✅ 카카오톡 등 in-app browser Google 로그인 안내 (Android Chrome intent / iOS 안내)
 - ✅ 조직도/계약자/고객 관리대장 통합 (page_type 기반)
-- ✅ 카드 expanded 상태 re-render 후 복원 (_expandedRowIds + MutationObserver)
-- ✅ PII 사용자별 격리 + AES-256-GCM 암호화 + 컬럼 폭 자동 확장
-- ✅ 단체 SMS 발송 (Solapi/Aligo, 폰 미리보기, 사진 첨부) + 잔액 카드
-- ✅ 모바일 하단 네비게이션 (4탭, glass 톤) + bfcache reload
-- ✅ 사용자 정의 양식 빌더 시스템 (forms Phase 1~3, 8타입)
-- ✅ forms 수식 함수 라이브러리 (엑셀 스타일 + ref 점표기 + 캐스케이드 picker)
+- ✅ PII 사용자별 격리 + AES-256-GCM 암호화
+- ✅ 단체 SMS 발송 (Solapi/Aligo) + 잔액 카드
+- ✅ 모바일 하단 네비게이션 (4탭) + bfcache reload
+- ✅ 사용자 정의 양식 빌더 (forms Phase 1~3, 8타입)
+- ✅ forms 수식 함수 라이브러리 + 캐스케이드 picker
 - ✅ 양식 슬롯 시스템 (slot1=조직도/slot2=계약자, caret hover dropdown)
-- ✅ 모바일 카드 별도 DOM 렌더 (가로스크롤 제거)
+- ✅ 모바일 카드 별도 DOM 렌더
 - ✅ 모바일 API 토큰 발급 UI (profile)
-- ✅ 회원 탈퇴 (account-delete 트랜잭션)
-- ✅ NICE 휴대폰 본인확인 심사 대응 (terms/privacy/footer)
-- ✅ kapp_premium 사이트 통합 + board/upload/lotto 가독성 polish
-- ✅ 로그인/회원가입 모달 가독성 polish + 모달 닫기 버튼 viewport fix
-- ✅ 앱 잠금화면 후 자동 로그아웃 회귀 차단
-- ✅ 모바일 모달 footer 가 하단 nav 에 가려지던 fix
+- ✅ 회원 탈퇴 + NICE 휴대폰 본인확인 약관
 
-### ✅ 통화 녹취 → AI 요약 → CRM 기록 (Phase 1+2 전체 라이브, e2e 1차 검증 완료)
+### ✅ 통화 녹취 → AI 요약 → CRM (Phase 1+2 라이브)
 
-- **Phase 1 (sync)**: 앱 m4a 업로드 → Clova STT(ko, 화자분리 2명) → gpt-4o-mini JSON 요약 → customer_log row + AES-256-GCM 암호화 → audio 즉시 unlink
-- **customer_name 7단계 룰**: hint > 이름 > 호칭+나이 > 호칭만 > "고객". transcript 없는 추측 금지
-- **customer_name_hint** body 필드 (앱 측 contacts lookup 우선)
-- **admin bypass** (`nxnxax@gmail.com` allowlist) — quota 우회 + counter 미카운트
-- **records.php customer-log resource**: list/get/update/delete + send_to_group + 자체 인증 + spec §4 표준 응답
-- **Phase 2 M1**: `app-fcm-token` resource (register/unregister/list, UPSERT, 토큰 마스킹) + `recording_jobs`/`user_fcm_tokens` 테이블
-- **Phase 2 M2**: `process-recording.php` body `mode:"async"` 분기 — HTTP 202 + fastcgi_finish_request + ignore_user_abort + register_shutdown_function failsafe + `recording-job` 폴링 endpoint
-- **Phase 2 M3**: FCM HTTP v1 발송 (fcm_helpers.php — RS256 self-signed JWT + OAuth + send-to-token + stale 토큰 자동 정리), async 완료 시 자동 푸시
-- **Phase 2 M4**: audio_cleanup.php — 24h 미정리 audio cron, GitHub Actions schedule 매일 KST 04:00, dry_run / max_age_hours / max_files 옵션, AUDIO_CLEANUP_TOKEN hash_equals 인증, audio_kept=1 보존
-- **옵션 D**: customer_log_send_to_group action — **8필드 매핑** (managed/date/call_count/customer/phone/content/agent_memo/memo, content = summary+관심+문의 라벨조립) + 자동 default 그룹 생성 + lazy schema 마이그레이션 + linked_ledger_record_id 컬럼 + Idempotency. **2026-05-18 라운드 4 완성**:
-  - `managed: true` 자동 (사용자가 ledger 토글로 비관리 가능, 백엔드는 항상 default true)
-  - `call_count` 자동 계산 (`calculate_call_count()` — 같은 group 내 정규화 phone 매칭 카운트 + 1)
-  - **phone merge** — send_to_group 호출 시 같은 group + 정규화된 phone 일치하는 기존 ledger_record 가 있으면 INSERT 대신 UPDATE. content/agent_memo 최신이 위쪽 prepend. 회차 marker `📞 {date} 통화 ({N}회차)`. 응답에 `merged: true`.
-  - **backfill catch-up** (`backfill_same_phone_links()`) — send_to_group 시 같은 owner_email + 같은 정규화 phone 의 모든 unlinked customer_log 도 batch UPDATE 로 link 갱신. 응답에 `backfilled_count: N`. 한 건만 양식 전송해도 같은 phone 의 미전송 row 자동 청산.
-- **is_main 응답 필드** — `ledger_group_row()` 에 isDefault snake_case alias (앱 chip picker 기본 선택용)
-- **고객관리대장 UI 통일** (2026-05-18): 모든 텍스트 셀 (text/textarea) 2줄 clamp + 가운데 정렬, tel nowrap, 행 크기 고정. 클릭 시 상세 모달 (관리 → 고객명 → ... 순). 가로 스크롤 제거 (컬럼 width 1052px), 날짜 6자리(YY.MM.DD), 모바일 카드 접힘 시 "강동원 (3)번 통화함" 자연어 태그.
+- **Phase 1 (sync)**: 앱 m4a → Clova STT(ko, 화자분리 2명) → gpt-4o-mini JSON → customer_log + AES-256-GCM
+- **Phase 2 M1~M4**: app-fcm-token / async mode + recording-job 폴링 / FCM HTTP v1 / 24h audio cleanup
+- **옵션 D (라운드 4 완성)**: customer_log_send_to_group — **8필드 매핑** (managed/date/call_count/customer/phone/content/agent_memo/memo). 자동 default 그룹 생성 + lazy 마이그레이션 + Idempotency
+- **phone merge**: 같은 group + 정규화된 phone 일치하는 기존 row 가 있으면 INSERT 대신 UPDATE 누적. 최신 통화 = 최상단 (sort_no = MIN - 1)
+- **backfill catch-up**: send_to_group 시 같은 phone 의 모든 unlinked customer_log 도 같이 link
+- **고객관리대장 UI 통일**: 모든 텍스트 셀 2줄 clamp + 가운데 + click 상세 모달, 가로 스크롤 제거, 날짜 6자리(YY.MM.DD), 모바일 카드 접힘 시 "강동원 (3)번 통화함" 자연어 태그
+- **AI 요약 톤/구조** 옛 대화형(`~습니다`) 으로 롤백 — PPT 톤(`37fca8b`)은 git 보존, 두 모드 분기 작업 시 복원 예정
+- 카드 expanded 상태 보존 (_expandedRowIds + MutationObserver)
+
+### ✅ 구독 결제 시스템 — PortOne V2 + 토스페이먼츠 (2026-05-19 풀스택)
+
+- **요금제**: Free(0) / Plus(₩19,000) / Pro(₩39,000). 신규 가입자 trialing 5회 무료체험.
+- **사용량 카운트**: "통화녹음 → AI 요약 → 고객관리대장 저장" 전체 1회 (process-recording 시점 +1).
+- **결제 흐름** (2단계 분리 — 토스는 IssueBillingKeyAndPay 미지원):
+  1. 클라이언트: PortOne SDK `requestIssueBillingKey({ billingKeyMethod:'CARD', ... })` → 카드 등록 창 → billingKey 받음
+  2. 서버: `/billing/verify-payment.php` POST → PortOne API `POST /payments/{id}/billing-key` 호출 → status=PAID 검증 → DB 갱신
+- **모바일**: REDIRECTION 모드 자동 적용 (IFRAME 이 화면 폭 벗어남 → 토스 페이지 전체 화면 이동 + 복귀)
+- **정기결제 cron**: `.github/workflows/billing-renew.yml` 매일 KST 03:00 → `/billing/cron-renew.php` → 만료된 row PortOne 빌링키 결제 호출. 실패 시 past_due. cancel_at_period_end=1 + 만료 시 free 강등.
+- **Webhook**: PortOne 콘솔 → `/billing/webhook-portone.php` (Standard Webhooks signature 검증)
+- **해지**: cancel_at_period_end=1 + PortOne 빌링키 DELETE. 기간 만료 시 cron 이 free 로 강등.
+- **DB 마이그레이션** (lazy ALTER):
+  - members: plan / plan_status / portone_customer_id / portone_billing_key / portone_subscription_id / current_period_start / current_period_end / cancel_at_period_end / summary_limit / last_usage_reset_at
+  - subscriptions / payments / usage_logs 테이블 (billing_pdo() 호출 시 자동 ensure)
+- **summary_limit 자동 동기화**: plan 변경 시 verify-payment / cron-renew / admin PATCH 모두 자동 (plus=20, pro=NULL, trialing=5, free=0). 옛 trialing default 5 잔재 일괄 마이그레이션.
+- **premium → plus alias**: Phase 1 'premium' 값을 'plus' 로 자동 마이그레이션 + UI alias.
+- **admin > 회원 관리 강화**: 회원 표에 플랜/사용량/다음 결제일 컬럼. 편집 모달에 구독 플랜 / 구독 상태 / 사용량 / **만료일 입력 + 빠른 버튼**(+7/14/30/90일/+1년/지우기) — 현금/오프라인 결제 + 테스터 무료기간 수동 부여.
+- **정책 페이지**: refund.html (환불정책) + auto-billing.html (자동결제 안내). 사업자정보 (어센트라 / 393-39-01518) 는 footer + terms/privacy 에 기존 등록.
+
+### ✅ 메인 페이지 flagship CTA (2026-05-19)
+
+- "AI 통화 요약 + 고객관리 원터치 전송 서비스 신청" — **매출 최우선 CTA**
+- 위치: PC = "전화만 하세요" 직후 / 모바일 = 스마트폰 SVG 와 eyebrow 사이 정중앙
+- 디자인: 황금색 메탈릭 (#b8870c → #d4a017 → #b8870c) + 검정 좁은 그림자 + radius 12px + shimmer 빛 sweep (3.6초 간격) + 흰 텍스트 + drop shadow
+- plan 별 분기:
+  - 비로그인/free/trialing → 신청 텍스트 → `/subscribe.html`
+  - plus/premium → "AI 요약 무제한을 원하신다면 Upgrade to Pro" → `/subscribe.html`
+  - pro → 숨김
 
 ## 4. 아직 미완성인 기능
 
-- ⏳ **GitHub Actions M4 dry_run 결과** — 사용자가 workflow_dispatch 트리거 후 결과 확인 (여전히 미트리거)
-- ⏳ **AI 요약 두 모드 분기** — 대화형(legacy) / 요약정리형(PPT) 사용자 설정 분기. profile.html 라디오 + members.ai_summary_mode + process-recording.php prompt 분기. PPT prompt 는 `37fca8b` 에 보존. budget_condition/next_action 매핑 정책도 함께 재검토.
+- ⏳ **PortOne 콘솔 Webhook URL 등록** — `https://youngman-biz.com/billing/webhook-portone.php` (사용자 직접)
+- ⏳ **정식 토스 키 발급 후 라이브 결제 검증** — 테스트 키 환경에서 `NOT_SUPPORTED_CARD_TYPE` 으로 e2e 결제 검증 미완 (정식 키 도착 후 30분이면 됨)
+- ⏳ **통화 요약 HTTP 401** — process-recording 의 진단 정보 (`debug.stage` / `auth_status`) 추가됨, 사용자 새 통화 시도 후 회신 대기. 가장 가능성: 앱 토큰 만료 → `window.YoungmanBridge.refreshSession()` 추가 필요할 수 있음 (앱팀 결정 대기)
+- ⏳ **GitHub Actions M4 audio-cleanup workflow_dispatch dry_run** — 사용자 트리거 미완
+- ⏳ **AI 요약 두 모드 분기** — 대화형(legacy) / 요약정리형(PPT). [[project_ai_summary_modes]]. profile.html 라디오 + members.ai_summary_mode + prompt 분기. PPT prompt 는 `37fca8b` 에 보존
 - ⏳ **card-builder UX** — Recraft overlay primary + AI/템플릿 토글
+- ⏳ **PII 평문 → 암호문 일괄 backfill 스크립트** (lazy 외 일괄)
+- ⏳ **forms 수식 inline help** — 함수/path 카탈로그 모달
 - ⏳ **profile/admin 디자인 일관성 감사**
-- ⏳ **forms 수식 inline help** — 함수 카탈로그 모달
-- ⏳ **PII 평문 → 암호문 일괄 backfill 스크립트** (현재 lazy)
-- ⏳ **로또 자동 갱신** — JSON 미러 cron
 - ⏳ **Supabase Email Template 한글화** (Dashboard 수동)
-- ⏳ **SMS_USER_GUIDE.txt 처리** — untracked, 결정 미정
-- ⏳ **RN Android 앱 측 검증 마무리** — logcat 확인
+- ⏳ **Marketing.html 브리지 포함 검토**
 
 ## 5. 배포 방식
 
 - **GitHub Actions → FTP** via `SamKirkland/FTP-Deploy-Action`
 - 주 워크플로우: `.github/workflows/deploy.yml`
-- 보조 워크플로우: `.github/workflows/audio-cleanup-schedule.yml` (매일 KST 04:00 audio cleanup)
+- 보조 워크플로우:
+  - `audio-cleanup-schedule.yml` (매일 KST 04:00)
+  - `billing-renew.yml` (매일 KST 03:00 — 빌링키 자동 결제)
 - 시크릿 (필수):
-  - `CAFE24_FTP_PASSWORD`, `YOUNGMAN_CRYPTO_KEY`, `SUPABASE_SERVICE_KEY`
-  - `NCP_CLOVA_INVOKE_URL`, `NCP_CLOVA_SECRET` (Clova STT)
-  - `FIREBASE_SERVICE_ACCOUNT_JSON` (FCM 발송)
-  - `AUDIO_CLEANUP_TOKEN` (M4 cron 인증)
-- "배포/올려" 키워드 → push → trigger → verify 자동 (per-step 확인 묻지 말 것)
+  - `CAFE24_FTP_PASSWORD` / `YOUNGMAN_CRYPTO_KEY` / `SUPABASE_SERVICE_KEY`
+  - `NCP_CLOVA_INVOKE_URL` / `NCP_CLOVA_SECRET`
+  - `FIREBASE_SERVICE_ACCOUNT_JSON` / `AUDIO_CLEANUP_TOKEN`
+  - **`PORTONE_STORE_ID` / `PORTONE_API_SECRET` / `PORTONE_WEBHOOK_SECRET` / `PORTONE_CHANNEL_KEY_TOSS`** (2026-05-19 등록 완료)
+- "배포/올려" 키워드 → push 안내 (사용자 직접 push 후 Actions 자동) — 이 환경에는 GitHub push 자격 없음
 - 검증: `curl -sk https://youngman-biz.com/<file>?cb=$(date +%s)`
-- **신규 페이지 추가 시** deploy.yml 의 Prepare cp 줄 + Validate test -f / php -l 둘 다 추가
-- **Secret 변경 시** 빈 commit push 로 재배포 트리거: `git commit --allow-empty -m "chore: <SECRET> 반영 재배포"`
+- **신규 페이지 추가 시** deploy.yml 의 `Prepare cp` + `Validate test -f / php -l` 둘 다 추가
+- **Secret 변경 시** 빈 commit push 로 재배포: `git commit --allow-empty -m "..."`
 
 ## 6. Cafe24/PHP 관련 주의사항
 
-- 🚫 **SSH/SCP 절대 금지** — silent drop. FTP only. `server-dir: ./`
-- 🚫 **cafe24 cron 미지원** — GitHub Actions schedule 로 대체 (audio_cleanup 매일 KST 04:00)
+- 🚫 **SSH/SCP 절대 금지** — silent drop. FTP only.
+- 🚫 **cafe24 cron 미지원** — GitHub Actions schedule 로 대체 (audio_cleanup / billing-renew)
 - 🚫 **cafe24 빈 POST body → 5xx HTML** — multipart/JSON body 1바이트 이상 필수
-- 🚫 **cafe24 ffmpeg 미설치** — 통화녹음 transcode 불가 → Clova Speech 가 3gpp/AMR 네이티브 처리
+- 🚫 **cafe24 ffmpeg 미설치** — 통화 녹음 transcode 불가 → Clova Speech 가 3gpp/AMR 네이티브 처리
 - 🚫 **dhlottery 직접 호출 금지** — cafe24 IP 차단 영구. JSON 미러만
 - 📁 **Webroot flat layout** — `api/records.php` → 배포 후 `/records.php`. `__DIR__` 기준
-- 📁 **`api/sms/` 디렉토리는 deploy 시 `deploy/sms/providers/` 로 cp**
+- 📁 **`api/sms/` → `deploy/sms/providers/` cp**
+- 📁 **`api/billing/` → `deploy/billing/` cp** (mkdir -p)
 - 🔐 **YOUNGMAN_CRYPTO_KEY 분실 = 복호화 영구 불가** — GitHub Secret 백업 필수
-- 🔐 **SUPABASE_SERVICE_KEY** — 비밀번호 재설정용. cafe24 서버 PHP 에서만, 절대 노출 금지
-- 🔐 **NCP_CLOVA_SECRET / FIREBASE_SERVICE_ACCOUNT_JSON / AUDIO_CLEANUP_TOKEN** — 채팅 노출 금지. 노출 시 즉시 재발급
-- 🔐 **사용자별 Solapi 키** — `sms_credentials` 테이블 AES-256-GCM
-- 🔐 **관리자 Solapi 키** — admin_email_allowlist[0] 익명 OTP 발송용
+- 🔐 **PORTONE_API_SECRET / WEBHOOK_SECRET** — 채팅 노출 금지. 노출 시 PortOne 콘솔에서 즉시 재발급 + Secret 갱신
+- 🔐 **NCP_CLOVA_SECRET / FIREBASE_SERVICE_ACCOUNT_JSON / AUDIO_CLEANUP_TOKEN** — 채팅 노출 금지
 - 📡 **deploy/.env 매번 어셈블** — FTP 로 직접 넣은 키는 다음 deploy 에 덮어쓰임
-- 📡 **records.php `/auth/v1/user` 폴백** — sb_publishable 키 로그인용. 제거 시 깨짐
+- 📡 **PHP 가 .env 자동 로드 안 함** — `billing_load_env_value()` 또는 `load_env_value()` 로 파일 직접 파싱
+- 📡 **VITE_SUPABASE_URL** 가 `https://xxx.supabase.co/rest/v1/` 형태 → `preg_replace('#/(rest|auth)/v1/?.*$#', '', $url)` 로 root 추출 후 `/auth/v1/user` 호출
+- 📡 **db_config.php** — `return [host=>..., port=>..., database=>..., user=>..., password=>...]` array 반환 패턴. `$DB_HOST` 같은 변수 set 안 함
+- 📡 **records.php `/auth/v1/user` 폴백 유지**
 - 📡 **PHP timeout 30초** — send-bulk.php `set_time_limit(120)`, process-recording.php `set_time_limit(240)`
 - 📊 **PII 컬럼 폭** — 암호문 100~200 chars. 새 PII 컬럼은 최소 VARCHAR(255)
 
 ## 7. 최근 수정한 파일 (커밋 흐름)
 
 ```
-5900869 fix(customers): 모든 텍스트 셀 행 크기 고정 + 가운데 정렬 specificity 강화
-7f01404 feat(call-recording): send_to_group 시 같은 phone 의 unlinked customer_log 일괄 link (catch-up)
-706b4f9 fix(customers): 가운데 정렬 실제 적용 + 옛 데이터 ━ 구분선 display-time 제거
-489bb4d ui(customers): 셀 가운데 정렬 + 모달 reorder + 회차 구분선 제거
-812bc11 ui(customers/mobile): 카드 접힘 시 이름 옆에 "(N)번 통화함" 자연어 태그
-baac51d ui(customers): 가로 스크롤 제거 — 컬럼 너비 축소 + 날짜 6자리 표시
-674618d fix(call-recording): 옛/새 통화 혼선 차단 — prompt 안전망 + separator 강화
-09dc0f5 fix(call-recording): summary 말투 변경 — 보고서식 (~했음/~임/관심 필요)
-a61ca49 fix(call-recording): summary 분량 제한 해제 + 맥락 누락 절대 금지 강화
-62c5834 revert+feat: PPT 톤 롤백 + 고객관리대장 행 고정/상세 모달
-37fca8b feat(call-recording): AI 요약 톤/구조 변경 — 보고서식 PPT 형식 (★ git history 보존)
-9057db9 feat(call-recording): phone 기반 row merge + customers.js cache 무효화
-39b8969 feat(customers): level → 통화수 자동 카운팅 + managed default true
-d80c9f5 fix(call-recording): customer_log_send_to_group 데이터 매핑 — 5필드 (앱팀 요청)
+878c04e fix(subscribe): 모바일 결제창 — REDIRECTION 모드 + 복귀 흐름
+e68a38f fix(index): Plus 사용자 클릭 시 결제 페이지로 (billing.html → subscribe.html)
+e2d23f7 ui(index): flagship CTA 텍스트 부각 (font-weight 700 + 그림자 강화)
+a16f094 ui(index): flagship CTA — 황금색 메탈릭 + shimmer + 영문 + 아이콘 제거
+13944dd feat: hero flagship CTA(plan 분기) + admin 구독 컬럼 + 로또 갱신 카드
+0698c37 feat(index): hero 'AI 통화 요약 + 원터치 전송 서비스 신청' CTA
+aabff13 fix(billing): summary_limit 동기화 + 옛 데이터 마이그레이션
+71803f2 fix(billing): billing_pdo 호출 시 테이블 자동 생성
+4998ba9 fix(billing): 일괄 점검 — DB / Supabase URL / 응답 schema / 인증 통일
+d661938 fix(billing): PortOne 응답 schema 다층 탐색 + 비동기 PAID 대기
+477884d fix(billing): 결제 토큰 만료 진단 + 세션 사전 검사
+e4036f6 fix(billing): Supabase URL '/rest/v1/' 잔재 제거
+3def88c fix(call-recording): process-recording 401 진단 정보 추가
+06ce9fb fix(billing): .env 직접 파싱 — cafe24 PHP 자동 로드 X
+54ae0c3 fix(billing): 빌링키 + 결제 2단계 분리 (토스페이먼츠 호환)
+e5593a1 fix(billing): billingKeyMethod → billingKeyAndPayMethod
+5b0812f feat(billing): 정기결제 cron + GitHub Actions schedule
+e0efe39 feat(billing): 결제 버튼 + 해지 버튼 활성화 + config.php
+77528ae feat(billing): PortOne V2 endpoint 3종 + deploy.yml
+7c0e8d1 feat(billing): /billing 구독 관리 페이지
+66587fd feat(billing): /subscribe 요금제 비교 페이지
+50df9e0 feat(billing): 환불정책 + 자동결제 안내 페이지
+6dbaf1f feat(billing): DB 스키마 + admin plan 편집 + quota 분기
+170088e feat(admin): 회원 편집 모달 만료일 입력 + 빠른 버튼
+39fc556 fix(billing): premium → plus 자동 마이그레이션
 ```
 
-**미커밋:** `SMS_USER_GUIDE.txt` (untracked, 5/15 추가)
+**미커밋:** `SMS_USER_GUIDE.txt` (untracked)
 
 ## 8. 절대 건드리면 안 되는 부분
 
-- 🔒 **PII owner_email 격리** — 모든 SELECT/UPDATE/DELETE 강제. admin 우회 없음 (단 `is_admin_email_for_recording` 의 quota 우회는 예외)
-- 🔒 **`git add -A` 금지** — 작업 폴더 PII 새어나갈 위험. 명시 add 만
+- 🔒 **PII owner_email 격리** — 모든 SELECT/UPDATE/DELETE 강제. admin 우회 없음 (단 `is_admin_email_for_recording` quota 우회는 예외)
+- 🔒 **`git add -A` 금지** — PII 새어나갈 위험. 명시 add 만
 - 🔒 **YOUNGMAN 브랜드** — logo_main.png + seal-red(#c8362c)
 - 🔒 **SSH/SCP 배포 시도 금지**
 - 🔒 **서버 설정 파일 repo 커밋 금지** — supabase_config.js/php, db_config.php, .env
@@ -188,43 +224,56 @@ d80c9f5 fix(call-recording): customer_log_send_to_group 데이터 매핑 — 5�
 - 🔒 **검색 input 재생성 금지** — filterDOMRowsBySearch hide/show 만
 - 🔒 **apiRequest 토큰 refresh + 401 retry**
 - 🔒 **mountAppHeader currentSession 즉시 도출**
-- 🔒 **bridge.js 메시지 타입 이름 / window.YoungmanBridge 전역 이름**
-- 🔒 **Google 로그인 signInWithIdToken 직접 / nonce raw 웹 / hash 앱 전달**
+- 🔒 **bridge.js 메시지 타입 / window.YoungmanBridge 전역 이름 / isInApp 2단계 신호 (ReactNativeWebView + UA 'YoungmanApp')**
+- 🔒 **Google 로그인 signInWithIdToken 직접 / nonce raw 웹 / hash 앱 전달 / in-app browser 분기 (카카오톡 등 Android Chrome intent)**
 - 🔒 **deploy.yml 의 bridge.js cp**
 - 🔒 **forms 사용 모드 UI = accordion-card**
-- 🔒 **양식 슬롯 caret hover 만 활성화**
-- 🔒 **새 entry HTML 의 inline script** — `initSupabase()` 또는 `bootApp()` 동반 필수
+- 🔒 **새 entry HTML inline script** — `initSupabase()` 또는 `bootApp()` 동반 필수
 - 🔒 **모바일 카드 별도 DOM 렌더**
-- 🔒 **NICE 본인확인 약관/처리방침**
-- 🔒 **records.php $selfAuthResources** — `['customer-log', 'app-fcm-token', 'recording-job']`. global verify_auth_token 우회용
-- 🔒 **customer_log_send_to_group 5필드 매핑** — customer/phone/date/content/memo. customers.html UI key. 변경 금지
-- 🔒 **customer_log_default_group_field_schema lazy 마이그레이션** — 옛 9필드 → 새 5필드 자동 갱신
-- 🔒 **process-recording.php async 흐름** — fastcgi_finish_request + ignore_user_abort + register_shutdown_function failsafe 셋 다 유지
-- 🔒 **fcm_helpers.php RS256 self-signed JWT** — openssl_sign 직접. firebase/php-jwt 외부 라이브러리 불필요
-- 🔒 **user_fcm_tokens UNIQUE token** — UPSERT 동작 (계정 전환 시 owner_email 갱신)
-- 🔒 **audio_cleanup.php hash_equals** — token 비교 timing-safe. == 비교 금지
-- 🔒 **audio_cleanup.php customer_log.audio_kept=1 보존**
-- 🔒 **is_admin_email_for_recording allowlist** — `nxnxax@gmail.com`. records.php admin_email_allowlist() 와 양쪽 동기
+- 🔒 **records.php $selfAuthResources** — `['customer-log', 'app-fcm-token', 'recording-job']`
+- 🔒 **customer_log_send_to_group 8필드 매핑** + lazy 마이그레이션 (call_count key 없으면 갱신)
+- 🔒 **calculate_call_count / backfill_same_phone_links** — 정규화 phone 매칭, 본인 제외
+- 🔒 **phone merge sort_no 정책** — MIN-1 로 최상단 이동
+- 🔒 **process-recording.php async** — fastcgi_finish_request + ignore_user_abort + register_shutdown_function 셋 다 유지
+- 🔒 **fcm_helpers.php RS256 self-signed JWT** — openssl_sign 직접
+- 🔒 **user_fcm_tokens UNIQUE token** — UPSERT 동작
+- 🔒 **audio_cleanup.php hash_equals + audio_kept=1 보존**
+- 🔒 **is_admin_email_for_recording allowlist** — `nxnxax@gmail.com`
 - 🔒 **Clova Speech params** — `language=ko-KR`, `completion=sync`, `fullText=true`, `diarization` 2명
-- 🔒 **ai_model 컬럼 값** — `naver-clova-speech+gpt-4o-mini`
+- 🔒 **ai_model 컬럼** — `naver-clova-speech+gpt-4o-mini`
+- 🔒 **billing_pdo()** — db_config.php candidate 4단계 검색 + billing_ensure_tables() 자동 호출
+- 🔒 **portone_extract_status / portone_extract_amount** — schema 변동 안전망 (4 nested 위치 탐색)
+- 🔒 **billing_require_bearer_email()** — Supabase URL 정규화 + auth_status 진단 응답
+- 🔒 **subscribe.html PortOne 호출** — 토스 미지원이라 `requestIssueBillingKey` (And Pay 아님) + 모바일 `windowType.mobile: 'REDIRECTION'` + `redirectUrl`
+- 🔒 **handleBillingReturn()** — `?billing_return=1` 감지 + localStorage 의 pending plan/issueId 복원
+- 🔒 **summary_limit plan 별 default** (`plan_default_summary_limit`) — plus=20 / pro=null / trialing=5 / free=0
+- 🔒 **premium → plus 자동 마이그레이션** — `ensure_members_plan_columns` 끝 UPDATE 한 줄
+- 🔒 **flagship CTA plan 분기** — pro 면 display:none
 
 ## 9. 다음에 이어서 해야 할 작업
 
-### 미완 항목 (call-recording 관련)
+### 결제 시스템 마무리 (1순위)
 
-1. **GitHub Actions M4 audio-cleanup workflow_dispatch dry_run** — 사용자가 Actions 탭에서 수동 트리거 (https://github.com/nxnxax/product-builder-jd/actions/workflows/audio-cleanup-schedule.yml). 응답 `{ok:true, scanned, deleted, skipped, ...}` 확인 → 매일 KST 04:00 자동 cron 가동 시작. (여전히 미트리거)
-2. **AI 요약 두 모드 분기 작업** — 사용자 명시 보존 요청. [[project_ai_summary_modes]]. profile.html 라디오 + `members.ai_summary_mode` 컬럼 + `process-recording.php` prompt 분기 + content 매핑 정책 동시 결정. PPT prompt 는 `37fca8b` 에 보존, 대화형 prompt 는 현재 HEAD.
+1. **PortOne 콘솔에 Webhook URL 등록** — `https://youngman-biz.com/billing/webhook-portone.php`. 이벤트: Transaction.Paid / Failed / Cancelled / PartialCancelled. 사용자 직접.
+2. **정식 토스 키 도착 시 라이브 검증**:
+   - PortOne 콘솔 → 채널 라이브 전환 + 라이브 토스 키 입력
+   - GitHub Secrets 의 `PORTONE_*` 4개 라이브 키로 갱신
+   - 빈 commit push 로 재배포
+   - 본인 카드로 1회 결제 e2e 검증 (₩19,000 또는 ₩39,000)
+3. **통화 요약 HTTP 401 회신 대기** — `debug.stage` / `auth_status` 받아서 진단. 가장 가능성 = 앱 토큰 만료 → bridge.refreshSession() 추가 검토.
 
 ### 기존 backlog
 
-3. **SMS_USER_GUIDE.txt 처리** — 커밋 / .gitignore / 그대로
-4. **card-builder UX** — Recraft overlay primary + AI/템플릿 토글
-5. **PII 평문 → 암호문 backfill 스크립트** (lazy 외 일괄)
-6. **forms 수식 inline help** — 함수/path 카탈로그 모달
-7. **profile/admin 디자인 일관성 감사**
-8. **Supabase Email Template 한글화** (Dashboard 수동)
-9. **로또 자동 갱신** — JSON 미러 cron
-10. **Marketing.html 브리지 포함 검토**
+4. **GitHub Actions M4 audio-cleanup workflow_dispatch dry_run** — 사용자가 [audio-cleanup-schedule.yml](https://github.com/nxnxax/product-builder-jd/actions/workflows/audio-cleanup-schedule.yml) 트리거
+5. **AI 요약 두 모드 분기** — [[project_ai_summary_modes]]. profile.html 라디오 + members.ai_summary_mode + prompt 분기. PPT prompt 는 `37fca8b` 에 보존
+6. **SMS_USER_GUIDE.txt 처리** — 커밋 / .gitignore / 그대로
+7. **card-builder UX** — Recraft overlay primary + AI/템플릿 토글
+8. **PII 평문 → 암호문 backfill 스크립트** (lazy 외 일괄)
+9. **forms 수식 inline help** — 함수/path 카탈로그 모달
+10. **profile/admin 디자인 일관성 감사**
+11. **Supabase Email Template 한글화** (Dashboard 수동)
+12. **로또 자동 갱신** — JSON 미러 cron
+13. **Marketing.html 브리지 포함 검토**
 
 ---
 
@@ -233,24 +282,33 @@ d80c9f5 fix(call-recording): customer_log_send_to_group 데이터 매핑 — 5�
 - `sessionStorage.erp.ensureError` : members 보강 실패 시 JSON
 - `sessionStorage.erp.memberEnsured = '1'` : 보강 성공
 - `sessionStorage.erp.endSessionOnClose = '1'` : 로그인 유지 해제
-- 콘솔 prefix: `[auth submit]` / `[signIn]` / `[signUp]` / `[google oauth]` / `[google native]` / `[ensure member auto]` / `[sms balance]` / `[bridge]` / `[process-recording]` / `[fcm]` / `[records]`
+- 콘솔 prefix: `[auth submit]` / `[signIn]` / `[signUp]` / `[google oauth]` / `[google native]` / `[ensure member auto]` / `[sms balance]` / `[bridge]` / `[process-recording]` / `[fcm]` / `[records]` / `[subscribe]` / `[billing/verify-payment]` / `[webhook-portone]` / `[cron-renew]`
 - 브리지 디버깅: `window.YoungmanBridge.isInApp()` / `.getAppInfo()` / `.getFcmToken()` / `.version`
+- 결제 진단: `/billing/config.php` GET → 200 + storeId 응답이면 .env 정상. `verify-payment` 응답의 `debug` 객체로 단계별 실패 위치 즉시 파악.
+
+## 환경 한계 (이 클로드 워크스페이스)
+
+- GitHub credentials / SSH key / gh CLI / FTP password 모두 **없음**
+- `git push origin main` → `fatal: could not read Username` 즉시 실패
+- 실제 push 는 **사용자가 터미널에서 직접 실행** — 메모리에 [[feedback_deploy_autonomy]]
+- push 만 되면 GitHub Actions deploy.yml 이 FTP 업로드까지 자동 — 그 후 라이브 `curl` 검증은 다시 클로드 가능
 
 ## 메모리 참조 (~/.claude/projects/-home-user-jdhoon/memory/)
 
 - `feedback_auth_flow_lessons.md` — 인증 root cause + 단일 페이지 일원화
 - `feedback_css_edit_sanity.md` — 큰 Edit 후 brace balance 검증
-- `feedback_deploy_autonomy.md` — "배포/올려" 키워드 → 전체 chain 자동
+- `feedback_deploy_autonomy.md` — "배포/올려" 키워드 → push 까지 안내 (이 환경 push 자격 없음)
 - `feedback_no_proceed_prompts.md` — "Do you want to proceed?" 묻지 말 것
 - `feedback_pii_isolation.md` — PII owner_email 강제, git add -A 금지
 - `feedback_readability_first.md` — 60대+ 가독성 우선
 - `feedback_ledger_ux.md` — 헤더 클릭 필터 / 행 추가 모달 / accordion
-- `feedback_paste_formatting.md` — 외부 채팅 붙여넣기 메시지 코드블록 wrap + 시작/끝 마커
-- `pending_call_recording_status.md` — 2026-05-17 인계 시점 call-recording 대기 항목
+- `feedback_paste_formatting.md` — 외부 채팅 붙여넣기 메시지 코드블록 wrap
+- `pending_call_recording_status.md` — call-recording 라운드 4 인계 + 대기 항목
 - `project_app_bridge.md` — RN Android WebView 앱 연동
 - `project_pii_crypto.md` — AES-256-GCM 라이브
 - `project_ledger_system.md` — page_type 기반 그룹/레코드
 - `project_youngman_redesign.md` — 브랜드 리디자인
 - `project_nav_slots.md` — slot1/slot2 caret hover dropdown
 - `project_mobile_bottom_nav.md` — 4탭 하단 nav
+- `project_ai_summary_modes.md` — 대화형/PPT 두 모드 분기 예정 (PPT prompt `37fca8b` 보존)
 - `deploy_cafe24.md` — FTP only, webroot flat layout
