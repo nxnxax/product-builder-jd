@@ -58,8 +58,11 @@
 
 import os
 import sys
+import asyncio
 import logging
-from typing import Optional
+import tempfile
+import subprocess
+from typing import Optional, List
 from contextlib import asynccontextmanager
 
 import httpx
@@ -215,6 +218,89 @@ transcript 에 실제 나타난 단서만 사용. 임의로 추측/추정 금지
 - JSON 외 다른 텍스트 출력 금지."""
 
 
+# ─── 청크 분할 (긴 통화 10분+) ─────────────────────────────────────────
+CHUNK_THRESHOLD_SEC = 10 * 60      # 10분 이상이면 청크 분할
+CHUNK_DURATION_SEC = 5 * 60        # 청크당 5분
+MAX_PARALLEL_CHUNKS = 6            # 동시 Whisper 호출 최대 6개 (OpenAI rate limit 회피)
+
+
+def ffmpeg_split_audio(audio_bytes: bytes, chunk_sec: int = CHUNK_DURATION_SEC) -> List[bytes]:
+    """ffmpeg 로 audio 를 청크로 분할. 청크별 bytes 반환.
+    실패 시 [audio_bytes] (단일 청크) 반환 — fallback."""
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".m4a", delete=False) as tmp_in:
+            tmp_in.write(audio_bytes)
+            in_path = tmp_in.name
+
+        # ffmpeg 출력 패턴: chunk_000.m4a, chunk_001.m4a, ...
+        out_dir = tempfile.mkdtemp(prefix="youngman-chunks-")
+        out_pattern = os.path.join(out_dir, "chunk_%03d.m4a")
+
+        cmd = [
+            "ffmpeg", "-y", "-i", in_path,
+            "-f", "segment",
+            "-segment_time", str(chunk_sec),
+            "-c", "copy",  # re-encode 없이 stream copy (빠름)
+            "-reset_timestamps", "1",
+            out_pattern,
+        ]
+        result = subprocess.run(cmd, capture_output=True, timeout=120)
+        if result.returncode != 0:
+            log.warning("ffmpeg 분할 실패 (returncode=%d): %s", result.returncode, result.stderr[:200].decode("utf-8", errors="ignore"))
+            return [audio_bytes]
+
+        chunks = []
+        for fname in sorted(os.listdir(out_dir)):
+            if fname.startswith("chunk_") and fname.endswith(".m4a"):
+                with open(os.path.join(out_dir, fname), "rb") as f:
+                    chunks.append(f.read())
+
+        # 청크 임시파일 정리
+        try:
+            os.unlink(in_path)
+            for fname in os.listdir(out_dir):
+                os.unlink(os.path.join(out_dir, fname))
+            os.rmdir(out_dir)
+        except Exception:
+            pass
+
+        if not chunks:
+            log.warning("ffmpeg 분할 결과 0개 — fallback")
+            return [audio_bytes]
+
+        log.info("ffmpeg 분할 성공: %d chunks", len(chunks))
+        return chunks
+    except subprocess.TimeoutExpired:
+        log.error("ffmpeg 분할 timeout (>120s)")
+        return [audio_bytes]
+    except FileNotFoundError:
+        log.error("ffmpeg 미설치 — fallback (단일 처리). nixpacks.toml 확인")
+        return [audio_bytes]
+    except Exception as e:
+        log.exception("ffmpeg 분할 예외 — fallback")
+        return [audio_bytes]
+
+
+async def transcribe_chunks_parallel(chunks: List[bytes]) -> List[str]:
+    """청크별 Whisper 병렬 호출. asyncio.gather + semaphore 로 rate limit 회피."""
+    semaphore = asyncio.Semaphore(MAX_PARALLEL_CHUNKS)
+
+    async def transcribe_one(idx: int, chunk_bytes: bytes) -> str:
+        async with semaphore:
+            try:
+                result = await transcribe_whisper(chunk_bytes, f"chunk_{idx:03d}.m4a")
+                text = result.get("text", "").strip()
+                log.info("chunk %d transcribed: %d chars", idx, len(text))
+                return text
+            except Exception as e:
+                log.exception("chunk %d Whisper 실패", idx)
+                return ""
+
+    tasks = [transcribe_one(i, c) for i, c in enumerate(chunks)]
+    results = await asyncio.gather(*tasks)
+    return [r for r in results if r]  # 빈 청크 제외
+
+
 async def summarize_claude(transcript: str) -> dict:
     async with httpx.AsyncClient(timeout=60.0) as client:
         resp = await client.post(
@@ -279,12 +365,23 @@ async def process_job(req: ProcessRequest) -> None:
             audio_bytes = audio_resp.content
         log.info("audio 다운로드 완료: %d bytes", len(audio_bytes))
 
-        # 2. STT
-        stt = await transcribe_whisper(audio_bytes, "audio.m4a")
-        transcript = stt["text"]
-        if not transcript:
-            raise HTTPException(status_code=502, detail="STT 결과 비어있음")
-        log.info("STT 완료: %d chars, duration=%s", len(transcript), stt.get("duration"))
+        # 2. STT — 10분+ 통화는 청크 분할 + 병렬 처리
+        if req.duration_sec >= CHUNK_THRESHOLD_SEC:
+            log.info("긴 통화 (%ds) 청크 분할 시작", req.duration_sec)
+            chunks = ffmpeg_split_audio(audio_bytes, CHUNK_DURATION_SEC)
+            log.info("청크 %d 개, 병렬 Whisper 시작 (max parallel=%d)", len(chunks), MAX_PARALLEL_CHUNKS)
+            partial_transcripts = await transcribe_chunks_parallel(chunks)
+            if not partial_transcripts:
+                raise HTTPException(status_code=502, detail="모든 청크 STT 실패")
+            # 청크별 transcript 를 시간 순으로 합침 (각 청크 사이 공백 구분)
+            transcript = "\n\n".join(partial_transcripts)
+            log.info("STT 완료 (청크 모드): %d chunks → %d chars", len(partial_transcripts), len(transcript))
+        else:
+            stt = await transcribe_whisper(audio_bytes, "audio.m4a")
+            transcript = stt["text"]
+            if not transcript:
+                raise HTTPException(status_code=502, detail="STT 결과 비어있음")
+            log.info("STT 완료 (단일 모드): %d chars, duration=%s", len(transcript), stt.get("duration"))
 
         # 3. LLM
         summary_data = await summarize_claude(transcript)

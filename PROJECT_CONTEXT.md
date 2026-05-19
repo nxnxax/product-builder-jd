@@ -103,6 +103,14 @@ CALL_RECORDING_BACKEND.md — 통화 녹취 → AI 요약 백엔드 spec
     - audio URL: HMAC-SHA256 signed URL, 10분 만료
     - **사장님 작업 필요**: Railway 가입 + GitHub repo 연동 (root=worker/) + 환경변수 등록 + GitHub Secret RAILWAY_WORKER_URL 등록
     - 환경변수 없으면 영맨 그대로 작동 (점진적 마이그레이션)
+- ✅ **긴 통화 청크 분할 (2026-05-20 ship)**:
+    - duration_sec >= 10분 (600초) 이면 ffmpeg 로 5분씩 분할
+    - `asyncio.gather` + `Semaphore(6)` 청크 병렬 Whisper (OpenAI rate limit 회피)
+    - 청크별 transcript 합쳐서 Claude 단일 호출 (60분 통화 ≈ 12,000자 — context 충분)
+    - `worker/nixpacks.toml` 에 ffmpeg 추가 (Railway 자동 설치)
+    - 효과: 60분 통화 = ~50초 (병렬 STT 30초 + Claude 20초). cafe24 PHP 240초 timeout 무관.
+    - 청크 분할 실패 시 단일 처리 fallback (안전망)
+    - 환경변수 추가 필요 없음 — 환경변수 그대로 두고 worker 재배포만 트리거
 - ✅ **Path B — AI 작업 lifecycle 사용자 token 분리 (commit 곧 push)** — 영맨 슬로건 "단 한 건의 고객정보 누락 없이 관리" 만족 목적:
     - recording_jobs 확장: audio_sha256 / duration_sec / customer_name_hint / phone_number / recorded_at / retry_count 컬럼 lazy ALTER. status (16→20) 길이 확장
     - audio_sha256 idempotency: 24h 내 같은 파일 hash 면 그 job 반환 (앱 outbox 재시도 안전망)

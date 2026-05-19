@@ -1,0 +1,14 @@
+# Nixpacks 빌드 설정 — Railway 가 자동 감지
+# ffmpeg 추가 (긴 통화 청크 분할용)
+
+[phases.setup]
+nixPkgs = ["python311", "ffmpeg"]
+
+[phases.install]
+cmds = ["pip install --upgrade pip && pip install -r requirements.txt"]
+
+[phases.build]
+# 빌드 단계 — 별도 컴파일 불필요
+
+[start]
+cmd = "uvicorn main:app --host 0.0.0.0 --port $PORT --workers 2"
