@@ -684,21 +684,32 @@ $sttProviderRequested = strtolower(trim((string)load_env_value('STT_PROVIDER')))
 $origExt = $origFilename !== '' ? strtolower(pathinfo($origFilename, PATHINFO_EXTENSION)) : '';
 $srcExt = $origExt !== '' ? $origExt : strtolower(pathinfo($realPath, PATHINFO_EXTENSION));
 
-/* STT auto-fallback (옵션 c): Whisper 화이트리스트 방식.
- * Whisper API 가 명시한 지원 포맷 외 모두 CLOVA 로 자동 fallback (aac/opus/3gpp/amr 등 + 미지정 ext 도 포함).
- * NCP 설정이 없으면 그대로 whisper 호출 → API 가 400 반환. 앱 코드 변경 없이 모든 디바이스 호환. */
+/* STT auto-fallback (옵션 c): 2단 사전 안전망.
+ *   1) 확장자 화이트리스트 — Whisper 가 명시한 지원 포맷 외 자동 CLOVA
+ *   2) 파일 사이즈 — Whisper API 의 25MB 제한 초과 시 자동 CLOVA (CLOVA 는 100MB 까지 OK)
+ * NCP 설정이 없으면 그대로 whisper 호출 → 런타임 fallback 또는 친절한 jerror. */
 $whisperSupportedExts = ['flac', 'm4a', 'mp3', 'mp4', 'mpeg', 'mpga', 'oga', 'ogg', 'wav', 'webm'];
+$whisperMaxBytes = 25 * 1024 * 1024;  // OpenAI Whisper API 공식 제한
 $sttProvider = $sttProviderRequested;
 $sttFallbackReason = '';
-if ($sttProvider === 'whisper' && !in_array($srcExt, $whisperSupportedExts, true)) {
-    $clovaInvokeUrlCheck = load_env_value('NCP_CLOVA_INVOKE_URL');
-    $clovaSecretCheck    = load_env_value('NCP_CLOVA_SECRET');
-    if ($clovaInvokeUrlCheck !== '' && $clovaSecretCheck !== '') {
-        $sttProvider = 'clova';
-        $sttFallbackReason = 'whisper_unsupported_format_' . ($srcExt !== '' ? $srcExt : 'unknown');
-        error_log('[process-recording] STT auto-fallback: whisper → clova (ext=' . $srcExt . ', filename=' . $origFilename . ', owner=' . $ownerEmail . ')');
+$fileSize = @filesize($realPath);
+if ($sttProvider === 'whisper') {
+    $reasonCand = '';
+    if (!in_array($srcExt, $whisperSupportedExts, true)) {
+        $reasonCand = 'whisper_unsupported_format_' . ($srcExt !== '' ? $srcExt : 'unknown');
+    } elseif ($fileSize !== false && $fileSize > $whisperMaxBytes) {
+        $reasonCand = 'whisper_file_too_large_' . $fileSize;
     }
-    // NCP 설정 없으면 그대로 whisper → Whisper API 가 400 반환 (사용자에게 메시지 노출).
+    if ($reasonCand !== '') {
+        $clovaInvokeUrlCheck = load_env_value('NCP_CLOVA_INVOKE_URL');
+        $clovaSecretCheck    = load_env_value('NCP_CLOVA_SECRET');
+        if ($clovaInvokeUrlCheck !== '' && $clovaSecretCheck !== '') {
+            $sttProvider = 'clova';
+            $sttFallbackReason = $reasonCand;
+            error_log('[process-recording] STT pre-fallback: whisper → clova (reason=' . $reasonCand . ', ext=' . $srcExt . ', filename=' . $origFilename . ', size=' . ($fileSize !== false ? $fileSize : '?') . ', owner=' . $ownerEmail . ')');
+        }
+        // NCP 설정 없으면 그대로 whisper → Whisper 호출 후 런타임 fallback 시도 또는 friendly jerror.
+    }
 }
 $sttMimeMap = [
     'm4a' => 'audio/mp4',   'mp4' => 'audio/mp4',  'mp3' => 'audio/mpeg',
