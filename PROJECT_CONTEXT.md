@@ -61,7 +61,7 @@ CALL_RECORDING_BACKEND.md — 통화 녹취 → AI 요약 백엔드 spec
 ## 3. 현재 완성된 기능
 
 - ✅ Supabase Auth (이메일 + Google OAuth, 회원가입/로그인/로그아웃/비번 변경)
-- ✅ 인증 일원화 (logout.html / login-complete.html 단일 transition)
+- ✅ 인증 일원화 (logout.html / login-complete.html 단일 transition) + **refresh_token rotation race condition fix** (2026-05-20): `_refreshInflight` 전역 dedup, 임계점 60→300초, 모든 핸들러 (ensureFreshAccessToken / apiRequest 401 retry / SIGNED_OUT / onAppResume / visibilitychange) 공유
 - ✅ 고아 user 자동 복구 (ensureMemberRowOnce)
 - ✅ 로그인 유지 체크박스 (pagehide/beforeunload 자동 sb-* 삭제)
 - ✅ 아이디/비밀번호 찾기 (SMS 인증)
