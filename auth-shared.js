@@ -118,6 +118,35 @@ let initPromise = null;
  * 사용처: ensureFreshAccessToken, apiRequest 401 retry, SIGNED_OUT transient,
  *        onAppResume, visibilitychange 핸들러. */
 let _refreshInflight = null;
+/* Refresh cooldown (ChatGPT 권장, 2026-05-20):
+ * 방금 성공한 refresh 가 있으면 N초간 추가 refresh 금지. cooldown 우선 적용.
+ * 후속 호출들은 기존 access_token 그대로 사용. timeout 누적 / SESSION_DEAD_EVENT 오발동 차단. */
+let _refreshLastSuccessAt = 0;       // 마지막 성공 시각 (ms)
+const REFRESH_COOLDOWN_MS = 25_000;  // 25초 — refresh 성공 후 이 기간 동안 추가 refresh 금지
+function _refreshInCooldown() {
+    if (_refreshLastSuccessAt === 0) return false;
+    return (Date.now() - _refreshLastSuccessAt) < REFRESH_COOLDOWN_MS;
+}
+function _markRefreshSuccess() { _refreshLastSuccessAt = Date.now(); }
+/* 공통 inflight refresh — 모든 핸들러가 같은 Promise 공유 + cooldown 자동 적용 */
+async function _runRefreshOnce() {
+    if (_refreshInCooldown()) return currentSession?.access_token || null;
+    if (!_refreshInflight) {
+        _refreshInflight = (async () => {
+            try {
+                const { data, error } = await supabaseClient.auth.refreshSession();
+                if (!error && data?.session) {
+                    currentSession = data.session;
+                    _markRefreshSuccess();
+                    try { _bridgeLogin(data.session); } catch {}
+                }
+            } catch {}
+            finally { _refreshInflight = null; }
+        })();
+    }
+    await _refreshInflight;
+    return currentSession?.access_token || null;
+}
 
 async function loadConfig() {
     try {
@@ -154,20 +183,7 @@ export async function initSupabase() {
             if (typeof window !== 'undefined') {
                 window.YoungmanBridge = window.YoungmanBridge || {};
                 window.YoungmanBridge.refreshSession = async function () {
-                    if (!_refreshInflight) {
-                        _refreshInflight = (async () => {
-                            try {
-                                const { data: rd } = await supabaseClient.auth.refreshSession();
-                                if (rd?.session) {
-                                    currentSession = rd.session;
-                                    try { _bridgeLogin(rd.session); } catch {}
-                                }
-                            } catch {}
-                            finally { _refreshInflight = null; }
-                        })();
-                    }
-                    await _refreshInflight;
-                    return currentSession?.access_token || null;
+                    return await _runRefreshOnce();
                 };
                 // window.supabase 글로벌 노출 — RN 자동 복구 fallback 코드가 직접 호출 가능.
                 window.supabase = supabaseClient;
@@ -211,21 +227,8 @@ export async function initSupabase() {
                     try { _bridgeLogout(); } catch {}
                 } else {
                     // 앱 안 transient SIGNED_OUT — 마지막 토큰으로 refresh 한 번 더 시도.
-                    // inflight dedup — 동시 다발 refresh 호출 방지 (Supabase refresh_token rotation race condition)
-                    try {
-                        if (!_refreshInflight) {
-                            _refreshInflight = (async () => {
-                                try {
-                                    const { data: rd } = await supabaseClient.auth.refreshSession();
-                                    if (rd?.session) {
-                                        currentSession = rd.session;
-                                        try { _bridgeLogin(rd.session); } catch {}
-                                    }
-                                } catch {}
-                                finally { _refreshInflight = null; }
-                            })();
-                        }
-                    } catch {}
+                    // cooldown + inflight dedup 적용된 공통 헬퍼.
+                    try { _runRefreshOnce(); } catch {}
                 }
             }
         });
@@ -237,21 +240,8 @@ export async function initSupabase() {
             const g = (typeof window !== 'undefined') ? window.YoungmanBridge : null;
             if (g?.setHandler) {
                 g.setHandler('onAppResume', () => {
-                    // inflight dedup — 동시 다발 refresh 호출 방지 (Supabase refresh_token rotation race condition)
-                    try {
-                        if (!_refreshInflight) {
-                            _refreshInflight = (async () => {
-                                try {
-                                    const { data: rd } = await supabaseClient.auth.refreshSession();
-                                    if (rd?.session) {
-                                        currentSession = rd.session;
-                                        try { _bridgeLogin(rd.session); } catch {}
-                                    }
-                                } catch {}
-                                finally { _refreshInflight = null; }
-                            })();
-                        }
-                    } catch {}
+                    // cooldown + inflight dedup 적용된 공통 헬퍼.
+                    try { _runRefreshOnce(); } catch {}
                 });
             }
         } catch {}
@@ -367,30 +357,16 @@ export async function getAccessToken({ forceRefresh = false } = {}) {
     return currentSession?.access_token || null;
 }
 
-/* 만료 임박/만료된 access_token 을 refresh_token 으로 갱신. 모바일 백그라운드 탭에서
-   setInterval 기반 auto-refresh 가 멈춰 토큰이 만료되는 케이스 대응.
-   인플라이트 dedup (위 _refreshInflight) — 동시 다발 호출 시 1건으로 합쳐서
-   refresh_token rotation race condition 방지. 임계점 300초 (5분) — WebView sleep 회피. */
+/* 만료 임박/만료된 access_token 을 refresh_token 으로 갱신.
+   - 만료 300초 (5분) 이내면 _runRefreshOnce 호출 (cooldown + inflight dedup 적용됨)
+   - 그 외엔 cached session 그대로 사용 */
 async function ensureFreshAccessToken() {
     if (!supabaseClient) return null;
     try {
         const nowSec = Math.floor(Date.now() / 1000);
         const exp = Number(currentSession?.expires_at || 0);
-        // 만료 300초 이내 또는 이미 만료 → 강제 refresh (inflight dedup)
         if (!exp || exp - nowSec < 300) {
-            if (!_refreshInflight) {
-                _refreshInflight = (async () => {
-                    try {
-                        const { data, error } = await supabaseClient.auth.refreshSession();
-                        if (!error && data?.session) {
-                            currentSession = data.session;
-                            try { _bridgeLogin(data.session); } catch {}
-                        }
-                    } catch {}
-                    finally { _refreshInflight = null; }
-                })();
-            }
-            await _refreshInflight;
+            await _runRefreshOnce();
         } else {
             const { data } = await supabaseClient.auth.getSession();
             currentSession = data?.session || currentSession;
@@ -417,25 +393,11 @@ export async function apiRequest(resource, options = {}) {
         body: options.body,
     });
 
-    // 401 → refresh_token 으로 한 번 더 갱신 후 재시도. (서버 stale clock / 비정상 만료 케이스 보호.)
-    // 인플라이트 dedup — 같은 시점에 여러 apiRequest 가 401 받아 refresh 동시 트리거 시 1건으로 합침.
+    // 401 → refresh_token 으로 한 번 더 갱신 후 재시도. cooldown + inflight dedup 적용됨.
     if (response.status === 401 && supabaseClient) {
         try {
-            if (!_refreshInflight) {
-                _refreshInflight = (async () => {
-                    try {
-                        const { data, error } = await supabaseClient.auth.refreshSession();
-                        if (!error && data?.session) {
-                            currentSession = data.session;
-                            try { _bridgeLogin(data.session); } catch {}
-                        }
-                    } catch {}
-                    finally { _refreshInflight = null; }
-                })();
-            }
-            await _refreshInflight;
-            const newToken = currentSession?.access_token;
-            if (newToken) {
+            const newToken = await _runRefreshOnce();
+            if (newToken && newToken !== token) {
                 const retryHeaders = { ...headers, Authorization: `Bearer ${newToken}` };
                 response = await fetch(url, {
                     method: options.method || 'GET',
