@@ -1,0 +1,82 @@
+name: Process Recording Jobs (every 5 min)
+
+# 매 5분마다 cron-process-jobs.php 호출.
+# Phase 2 Path B — AI 작업 lifecycle 을 사용자 access_token lifecycle 과 분리.
+# queued / failed_retryable 작업을 server secret 으로 처리.
+#
+# 작동 조건:
+#   - GitHub Secret RECORDING_WORKER_TOKEN 등록 필수 (없으면 workflow 실패).
+#   - cafe24 .env 에 같은 RECORDING_WORKER_TOKEN 등록 (deploy.yml 의 .env assembly 단계가 자동 동기화).
+#
+# 수동 실행: Actions 탭 → "Process Recording Jobs" 선택 → Run workflow.
+
+on:
+  schedule:
+    # 매 5분 (UTC, 한국 시간과 무관)
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: '한 번에 처리할 jobs 수 (1~20)'
+        required: false
+        default: '5'
+
+concurrency:
+  group: process-jobs
+  cancel-in-progress: false
+
+jobs:
+  process:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify RECORDING_WORKER_TOKEN secret
+        env:
+          TOKEN: ${{ secrets.RECORDING_WORKER_TOKEN }}
+        run: |
+          if [ -z "$TOKEN" ]; then
+            echo "::error::RECORDING_WORKER_TOKEN secret 미등록. GitHub Settings → Secrets → Actions 에서 등록 필요."
+            exit 1
+          fi
+          echo "Token secret OK (length=${#TOKEN})"
+
+      - name: Call cron-process-jobs.php
+        env:
+          TOKEN: ${{ secrets.RECORDING_WORKER_TOKEN }}
+          LIMIT: ${{ inputs.limit || '5' }}
+        run: |
+          set -e
+          URL="https://youngman-biz.com/cron-process-jobs.php?limit=$LIMIT"
+          echo "Calling: $URL"
+
+          RESPONSE=$(curl -sk -w "\n__HTTP_CODE__%{http_code}" \
+            -H "X-Cron-Token: $TOKEN" \
+            --max-time 240 \
+            "$URL")
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n1 | sed 's/__HTTP_CODE__//')
+          BODY=$(echo "$RESPONSE" | sed '$d')
+
+          echo "── Response ($HTTP_CODE) ──"
+          echo "$BODY"
+          echo "──────────────"
+
+          # cron 호출은 처리할 작업이 없어도 200 OK 반환. ok:true 만 보면 됨.
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "::error::HTTP $HTTP_CODE — cron-process-jobs.php 호출 실패"
+            exit 1
+          fi
+          if ! echo "$BODY" | grep -q '"ok":true'; then
+            echo "::error::응답에 ok:true 없음"
+            exit 1
+          fi
+
+          # processed/failed/skipped 카운트 추출해서 summary 출력
+          PROCESSED=$(echo "$BODY" | grep -oE '"processed":[0-9]+' | head -1 | grep -oE '[0-9]+' || echo '0')
+          FAILED=$(echo "$BODY" | grep -oE '"failed":[0-9]+' | head -1 | grep -oE '[0-9]+' || echo '0')
+          SKIPPED=$(echo "$BODY" | grep -oE '"skipped":[0-9]+' | head -1 | grep -oE '[0-9]+' || echo '0')
+
+          echo "Summary — processed: $PROCESSED, failed: $FAILED, skipped: $SKIPPED"
+
+          if [ "$FAILED" != "0" ]; then
+            echo "::warning::$FAILED 건 실패. failed_retryable 로 마킹됨 (다음 5분 후 재시도)."
+          fi

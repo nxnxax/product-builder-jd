@@ -122,6 +122,7 @@ jobs:
           cp api/process-recording.php deploy/process-recording.php   # 통화 녹취 → Clova STT → LLM → customer_log
           cp api/fcm_helpers.php deploy/fcm_helpers.php   # FCM HTTP v1 발송 — process-recording 이 async 완료 시 require
           cp api/audio_cleanup.php deploy/audio_cleanup.php   # 24h 미정리 audio cron cleanup (M4)
+          cp api/cron-process-jobs.php deploy/cron-process-jobs.php   # Phase 2 Path B — server secret worker (recording_jobs 처리)
           # 구독 결제 (PortOne V2 + 토스페이먼츠)
           cp api/billing_helpers.php deploy/billing_helpers.php
           mkdir -p deploy/billing
@@ -185,6 +186,7 @@ jobs:
           PORTONE_CHANNEL_KEY_TOSS: ${{ secrets.PORTONE_CHANNEL_KEY_TOSS }}
           STT_PROVIDER: ${{ secrets.STT_PROVIDER }}
           LLM_PROVIDER: ${{ secrets.LLM_PROVIDER }}
+          RECORDING_WORKER_TOKEN: ${{ secrets.RECORDING_WORKER_TOKEN }}
         run: |
           set -e
           {
@@ -220,6 +222,8 @@ jobs:
             [ -n "$STT_PROVIDER" ] && echo "STT_PROVIDER=$STT_PROVIDER" || echo "STT_PROVIDER=clova"
             # LLM provider toggle: 'openai' (기본, gpt-4o-mini ~1원/건) 또는 'anthropic' (Claude Sonnet 4.6 ~7~21원/건, 보고서 수준)
             [ -n "$LLM_PROVIDER" ] && echo "LLM_PROVIDER=$LLM_PROVIDER" || echo "LLM_PROVIDER=openai"
+            # Phase 2 Path B — recording_jobs cron worker token (X-Cron-Token / X-Internal-Worker-Token 둘 다 같은 값)
+            [ -n "$RECORDING_WORKER_TOKEN" ] && echo "RECORDING_WORKER_TOKEN=$RECORDING_WORKER_TOKEN" || echo "::warning::RECORDING_WORKER_TOKEN missing — cron-process-jobs 비활성"
           } > deploy/.env
           [ -n "$OPENAI_KEY" ]    && echo "OPENAI_API_KEY len=${#OPENAI_KEY}, prefix=$(printf '%s' "$OPENAI_KEY" | head -c6)…"     || true
           [ -n "$RECRAFT_KEY" ]   && echo "RECRAFT_API_KEY len=${#RECRAFT_KEY}, prefix=$(printf '%s' "$RECRAFT_KEY" | head -c6)…"   || true

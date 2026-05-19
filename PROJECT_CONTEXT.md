@@ -1,6 +1,6 @@
 # PROJECT_CONTEXT — youngman-biz.com
 
-*최종 갱신: 2026-05-20 (Phase 2 분 단위 과금 + 자동 충전 + 인증 race condition fix + 앱팀 5가지 점검 반영 풀스택 ship)*
+*최종 갱신: 2026-05-20 새벽 (Phase 2 + 인증 fix Path A 쿨다운 + **Path B AI lifecycle 분리 (recording_jobs 상태 머신 + audio_sha256 idempotency + cron worker)** 풀스택 ship)*
 
 ## 1. 사이트 목적
 
@@ -38,6 +38,9 @@ api/records.php         — 모든 CRUD (customers/employees/ledger-*/admin-*/au
                           + admin-members PATCH 에 summary_limit_minutes / overage_balance_minutes 입력
 api/process-recording.php — 통화 녹취 → STT (Whisper/CLOVA 3단 fallback) → Claude Sonnet 4.6 요약
                           → customer_log + 분 단위 차감 + 자동 충전 트리거
+                          + **X-Internal-Worker-Token 헤더 시 user auth skip (cron worker 호출용)**
+api/cron-process-jobs.php — **Path B (2026-05-20)**: recording_jobs queued/failed_retryable 작업
+                          를 server secret 으로 background 처리. AI lifecycle 을 사용자 token 분리.
 api/fcm_helpers.php     — FCM HTTP v1
 api/audio_cleanup.php   — 24h audio cron cleanup
 api/sms/...             — SMS 발송
@@ -62,6 +65,7 @@ CALL_RECORDING_BACKEND.md — 통화 녹취 → AI 요약 백엔드 spec
 .github/workflows/deploy.yml                  — FTP 배포 + .env 어셈블 (STT_PROVIDER, LLM_PROVIDER 포함)
 .github/workflows/audio-cleanup-schedule.yml  — 매일 KST 04:00 audio cleanup
 .github/workflows/billing-renew.yml           — 매일 KST 03:00 빌링키 자동 결제 cron
+.github/workflows/process-jobs.yml            — **매 5분 cron-process-jobs.php (Phase 2 Path B)**
 ```
 
 ## 3. 현재 완성된 기능
@@ -69,6 +73,14 @@ CALL_RECORDING_BACKEND.md — 통화 녹취 → AI 요약 백엔드 spec
 - ✅ Supabase Auth (이메일 + Google OAuth, 회원가입/로그인/로그아웃/비번 변경)
 - ✅ 인증 일원화 (logout.html / login-complete.html 단일 transition)
 - ✅ **인증 race condition fix (2026-05-20)** — `_refreshInflight` 전역 dedup, 임계점 60→300초, 5곳 핸들러 (ensureFreshAccessToken / apiRequest 401 retry / SIGNED_OUT / onAppResume / visibilitychange) 공유
+- ✅ **Path A — refresh cooldown 25초 (commit 15f0959, ChatGPT 권장)** — `_refreshLastSuccessAt` + `_runRefreshOnce()` 공통 헬퍼. "방금 refresh 성공 후 또 refresh" 현상 차단 (timeout 누적 / SESSION_DEAD_EVENT 오발동 방지)
+- ✅ **Path B — AI 작업 lifecycle 사용자 token 분리 (commit 곧 push)** — 영맨 슬로건 "단 한 건의 고객정보 누락 없이 관리" 만족 목적:
+    - recording_jobs 확장: audio_sha256 / duration_sec / customer_name_hint / phone_number / recorded_at / retry_count 컬럼 lazy ALTER. status (16→20) 길이 확장
+    - audio_sha256 idempotency: 24h 내 같은 파일 hash 면 그 job 반환 (앱 outbox 재시도 안전망)
+    - process-recording.php 의 `X-Internal-Worker-Token` 헤더 인식: 일치하면 user auth skip + `_internal_owner_email` 사용
+    - api/cron-process-jobs.php: server secret 인증 → queued / failed_retryable LIMIT 5 SELECT → internal HTTP 로 process-recording 호출 → 실패 시 retry_count++ + failed_retryable (3번째 failed_permanent)
+    - .github/workflows/process-jobs.yml: 매 5분 schedule (RECORDING_WORKER_TOKEN secret 필요)
+    - **앱 종료 / 토큰 만료 / 첫 호출 실패해도 job 은 반드시 끝남** — 통화 누락 0건 보장
 - ✅ **앱팀 5가지 인증 점검 반영 (2026-05-20)** — `storage: localStorage` 명시 / `window.YoungmanBridge.refreshSession()` 글로벌 hook / `window.supabase` 노출 / TOKEN_REFRESHED 시 _bridgeLogin 자동
 - ✅ 고아 user 자동 복구 (ensureMemberRowOnce)
 - ✅ 로그인 유지 체크박스 (pagehide/beforeunload 자동 sb-* 삭제)

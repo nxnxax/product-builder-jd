@@ -348,9 +348,15 @@ function ensure_recording_jobs_table(PDO $pdo): bool {
                 id CHAR(36) NOT NULL PRIMARY KEY,
                 owner_email VARCHAR(255) NOT NULL,
                 customer_log_id CHAR(36) NULL DEFAULT NULL,
-                status VARCHAR(16) NOT NULL DEFAULT 'queued',
+                status VARCHAR(20) NOT NULL DEFAULT 'queued',
                 storage_path VARCHAR(512) NULL DEFAULT NULL,
                 client_request_id VARCHAR(64) NULL DEFAULT NULL,
+                audio_sha256 CHAR(64) NULL DEFAULT NULL,
+                duration_sec INT NOT NULL DEFAULT 0,
+                customer_name_hint VARCHAR(80) NULL DEFAULT NULL,
+                phone_number VARCHAR(60) NULL DEFAULT NULL,
+                recorded_at DATETIME NULL DEFAULT NULL,
+                retry_count INT NOT NULL DEFAULT 0,
                 error_message TEXT NULL DEFAULT NULL,
                 fcm_sent_at DATETIME NULL DEFAULT NULL,
                 started_at DATETIME NULL DEFAULT NULL,
@@ -359,9 +365,37 @@ function ensure_recording_jobs_table(PDO $pdo): bool {
                 updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                 INDEX idx_rj_owner_status (owner_email, status),
                 INDEX idx_rj_status_created (status, created_at),
+                INDEX idx_rj_sha256 (owner_email, audio_sha256),
                 UNIQUE KEY uniq_rj_idempotency (owner_email, client_request_id)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
         ");
+        // Path B lazy ALTER — 기존 테이블에 신규 컬럼 추가
+        $cols = [];
+        try {
+            foreach ($pdo->query("SHOW COLUMNS FROM recording_jobs")->fetchAll() as $c) $cols[] = $c['Field'];
+        } catch (Throwable $e) {}
+        $needAlter = [
+            'audio_sha256'         => 'CHAR(64) NULL DEFAULT NULL',
+            'duration_sec'         => 'INT NOT NULL DEFAULT 0',
+            'customer_name_hint'   => 'VARCHAR(80) NULL DEFAULT NULL',
+            'phone_number'         => 'VARCHAR(60) NULL DEFAULT NULL',
+            'recorded_at'          => 'DATETIME NULL DEFAULT NULL',
+            'retry_count'          => 'INT NOT NULL DEFAULT 0',
+        ];
+        foreach ($needAlter as $col => $def) {
+            if (!empty($cols) && !in_array($col, $cols, true)) {
+                try { $pdo->exec("ALTER TABLE recording_jobs ADD COLUMN `{$col}` {$def}"); }
+                catch (Throwable $e) { error_log('[process-recording] ALTER ' . $col . ': ' . $e->getMessage()); }
+            }
+        }
+        // status 컬럼 길이 16→20 으로 확장 (failed_retryable / failed_permanent / ready_to_review 등)
+        if (!empty($cols) && in_array('status', $cols, true)) {
+            try { $pdo->exec("ALTER TABLE recording_jobs MODIFY COLUMN status VARCHAR(20) NOT NULL DEFAULT 'queued'"); }
+            catch (Throwable $e) {}
+        }
+        // audio_sha256 인덱스 추가 (이미 있으면 무시)
+        try { $pdo->exec("CREATE INDEX idx_rj_sha256 ON recording_jobs (owner_email, audio_sha256)"); }
+        catch (Throwable $e) {}
         return $done = true;
     } catch (Throwable $e) {
         error_log('[process-recording] ensure_recording_jobs_table failed: ' . $e->getMessage());
@@ -445,8 +479,31 @@ if ($method === 'OPTIONS') {
 }
 if ($method !== 'POST') jerror('method_not_allowed', 'POST only', 405);
 
-/* ========== 인증 & PDO ========== */
-$ownerEmail = require_auth_email();
+/* ========== 인증 & PDO ==========
+ * Path B (2026-05-20): cron worker 가 X-Internal-Worker-Token 헤더로 internal 호출하면
+ * user access_token 검증 skip + body 의 _internal_owner_email 사용. AI 작업 lifecycle 을
+ * 사용자 토큰 lifecycle 과 분리하기 위함. */
+$internalWorkerToken = trim((string)($_SERVER['HTTP_X_INTERNAL_WORKER_TOKEN'] ?? ''));
+$isInternalWorker = false;
+if ($internalWorkerToken !== '') {
+    $expectedWorker = load_env_value('RECORDING_WORKER_TOKEN');
+    if ($expectedWorker !== '' && hash_equals($expectedWorker, $internalWorkerToken)) {
+        $isInternalWorker = true;
+    } else {
+        jerror('unauthenticated', 'Invalid worker token.', 401);
+    }
+}
+
+if ($isInternalWorker) {
+    // body 에서 owner_email 받음. 사전에 body 파싱이 필요한데, 아래에서 다시 파싱하므로 미리 한 번 더.
+    $rawBodyEarly = file_get_contents('php://input');
+    $bodyEarly = json_decode((string)$rawBodyEarly, true);
+    $internalOwner = trim((string)($bodyEarly['_internal_owner_email'] ?? ''));
+    if ($internalOwner === '') jerror('invalid_request', 'internal owner_email 누락.', 400);
+    $ownerEmail = strtolower($internalOwner);
+} else {
+    $ownerEmail = require_auth_email();
+}
 
 $dbConfigPath = __DIR__ . '/db_config.php';
 if (!is_file($dbConfigPath)) $dbConfigPath = dirname(__DIR__) . '/db_config.php';
@@ -558,16 +615,48 @@ if ($asyncMode) {
             'customer_log_id' => $existingJob['customer_log_id'] ?? null,
         ], 202);
     }
-    // 새 job 생성.
+    // Path B audio_sha256 idempotency — 같은 파일(content hash) 이 24h 안에 있었으면 그 job 반환.
+    // client_request_id 가 달라도 파일이 같으면 차단. 앱 outbox 재시도 안전망.
+    $absForHash = __DIR__ . '/' . $storagePath;
+    $realForHash = @realpath($absForHash);
+    $audioSha256 = null;
+    if ($realForHash && is_file($realForHash)) {
+        try { $audioSha256 = hash_file('sha256', $realForHash) ?: null; } catch (Throwable $e) { $audioSha256 = null; }
+    }
+    if ($audioSha256) {
+        $shaIdem = $pdo->prepare("SELECT * FROM recording_jobs
+            WHERE owner_email = :o AND audio_sha256 = :h
+              AND created_at >= (NOW() - INTERVAL 24 HOUR) LIMIT 1");
+        $shaIdem->execute([':o' => $ownerEmail, ':h' => $audioSha256]);
+        $shaJob = $shaIdem->fetch();
+        if ($shaJob) {
+            jout([
+                'status' => 'queued',
+                'job_id' => (string)$shaJob['id'],
+                'duplicate' => true,
+                'duplicate_reason' => 'audio_sha256',
+                'job_status' => $shaJob['status'],
+                'customer_log_id' => $shaJob['customer_log_id'] ?? null,
+            ], 202);
+        }
+    }
+    // 새 job 생성. 사용자 token 검증은 이미 끝났으므로 cron worker 가 server secret 으로 처리할 수 있음.
     $asyncJobId = uuid_v4();
     $insJob = $pdo->prepare("INSERT INTO recording_jobs
-        (id, owner_email, status, storage_path, client_request_id)
-        VALUES (:id, :o, 'queued', :sp, :k)");
+        (id, owner_email, status, storage_path, client_request_id,
+         audio_sha256, duration_sec, customer_name_hint, phone_number, recorded_at)
+        VALUES (:id, :o, 'queued', :sp, :k,
+                :sha, :dur, :hint, :ph, :ra)");
     $insJob->execute([
-        ':id' => $asyncJobId,
-        ':o'  => $ownerEmail,
-        ':sp' => $storagePath,
-        ':k'  => $clientReqId,
+        ':id'  => $asyncJobId,
+        ':o'   => $ownerEmail,
+        ':sp'  => $storagePath,
+        ':k'   => $clientReqId,
+        ':sha' => $audioSha256,
+        ':dur' => (int)$durationSec,
+        ':hint' => $customerNameHint !== '' ? $customerNameHint : null,
+        ':ph'  => $phoneNumber !== '' ? $phoneNumber : null,
+        ':ra'  => $consultAt !== '' ? $consultAt : null,
     ]);
 
     // 즉시 응답 — client 연결 종료. 이후 코드는 백그라운드.
