@@ -99,18 +99,30 @@ function _installLinkInterceptor() {
 }
 
 // ─── 고수준 헬퍼 ──────────────────────────────────────────────────────
+// notifyLogout race guard (ChatGPT 진단 2026-05-20 반영):
+// 최근 notifyLogin 시각이 N초 안이면 notifyLogout 무시. stale logout 이 새 토큰 덮어쓰기 방지.
+let _lastNotifyLoginAt = 0;
+const NOTIFY_LOGOUT_COOLDOWN_MS = 30_000;  // 30초
+
 function notifyLogin(session) {
     if (!session || !session.access_token) return;
+    _lastNotifyLoginAt = Date.now();
     postToApp('auth.login', {
         accessToken: session.access_token,
         refreshToken: session.refresh_token || null,
         userId: session.user?.id || null,
         email: session.user?.email || null,
         expiresAt: session.expires_at || null,
+        authEpoch: _lastNotifyLoginAt,  // RN 측 stale logout 판별용
     });
 }
 
 function notifyLogout() {
+    // race guard — 최근 30초 안에 notifyLogin 보낸 적 있으면 stale logout 으로 간주.
+    if (_lastNotifyLoginAt > 0 && (Date.now() - _lastNotifyLoginAt) < NOTIFY_LOGOUT_COOLDOWN_MS) {
+        try { console.warn('[bridge] notifyLogout skipped — recent login within 30s'); } catch {}
+        return;
+    }
     postToApp('auth.logout', null);
 }
 

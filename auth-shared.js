@@ -683,7 +683,8 @@ export function performLogout(e) {
     // preventDefault/stopPropagation 호출하지 않음 — <a> click 의 native navigation 까지 보존.
     // body class 변경도 X — 클릭 target 의 부모 컨테이너가 display:none 되면 일부 브라우저가 navigation cancel.
     // 오직 navigation 만 시도. cleanup 은 logout.html 에서 책임.
-    const target = 'logout.html?_t=' + Date.now();
+    // explicit=1: 사용자 명시 의도 — logout.html 의 ChatGPT race guard 통과.
+    const target = 'logout.html?explicit=1&_t=' + Date.now();
     try {
         window.location.replace(target);
     } catch {
@@ -762,7 +763,7 @@ if (typeof document !== 'undefined' && typeof window !== 'undefined' && !window.
         // a 태그면 href 만 fresh 하게 — preventDefault 호출 X, 브라우저 navigation 진행.
         // body class 변경/storage cleanup 같은 부수 작업 절대 X (navigation 막을 수 있음).
         if (btn.tagName === 'A') {
-            try { btn.setAttribute('href', 'logout.html?_t=' + Date.now()); } catch {}
+            try { btn.setAttribute('href', 'logout.html?explicit=1&_t=' + Date.now()); } catch {}
             return;   // 브라우저가 a href 로 navigate
         }
         // button 류는 명시적 navigation. performLogout 도 부수작업 없이 navigate 만.
@@ -995,7 +996,7 @@ export function mountAppHeader(opts) {
                 <a href="profile.html" id="profile-link" class="user-menu-link"><span class="profile-link-icon">${ICON.user}</span><span class="profile-link-label">내 정보</span></a>
                 <a href="billing.html" id="billing-link" class="user-menu-link">구독 관리</a>
                 <a href="admin.html" id="admin-link" class="user-menu-link">관리자</a>
-                <a href="logout.html" id="logout-btn" class="user-menu-btn" role="button">로그아웃</a>
+                <a href="logout.html?explicit=1" id="logout-btn" class="user-menu-btn" role="button">로그아웃</a>
             </div>
         </div>
     `;
@@ -1017,7 +1018,7 @@ export function mountAppHeader(opts) {
             <div class="mobile-drawer-account">
                 <a href="billing.html" class="mobile-drawer-account-link" data-anon-hide><span class="mobile-drawer-icon">₩</span><span>구독 관리</span></a>
                 <a href="admin.html" class="mobile-drawer-account-link" data-admin-only data-anon-hide><span class="mobile-drawer-icon">⚙</span><span>관리자</span></a>
-                <a href="logout.html" class="mobile-drawer-account-link" id="drawer-logout-btn" data-anon-hide role="button"><span class="mobile-drawer-icon">↩</span><span>로그아웃</span></a>
+                <a href="logout.html?explicit=1" class="mobile-drawer-account-link" id="drawer-logout-btn" data-anon-hide role="button"><span class="mobile-drawer-icon">↩</span><span>로그아웃</span></a>
                 <a href="index.html#login" class="mobile-drawer-account-link" data-anon-show><span class="mobile-drawer-icon">→</span><span>로그인</span></a>
             </div>
         </aside>

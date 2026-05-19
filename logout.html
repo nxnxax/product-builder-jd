@@ -99,17 +99,33 @@
             } catch {}
         }
 
-        // 0) 사용자 의도적 로그아웃 플래그 set — auth-shared.js 가 onAuthStateChange
-        //    의 SIGNED_OUT 시점에 이 플래그를 보고만 네이티브 앱에 logout 을 통보함.
-        //    (없으면 supabase 의 transient refresh 실패로 SIGNED_OUT 떠도 앱은 로그인 유지.)
-        try { sessionStorage.setItem('erp.userInitiatedLogout', '1'); } catch {}
+        // ChatGPT 진단 (2026-05-20) 반영 — explicit 가드:
+        // URL 에 ?explicit=1 없으면 사용자 명시 의도 아님 (history.back / 잘못된 navigation race).
+        // 그 경우 notifyLogout() 호출 X, sessionStorage flag 도 set X.
+        // 사용자 명시 logout 버튼은 logout.html?explicit=1 으로 진입.
+        const _isExplicitLogout = (() => {
+            try {
+                const params = new URLSearchParams(window.location.search);
+                return params.get('explicit') === '1';
+            } catch { return false; }
+        })();
 
-        // 0-2) 네이티브 앱에 logout 먼저 통보 — navigation race 로 SIGNED_OUT 이벤트가
-        //      못 닿는 경우 대비. 브라우저에서는 no-op.
-        try {
-            const b = await import('./bridge.js?v=20260517-bridge-v2');
-            b.notifyLogout();
-        } catch {}
+        if (_isExplicitLogout) {
+            // 0) 사용자 의도적 로그아웃 플래그 set — auth-shared.js 가 SIGNED_OUT 시점에 이 플래그를 보고만 logout 통보.
+            try { sessionStorage.setItem('erp.userInitiatedLogout', '1'); } catch {}
+
+            // 0-2) 네이티브 앱에 logout 먼저 통보 — navigation race 로 SIGNED_OUT 이벤트가 못 닿는 경우 대비.
+            try {
+                const b = await import('./bridge.js?v=20260517-bridge-v2');
+                b.notifyLogout();
+            } catch {}
+        } else {
+            // explicit 아닌 진입 (history.back / redirect race) — logout 의도 아님.
+            // 사용자에게 안내 후 메인 페이지로 이동.
+            try { console.warn('[logout.html] not explicit, redirecting to index'); } catch {}
+            try { window.location.replace('/'); } catch {}
+            return;
+        }
 
         // 1) Supabase signOut — scope: 'global' 로 서버의 모든 refresh token revoke.
         //    다른 브라우저/디바이스에서 silent refresh 로 살아나는 시나리오 차단.
