@@ -466,19 +466,28 @@
                 aspect-ratio: 1;
                 animation: fadeUp 900ms 200ms cubic-bezier(.22,.61,.36,1) forwards, mobile-float 5.5s ease-in-out 1s infinite;
             }
-            /* 모바일 flagship CTA — 스마트폰 SVG 와 eyebrow 사이 정중앙 */
-            .hero-flagship-cta-pc { display: none !important; }
+            /* 모바일 flagship CTA — 스마트폰 SVG 와 eyebrow 사이 정중앙
+               갤럭시(360-412px) 등 좁은 폭에서 텍스트 두 줄로 떨어지면 버튼 높이가 변함.
+               → nowrap + clamp() 로 viewport 폭에 맞춰 글자/패딩 스케일. */
             .hero-flagship-cta-mobile {
                 display: inline-flex !important;
                 order: -1;
                 justify-self: center;
                 align-self: center;
-                font-size: 15px;
-                padding: 14px 22px;
+                white-space: nowrap;
+                font-size: clamp(12px, 3.6vw, 15px);
+                padding: 13px clamp(12px, 3.6vw, 22px);
                 margin: 4px auto 14px;
-                max-width: calc(100vw - 36px);
+                max-width: calc(100vw - 24px);
                 width: auto;
             }
+            .hero-flagship-cta-mobile .flagship-text {
+                display: inline-block;
+                max-width: 100%;
+                overflow: hidden;
+                text-overflow: ellipsis;
+            }
+            .hero-flagship-cta-pc { display: none !important; }
             @keyframes mobile-float {
                 0%, 100% { transform: translateY(0) rotate(-0.5deg); }
                 50%      { transform: translateY(-8px) rotate(0.6deg); }
