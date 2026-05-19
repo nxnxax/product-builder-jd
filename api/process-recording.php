@@ -678,8 +678,26 @@ if (!$uploadsReal || strpos($realPath, $uploadsReal . DIRECTORY_SEPARATOR) !== 0
 $apiKey = load_env_value('OPENAI_API_KEY');
 if ($apiKey === '') jerror('upstream_failed', 'OPENAI_API_KEY 미설정.', 500);
 
-$sttProvider = strtolower(trim((string)load_env_value('STT_PROVIDER'))) ?: 'clova';
-$srcExt = strtolower(pathinfo($realPath, PATHINFO_EXTENSION));
+$sttProviderRequested = strtolower(trim((string)load_env_value('STT_PROVIDER'))) ?: 'clova';
+/* 확장자 판별 — 앱팀 회신: Content-Type 헤더는 항상 'audio/mp4' 하드코딩이라 신뢰 불가.
+ *                       original_filename 의 확장자가 가장 신뢰할 수 있음. fallback: 서버 저장 파일명. */
+$origExt = $origFilename !== '' ? strtolower(pathinfo($origFilename, PATHINFO_EXTENSION)) : '';
+$srcExt = $origExt !== '' ? $origExt : strtolower(pathinfo($realPath, PATHINFO_EXTENSION));
+
+/* STT auto-fallback (옵션 c): Whisper 가 미지원하는 3gpp/amr 포맷은 자동으로 CLOVA 로 폴백.
+ * NCP 설정이 없으면 415 유지. 앱 코드 변경 없이 모든 디바이스 호환. */
+$sttProvider = $sttProviderRequested;
+$sttFallbackReason = '';
+if ($sttProvider === 'whisper' && in_array($srcExt, ['3gp', '3gpp', 'amr'], true)) {
+    $clovaInvokeUrlCheck = load_env_value('NCP_CLOVA_INVOKE_URL');
+    $clovaSecretCheck    = load_env_value('NCP_CLOVA_SECRET');
+    if ($clovaInvokeUrlCheck !== '' && $clovaSecretCheck !== '') {
+        $sttProvider = 'clova';
+        $sttFallbackReason = 'whisper_unsupported_format_' . $srcExt;
+        error_log('[process-recording] STT auto-fallback: whisper → clova (ext=' . $srcExt . ', owner=' . $ownerEmail . ')');
+    }
+    // NCP 설정 없으면 그대로 whisper → 아래 415 jerror.
+}
 $sttMimeMap = [
     'm4a' => 'audio/mp4',   'mp4' => 'audio/mp4',  'mp3' => 'audio/mpeg',
     'wav' => 'audio/wav',   'webm'=> 'audio/webm', 'ogg' => 'audio/ogg',
@@ -733,8 +751,8 @@ if ($sttProvider === 'whisper') {
     $transcript = trim((string)($sttData['text'] ?? ''));
     if ($transcript === '') jerror('upstream_failed', 'Whisper STT 결과가 비어있습니다.', 502);
     $sttModelName = 'openai-whisper-1';
-    // verbose_json 응답에 duration(초) 포함
-    $durationSeconds = (int)round((float)($sttData['duration'] ?? 0));
+    // 앱이 보낸 duration_sec (MediaStore Audio.Media.DURATION) 우선. 0 이면 Whisper response 의 duration 폴백.
+    $durationSeconds = $durationSec > 0 ? $durationSec : (int)round((float)($sttData['duration'] ?? 0));
 } else {
     /* ----- Naver CLOVA Speech (Long Sentence Recognition) -----
      * 3gpp/AMR (Samsung T전화 등) / m4a/mp4 등 다양한 컨테이너 네이티브 지원이라
@@ -801,8 +819,10 @@ if ($sttProvider === 'whisper') {
     }
     if ($transcript === '') jerror('upstream_failed', 'Clova STT 결과가 비어있습니다.', 502);
     $sttModelName = 'naver-clova-speech';
-    // CLOVA segments 의 마지막 end (ms) → 초 변환
-    if (!empty($sttData['segments']) && is_array($sttData['segments'])) {
+    // duration: 앱이 보낸 duration_sec 우선. 없으면 CLOVA segments 의 마지막 end (ms) → 초 변환.
+    if ($durationSec > 0) {
+        $durationSeconds = $durationSec;
+    } elseif (!empty($sttData['segments']) && is_array($sttData['segments'])) {
         $lastSeg = end($sttData['segments']);
         if (isset($lastSeg['end'])) {
             $durationSeconds = (int)round(((int)$lastSeg['end']) / 1000);
