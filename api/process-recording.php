@@ -667,92 +667,172 @@ if (!$uploadsReal || strpos($realPath, $uploadsReal . DIRECTORY_SEPARATOR) !== 0
     jerror('invalid_audio', '오디오 경로가 uploads 외부.', 422);
 }
 
-/* ========== Whisper STT ========== */
+/* ========== STT provider 분기 ==========
+ * STT_PROVIDER 환경변수로 토글:
+ *   - 'clova' (기본): Naver CLOVA Speech LSR — 화자분리 포함, 회당 ~180원
+ *   - 'whisper': OpenAI Whisper API — 화자분리 없음, 회당 ~50원 (-72%)
+ *
+ * Whisper 사용 시 화자 라벨이 없으므로 LLM system prompt 가 평문도 처리 가능해야 함
+ * (아래 ====== STT_PROVIDER 평문 케이스 ====== 블록 참조).
+ */
 $apiKey = load_env_value('OPENAI_API_KEY');
 if ($apiKey === '') jerror('upstream_failed', 'OPENAI_API_KEY 미설정.', 500);
 
-/* ========== Naver CLOVA Speech (Long Sentence Recognition) ==========
- * 3gpp/AMR (Samsung T전화 등) / m4a/mp4 등 다양한 컨테이너 네이티브 지원이라
- * ffmpeg transcode 단계 불필요. cafe24 .env 의 NCP_CLOVA_INVOKE_URL + NCP_CLOVA_SECRET 사용.
- *
- * API: POST {INVOKE_URL}/recognizer/upload
- *   - 헤더: X-CLOVASPEECH-API-KEY
- *   - multipart: media (audio file) + params (JSON: language/completion/fullText/diarization)
- *   - completion="sync" → 결과 받을 때까지 응답 hold (Whisper 와 동일 sync 패턴)
- *   - diarization → 화자 분리 (영업/고객 2명 가정), LLM 이 customer_name 추출 유리
- */
-$clovaInvokeUrl = load_env_value('NCP_CLOVA_INVOKE_URL');
-$clovaSecret    = load_env_value('NCP_CLOVA_SECRET');
-if ($clovaInvokeUrl === '' || $clovaSecret === '') {
-    jerror('upstream_failed', 'NCP Clova 설정 누락 (NCP_CLOVA_INVOKE_URL / NCP_CLOVA_SECRET).', 500);
-}
-
-// mime 결정 — Clova 는 관대하지만 정확히 보내는 게 안전.
+$sttProvider = strtolower(trim((string)load_env_value('STT_PROVIDER'))) ?: 'clova';
 $srcExt = strtolower(pathinfo($realPath, PATHINFO_EXTENSION));
-$clovaMimeMap = [
+$sttMimeMap = [
     'm4a' => 'audio/mp4',   'mp4' => 'audio/mp4',  'mp3' => 'audio/mpeg',
     'wav' => 'audio/wav',   'webm'=> 'audio/webm', 'ogg' => 'audio/ogg',
     'flac'=> 'audio/flac',  '3gp' => 'audio/3gpp', '3gpp'=> 'audio/3gpp',
     'aac' => 'audio/aac',   'amr' => 'audio/amr',  'opus'=> 'audio/ogg',
 ];
-$clovaMime = $clovaMimeMap[$srcExt] ?? 'audio/mp4';
-$clovaPostname = 'audio.' . ($srcExt !== '' ? $srcExt : 'm4a');
+$sttMime = $sttMimeMap[$srcExt] ?? 'audio/mp4';
+$sttPostname = 'audio.' . ($srcExt !== '' ? $srcExt : 'm4a');
+$transcript = '';
+$sttModelName = '';
+$durationSeconds = 0;  // 통화 길이 (초) — 분 기반 사용량 추적 (Phase 1: 기록만, Phase 2: 차감)
 
-$clovaParams = json_encode([
-    'language'    => 'ko-KR',
-    'completion'  => 'sync',
-    'fullText'    => true,
-    'wordAlignment' => false,
-    'diarization' => ['enable' => true, 'speakerCountMin' => 2, 'speakerCountMax' => 2],
-    'resultToObs' => false,
-], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-
-$ch = curl_init(rtrim($clovaInvokeUrl, '/') . '/recognizer/upload');
-curl_setopt_array($ch, [
-    CURLOPT_RETURNTRANSFER => true,
-    CURLOPT_POST => true,
-    CURLOPT_POSTFIELDS => [
-        'media'  => new CURLFile($realPath, $clovaMime, $clovaPostname),
-        'params' => $clovaParams,
-    ],
-    CURLOPT_HTTPHEADER => ['X-CLOVASPEECH-API-KEY: ' . $clovaSecret],
-    CURLOPT_TIMEOUT => 180,
-    CURLOPT_CONNECTTIMEOUT => 10,
-]);
-$sttResp = curl_exec($ch);
-$sttStatus = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
-$sttErr = curl_error($ch);
-curl_close($ch);
-
-if ($sttResp === false) jerror('upstream_failed', 'Clova 호출 실패: ' . $sttErr, 502);
-$sttData = json_decode((string)$sttResp, true);
-
-if ($sttStatus < 200 || $sttStatus >= 300) {
-    $msg = is_array($sttData) ? ($sttData['message'] ?? json_encode($sttData)) : substr((string)$sttResp, 0, 300);
-    jerror('upstream_failed', 'Clova ' . $sttStatus . ': ' . $msg, 502);
-}
-
-// transcript 추출: fullText=true 면 $sttData['text'] 에 합쳐진 결과 옴.
-// fallback: segments[].text 합치기 (화자 정보 포함 시 LLM 이 더 잘 추출).
-$transcript = trim((string)($sttData['text'] ?? ''));
-if ($transcript === '' && !empty($sttData['segments']) && is_array($sttData['segments'])) {
-    $parts = [];
-    foreach ($sttData['segments'] as $seg) {
-        $segText = trim((string)($seg['text'] ?? ''));
-        if ($segText === '') continue;
-        $speakerLabel = $seg['speaker']['label'] ?? ($seg['speaker'] ?? null);
-        $parts[] = ($speakerLabel !== null ? '[화자' . $speakerLabel . '] ' : '') . $segText;
+if ($sttProvider === 'whisper') {
+    /* ----- OpenAI Whisper API -----
+     * POST https://api.openai.com/v1/audio/transcriptions
+     *   - multipart: file + model='whisper-1' + language='ko' + prompt(한국어 컨텍스트 힌트)
+     *   - 화자분리 없음 — transcript 가 평문 한 덩어리로 옴
+     *   - 단가: $0.006/min (회당 ~50원)
+     * 3gpp/AMR(삼성 T전화) 는 Whisper 미지원 가능성 — 그 경우 jerror 로 명시.
+     */
+    if (in_array($srcExt, ['3gp', '3gpp', 'amr'], true)) {
+        jerror('upstream_failed', 'Whisper는 3gpp/AMR 포맷 미지원. STT_PROVIDER=clova 로 전환 필요.', 415);
     }
-    $transcript = implode("\n", $parts);
-}
-if ($transcript === '') jerror('upstream_failed', 'Clova STT 결과가 비어있습니다.', 502);
+    $ch = curl_init('https://api.openai.com/v1/audio/transcriptions');
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST => true,
+        CURLOPT_POSTFIELDS => [
+            'file'            => new CURLFile($realPath, $sttMime, $sttPostname),
+            'model'           => 'whisper-1',
+            'language'        => 'ko',
+            'response_format' => 'verbose_json',
+            'temperature'     => '0',
+            // 한국어 영업/부동산 통화 컨텍스트 힌트 — Whisper 도메인 적응에 큰 효과
+            'prompt'          => '한국어 부동산/영업 통화입니다. 사장님, 사모님, 평수, 매물, 자료, 견적, 자료 발송, 재컨택 같은 용어가 자주 등장합니다.',
+        ],
+        CURLOPT_HTTPHEADER => ['Authorization: Bearer ' . $apiKey],
+        CURLOPT_TIMEOUT => 180,
+        CURLOPT_CONNECTTIMEOUT => 10,
+    ]);
+    $sttResp = curl_exec($ch);
+    $sttStatus = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $sttErr = curl_error($ch);
+    curl_close($ch);
+    if ($sttResp === false) jerror('upstream_failed', 'Whisper 호출 실패: ' . $sttErr, 502);
+    $sttData = json_decode((string)$sttResp, true);
+    if ($sttStatus < 200 || $sttStatus >= 300) {
+        $msg = is_array($sttData) ? ($sttData['error']['message'] ?? json_encode($sttData)) : substr((string)$sttResp, 0, 300);
+        jerror('upstream_failed', 'Whisper ' . $sttStatus . ': ' . $msg, 502);
+    }
+    $transcript = trim((string)($sttData['text'] ?? ''));
+    if ($transcript === '') jerror('upstream_failed', 'Whisper STT 결과가 비어있습니다.', 502);
+    $sttModelName = 'openai-whisper-1';
+    // verbose_json 응답에 duration(초) 포함
+    $durationSeconds = (int)round((float)($sttData['duration'] ?? 0));
+} else {
+    /* ----- Naver CLOVA Speech (Long Sentence Recognition) -----
+     * 3gpp/AMR (Samsung T전화 등) / m4a/mp4 등 다양한 컨테이너 네이티브 지원이라
+     * ffmpeg transcode 단계 불필요. cafe24 .env 의 NCP_CLOVA_INVOKE_URL + NCP_CLOVA_SECRET 사용.
+     *
+     * API: POST {INVOKE_URL}/recognizer/upload
+     *   - 헤더: X-CLOVASPEECH-API-KEY
+     *   - multipart: media (audio file) + params (JSON: language/completion/fullText/diarization)
+     *   - completion="sync" → 결과 받을 때까지 응답 hold
+     *   - diarization → 화자 분리 (영업/고객 2명 가정), LLM 이 customer_name 추출 유리
+     */
+    $clovaInvokeUrl = load_env_value('NCP_CLOVA_INVOKE_URL');
+    $clovaSecret    = load_env_value('NCP_CLOVA_SECRET');
+    if ($clovaInvokeUrl === '' || $clovaSecret === '') {
+        jerror('upstream_failed', 'NCP Clova 설정 누락 (NCP_CLOVA_INVOKE_URL / NCP_CLOVA_SECRET).', 500);
+    }
 
-/* ========== LLM 요약 (gpt-4o-mini, JSON 응답) ========== */
-$llmModel = 'gpt-4o-mini';
+    $clovaParams = json_encode([
+        'language'    => 'ko-KR',
+        'completion'  => 'sync',
+        'fullText'    => true,
+        'wordAlignment' => false,
+        'diarization' => ['enable' => true, 'speakerCountMin' => 2, 'speakerCountMax' => 2],
+        'resultToObs' => false,
+    ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+    $ch = curl_init(rtrim($clovaInvokeUrl, '/') . '/recognizer/upload');
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST => true,
+        CURLOPT_POSTFIELDS => [
+            'media'  => new CURLFile($realPath, $sttMime, $sttPostname),
+            'params' => $clovaParams,
+        ],
+        CURLOPT_HTTPHEADER => ['X-CLOVASPEECH-API-KEY: ' . $clovaSecret],
+        CURLOPT_TIMEOUT => 180,
+        CURLOPT_CONNECTTIMEOUT => 10,
+    ]);
+    $sttResp = curl_exec($ch);
+    $sttStatus = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $sttErr = curl_error($ch);
+    curl_close($ch);
+
+    if ($sttResp === false) jerror('upstream_failed', 'Clova 호출 실패: ' . $sttErr, 502);
+    $sttData = json_decode((string)$sttResp, true);
+
+    if ($sttStatus < 200 || $sttStatus >= 300) {
+        $msg = is_array($sttData) ? ($sttData['message'] ?? json_encode($sttData)) : substr((string)$sttResp, 0, 300);
+        jerror('upstream_failed', 'Clova ' . $sttStatus . ': ' . $msg, 502);
+    }
+
+    // transcript 추출: fullText=true 면 $sttData['text'] 에 합쳐진 결과 옴.
+    // fallback: segments[].text 합치기 (화자 정보 포함 시 LLM 이 더 잘 추출).
+    $transcript = trim((string)($sttData['text'] ?? ''));
+    if ($transcript === '' && !empty($sttData['segments']) && is_array($sttData['segments'])) {
+        $parts = [];
+        foreach ($sttData['segments'] as $seg) {
+            $segText = trim((string)($seg['text'] ?? ''));
+            if ($segText === '') continue;
+            $speakerLabel = $seg['speaker']['label'] ?? ($seg['speaker'] ?? null);
+            $parts[] = ($speakerLabel !== null ? '[화자' . $speakerLabel . '] ' : '') . $segText;
+        }
+        $transcript = implode("\n", $parts);
+    }
+    if ($transcript === '') jerror('upstream_failed', 'Clova STT 결과가 비어있습니다.', 502);
+    $sttModelName = 'naver-clova-speech';
+    // CLOVA segments 의 마지막 end (ms) → 초 변환
+    if (!empty($sttData['segments']) && is_array($sttData['segments'])) {
+        $lastSeg = end($sttData['segments']);
+        if (isset($lastSeg['end'])) {
+            $durationSeconds = (int)round(((int)$lastSeg['end']) / 1000);
+        }
+    }
+}
+
+/* ========== LLM provider 분기 ==========
+ * LLM_PROVIDER 환경변수로 토글:
+ *   - 'openai' (기본): gpt-4o-mini — 회당 ~1원, 메모 수준 품질
+ *   - 'anthropic': Claude Sonnet 4.6 + prompt caching — 회당 ~7~15원, 보고서 수준 품질
+ *     (caching hit 시 회당 7원, miss 시 15~21원. 5분 통화 평균 시 분당 3~5원)
+ */
+$llmProvider = strtolower(trim((string)load_env_value('LLM_PROVIDER'))) ?: 'openai';
+
+if ($llmProvider === 'anthropic') {
+    $llmModel = 'claude-sonnet-4-6';
+    $anthropicKey = load_env_value('ANTHROPIC_API_KEY');
+    if ($anthropicKey === '') jerror('upstream_failed', 'ANTHROPIC_API_KEY 미설정.', 500);
+} else {
+    $llmModel = 'gpt-4o-mini';
+}
 $sys = <<<SYS
 당신은 한국어 부동산/세일즈 통화 내용을 요약해 CRM에 기록하는 보조AI입니다.
 
-입력: 통화 STT 전사 (화자별 segment 가 [화자1]/[화자2] 로 표시될 수 있음)
+입력: 통화 STT 전사
+  - CLOVA(Naver) 결과: 화자별 segment 가 [화자1]/[화자2] 로 표시될 수 있음.
+  - Whisper(OpenAI) 결과: 화자 라벨 없는 평문 한 덩어리.
+  두 경우 모두 처리. 화자 라벨이 없으면 발화 흐름과 호칭/맥락으로 영업측·고객을 추론.
+
 출력: 다음 JSON 스키마. 키 이름은 정확히 일치. 누락 시 빈 문자열이나 null.
 
 {
@@ -792,7 +872,10 @@ transcript 에 실제 나타난 단서만 사용. 임의로 추측/추정 금지
 - 음성 timbre, 어휘 수준, 말투 등으로 성별/연령 추정 금지.
   transcript 에 명시되지 않은 정보는 절대 추론하지 말 것.
 - "사장님"/"사모님" 이 영업측 발화에만 등장하고 그 대상이 고객인지 불명확하면
-  fallback 적용 금지. 화자 분리 결과를 활용해 호칭의 지칭 대상이 고객일 때만 적용.
+  fallback 적용 금지. 화자 분리 결과(있을 때) 또는 발화 흐름(없을 때) 으로
+  호칭의 지칭 대상이 고객일 때만 적용.
+- 화자 라벨이 없는 평문 transcript 에서는 호칭/대답 패턴으로 추론하되,
+  영업측이 본인을 "사장님"이라 부르는 경우는 거의 없으므로 호칭 대상은 대체로 고객.
 - 정보 부족 시 절대 추측 말고 "고객" 으로 반환.
 
 [테스트 케이스]
@@ -856,38 +939,83 @@ summary 와 별개로 각 필드 채움. summary 와 중복돼도 OK — 각 필
   옛 정보나 일반론으로 채우지 말 것.
 SYS;
 
-$ch = curl_init('https://api.openai.com/v1/chat/completions');
-curl_setopt_array($ch, [
-    CURLOPT_RETURNTRANSFER => true,
-    CURLOPT_POST => true,
-    CURLOPT_POSTFIELDS => json_encode([
-        'model' => $llmModel,
-        'messages' => [
-            ['role' => 'system', 'content' => $sys],
-            ['role' => 'user', 'content' => $transcript],
+if ($llmProvider === 'anthropic') {
+    /* ----- Anthropic Claude Messages API + prompt caching -----
+     * system 메시지를 cache_control=ephemeral 로 표시 → 5분 TTL 캐시.
+     * 같은 system prompt 가 5분 안에 재호출되면 input 단가 90% 절감.
+     * 5분 안에 다음 통화가 안 들어와도 정상 호출 (cache miss → 정가). */
+    $ch = curl_init('https://api.anthropic.com/v1/messages');
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST => true,
+        CURLOPT_POSTFIELDS => json_encode([
+            'model' => $llmModel,
+            'max_tokens' => 2048,
+            'temperature' => 0.3,
+            'system' => [
+                [
+                    'type' => 'text',
+                    'text' => $sys,
+                    'cache_control' => ['type' => 'ephemeral'],
+                ],
+            ],
+            'messages' => [
+                ['role' => 'user', 'content' => $transcript],
+            ],
+        ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+        CURLOPT_HTTPHEADER => [
+            'x-api-key: ' . $anthropicKey,
+            'anthropic-version: 2023-06-01',
+            'content-type: application/json',
         ],
-        'temperature' => 0.3,
-        'response_format' => ['type' => 'json_object'],
-    ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
-    CURLOPT_HTTPHEADER => [
-        'Authorization: Bearer ' . $apiKey,
-        'Content-Type: application/json',
-    ],
-    CURLOPT_TIMEOUT => 60,
-    CURLOPT_CONNECTTIMEOUT => 10,
-]);
-$llmResp = curl_exec($ch);
-$llmStatus = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
-$llmErr = curl_error($ch);
-curl_close($ch);
-
-if ($llmResp === false) jerror('upstream_failed', 'LLM 호출 실패: ' . $llmErr, 502);
-$llmData = json_decode((string)$llmResp, true);
-if ($llmStatus < 200 || $llmStatus >= 300) {
-    $msg = is_array($llmData) ? ($llmData['error']['message'] ?? json_encode($llmData)) : substr((string)$llmResp, 0, 300);
-    jerror('upstream_failed', 'LLM ' . $llmStatus . ': ' . $msg, 502);
+        CURLOPT_TIMEOUT => 60,
+        CURLOPT_CONNECTTIMEOUT => 10,
+    ]);
+    $llmResp = curl_exec($ch);
+    $llmStatus = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $llmErr = curl_error($ch);
+    curl_close($ch);
+    if ($llmResp === false) jerror('upstream_failed', 'Claude 호출 실패: ' . $llmErr, 502);
+    $llmData = json_decode((string)$llmResp, true);
+    if ($llmStatus < 200 || $llmStatus >= 300) {
+        $msg = is_array($llmData) ? ($llmData['error']['message'] ?? json_encode($llmData)) : substr((string)$llmResp, 0, 300);
+        jerror('upstream_failed', 'Claude ' . $llmStatus . ': ' . $msg, 502);
+    }
+    $llmText = (string)($llmData['content'][0]['text'] ?? '');
+} else {
+    /* ----- OpenAI Chat Completions ----- */
+    $ch = curl_init('https://api.openai.com/v1/chat/completions');
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST => true,
+        CURLOPT_POSTFIELDS => json_encode([
+            'model' => $llmModel,
+            'messages' => [
+                ['role' => 'system', 'content' => $sys],
+                ['role' => 'user', 'content' => $transcript],
+            ],
+            'temperature' => 0.3,
+            'response_format' => ['type' => 'json_object'],
+        ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+        CURLOPT_HTTPHEADER => [
+            'Authorization: Bearer ' . $apiKey,
+            'Content-Type: application/json',
+        ],
+        CURLOPT_TIMEOUT => 60,
+        CURLOPT_CONNECTTIMEOUT => 10,
+    ]);
+    $llmResp = curl_exec($ch);
+    $llmStatus = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $llmErr = curl_error($ch);
+    curl_close($ch);
+    if ($llmResp === false) jerror('upstream_failed', 'LLM 호출 실패: ' . $llmErr, 502);
+    $llmData = json_decode((string)$llmResp, true);
+    if ($llmStatus < 200 || $llmStatus >= 300) {
+        $msg = is_array($llmData) ? ($llmData['error']['message'] ?? json_encode($llmData)) : substr((string)$llmResp, 0, 300);
+        jerror('upstream_failed', 'LLM ' . $llmStatus . ': ' . $msg, 502);
+    }
+    $llmText = (string)($llmData['choices'][0]['message']['content'] ?? '');
 }
-$llmText = (string)($llmData['choices'][0]['message']['content'] ?? '');
 $parsed = json_decode($llmText, true);
 if (!is_array($parsed)) {
     // 한 번 더 시도 — 평문 안에 JSON 블록이 섞인 경우 추출.
@@ -942,7 +1070,7 @@ try {
         ':tr'  => youngman_encrypt($transcript),
         ':ca'  => $consultAt,
         ':asp' => $storagePath,
-        ':am'  => 'naver-clova-speech+' . $llmModel,
+        ':am'  => $sttModelName . '+' . $llmModel,
         ':cri' => $clientReqId,
     ]);
 } catch (Throwable $e) {
@@ -968,6 +1096,14 @@ if (!$isAdminUser && strtolower($plan) !== 'pro') {
     } catch (Throwable $e) {
         // 컬럼이 아직 없으면 무시 (다음 호출 시 ensure 후 정상 동작).
     }
+    // Phase 1: 분 기반 사용량 누적 (병행 운영, 차감 로직은 Phase 2 에서 추가).
+    // usage_seconds_period 가 NULL 컬럼이거나 없는 환경에선 무시 — billing_helpers 의 ensure 가 다음 호출 시 정상화.
+    if ($durationSeconds > 0) {
+        try {
+            $pdo->prepare('UPDATE members SET usage_seconds_period = COALESCE(usage_seconds_period,0) + :d WHERE email = :e')
+                ->execute([':d' => $durationSeconds, ':e' => $ownerEmail]);
+        } catch (Throwable $e) { /* 컬럼 없으면 무시 */ }
+    }
     // usage_logs 기록 (best-effort)
     try {
         // 같은 lazy CREATE 트릭 — usage_logs 없으면 records.php 의 ensure 가 트리거되어 있어야.
@@ -976,7 +1112,12 @@ if (!$isAdminUser && strtolower($plan) !== 'pro') {
                 ':o' => $ownerEmail,
                 ':f' => 'call_summary',
                 ':p' => $plan,
-                ':m' => json_encode(['customer_log_id' => $rowId], JSON_UNESCAPED_UNICODE),
+                ':m' => json_encode([
+                    'customer_log_id'   => $rowId,
+                    'duration_seconds'  => $durationSeconds,
+                    'stt_model'         => $sttModelName,
+                    'llm_model'         => $llmModel,
+                ], JSON_UNESCAPED_UNICODE),
             ]);
     } catch (Throwable $e) {
         // 테이블 없으면 무시 — 다음 deploy 후 정상.

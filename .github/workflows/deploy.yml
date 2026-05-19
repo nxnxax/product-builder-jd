@@ -183,6 +183,8 @@ jobs:
           PORTONE_API_SECRET: ${{ secrets.PORTONE_API_SECRET }}
           PORTONE_WEBHOOK_SECRET: ${{ secrets.PORTONE_WEBHOOK_SECRET }}
           PORTONE_CHANNEL_KEY_TOSS: ${{ secrets.PORTONE_CHANNEL_KEY_TOSS }}
+          STT_PROVIDER: ${{ secrets.STT_PROVIDER }}
+          LLM_PROVIDER: ${{ secrets.LLM_PROVIDER }}
         run: |
           set -e
           {
@@ -214,6 +216,10 @@ jobs:
             [ -n "$PORTONE_API_SECRET" ] && echo "PORTONE_API_SECRET=$PORTONE_API_SECRET" || echo "::warning::PORTONE_API_SECRET missing — 결제 API 호출 503"
             [ -n "$PORTONE_WEBHOOK_SECRET" ] && echo "PORTONE_WEBHOOK_SECRET=$PORTONE_WEBHOOK_SECRET" || echo "::warning::PORTONE_WEBHOOK_SECRET missing — webhook 검증 503"
             [ -n "$PORTONE_CHANNEL_KEY_TOSS" ] && echo "PORTONE_CHANNEL_KEY_TOSS=$PORTONE_CHANNEL_KEY_TOSS" || echo "::warning::PORTONE_CHANNEL_KEY_TOSS missing — 토스 결제창 비활성"
+            # STT provider toggle: 'clova' (기본, 화자분리 포함 ~180원/건) 또는 'whisper' (OpenAI Whisper ~50원/건, 화자분리 없음)
+            [ -n "$STT_PROVIDER" ] && echo "STT_PROVIDER=$STT_PROVIDER" || echo "STT_PROVIDER=clova"
+            # LLM provider toggle: 'openai' (기본, gpt-4o-mini ~1원/건) 또는 'anthropic' (Claude Sonnet 4.6 ~7~21원/건, 보고서 수준)
+            [ -n "$LLM_PROVIDER" ] && echo "LLM_PROVIDER=$LLM_PROVIDER" || echo "LLM_PROVIDER=openai"
           } > deploy/.env
           [ -n "$OPENAI_KEY" ]    && echo "OPENAI_API_KEY len=${#OPENAI_KEY}, prefix=$(printf '%s' "$OPENAI_KEY" | head -c6)…"     || true
           [ -n "$RECRAFT_KEY" ]   && echo "RECRAFT_API_KEY len=${#RECRAFT_KEY}, prefix=$(printf '%s' "$RECRAFT_KEY" | head -c6)…"   || true

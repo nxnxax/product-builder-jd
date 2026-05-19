@@ -135,9 +135,9 @@ if (!function_exists('portone_plan_amount')) {
 
 if (!function_exists('plan_default_summary_limit')) {
     /**
-     * plan 별 default summary_limit. null = 무제한 (pro).
-     * verify-payment / cron-renew / admin-members PATCH 가 plan 변경 시
-     * 이 함수로 summary_limit 도 동기화.
+     * plan 별 default summary_limit (회 단위 — 레거시).
+     * Phase 1 분 기반 전환 진행 중. 분 단위 한도는 plan_default_summary_limit_minutes() 참조.
+     * verify-payment / cron-renew / admin-members PATCH 가 plan 변경 시 회/분 둘 다 동기화.
      */
     function plan_default_summary_limit(string $plan): ?int {
         switch (strtolower($plan)) {
@@ -149,6 +149,38 @@ if (!function_exists('plan_default_summary_limit')) {
             default:          return 0;
         }
     }
+}
+
+if (!function_exists('plan_default_summary_limit_minutes')) {
+    /**
+     * plan 별 default summary_limit_minutes (분 단위 — 신규 분 기반 과금).
+     * 2026-05-19 분 기반 전환:
+     *   - Free: 30분/월 (체험)
+     *   - Plus: 300분/월 (₩19,000)
+     *   - Pro: 1,000분/월 (₩39,000)
+     *   - trialing (신규 가입 7일 체험): 30분
+     * null = 무제한 (admin 수동 부여 시만, 일반 결제에서는 사용 안 함).
+     */
+    function plan_default_summary_limit_minutes(string $plan): ?int {
+        switch (strtolower($plan)) {
+            case 'pro':       return 1000;
+            case 'plus':
+            case 'premium':   return 300;
+            case 'trialing':  return 30;
+            case 'free':
+            default:          return 30;
+        }
+    }
+}
+
+if (!function_exists('overage_top_up_seconds')) {
+    /**
+     * 자동 충전 1회 단위 (초). 5,000원 / 분당 70원 = 71.43분 ≈ 4,286초.
+     * 사용자가 5,000원 자동결제 시 이 초 만큼 overage_balance_seconds 에 충전.
+     */
+    function overage_top_up_seconds(): int { return 4286; }
+    function overage_top_up_amount_won(): int { return 5000; }
+    function overage_per_minute_won(): int { return 70; }
 }
 
 if (!function_exists('portone_plan_label')) {
@@ -279,6 +311,13 @@ if (!function_exists('billing_ensure_tables')) {
                 'cancel_at_period_end'     => 'TINYINT(1) NOT NULL DEFAULT 0',
                 'summary_limit'            => 'INT NULL DEFAULT 5',
                 'last_usage_reset_at'      => 'DATETIME NULL DEFAULT NULL',
+                // 분 기반 과금 (2026-05-19 추가)
+                'summary_limit_minutes'    => 'INT NULL DEFAULT 30',     // 이번달 한도 (분)
+                'usage_seconds_period'     => 'INT NOT NULL DEFAULT 0',  // 이번달 누적 사용 (초)
+                'overage_enabled'          => 'TINYINT(1) NOT NULL DEFAULT 0',   // 자동 충전 동의 여부
+                'overage_balance_seconds'  => 'INT NOT NULL DEFAULT 0',          // 충전 잔여 (초)
+                'overage_top_up_count'     => 'INT NOT NULL DEFAULT 0',          // 이번달 충전 횟수
+                'overage_last_top_up_at'   => 'DATETIME NULL DEFAULT NULL',
             ];
             foreach ($addColumns as $col => $def) {
                 if (!empty($cols) && !in_array($col, $cols, true)) {
@@ -294,6 +333,16 @@ if (!function_exists('billing_ensure_tables')) {
                 $pdo->exec("UPDATE members SET summary_limit = 0 WHERE plan = 'free' AND summary_limit = 5");
             } catch (Throwable $e) {
                 error_log('[billing_ensure_tables] limit migration: ' . $e->getMessage());
+            }
+            // Phase 1 분 기반 마이그레이션 — plan 별 분 한도 자동 설정 (NULL 인 신규 컬럼만 채움).
+            // 기존 사용자 영향 없음: summary_limit (회) 와 summary_limit_minutes (분) 가 병행 운영됨.
+            // Phase 2 에서 process-recording.php 의 차감 로직이 분 단위로 전환되면 summary_limit 은 deprecated.
+            try {
+                $pdo->exec("UPDATE members SET summary_limit_minutes = 1000 WHERE plan = 'pro'      AND summary_limit_minutes IS NULL");
+                $pdo->exec("UPDATE members SET summary_limit_minutes = 300  WHERE plan IN ('plus','premium') AND summary_limit_minutes IS NULL");
+                $pdo->exec("UPDATE members SET summary_limit_minutes = 30   WHERE plan IN ('trialing','free') AND summary_limit_minutes IS NULL");
+            } catch (Throwable $e) {
+                error_log('[billing_ensure_tables] minutes migration: ' . $e->getMessage());
             }
             $done = true;
         } catch (Throwable $e) {

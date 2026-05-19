@@ -81,6 +81,21 @@ CALL_RECORDING_BACKEND.md — 통화 녹취 → AI 요약 백엔드 spec
 
 ### ✅ 통화 녹취 → AI 요약 → CRM (Phase 1+2 라이브)
 
+- **STT provider toggle (2026-05-19 추가)**: `STT_PROVIDER` 환경변수로 분기
+  - `clova` (기본): Naver CLOVA Speech LSR — 화자분리 포함, 회당 **~180원**
+  - `whisper`: OpenAI Whisper API — 화자분리 없음, 회당 **~50원** (-72%)
+  - 3gpp/AMR (삼성 T전화) 는 Whisper 미지원 → 415 에러. 해당 디바이스 사용자 있으면 clova 로 유지.
+  - `ai_model` 컬럼은 동적 생성 (`{stt}+{llm}` 패턴)
+- **LLM provider toggle (2026-05-19 추가)**: `LLM_PROVIDER` 환경변수로 분기
+  - `openai` (기본): gpt-4o-mini — 회당 **~1원**, 메모 수준 품질
+  - `anthropic`: Claude Sonnet 4.6 + prompt caching — 회당 **~7~21원**, **보고서 수준** (한국어 뉘앙스/감정/next_action 정교도 우위)
+  - prompt caching: system 메시지 `cache_control: ephemeral` → 5분 TTL, hit 시 input 90% 절감
+- **분 기반 사용량 추적 (Phase 1 — 2026-05-19, 백엔드 only)**:
+  - `members.summary_limit_minutes` (분 한도), `members.usage_seconds_period` (이번달 누적 초) 컬럼 추가 (lazy ALTER)
+  - `members.overage_enabled` / `overage_balance_seconds` / `overage_top_up_count` / `overage_last_top_up_at` 자동 충전 컬럼 추가
+  - `plan_default_summary_limit_minutes()`: Free=30, Plus=300, Pro=1,000, trialing=30
+  - `overage_top_up_seconds()`: 4,286초 (= 71.43분, ₩5,000 / 분당 70원)
+  - process-recording.php 가 통화 길이(초) 추출 후 `usage_seconds_period` 누적. 차감/한도 체크는 **Phase 2 에서 활성화** (현재는 회 단위 병행 운영)
 - **Phase 1 (sync)**: 앱 m4a → Clova STT(ko, 화자분리 2명) → gpt-4o-mini JSON → customer_log + AES-256-GCM
 - **Phase 2 M1~M4**: app-fcm-token / async mode + recording-job 폴링 / FCM HTTP v1 / 24h audio cleanup
 - **옵션 D (라운드 4 완성)**: customer_log_send_to_group — **8필드 매핑** (managed/date/call_count/customer/phone/content/agent_memo/memo). 자동 default 그룹 생성 + lazy 마이그레이션 + Idempotency
@@ -145,6 +160,8 @@ CALL_RECORDING_BACKEND.md — 통화 녹취 → AI 요약 백엔드 spec
   - `NCP_CLOVA_INVOKE_URL` / `NCP_CLOVA_SECRET`
   - `FIREBASE_SERVICE_ACCOUNT_JSON` / `AUDIO_CLEANUP_TOKEN`
   - **`PORTONE_STORE_ID` / `PORTONE_API_SECRET` / `PORTONE_WEBHOOK_SECRET` / `PORTONE_CHANNEL_KEY_TOSS`** (2026-05-19 등록 완료)
+  - `STT_PROVIDER` (선택, 미설정 시 'clova') — 'whisper' 로 설정 시 OpenAI Whisper 사용
+  - `LLM_PROVIDER` (선택, 미설정 시 'openai') — 'anthropic' 으로 설정 시 Claude Sonnet 4.6 + prompt caching 사용
 - "배포/올려" 키워드 → push 안내 (사용자 직접 push 후 Actions 자동) — 이 환경에는 GitHub push 자격 없음
 - 검증: `curl -sk https://youngman-biz.com/<file>?cb=$(date +%s)`
 - **신규 페이지 추가 시** deploy.yml 의 `Prepare cp` + `Validate test -f / php -l` 둘 다 추가
@@ -239,8 +256,10 @@ e0efe39 feat(billing): 결제 버튼 + 해지 버튼 활성화 + config.php
 - 🔒 **user_fcm_tokens UNIQUE token** — UPSERT 동작
 - 🔒 **audio_cleanup.php hash_equals + audio_kept=1 보존**
 - 🔒 **is_admin_email_for_recording allowlist** — `nxnxax@gmail.com`
-- 🔒 **Clova Speech params** — `language=ko-KR`, `completion=sync`, `fullText=true`, `diarization` 2명
-- 🔒 **ai_model 컬럼** — `naver-clova-speech+gpt-4o-mini`
+- 🔒 **Clova Speech params** (STT_PROVIDER=clova 시) — `language=ko-KR`, `completion=sync`, `fullText=true`, `diarization` 2명
+- 🔒 **Whisper params** (STT_PROVIDER=whisper 시) — `model=whisper-1`, `language=ko`, `response_format=verbose_json`, `temperature=0`, `prompt`=한국어 영업 컨텍스트 힌트
+- 🔒 **ai_model 컬럼** — `{sttModelName}+{llmModel}` 동적 (`naver-clova-speech+gpt-4o-mini` 또는 `openai-whisper-1+gpt-4o-mini`)
+- 🔒 **system prompt 화자 라벨 분기** — Clova 는 `[화자1]/[화자2]` 라벨 포함, Whisper 는 평문. LLM 이 둘 다 처리 가능해야 함 (prompt 명시)
 - 🔒 **billing_pdo()** — db_config.php candidate 4단계 검색 + billing_ensure_tables() 자동 호출
 - 🔒 **portone_extract_status / portone_extract_amount** — schema 변동 안전망 (4 nested 위치 탐색)
 - 🔒 **billing_require_bearer_email()** — Supabase URL 정규화 + auth_status 진단 응답
@@ -261,6 +280,16 @@ e0efe39 feat(billing): 결제 버튼 + 해지 버튼 활성화 + config.php
    - 빈 commit push 로 재배포
    - 본인 카드로 1회 결제 e2e 검증 (₩19,000 또는 ₩39,000)
 3. **통화 요약 HTTP 401 회신 대기** — `debug.stage` / `auth_status` 받아서 진단. 가장 가능성 = 앱 토큰 만료 → bridge.refreshSession() 추가 검토.
+
+### STT 원가 절감 PoC — Whisper 검증 (2026-05-19 추가)
+
+- **목표**: STT 원가 회당 180원 → 50원 (-72%) 또는 추가 30~50% 절감 (자체 호스팅 시)
+- **방법**: GitHub Secret 에 `STT_PROVIDER=whisper` 등록 후 빈 commit push → 재배포 → 실 영업 통화로 품질 비교
+- **검증 포인트**:
+  - 한국어 영업/부동산 통화 transcript 품질 (NCP CLOVA 대비 정확도)
+  - 7단계 customer_name 추출 로직이 화자 라벨 없이도 작동하는지 (LLM 추론 의존)
+  - 3gpp/AMR 디바이스 (삼성 T전화) 사용자 비율 — 차단되면 영향 큼
+- **롤백**: `STT_PROVIDER=clova` 로 재변경 + 재배포 (즉시)
 
 ### 기존 backlog
 
