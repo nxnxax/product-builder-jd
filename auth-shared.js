@@ -994,7 +994,8 @@ export function mountAppHeader(opts) {
             <div id="user-menu" class="user-menu">
                 <span id="user-display" class="user-display">${escapeHtmlSafe(cachedName)}</span>
                 <a href="profile.html" id="profile-link" class="user-menu-link"><span class="profile-link-icon">${ICON.user}</span><span class="profile-link-label">내 정보</span></a>
-                <a href="billing.html" id="billing-link" class="user-menu-link">구독 관리</a>
+                <!-- 구독 관리는 모바일 햄버거 메뉴 안에만 노출 (PC 는 햄버거 통해 접근).
+                     '내 정보' 옆 슬롯은 향후 '앱 다운로드' 버튼 자리로 예약. -->
                 <a href="admin.html" id="admin-link" class="user-menu-link">관리자</a>
                 <a href="logout.html?explicit=1" id="logout-btn" class="user-menu-btn" role="button">로그아웃</a>
             </div>
