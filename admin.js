@@ -54,6 +54,11 @@ const memberPlanInput = document.getElementById('member-plan');
 const memberPlanStatusInput = document.getElementById('member-plan-status');
 const memberSummaryUsedInput = document.getElementById('member-summary-used');
 const memberPeriodEndInput = document.getElementById('member-period-end');
+// 분 단위 과금 (Phase 2)
+const memberUsageMinutesInput = document.getElementById('member-usage-minutes');
+const memberSummaryLimitMinutesInput = document.getElementById('member-summary-limit-minutes');
+const memberOverageBalanceInput = document.getElementById('member-overage-balance');
+const memberOverageEnabledInput = document.getElementById('member-overage-enabled');
 const memberMessage = document.getElementById('member-message');
 const memberSave = document.getElementById('member-save');
 
@@ -199,10 +204,25 @@ function openMemberEdit(email) {
         memberSummaryUsedInput.value = (member.summary_used != null && Number.isFinite(+member.summary_used)) ? String(member.summary_used) : '0';
     }
     if (memberPeriodEndInput) {
-        // member.current_period_end 가 "YYYY-MM-DD HH:MM:SS" 또는 "YYYY.MM.DD" 형태일 수 있음 → YYYY-MM-DD 추출.
         const raw = String(member.current_period_end || '');
         const m = raw.match(/^(\d{4})[-.](\d{2})[-.](\d{2})/);
         memberPeriodEndInput.value = m ? `${m[1]}-${m[2]}-${m[3]}` : '';
+    }
+    // Phase 2 분 단위 prefill
+    if (memberUsageMinutesInput) {
+        const sec = +(member.usage_seconds_period || 0);
+        memberUsageMinutesInput.value = Number.isFinite(sec) ? String(Math.round(sec / 60)) : '0';
+    }
+    if (memberSummaryLimitMinutesInput) {
+        memberSummaryLimitMinutesInput.value = (member.summary_limit_minutes != null && Number.isFinite(+member.summary_limit_minutes))
+            ? String(member.summary_limit_minutes) : '';
+    }
+    if (memberOverageBalanceInput) {
+        const balSec = +(member.overage_balance_seconds || 0);
+        memberOverageBalanceInput.value = Number.isFinite(balSec) ? String(Math.round(balSec / 60)) : '0';
+    }
+    if (memberOverageEnabledInput) {
+        memberOverageEnabledInput.checked = !!(+member.overage_enabled);
     }
     memberMessage.textContent = '';
     memberMessage.className = 'form-help';
@@ -221,6 +241,20 @@ if (memberPeriodEndInput) {
     });
     document.querySelectorAll('[data-period-clear]').forEach(btn => {
         btn.addEventListener('click', () => { memberPeriodEndInput.value = ''; });
+    });
+}
+
+// 자동 충전 잔액 빠른 부여 버튼
+if (memberOverageBalanceInput) {
+    document.querySelectorAll('[data-overage-add]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const add = parseInt(btn.dataset.overageAdd, 10) || 0;
+            const cur = parseInt(memberOverageBalanceInput.value, 10) || 0;
+            memberOverageBalanceInput.value = String(Math.max(0, cur + add));
+        });
+    });
+    document.querySelectorAll('[data-overage-clear]').forEach(btn => {
+        btn.addEventListener('click', () => { memberOverageBalanceInput.value = '0'; });
     });
 }
 
@@ -260,6 +294,26 @@ memberForm.addEventListener('submit', async (event) => {
             const v = memberPeriodEndInput.value;
             if (v === '') body.current_period_end = null;
             else if (/^\d{4}-\d{2}-\d{2}$/.test(v)) body.current_period_end = v + ' 23:59:59';
+        }
+        // Phase 2 분 단위 — records.php admin-members PATCH 가 받음
+        if (memberUsageMinutesInput && memberUsageMinutesInput.value !== '') {
+            const n = parseInt(memberUsageMinutesInput.value, 10);
+            if (Number.isFinite(n) && n >= 0) body.usage_minutes_period = n;
+        }
+        if (memberSummaryLimitMinutesInput) {
+            const v = memberSummaryLimitMinutesInput.value.trim();
+            if (v === '') body.summary_limit_minutes = null;  // plan default 사용
+            else {
+                const n = parseInt(v, 10);
+                if (Number.isFinite(n) && n >= 0) body.summary_limit_minutes = n;
+            }
+        }
+        if (memberOverageBalanceInput && memberOverageBalanceInput.value !== '') {
+            const n = parseInt(memberOverageBalanceInput.value, 10);
+            if (Number.isFinite(n) && n >= 0) body.overage_balance_minutes = n;
+        }
+        if (memberOverageEnabledInput) {
+            body.overage_enabled = memberOverageEnabledInput.checked ? 1 : 0;
         }
         await apiRequest('admin-members', {
             method: 'PATCH',

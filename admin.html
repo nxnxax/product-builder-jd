@@ -235,11 +235,12 @@
                     <label class="row-label" for="member-plan">구독 플랜</label>
                     <div class="row-control">
                         <select id="member-plan">
-                            <option value="trialing">체험 (5회)</option>
-                            <option value="free">Free</option>
-                            <option value="plus">Plus (월 20회)</option>
-                            <option value="pro">Pro (무제한)</option>
+                            <option value="trialing">체험 (30분)</option>
+                            <option value="free">Free (30분)</option>
+                            <option value="plus">Plus (300분)</option>
+                            <option value="pro">Pro (1,000분)</option>
                         </select>
+                        <p class="form-help" style="margin-top:6px;font-size:11.5px;">분 단위 한도 (2026-05-20 분 기반 전환). plan 변경 시 분 한도/회 한도 자동 동기화.</p>
                     </div>
                 </div>
                 <div class="modal-row">
@@ -255,10 +256,44 @@
                     </div>
                 </div>
                 <div class="modal-row">
-                    <label class="row-label" for="member-summary-used">이번 달 사용량</label>
+                    <label class="row-label" for="member-summary-used">이번 달 사용량 (회 / 분)</label>
                     <div class="row-control">
-                        <input type="number" id="member-summary-used" min="0" style="width:120px;">
-                        <p class="form-help" style="margin-top:6px;font-size:11.5px;">AI 통화 요약 사용 횟수. 신규 결제 갱신 또는 관리자 수동 reset 시 0.</p>
+                        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+                            <input type="number" id="member-summary-used" min="0" style="width:90px;" placeholder="회">
+                            <span style="color:var(--fg-tertiary);font-size:12px;">회</span>
+                            <input type="number" id="member-usage-minutes" min="0" style="width:90px;" placeholder="분">
+                            <span style="color:var(--fg-tertiary);font-size:12px;">분</span>
+                        </div>
+                        <p class="form-help" style="margin-top:6px;font-size:11.5px;">신규 결제 갱신 또는 관리자 수동 reset 시 0. 분은 분당 70원 자동 충전 차감 기준.</p>
+                    </div>
+                </div>
+                <div class="modal-row">
+                    <label class="row-label" for="member-summary-limit-minutes">분 단위 한도 (override)</label>
+                    <div class="row-control">
+                        <input type="number" id="member-summary-limit-minutes" min="0" style="width:120px;" placeholder="default">
+                        <p class="form-help" style="margin-top:6px;font-size:11.5px;">비워두면 plan default (Free=30 / Plus=300 / Pro=1000). 수동 부여 시 입력 (예: 무제한 = 99999, 무료 사용 = 60).</p>
+                    </div>
+                </div>
+                <div class="modal-row">
+                    <label class="row-label" for="member-overage-balance">자동 충전 잔액 (분)</label>
+                    <div class="row-control">
+                        <input type="number" id="member-overage-balance" min="0" style="width:120px;">
+                        <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;">
+                            <button type="button" class="tiny-btn" data-overage-add="71">+71분 (₩5,000 1회분)</button>
+                            <button type="button" class="tiny-btn" data-overage-add="142">+142분 (₩10,000 2회분)</button>
+                            <button type="button" class="tiny-btn" data-overage-clear>0으로</button>
+                        </div>
+                        <p class="form-help" style="margin-top:6px;font-size:11.5px;">자동 충전 잔여 시간 (분). 사장님이 무료로 부여하고 싶을 때 수동 추가 가능.</p>
+                    </div>
+                </div>
+                <div class="modal-row">
+                    <label class="row-label">자동 충전 동의</label>
+                    <div class="row-control">
+                        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:14px;">
+                            <input type="checkbox" id="member-overage-enabled" style="width:18px;height:18px;cursor:pointer;">
+                            <span>한도 초과 시 ₩5,000 자동 충전 동의</span>
+                        </label>
+                        <p class="form-help" style="margin-top:6px;font-size:11.5px;">사용자가 billing.html 에서 직접 토글 가능. 관리자도 수동 변경 가능 (예: 분쟁 시 OFF).</p>
                     </div>
                 </div>
                 <div class="modal-row">
@@ -285,6 +320,6 @@
         </form>
     </div>
 
-    <script src="admin.js?v=20260519-sub-columns" type="module"></script>
+    <script src="admin.js?v=20260520-minutes" type="module"></script>
 </body>
 </html>
