@@ -149,7 +149,8 @@
     // premium = Phase 1 legacy plan, Plus 와 동일 권한 (백엔드 마이그레이션 적용 후 사라짐).
     const PLAN_LABEL = { free: 'Free', plus: 'Plus', pro: 'Pro', trialing: '신규 체험', premium: 'Plus' };
     const STATUS_LABEL = { active: '활성', trialing: '체험중', past_due: '결제 실패', cancelled: '해지됨' };
-    const PLAN_LIMITS = { free: 0, trialing: 5, plus: 20, pro: null, premium: 20 };
+    const PLAN_LIMITS = { free: 0, trialing: 5, plus: 20, pro: null, premium: 20 };  // 레거시 회 단위
+    const PLAN_LIMIT_MINUTES = { free: 30, trialing: 30, plus: 300, pro: 1000, premium: 300 };  // Phase 2 분 단위
     const PLAN_PRICE = { free: 0, trialing: 0, plus: 19000, pro: 39000, premium: 19000 };
     function normalizePlan(p) { return (p === 'premium') ? 'plus' : p; }
 
@@ -169,23 +170,32 @@
     function renderBilling(profile) {
         const plan = normalizePlan((profile.plan || 'trialing').toLowerCase());
         const planStatus = (profile.plan_status || 'trialing').toLowerCase();
-        const used = profile.summary_used || 0;
-        const limit = profile.summary_limit != null ? profile.summary_limit : (PLAN_LIMITS[plan] ?? null);
+        // Phase 2 분 단위 우선. 백엔드에 분 컬럼 없으면 레거시 회 단위로 폴백.
+        const limitMin = (profile.summary_limit_minutes != null)
+            ? profile.summary_limit_minutes
+            : (PLAN_LIMIT_MINUTES[plan] ?? null);
+        const usedSec = profile.usage_seconds_period || 0;
+        const usedMin = Math.round(usedSec / 60);
+        const overageEnabled = !!profile.overage_enabled;
+        const overageBalSec = profile.overage_balance_seconds || 0;
+        const overageBalMin = Math.round(overageBalSec / 60);
+        const overageTopUpCount = profile.overage_top_up_count || 0;
         const periodEnd = profile.current_period_end;
 
         let usageHtml;
-        if (limit === null) {
+        if (limitMin === null) {
             usageHtml = `<span class="billing-row-value" style="color:#15803d;">무제한</span>`;
-        } else if (limit === 0) {
+        } else if (limitMin === 0) {
             usageHtml = `<span class="billing-row-value" style="color:var(--fg-tertiary);">사용 불가 (구독 필요)</span>`;
         } else {
-            const pct = Math.min(100, Math.round((used / limit) * 100));
-            const overCls = used >= limit ? 'over' : '';
+            const pct = Math.min(100, Math.round((usedMin / limitMin) * 100));
+            const overCls = usedMin >= limitMin ? 'over' : '';
+            const remainMin = Math.max(0, limitMin - usedMin);
             usageHtml = `
                 <div style="flex:1 1 auto;">
                     <div style="display:flex;justify-content:space-between;align-items:baseline;">
-                        <span style="font-size:14px;font-weight:600;">${used} / ${limit}회</span>
-                        <span style="font-size:12px;color:var(--fg-tertiary);">${pct}%</span>
+                        <span style="font-size:14px;font-weight:600;">${usedMin}분 / ${limitMin}분</span>
+                        <span style="font-size:12px;color:var(--fg-tertiary);">남은 ${remainMin}분 (${pct}%)</span>
                     </div>
                     <div class="usage-bar-wrap"><div class="usage-bar-fill ${overCls}" style="width:${pct}%;"></div></div>
                 </div>
@@ -223,6 +233,20 @@
             </section>
         `;
 
+        const isPaidPlan = (plan === 'plus' || plan === 'pro' || plan === 'premium');
+        const overageRow = isPaidPlan ? `
+            <div class="billing-row" style="margin-top:16px;border-top:1px solid var(--border);padding-top:14px;">
+                <div class="billing-row-label">자동 충전</div>
+                <div class="billing-row-value" style="display:flex;flex-direction:column;gap:6px;align-items:flex-end;">
+                    <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:14px;">
+                        <input type="checkbox" id="overage-toggle" ${overageEnabled ? 'checked' : ''} style="width:18px;height:18px;cursor:pointer;">
+                        <span>한도 초과 시 자동 충전 (₩5,000 = 71분)</span>
+                    </label>
+                    <span style="font-size:12px;color:var(--fg-tertiary);">충전 잔액: <b style="color:var(--fg-primary);">${overageBalMin}분</b>${overageTopUpCount > 0 ? ` · 이번달 ${overageTopUpCount}회 충전` : ''}</span>
+                </div>
+            </div>
+        ` : '';
+
         const usageSection = `
             <section class="billing-card">
                 <h3>이번 달 사용량 (AI 통화 요약)</h3>
@@ -230,7 +254,8 @@
                     <div class="billing-row-label">사용량</div>
                     ${usageHtml}
                 </div>
-                <p class="billing-info-line">매월 결제 갱신 시 0으로 초기화됩니다. AI 요약 1회 = 통화녹음 → 요약 → 고객관리대장 저장 전체 과정 한 사이클.</p>
+                ${overageRow}
+                <p class="billing-info-line">매월 결제 갱신 시 0으로 초기화됩니다. 통화 분 단위로 차감되며, 짧은 통화도 정확히 통화 길이만큼만 사용됩니다. 자동 충전은 한도 초과 시 등록 카드로 ₩5,000 (71분 분량) 가 결제됩니다.</p>
             </section>
         `;
 
@@ -265,6 +290,33 @@
         `;
 
         document.getElementById('billing-content').innerHTML = planSection + usageSection + paymentSection + historySection + policyLine;
+
+        // 자동 충전 토글 — PATCH /records.php?resource=auth-profile body: {overage_enabled}
+        const overageToggle = document.getElementById('overage-toggle');
+        if (overageToggle) {
+            overageToggle.addEventListener('change', async () => {
+                const enabled = overageToggle.checked ? 1 : 0;
+                overageToggle.disabled = true;
+                try {
+                    const res = await apiRequest('auth-profile', {
+                        method: 'PATCH',
+                        body: JSON.stringify({ overage_enabled: enabled }),
+                    });
+                    if (!res?.ok) throw new Error(res?.error || '저장 실패');
+                    // 안내 한 줄만 (alert 안 띄움)
+                    const note = document.createElement('span');
+                    note.textContent = enabled ? '✓ 자동 충전 켜졌습니다' : '✓ 자동 충전 꺼졌습니다';
+                    note.style.cssText = 'font-size:12px;color:#15803d;margin-left:8px;';
+                    overageToggle.parentElement.appendChild(note);
+                    setTimeout(() => note.remove(), 2500);
+                } catch (e) {
+                    overageToggle.checked = !enabled;  // 원위치
+                    alert('자동 충전 설정 실패: ' + (e?.message || e));
+                } finally {
+                    overageToggle.disabled = false;
+                }
+            });
+        }
 
         // 구독 해지 click handler.
         const cancelBtnEl = document.querySelector('[data-cancel-subscription]');

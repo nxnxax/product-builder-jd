@@ -609,8 +609,15 @@ $plan = 'trialing';
 $planStatus = 'trialing';
 $freeUsed = 0;
 $summaryLimitColumn = null;
+$summaryLimitMinutes = null;   // 분 한도 (NULL 이면 회 단위 레거시 흐름 사용)
+$usageSecondsPeriod = 0;       // 이번달 누적 초
+$overageEnabled = 0;
+$overageBalanceSeconds = 0;
 try {
-    $ps = $pdo->prepare('SELECT plan, plan_status, free_summaries_used, summary_limit FROM members WHERE email = :e LIMIT 1');
+    $ps = $pdo->prepare('SELECT plan, plan_status, free_summaries_used, summary_limit,
+                                summary_limit_minutes, usage_seconds_period,
+                                overage_enabled, overage_balance_seconds
+                         FROM members WHERE email = :e LIMIT 1');
     $ps->execute([':e' => $ownerEmail]);
     $row = $ps->fetch();
     if ($row) {
@@ -618,9 +625,13 @@ try {
         $planStatus = (string)($row['plan_status'] ?? 'trialing');
         $freeUsed = (int)($row['free_summaries_used'] ?? 0);
         $summaryLimitColumn = $row['summary_limit'] ?? null;
+        $summaryLimitMinutes = isset($row['summary_limit_minutes']) ? (int)$row['summary_limit_minutes'] : null;
+        $usageSecondsPeriod = (int)($row['usage_seconds_period'] ?? 0);
+        $overageEnabled = (int)($row['overage_enabled'] ?? 0);
+        $overageBalanceSeconds = (int)($row['overage_balance_seconds'] ?? 0);
     }
 } catch (Throwable $e) {
-    // 컬럼이 아직 없으면 trialing 으로 간주 (5회 무료 — 안전).
+    // 컬럼이 아직 없으면 trialing 으로 간주 (안전).
     $plan = 'trialing';
     $planStatus = 'trialing';
     $freeUsed = 0;
@@ -636,15 +647,58 @@ if (!$isAdminUser) {
     if ($statusLc === 'cancelled') {
         jerror('plan_required', '구독이 해지되어 통화 AI 요약을 사용할 수 없습니다.', 403);
     }
-    // plan 별 한도 검사.
-    $effectiveLimit = resolve_summary_limit($plan, $summaryLimitColumn);
-    if ($effectiveLimit !== null && $freeUsed >= $effectiveLimit) {
-        if ($plan === 'free') {
-            jerror('plan_required', '무료 플랜은 통화 AI 요약을 사용할 수 없습니다. Plus 또는 Pro 구독이 필요합니다.', 403);
-        } elseif ($plan === 'trialing') {
-            jerror('plan_required', '신규 가입 무료 체험 5회를 모두 사용했습니다. Plus 또는 Pro 구독을 시작해 주세요.', 403);
-        } else {
-            jerror('plan_required', '이번 달 ' . $effectiveLimit . '회 한도를 모두 사용했습니다. 다음 결제일까지 기다리거나 Pro 로 업그레이드해 주세요.', 403);
+
+    /* Phase 2 분 단위 한도 검사 (summary_limit_minutes 채워진 경우 우선).
+     * 앱이 보낸 duration_sec 으로 이번 통화 길이를 사전에 알 수 있음.
+     * 한도 + 충전 잔액으로 충당 가능한지 미리 검증. 부족 시 자동 충전 트리거. */
+    if ($summaryLimitMinutes !== null && $summaryLimitMinutes > 0) {
+        $limitSec = $summaryLimitMinutes * 60;
+        $needSec = max(60, (int)$durationSec);  // 최소 1분 가정 (앱이 0 보낼 때 안전망)
+        $afterUsage = $usageSecondsPeriod + $needSec;
+        $shortageSec = max(0, $afterUsage - $limitSec);  // 한도 초과량 (초)
+        $balanceShort = $shortageSec > $overageBalanceSeconds ? ($shortageSec - $overageBalanceSeconds) : 0;
+
+        if ($balanceShort > 0) {
+            // 한도 + 충전 잔액으로 부족 → 자동 충전 시도
+            if ($overageEnabled === 1) {
+                $topUp = function_exists('charge_overage_top_up') ? charge_overage_top_up($pdo, $ownerEmail) : ['ok' => false, 'reason' => 'helper_missing'];
+                if ($topUp['ok']) {
+                    $overageBalanceSeconds = (int)($topUp['new_balance_seconds'] ?? ($overageBalanceSeconds + (int)($topUp['added_seconds'] ?? 0)));
+                    error_log('[process-recording] overage auto top-up success: owner=' . $ownerEmail . ', added=' . ($topUp['added_seconds'] ?? 0) . 's, new_balance=' . $overageBalanceSeconds . 's');
+                    // 충전 후에도 부족하면 (5,000원으론 모자란 매우 긴 통화) — 일단 통과시키되 차감 시 음수 허용
+                    // 다음 통화 시점에 다시 충전 트리거됨
+                } else {
+                    error_log('[process-recording] overage auto top-up failed: owner=' . $ownerEmail . ', reason=' . ($topUp['reason'] ?? '?'));
+                    jerror('plan_required',
+                        '이번 달 ' . $summaryLimitMinutes . '분 한도를 모두 사용하셨고 자동 충전 결제도 실패했습니다. ' .
+                        '구독 관리 페이지에서 결제 수단을 확인해 주세요.',
+                        402);
+                }
+            } else {
+                // overage_enabled = 0 (자동 충전 미동의) → 한도 초과 거부
+                if ($plan === 'free') {
+                    jerror('plan_required', '무료 체험 ' . $summaryLimitMinutes . '분을 모두 사용했습니다. Plus 또는 Pro 구독을 시작해 주세요.', 403);
+                } elseif ($plan === 'trialing') {
+                    jerror('plan_required', '신규 가입 체험 ' . $summaryLimitMinutes . '분을 모두 사용했습니다. Plus 또는 Pro 구독을 시작해 주세요.', 403);
+                } else {
+                    jerror('plan_required',
+                        '이번 달 ' . $summaryLimitMinutes . '분 한도를 모두 사용했습니다. ' .
+                        '자동 충전을 켜시거나 다음 결제일을 기다려 주세요.',
+                        403);
+                }
+            }
+        }
+    } else {
+        /* 레거시 회 단위 흐름 (분 한도 컬럼이 아직 ALTER 안 된 환경 또는 Phase 1 잔재) */
+        $effectiveLimit = resolve_summary_limit($plan, $summaryLimitColumn);
+        if ($effectiveLimit !== null && $freeUsed >= $effectiveLimit) {
+            if ($plan === 'free') {
+                jerror('plan_required', '무료 플랜은 통화 AI 요약을 사용할 수 없습니다. Plus 또는 Pro 구독이 필요합니다.', 403);
+            } elseif ($plan === 'trialing') {
+                jerror('plan_required', '신규 가입 무료 체험을 모두 사용했습니다. Plus 또는 Pro 구독을 시작해 주세요.', 403);
+            } else {
+                jerror('plan_required', '이번 달 한도를 모두 사용했습니다. 다음 결제일까지 기다리거나 Pro 로 업그레이드해 주세요.', 403);
+            }
         }
     }
 }
@@ -1194,20 +1248,34 @@ try {
  *   - usage_logs 에도 row 추가 (감사 / 통계)
  */
 if (!$isAdminUser && strtolower($plan) !== 'pro') {
+    // 레거시 회 단위 카운트 (분 단위 시스템 안정화 전까지 병행 운영)
     try {
         $pdo->prepare('UPDATE members SET free_summaries_used = free_summaries_used + 1 WHERE email = :e')
             ->execute([':e' => $ownerEmail]);
         $freeUsed += 1;
-    } catch (Throwable $e) {
-        // 컬럼이 아직 없으면 무시 (다음 호출 시 ensure 후 정상 동작).
-    }
-    // Phase 1: 분 기반 사용량 누적 (병행 운영, 차감 로직은 Phase 2 에서 추가).
-    // usage_seconds_period 가 NULL 컬럼이거나 없는 환경에선 무시 — billing_helpers 의 ensure 가 다음 호출 시 정상화.
+    } catch (Throwable $e) {}
+
+    // Phase 2 분 단위 차감: usage_seconds_period 누적 + 한도 초과량은 overage_balance_seconds 에서 차감.
     if ($durationSeconds > 0) {
         try {
             $pdo->prepare('UPDATE members SET usage_seconds_period = COALESCE(usage_seconds_period,0) + :d WHERE email = :e')
                 ->execute([':d' => $durationSeconds, ':e' => $ownerEmail]);
-        } catch (Throwable $e) { /* 컬럼 없으면 무시 */ }
+        } catch (Throwable $e) {}
+        // 한도 초과량을 overage_balance_seconds 에서 차감 (분 한도가 있는 환경에서만)
+        if ($summaryLimitMinutes !== null && $summaryLimitMinutes > 0) {
+            $limitSecFinal = $summaryLimitMinutes * 60;
+            $usageAfter = $usageSecondsPeriod + $durationSeconds;  // 사후 누적
+            $overSec = max(0, $usageAfter - $limitSecFinal);
+            $prevOverSec = max(0, $usageSecondsPeriod - $limitSecFinal);
+            $deltaOverSec = $overSec - $prevOverSec;  // 이번 통화 분 중 한도 초과분
+            if ($deltaOverSec > 0) {
+                try {
+                    $pdo->prepare('UPDATE members SET overage_balance_seconds = GREATEST(0, COALESCE(overage_balance_seconds,0) - :d) WHERE email = :e')
+                        ->execute([':d' => $deltaOverSec, ':e' => $ownerEmail]);
+                    error_log('[process-recording] overage balance decrement: owner=' . $ownerEmail . ', delta=' . $deltaOverSec . 's');
+                } catch (Throwable $e) {}
+            }
+        }
     }
     // usage_logs 기록 (best-effort)
     try {

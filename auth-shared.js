@@ -144,8 +144,35 @@ export async function initSupabase() {
                 persistSession: true,
                 autoRefreshToken: true,
                 detectSessionInUrl: true,
+                // WebView 환경에서 default storage adapter 가 잡히지 않는 케이스 방지.
+                storage: (typeof window !== 'undefined' && window.localStorage) ? window.localStorage : undefined,
             },
         });
+        // 앱(WebView) 의 자동 복구 hook 노출 — RN 가 401 시 명시적으로 refresh 호출 가능.
+        // 정의 안 되어 있으면 RN 이 WebView reload 같은 무거운 fallback 으로 빠짐.
+        try {
+            if (typeof window !== 'undefined') {
+                window.YoungmanBridge = window.YoungmanBridge || {};
+                window.YoungmanBridge.refreshSession = async function () {
+                    if (!_refreshInflight) {
+                        _refreshInflight = (async () => {
+                            try {
+                                const { data: rd } = await supabaseClient.auth.refreshSession();
+                                if (rd?.session) {
+                                    currentSession = rd.session;
+                                    try { _bridgeLogin(rd.session); } catch {}
+                                }
+                            } catch {}
+                            finally { _refreshInflight = null; }
+                        })();
+                    }
+                    await _refreshInflight;
+                    return currentSession?.access_token || null;
+                };
+                // window.supabase 글로벌 노출 — RN 자동 복구 fallback 코드가 직접 호출 가능.
+                window.supabase = supabaseClient;
+            }
+        } catch {}
         const { data } = await supabaseClient.auth.getSession();
         currentSession = data?.session || null;
         cacheUserEmail(currentSession?.user?.email);

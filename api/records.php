@@ -697,6 +697,12 @@ function member_row_from_store($store, $row) {
     $planStatusCol = first_existing_column($cols, ['plan_status']);
     $summaryUsedCol = first_existing_column($cols, ['free_summaries_used', 'summary_used']);
     $summaryLimitCol = first_existing_column($cols, ['summary_limit']);
+    $summaryLimitMinutesCol = first_existing_column($cols, ['summary_limit_minutes']);
+    $usageSecondsCol = first_existing_column($cols, ['usage_seconds_period']);
+    $overageEnabledCol = first_existing_column($cols, ['overage_enabled']);
+    $overageBalanceCol = first_existing_column($cols, ['overage_balance_seconds']);
+    $overageTopUpCountCol = first_existing_column($cols, ['overage_top_up_count']);
+    $overageLastTopUpAtCol = first_existing_column($cols, ['overage_last_top_up_at']);
     $periodEndCol = first_existing_column($cols, ['current_period_end']);
 
     return [
@@ -709,8 +715,16 @@ function member_row_from_store($store, $row) {
         'role' => $role === '' ? 'member' : strtolower($role),
         'plan' => $planCol ? (string)($row[$planCol] ?? 'trialing') : 'trialing',
         'plan_status' => $planStatusCol ? (string)($row[$planStatusCol] ?? 'trialing') : 'trialing',
+        // 레거시 회 단위
         'summary_used' => $summaryUsedCol ? (int)($row[$summaryUsedCol] ?? 0) : 0,
         'summary_limit' => $summaryLimitCol ? ($row[$summaryLimitCol] === null ? null : (int)$row[$summaryLimitCol]) : null,
+        // Phase 2 분 단위
+        'summary_limit_minutes' => $summaryLimitMinutesCol ? ($row[$summaryLimitMinutesCol] === null ? null : (int)$row[$summaryLimitMinutesCol]) : null,
+        'usage_seconds_period' => $usageSecondsCol ? (int)($row[$usageSecondsCol] ?? 0) : 0,
+        'overage_enabled' => $overageEnabledCol ? (int)($row[$overageEnabledCol] ?? 0) : 0,
+        'overage_balance_seconds' => $overageBalanceCol ? (int)($row[$overageBalanceCol] ?? 0) : 0,
+        'overage_top_up_count' => $overageTopUpCountCol ? (int)($row[$overageTopUpCountCol] ?? 0) : 0,
+        'overage_last_top_up_at' => $overageLastTopUpAtCol ? format_date($row[$overageLastTopUpAtCol] ?? '') : '',
         'current_period_end' => $periodEndCol ? format_date($row[$periodEndCol] ?? '') : '',
         'createdAt' => $createdCol ? format_date($row[$createdCol] ?? '') : '',
         'updatedAt' => $updatedCol ? format_date($row[$updatedCol] ?? '') : '',
@@ -2362,6 +2376,13 @@ try {
                 $params[':nickname'] = $nick;
             }
 
+            // 자동 충전 동의 토글 (overage_enabled) — 본인이 직접 ON/OFF 가능. PII 아님.
+            $overageEnabledCol = first_existing_column($cols, ['overage_enabled']);
+            if ($overageEnabledCol && array_key_exists('overage_enabled', $data)) {
+                $assignments[] = quote_identifier($overageEnabledCol) . ' = :overage_enabled';
+                $params[':overage_enabled'] = (int)(!!$data['overage_enabled']);
+            }
+
             $updatedCol = first_existing_column($cols, ['updated_at', 'modified_at']);
             if ($updatedCol) {
                 $assignments[] = quote_identifier($updatedCol) . ' = :updated_at';
@@ -2637,6 +2658,47 @@ try {
                     $assignments[] = quote_identifier($summaryLimitCol) . ' = :auto_limit';
                     $params[':auto_limit'] = $autoLimit;
                 }
+            }
+            // Phase 2 — plan 변경 시 summary_limit_minutes 도 자동 동기화 (분 단위 한도).
+            $summaryLimitMinutesCol = first_existing_column($cols, ['summary_limit_minutes']);
+            if ($planChanged && $summaryLimitMinutesCol && !isset($body['summary_limit_minutes'])) {
+                $autoLimitMin = 30;  // default
+                switch ($newPlanVal) {
+                    case 'pro':       $autoLimitMin = 1000; break;
+                    case 'plus':      $autoLimitMin = 300;  break;
+                    case 'trialing':  $autoLimitMin = 30;   break;
+                    case 'free':      $autoLimitMin = 30;   break;
+                }
+                $assignments[] = quote_identifier($summaryLimitMinutesCol) . ' = :auto_limit_min';
+                $params[':auto_limit_min'] = $autoLimitMin;
+            }
+            // 명시적 summary_limit_minutes (admin 수동 부여)
+            if ($summaryLimitMinutesCol && array_key_exists('summary_limit_minutes', $body)) {
+                $slm = $body['summary_limit_minutes'];
+                if ($slm === null || $slm === '') {
+                    $assignments[] = quote_identifier($summaryLimitMinutesCol) . ' = NULL';
+                } else {
+                    $slmVal = (int)$slm;
+                    if ($slmVal < 0) $slmVal = 0;
+                    $assignments[] = quote_identifier($summaryLimitMinutesCol) . ' = :slm';
+                    $params[':slm'] = $slmVal;
+                }
+            }
+            // 관리자 수동 overage_balance_seconds 부여 (분 단위 입력 → 초 단위 저장)
+            $overageBalanceCol = first_existing_column($cols, ['overage_balance_seconds']);
+            if ($overageBalanceCol && array_key_exists('overage_balance_minutes', $body)) {
+                $obm = (int)$body['overage_balance_minutes'];
+                if ($obm < 0) $obm = 0;
+                $assignments[] = quote_identifier($overageBalanceCol) . ' = :obs';
+                $params[':obs'] = $obm * 60;
+            }
+            // usage_seconds_period 초기화 (admin 수동 — 분 단위 입력)
+            $usageSecondsCol = first_existing_column($cols, ['usage_seconds_period']);
+            if ($usageSecondsCol && array_key_exists('usage_minutes_period', $body)) {
+                $ump = (int)$body['usage_minutes_period'];
+                if ($ump < 0) $ump = 0;
+                $assignments[] = quote_identifier($usageSecondsCol) . ' = :ums';
+                $params[':ums'] = $ump * 60;
             }
             $planStatusCol = first_existing_column($cols, ['plan_status']);
             if ($planStatusCol && isset($body['plan_status'])) {

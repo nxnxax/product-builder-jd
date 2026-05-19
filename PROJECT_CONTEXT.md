@@ -61,7 +61,9 @@ CALL_RECORDING_BACKEND.md — 통화 녹취 → AI 요약 백엔드 spec
 ## 3. 현재 완성된 기능
 
 - ✅ Supabase Auth (이메일 + Google OAuth, 회원가입/로그인/로그아웃/비번 변경)
-- ✅ 인증 일원화 (logout.html / login-complete.html 단일 transition) + **refresh_token rotation race condition fix** (2026-05-20): `_refreshInflight` 전역 dedup, 임계점 60→300초, 모든 핸들러 (ensureFreshAccessToken / apiRequest 401 retry / SIGNED_OUT / onAppResume / visibilitychange) 공유
+- ✅ 인증 일원화 (logout.html / login-complete.html 단일 transition) + **refresh_token rotation race condition fix** (2026-05-20):
+    - `_refreshInflight` 전역 dedup, 임계점 60→300초, 모든 핸들러 (ensureFreshAccessToken / apiRequest 401 retry / SIGNED_OUT / onAppResume / visibilitychange) 공유
+    - **앱팀 5가지 점검 의뢰 반영 (2026-05-20)**: createClient 의 `storage: window.localStorage` 명시, `window.YoungmanBridge.refreshSession()` 글로벌 hook 노출, `window.supabase` 노출, TOKEN_REFRESHED 시 `_bridgeLogin` 자동 호출, visibilitychange 핸들러 (이미 적용됨)
 - ✅ 고아 user 자동 복구 (ensureMemberRowOnce)
 - ✅ 로그인 유지 체크박스 (pagehide/beforeunload 자동 sb-* 삭제)
 - ✅ 아이디/비밀번호 찾기 (SMS 인증)
@@ -110,6 +112,22 @@ CALL_RECORDING_BACKEND.md — 통화 녹취 → AI 요약 백엔드 spec
 - **고객관리대장 UI 통일**: 모든 텍스트 셀 2줄 clamp + 가운데 + click 상세 모달, 가로 스크롤 제거, 날짜 6자리(YY.MM.DD), 모바일 카드 접힘 시 "강동원 (3)번 통화함" 자연어 태그
 - **AI 요약 톤/구조** 옛 대화형(`~습니다`) 으로 롤백 — PPT 톤(`37fca8b`)은 git 보존, 두 모드 분기 작업 시 복원 예정
 - 카드 expanded 상태 보존 (_expandedRowIds + MutationObserver)
+
+### ✅ 분 단위 과금 + 자동 충전 (Phase 2 — 2026-05-20)
+
+- **가격 플랜 분 단위 전환**: Free 30분 / Plus ₩19,000 = 300분 / Pro ₩39,000 = 1,000분 (월 기준)
+- **자동 충전**: 한도 초과 시 ₩5,000 / 71분 자동 결제 (분당 70원). 사전 동의 (`overage_enabled=1`) 시만 동작.
+- **`charge_overage_top_up()` (billing_helpers.php)**: PortOne billingKey 로 임의 시점 5,000원 결제 → `overage_balance_seconds += 4,286`
+- **process-recording.php Phase 2 흐름**:
+  1. 사전 체크: `summary_limit_minutes` + `overage_balance_seconds` 합산 후 부족 시 자동 충전 트리거
+  2. 자동 충전 미동의 + 한도 초과 → 403 plan_required
+  3. 처리 후 차감: `usage_seconds_period += duration` + 한도 초과분은 `overage_balance_seconds` 에서 차감
+- **billing.html**: 사용량 분 단위 표시 + 자동 충전 토글 (PATCH /records.php?resource=auth-profile body: {overage_enabled}) + 잔액 표시
+- **subscribe.html**: 새 가격 features 분 단위 + 자동 충전 안내
+- **records.php**: admin-members PATCH 가 `summary_limit_minutes` / `overage_balance_minutes` / `usage_minutes_period` (분 단위 입력 → 초 단위 저장) 받음
+- **auto-billing.html**: 제6조 자동 충전 약관 조항 삽입 (해지 가능 명시)
+- **레거시 회 단위 병행**: 분 한도 컬럼이 없는 환경 (lazy ALTER 미경유) 에서는 기존 회 단위 흐름으로 폴백
+- **admin.html UI**: backend 는 준비됐으나 UI 입력 필드 추가는 follow-up (다음 세션)
 
 ### ✅ 구독 결제 시스템 — PortOne V2 + 토스페이먼츠 (2026-05-19 풀스택)
 

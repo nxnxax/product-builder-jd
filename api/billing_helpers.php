@@ -183,6 +183,117 @@ if (!function_exists('overage_top_up_seconds')) {
     function overage_per_minute_won(): int { return 70; }
 }
 
+if (!function_exists('charge_overage_top_up')) {
+    /**
+     * 사용자의 등록된 PortOne billingKey 로 자동 충전 결제 (5,000원).
+     * 성공 시 members.overage_balance_seconds += 4286 (분당 70원 = 71분).
+     *
+     * 호출 전 검증:
+     *   - members.overage_enabled = 1 (자동 충전 사전 동의)
+     *   - members.portone_billing_key 존재
+     *   - members.plan_status = 'active' 또는 'trialing'
+     *
+     * 반환:
+     *   [
+     *     'ok' => bool,
+     *     'reason' => ?string,           // 실패 사유 (no_billing_key / overage_not_enabled / 등)
+     *     'payment_id' => ?string,
+     *     'amount' => int,               // 실제 결제된 금액
+     *     'added_seconds' => int,        // balance 에 추가된 초
+     *     'new_balance_seconds' => int,
+     *   ]
+     */
+    function charge_overage_top_up(PDO $pdo, string $ownerEmail): array {
+        $row = null;
+        try {
+            $ps = $pdo->prepare('SELECT plan, plan_status, portone_billing_key, portone_customer_id,
+                                        overage_enabled, overage_balance_seconds, overage_top_up_count
+                                 FROM members WHERE email = :e LIMIT 1');
+            $ps->execute([':e' => $ownerEmail]);
+            $row = $ps->fetch();
+        } catch (Throwable $e) {
+            return ['ok' => false, 'reason' => 'db_error', 'amount' => 0, 'added_seconds' => 0, 'new_balance_seconds' => 0];
+        }
+        if (!$row) return ['ok' => false, 'reason' => 'member_not_found', 'amount' => 0, 'added_seconds' => 0, 'new_balance_seconds' => 0];
+        if ((int)($row['overage_enabled'] ?? 0) !== 1) {
+            return ['ok' => false, 'reason' => 'overage_not_enabled', 'amount' => 0, 'added_seconds' => 0, 'new_balance_seconds' => (int)($row['overage_balance_seconds'] ?? 0)];
+        }
+        $billingKey = trim((string)($row['portone_billing_key'] ?? ''));
+        if ($billingKey === '') {
+            return ['ok' => false, 'reason' => 'no_billing_key', 'amount' => 0, 'added_seconds' => 0, 'new_balance_seconds' => 0];
+        }
+        $planStatus = strtolower((string)($row['plan_status'] ?? ''));
+        if (!in_array($planStatus, ['active', 'trialing'], true)) {
+            return ['ok' => false, 'reason' => 'plan_inactive_' . $planStatus, 'amount' => 0, 'added_seconds' => 0, 'new_balance_seconds' => 0];
+        }
+
+        $amount = overage_top_up_amount_won();
+        $addSeconds = overage_top_up_seconds();
+        $paymentId = 'topup-' . date('YmdHis') . '-' . substr(md5($ownerEmail), 0, 8);
+        $orderName = 'YOUNGMAN 자동 충전 (' . number_format($amount) . '원 = ' . round($addSeconds / 60) . '분)';
+
+        try {
+            $resp = portone_api_call('POST', '/payments/' . urlencode($paymentId) . '/billing-key', [
+                'billingKey' => $billingKey,
+                'orderName' => $orderName,
+                'amount' => ['total' => $amount],
+                'currency' => 'KRW',
+                'customer' => ['id' => $row['portone_customer_id'] ?? $ownerEmail, 'email' => $ownerEmail],
+            ]);
+        } catch (Throwable $e) {
+            error_log('[charge_overage_top_up] portone call failed (' . $ownerEmail . '): ' . $e->getMessage());
+            return ['ok' => false, 'reason' => 'portone_api_error', 'amount' => 0, 'added_seconds' => 0, 'new_balance_seconds' => 0];
+        }
+
+        $okHttp = ($resp['status'] >= 200 && $resp['status'] < 300);
+        $paymentStatus = is_array($resp['body']) ? portone_extract_status($resp['body']) : '';
+        $paidAmount = is_array($resp['body']) ? portone_extract_amount($resp['body']) : 0;
+
+        if (!$okHttp || $paymentStatus !== 'PAID') {
+            error_log('[charge_overage_top_up] payment failed: status=' . $resp['status'] . ', payment_status=' . $paymentStatus . ', owner=' . $ownerEmail);
+            try {
+                $pdo->prepare("INSERT INTO payments (owner_email, portone_payment_id, amount, currency, status, raw_event_json)
+                               VALUES (:e, :pid, :amt, 'KRW', :st, :raw)")
+                    ->execute([
+                        ':e' => $ownerEmail, ':pid' => $paymentId, ':amt' => $amount,
+                        ':st' => $paymentStatus !== '' ? $paymentStatus : 'failed',
+                        ':raw' => substr($resp['raw'], 0, 4000),
+                    ]);
+            } catch (Throwable $e) {}
+            return ['ok' => false, 'reason' => 'payment_' . ($paymentStatus !== '' ? strtolower($paymentStatus) : 'http_' . $resp['status']), 'amount' => 0, 'added_seconds' => 0, 'new_balance_seconds' => (int)($row['overage_balance_seconds'] ?? 0)];
+        }
+
+        $newBalance = (int)($row['overage_balance_seconds'] ?? 0) + $addSeconds;
+        try {
+            $pdo->prepare("UPDATE members SET
+                    overage_balance_seconds = COALESCE(overage_balance_seconds,0) + :add,
+                    overage_top_up_count = COALESCE(overage_top_up_count,0) + 1,
+                    overage_last_top_up_at = NOW()
+                WHERE email = :e")
+                ->execute([':add' => $addSeconds, ':e' => $ownerEmail]);
+        } catch (Throwable $e) {
+            error_log('[charge_overage_top_up] members update failed: ' . $e->getMessage());
+        }
+        try {
+            $pdo->prepare("INSERT INTO payments (owner_email, portone_payment_id, amount, currency, status, paid_at, raw_event_json)
+                           VALUES (:e, :pid, :amt, 'KRW', 'PAID', NOW(), :raw)")
+                ->execute([
+                    ':e' => $ownerEmail, ':pid' => $paymentId, ':amt' => $paidAmount ?: $amount,
+                    ':raw' => substr($resp['raw'], 0, 4000),
+                ]);
+        } catch (Throwable $e) {}
+
+        return [
+            'ok' => true,
+            'reason' => null,
+            'payment_id' => $paymentId,
+            'amount' => $paidAmount ?: $amount,
+            'added_seconds' => $addSeconds,
+            'new_balance_seconds' => $newBalance,
+        ];
+    }
+}
+
 if (!function_exists('portone_plan_label')) {
     function portone_plan_label(string $plan): string {
         switch (strtolower($plan)) {
