@@ -1469,8 +1469,8 @@ if ($llmProvider === 'anthropic') {
             ],
             'messages' => [
                 ['role' => 'user', 'content' => $transcript],
-                // Prefill 패턴 — Claude 응답이 무조건 '{' 로 시작하도록 강제. JSON 파싱 안정성.
-                ['role' => 'assistant', 'content' => '{'],
+                // 주의: Claude Sonnet 4.x 는 assistant prefill 미지원 (3.x 만 지원).
+                // → prefill 제거. JSON 안정성은 system prompt 의 출력 규칙 + 3단 fallback parsing 으로 처리.
             ],
         ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
         CURLOPT_HTTPHEADER => [
@@ -1491,8 +1491,7 @@ if ($llmProvider === 'anthropic') {
         $msg = is_array($llmData) ? ($llmData['error']['message'] ?? json_encode($llmData)) : substr((string)$llmResp, 0, 300);
         jerror('upstream_failed', 'Claude ' . $llmStatus . ': ' . $msg, 502);
     }
-    // Claude 응답은 prefill '{' 다음부터 시작하므로 다시 붙여서 완전한 JSON 으로 복원.
-    $llmText = '{' . (string)($llmData['content'][0]['text'] ?? '');
+    $llmText = (string)($llmData['content'][0]['text'] ?? '');
 } else {
     /* ----- OpenAI Chat Completions ----- */
     $ch = curl_init('https://api.openai.com/v1/chat/completions');

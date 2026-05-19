@@ -386,18 +386,17 @@ async def summarize_claude(transcript: str) -> dict:
                     {"type": "text", "text": CLAUDE_SYSTEM_PROMPT,
                      "cache_control": {"type": "ephemeral"}},
                 ],
+                # 주의: Claude Sonnet 4.x 는 assistant prefill 미지원 (3.x 만 지원).
+                # JSON 안정성은 system prompt 출력 규칙 + 3단 fallback parsing 으로 처리.
                 "messages": [
                     {"role": "user", "content": transcript},
-                    # Prefill 패턴 — Claude 응답이 무조건 '{' 로 시작 → JSON 파싱 안정성
-                    {"role": "assistant", "content": "{"},
                 ],
             },
         )
         if resp.status_code >= 400:
             raise HTTPException(status_code=502, detail=f"Claude {resp.status_code}: {resp.text[:200]}")
         data = resp.json()
-        # prefill '{' 다시 붙여서 완전한 JSON 으로 복원
-        text = "{" + data.get("content", [{}])[0].get("text", "")
+        text = data.get("content", [{}])[0].get("text", "")
         # JSON 파싱 (다층 fallback)
         import json, re
         try:
