@@ -247,3 +247,84 @@ function send_fcm_to_user(PDO $pdo, string $ownerEmail, array $message): array {
 }
 
 } // end if function_exists guard
+
+if (!function_exists('send_usage_warning_fcm')) {
+    /**
+     * 분 한도 임박/초과 알림 발송 (Phase 2, 2026-05-20 ChatGPT 권장 3차).
+     *
+     * threshold: 80 / 90 / 100 단계. 사용자별 last_usage_warning_pct 보다 큰 경우만 발송 (중복 방지).
+     * @return array send_fcm_to_user 결과
+     */
+    function send_usage_warning_fcm(PDO $pdo, string $ownerEmail, int $threshold, int $usedMin, int $limitMin, ?string $periodEnd = null): array {
+        // 중복 발송 방지 — last_usage_warning_pct 컬럼 (lazy ALTER 됨)
+        $lastWarn = 0;
+        try {
+            $ps = $pdo->prepare('SELECT last_usage_warning_pct FROM members WHERE email = :e LIMIT 1');
+            $ps->execute([':e' => $ownerEmail]);
+            $row = $ps->fetch();
+            if ($row && isset($row['last_usage_warning_pct'])) {
+                $lastWarn = (int)$row['last_usage_warning_pct'];
+            }
+        } catch (Throwable $e) {
+            // 컬럼 없음 — 다음 ensure 후 정상화. 일단 발송은 진행.
+        }
+        if ($threshold <= $lastWarn) {
+            return ['sent' => 0, 'failed' => 0, 'invalid_tokens' => [], 'reason' => 'duplicate_threshold_' . $threshold];
+        }
+
+        $remainMin = max(0, $limitMin - $usedMin);
+        $title = '';
+        $body  = '';
+        if ($threshold >= 100) {
+            $title = '월 한도 도달';
+            $body  = '이번 달 사용량이 한도(' . $limitMin . '분) 에 도달했습니다. 자동 충전을 켜시면 ₩5,000 (71분) 추가 사용 가능.';
+        } elseif ($threshold >= 90) {
+            $title = '사용량 90% 도달';
+            $body  = '이번 달 ' . $usedMin . '분 / ' . $limitMin . '분 사용. 남은 ' . $remainMin . '분.';
+        } else {
+            $title = '사용량 80% 도달';
+            $body  = '이번 달 ' . $usedMin . '분 / ' . $limitMin . '분 사용. 남은 ' . $remainMin . '분.';
+        }
+
+        $result = send_fcm_to_user($pdo, $ownerEmail, [
+            'title' => $title,
+            'body'  => $body,
+            'data'  => [
+                'type'        => 'usage_warning',
+                'threshold'   => $threshold,
+                'used_min'    => $usedMin,
+                'limit_min'   => $limitMin,
+                'period_end'  => (string)($periodEnd ?? ''),
+            ],
+        ]);
+
+        // 발송 성공 여부 무관하게 last_usage_warning_pct 마킹 (다음 알림이 너무 잦게 안 가게)
+        try {
+            $pdo->prepare('UPDATE members SET last_usage_warning_pct = :p WHERE email = :e')
+                ->execute([':p' => $threshold, ':e' => $ownerEmail]);
+        } catch (Throwable $e) { /* 컬럼 없으면 무시 */ }
+
+        return $result;
+    }
+}
+
+if (!function_exists('send_overage_charged_fcm')) {
+    /**
+     * 자동 충전 결제 완료 알림 발송.
+     * 사용자가 모르고 결제당하지 않게 사후 통지 (전자상거래법 권장).
+     */
+    function send_overage_charged_fcm(PDO $pdo, string $ownerEmail, int $amountWon, int $addedSec, int $newBalanceSec): array {
+        $addedMin = (int)round($addedSec / 60);
+        $newBalanceMin = (int)round($newBalanceSec / 60);
+        return send_fcm_to_user($pdo, $ownerEmail, [
+            'title' => '자동 충전 완료',
+            'body'  => '₩' . number_format($amountWon) . ' 결제 완료. ' . $addedMin . '분 추가 (현재 잔액 ' . $newBalanceMin . '분).',
+            'data'  => [
+                'type'              => 'overage_charged',
+                'amount'            => $amountWon,
+                'added_min'         => $addedMin,
+                'new_balance_min'   => $newBalanceMin,
+            ],
+        ]);
+    }
+}

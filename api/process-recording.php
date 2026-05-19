@@ -1402,6 +1402,29 @@ if (!$isAdminUser && strtolower($plan) !== 'pro') {
                     error_log('[process-recording] overage balance decrement: owner=' . $ownerEmail . ', delta=' . $deltaOverSec . 's');
                 } catch (Throwable $e) {}
             }
+
+            // FCM 사용량 임박/초과 알림 — 80% / 90% / 100% 도달 시 (중복 발송 방지 last_usage_warning_pct)
+            $usedMinFinal = (int)round($usageAfter / 60);
+            $usagePct = $summaryLimitMinutes > 0 ? (int)floor(($usedMinFinal / $summaryLimitMinutes) * 100) : 0;
+            $threshold = 0;
+            if ($usagePct >= 100)      $threshold = 100;
+            elseif ($usagePct >= 90)   $threshold = 90;
+            elseif ($usagePct >= 80)   $threshold = 80;
+            if ($threshold > 0) {
+                try {
+                    require_once __DIR__ . '/fcm_helpers.php';
+                    if (function_exists('send_usage_warning_fcm')) {
+                        // current_period_end 조회
+                        $peStmt = $pdo->prepare('SELECT current_period_end FROM members WHERE email = :e LIMIT 1');
+                        $peStmt->execute([':e' => $ownerEmail]);
+                        $peRow = $peStmt->fetch();
+                        $periodEnd = $peRow['current_period_end'] ?? null;
+                        send_usage_warning_fcm($pdo, $ownerEmail, $threshold, $usedMinFinal, (int)$summaryLimitMinutes, $periodEnd);
+                    }
+                } catch (Throwable $e) {
+                    error_log('[process-recording] usage warning FCM 실패: ' . $e->getMessage());
+                }
+            }
         }
     }
     // usage_logs 기록 (best-effort)

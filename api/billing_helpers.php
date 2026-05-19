@@ -283,6 +283,20 @@ if (!function_exists('charge_overage_top_up')) {
                 ]);
         } catch (Throwable $e) {}
 
+        // FCM 알림 발송 — 자동 충전 결제 완료 사후 통지 (전자상거래법 권장).
+        try {
+            if (function_exists('send_overage_charged_fcm')) {
+                send_overage_charged_fcm($pdo, $ownerEmail, $paidAmount ?: $amount, $addSeconds, $newBalance);
+            } else {
+                require_once __DIR__ . '/fcm_helpers.php';
+                if (function_exists('send_overage_charged_fcm')) {
+                    send_overage_charged_fcm($pdo, $ownerEmail, $paidAmount ?: $amount, $addSeconds, $newBalance);
+                }
+            }
+        } catch (Throwable $e) {
+            error_log('[charge_overage_top_up] FCM 발송 실패 (결제는 성공): ' . $e->getMessage());
+        }
+
         return [
             'ok' => true,
             'reason' => null,
@@ -429,6 +443,7 @@ if (!function_exists('billing_ensure_tables')) {
                 'overage_balance_seconds'  => 'INT NOT NULL DEFAULT 0',          // 충전 잔여 (초)
                 'overage_top_up_count'     => 'INT NOT NULL DEFAULT 0',          // 이번달 충전 횟수
                 'overage_last_top_up_at'   => 'DATETIME NULL DEFAULT NULL',
+                'last_usage_warning_pct'   => 'INT NOT NULL DEFAULT 0',          // FCM 중복 발송 방지 (0/80/90/100)
             ];
             foreach ($addColumns as $col => $def) {
                 if (!empty($cols) && !in_array($col, $cols, true)) {
