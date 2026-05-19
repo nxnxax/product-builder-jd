@@ -41,6 +41,9 @@ api/process-recording.php — 통화 녹취 → STT (Whisper/CLOVA 3단 fallback
                           + **X-Internal-Worker-Token 헤더 시 user auth skip (cron worker 호출용)**
 api/cron-process-jobs.php — **Path B (2026-05-20)**: recording_jobs queued/failed_retryable 작업
                           를 server secret 으로 background 처리. AI lifecycle 을 사용자 token 분리.
+api/job-status.php       — **속도 개선 (2026-05-20)**: 앱 polling endpoint.
+                          GET ?job_id=xxx + Authorization Bearer → status/progress_pct/step_label 즉시 반환.
+                          앱이 1~2초 간격 polling 으로 진행률 표시 (queued→stt_processing→llm_processing→completed).
 api/fcm_helpers.php     — FCM HTTP v1
 api/audio_cleanup.php   — 24h audio cron cleanup
 api/sms/...             — SMS 발송
@@ -74,6 +77,12 @@ CALL_RECORDING_BACKEND.md — 통화 녹취 → AI 요약 백엔드 spec
 - ✅ 인증 일원화 (logout.html / login-complete.html 단일 transition)
 - ✅ **인증 race condition fix (2026-05-20)** — `_refreshInflight` 전역 dedup, 임계점 60→300초, 5곳 핸들러 (ensureFreshAccessToken / apiRequest 401 retry / SIGNED_OUT / onAppResume / visibilitychange) 공유
 - ✅ **Path A — refresh cooldown 25초 (commit 15f0959, ChatGPT 권장)** — `_refreshLastSuccessAt` + `_runRefreshOnce()` 공통 헬퍼. "방금 refresh 성공 후 또 refresh" 현상 차단 (timeout 누적 / SESSION_DEAD_EVENT 오발동 방지)
+- ✅ **속도 개선 (2026-05-20)** — ChatGPT 권장 "2~3분 무반응 → 1~2초 안에 처리중 표시" 핵심:
+    - recording_jobs status 8단계 세분화: `queued / uploading / stt_processing / llm_processing / completed / failed / failed_retryable / failed_permanent`
+    - `progress_pct` 컬럼 + 각 단계 진입 시 자동 UPDATE (30 → 70 → 100)
+    - `transcript_encrypted` / `summary_json_encrypted` 컬럼 — 중간 결과 임시 저장 (AES-256-GCM)
+    - `/api/job-status.php` 신규 — 앱이 1~2초 간격 polling. Authorization Bearer + owner_email 격리. status_label 한국어 자동 변환
+    - **앱팀 작업 필요**: ProcessingScreen + polling + progress UI + completed 시 ConfirmRecording 자동 이동
 - ✅ **Path B — AI 작업 lifecycle 사용자 token 분리 (commit 곧 push)** — 영맨 슬로건 "단 한 건의 고객정보 누락 없이 관리" 만족 목적:
     - recording_jobs 확장: audio_sha256 / duration_sec / customer_name_hint / phone_number / recorded_at / retry_count 컬럼 lazy ALTER. status (16→20) 길이 확장
     - audio_sha256 idempotency: 24h 내 같은 파일 hash 면 그 job 반환 (앱 outbox 재시도 안전망)

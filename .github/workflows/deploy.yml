@@ -123,6 +123,7 @@ jobs:
           cp api/fcm_helpers.php deploy/fcm_helpers.php   # FCM HTTP v1 발송 — process-recording 이 async 완료 시 require
           cp api/audio_cleanup.php deploy/audio_cleanup.php   # 24h 미정리 audio cron cleanup (M4)
           cp api/cron-process-jobs.php deploy/cron-process-jobs.php   # Phase 2 Path B — server secret worker (recording_jobs 처리)
+          cp api/job-status.php deploy/job-status.php   # 속도 개선 (2026-05-20) — 앱 polling endpoint
           # 구독 결제 (PortOne V2 + 토스페이먼츠)
           cp api/billing_helpers.php deploy/billing_helpers.php
           mkdir -p deploy/billing

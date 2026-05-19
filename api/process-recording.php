@@ -381,6 +381,10 @@ function ensure_recording_jobs_table(PDO $pdo): bool {
             'phone_number'         => 'VARCHAR(60) NULL DEFAULT NULL',
             'recorded_at'          => 'DATETIME NULL DEFAULT NULL',
             'retry_count'          => 'INT NOT NULL DEFAULT 0',
+            // 속도 개선 (2026-05-20 ChatGPT 권장): 중간 결과 저장 + 진행률 표시
+            'transcript_encrypted' => 'LONGTEXT NULL DEFAULT NULL',
+            'summary_json_encrypted' => 'LONGTEXT NULL DEFAULT NULL',
+            'progress_pct'         => 'TINYINT NOT NULL DEFAULT 0',
         ];
         foreach ($needAlter as $col => $def) {
             if (!empty($cols) && !in_array($col, $cols, true)) {
@@ -421,6 +425,24 @@ function respond_async_queued(string $jobId): void {
     }
     ignore_user_abort(true);
     @set_time_limit(300);   // 5분 — 백그라운드 처리 한도
+}
+
+/**
+ * recording_jobs status + progress 업데이트 (속도 개선, 2026-05-20).
+ * 앱이 /job-status.php polling 으로 진행률 표시. 실패 시 무시 (조용히).
+ */
+function update_job_status(?PDO $pdo, ?string $jobId, string $status, int $progressPct, ?string $errorMessage = null): void {
+    if (!$pdo || !$jobId) return;
+    try {
+        $sql = "UPDATE recording_jobs SET status = :st, progress_pct = :pp, updated_at = NOW()";
+        $params = [':st' => $status, ':pp' => $progressPct, ':id' => $jobId];
+        if ($errorMessage !== null) {
+            $sql .= ", error_message = :em";
+            $params[':em'] = substr($errorMessage, 0, 1000);
+        }
+        $sql .= " WHERE id = :id";
+        $pdo->prepare($sql)->execute($params);
+    } catch (Throwable $e) { /* 무시 — 진행률은 best-effort */ }
 }
 
 function customer_phone_lookup_key(?string $phone): ?string {
@@ -811,7 +833,10 @@ if (!$uploadsReal || strpos($realPath, $uploadsReal . DIRECTORY_SEPARATOR) !== 0
 }
 
 /* ========== STT provider 분기 ==========
- * STT_PROVIDER 환경변수로 토글:
+ * 속도 개선 (2026-05-20): status='stt_processing' / progress=30% UPDATE — 앱 polling 진행률 표시. */
+update_job_status($pdo, $asyncJobId, 'stt_processing', 30);
+
+/* STT_PROVIDER 환경변수로 토글:
  *   - 'clova' (기본): Naver CLOVA Speech LSR — 화자분리 포함, 회당 ~180원
  *   - 'whisper': OpenAI Whisper API — 화자분리 없음, 회당 ~50원 (-72%)
  *
@@ -1059,7 +1084,20 @@ if ($sttProvider === 'whisper') {
 }
 
 /* ========== LLM provider 분기 ==========
- * LLM_PROVIDER 환경변수로 토글:
+ * 속도 개선 (2026-05-20): status='llm_processing' / progress=70% + transcript 임시 저장 — 앱 polling 진행률. */
+if ($asyncJobId && $transcript !== '') {
+    try {
+        $pdo->prepare("UPDATE recording_jobs SET
+                transcript_encrypted = :tr,
+                status = 'llm_processing',
+                progress_pct = 70,
+                updated_at = NOW()
+            WHERE id = :id")
+            ->execute([':tr' => youngman_encrypt($transcript), ':id' => $asyncJobId]);
+    } catch (Throwable $e) { /* 무시 */ }
+}
+
+/* LLM_PROVIDER 환경변수로 토글:
  *   - 'openai' (기본): gpt-4o-mini — 회당 ~1원, 메모 수준 품질
  *   - 'anthropic': Claude Sonnet 4.6 + prompt caching — 회당 ~7~15원, 보고서 수준 품질
  *     (caching hit 시 회당 7원, miss 시 15~21원. 5분 통화 평균 시 분당 3~5원)
@@ -1403,11 +1441,29 @@ if (!$savedRow) {
 
 if ($asyncMode) {
     // async 모드 — client 응답은 이미 'queued' 로 갔음. 백그라운드 작업 완료 표시.
+    // 속도 개선 (2026-05-20): summary_json 도 임시 저장 (앱 polling 에서 즉시 받기) + progress 100%.
     try {
+        $summaryJsonPayload = json_encode([
+            'customer_name'    => $llmName,
+            'summary'          => $llmSummary,
+            'interest'         => $llmIntr,
+            'inquiry'          => $llmInq,
+            'budget_condition' => $llmBudg,
+            'next_action'      => $llmNext,
+        ], JSON_UNESCAPED_UNICODE);
         $pdo->prepare("UPDATE recording_jobs
-            SET status = 'completed', completed_at = NOW(), customer_log_id = :cl
+            SET status = 'completed',
+                progress_pct = 100,
+                completed_at = NOW(),
+                customer_log_id = :cl,
+                summary_json_encrypted = :sj,
+                updated_at = NOW()
             WHERE id = :id")
-            ->execute([':cl' => $rowId, ':id' => $asyncJobId]);
+            ->execute([
+                ':cl' => $rowId,
+                ':sj' => $summaryJsonPayload !== false ? youngman_encrypt($summaryJsonPayload) : null,
+                ':id' => $asyncJobId,
+            ]);
     } catch (Throwable $e) {
         error_log('[process-recording] recording_jobs completed update failed: ' . $e->getMessage());
     }
