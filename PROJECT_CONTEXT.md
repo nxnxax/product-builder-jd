@@ -83,6 +83,26 @@ CALL_RECORDING_BACKEND.md — 통화 녹취 → AI 요약 백엔드 spec
     - `transcript_encrypted` / `summary_json_encrypted` 컬럼 — 중간 결과 임시 저장 (AES-256-GCM)
     - `/api/job-status.php` 신규 — 앱이 1~2초 간격 polling. Authorization Bearer + owner_email 격리. status_label 한국어 자동 변환
     - **앱팀 작업 필요**: ProcessingScreen + polling + progress UI + completed 시 ConfirmRecording 자동 이동
+- ✅ **FCM 사용량 알림 + 자동 충전 알림 (commit ee7138b)**:
+    - `send_usage_warning_fcm()`: 80/90/100% 도달 시 자동 발송. `last_usage_warning_pct` 컬럼으로 중복 차단
+    - `send_overage_charged_fcm()`: 자동 충전 결제 성공 후 사후 통지 (전자상거래법)
+    - process-recording.php / billing_helpers.php 가 자동 트리거
+- ✅ **admin.html 분 단위 UI (commit b831ce5)**:
+    - 회원 편집 모달: 분 단위 한도 (override) / 자동 충전 잔액 (분) / 자동 충전 동의 토글 / 분 단위 사용량
+    - records.php admin-members PATCH 가 새 필드 받음 (commit 1aea481)
+- ✅ **group_id 컨테이너 + FCM payload 포함 (commit ee2f396, 앱팀 옵션 b)**:
+    - recording_jobs.group_id 컬럼 + body['group_id'] 받기
+    - call_summary_ready FCM payload 에 group_id emit
+    - customer_log_send_to_group 흐름은 lock-in 코드 — 앱이 FCM 받은 후 별도 호출
+- ✅ **Phase 2 외부 worker — Railway (2026-05-20 새벽 ship)**:
+    - worker/main.py — Python FastAPI. cafe24 가 webhook 호출 → 즉시 202 + 백그라운드 처리
+    - audio 다운로드 → Whisper → Claude → cafe24 callback
+    - api/recording-callback.php / api/recording-audio.php 신규
+    - process-recording.php 가 RAILWAY_WORKER_URL 환경변수 있으면 Railway 호출 + 종료, 없으면 cafe24 자체 처리 (호환 100%)
+    - X-Worker-Token 양방향 인증 (RECORDING_WORKER_TOKEN 공유)
+    - audio URL: HMAC-SHA256 signed URL, 10분 만료
+    - **사장님 작업 필요**: Railway 가입 + GitHub repo 연동 (root=worker/) + 환경변수 등록 + GitHub Secret RAILWAY_WORKER_URL 등록
+    - 환경변수 없으면 영맨 그대로 작동 (점진적 마이그레이션)
 - ✅ **Path B — AI 작업 lifecycle 사용자 token 분리 (commit 곧 push)** — 영맨 슬로건 "단 한 건의 고객정보 누락 없이 관리" 만족 목적:
     - recording_jobs 확장: audio_sha256 / duration_sec / customer_name_hint / phone_number / recorded_at / retry_count 컬럼 lazy ALTER. status (16→20) 길이 확장
     - audio_sha256 idempotency: 24h 내 같은 파일 hash 면 그 job 반환 (앱 outbox 재시도 안전망)

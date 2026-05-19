@@ -688,6 +688,68 @@ if ($asyncMode) {
     // 즉시 응답 — client 연결 종료. 이후 코드는 백그라운드.
     respond_async_queued($asyncJobId);
 
+    /* Railway worker 분기 (선택 — RAILWAY_WORKER_URL 환경변수 있을 때만).
+     * Railway 가 있으면: STT/LLM 처리를 Railway 에 위임 + cafe24 는 callback 만 기다림.
+     * Railway 가 없으면: 기존 cafe24 자체 처리 흐름 (Phase 1 / Path B 그대로).
+     * Railway 호출 실패해도 cron worker (Path B) 가 5분 후 재시도. */
+    $railwayUrl = load_env_value('RAILWAY_WORKER_URL');
+    if ($railwayUrl !== '' && !$isInternalWorker) {
+        try {
+            // signed audio URL 생성 (10분 유효, HMAC-SHA256)
+            $expires = time() + 600;
+            $workerToken = load_env_value('RECORDING_WORKER_TOKEN');
+            $audioToken = hash_hmac('sha256', $asyncJobId . '.' . $expires, $workerToken);
+            $audioUrl = rtrim($railwayUrl !== '' ? 'https://youngman-biz.com' : '', '/')
+                       . '/recording-audio.php?job_id=' . urlencode($asyncJobId)
+                       . '&token=' . urlencode($audioToken)
+                       . '&expires=' . $expires;
+            // 영맨은 https://youngman-biz.com hard-coded — Railway 가 외부에서 호출
+
+            // Railway worker 호출 (background, 응답 안 기다림)
+            $payload = json_encode([
+                'job_id'              => $asyncJobId,
+                'owner_email'         => $ownerEmail,
+                'audio_url'           => $audioUrl,
+                'duration_sec'        => (int)$durationSec,
+                'customer_name_hint'  => $customerNameHint,
+                'phone_number'        => $phoneNumber,
+                'recorded_at'         => $consultAt,
+                'group_id'            => $groupIdHint,
+                'storage_path'        => $storagePath,
+            ], JSON_UNESCAPED_UNICODE);
+
+            $ch = curl_init(rtrim($railwayUrl, '/') . '/process');
+            curl_setopt_array($ch, [
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_POST => true,
+                CURLOPT_POSTFIELDS => $payload,
+                CURLOPT_HTTPHEADER => [
+                    'Content-Type: application/json',
+                    'X-Worker-Token: ' . $workerToken,
+                ],
+                CURLOPT_TIMEOUT => 8,  // Railway 즉시 202 응답 — 8초면 충분
+                CURLOPT_CONNECTTIMEOUT => 4,
+            ]);
+            $rwResp = curl_exec($ch);
+            $rwStatus = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            curl_close($ch);
+
+            if ($rwStatus >= 200 && $rwStatus < 300) {
+                error_log('[process-recording] Railway dispatched: job=' . $asyncJobId . ', http=' . $rwStatus);
+                // Railway 처리 위임 완료 — cafe24 측 STT/LLM 흐름 스킵.
+                // 처리 결과는 Railway → /recording-callback.php 로 받음.
+                // job 상태는 그대로 'processing'. cron worker 가 5분 후 status='processing' 인 채로 오래된 job 발견 시 자동 재시도.
+                exit;
+            } else {
+                error_log('[process-recording] Railway dispatch 실패 (cafe24 자체 처리 fallback): http=' . $rwStatus . ', resp=' . substr((string)$rwResp, 0, 200));
+                // 실패 시 cafe24 자체 처리 흐름으로 fallback (아래 코드 진행)
+            }
+        } catch (Throwable $e) {
+            error_log('[process-recording] Railway dispatch exception: ' . $e->getMessage());
+            // 예외 시 cafe24 자체 처리로 fallback
+        }
+    }
+
     // 정상 완료 안 되면 (PHP fatal, jerror exit 등) shutdown 시 'failed' 마크.
     register_shutdown_function(function() use ($pdo, $asyncJobId) {
         try {
