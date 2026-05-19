@@ -88,7 +88,7 @@ $jobs = [];
 try {
     $sel = $pdo->prepare("SELECT id, owner_email, storage_path, client_request_id,
                                  audio_sha256, duration_sec, customer_name_hint, phone_number,
-                                 recorded_at, retry_count, status
+                                 recorded_at, retry_count, status, group_id
         FROM recording_jobs
         WHERE (status = 'queued')
            OR (status = 'failed_retryable' AND retry_count < 3 AND updated_at < (NOW() - INTERVAL 1 MINUTE))
@@ -135,7 +135,8 @@ foreach ($jobs as $job) {
         'customer_name_hint' => (string)($job['customer_name_hint'] ?? ''),
         'phone_number' => (string)($job['phone_number'] ?? ''),
         'recorded_at' => (string)($job['recorded_at'] ?? ''),
-        'mode' => 'sync',  // cron worker 안에서는 sync 처리 (이미 background 환경)
+        'group_id' => (string)($job['group_id'] ?? ''),
+        'mode' => 'sync',
         '_internal_job_id' => $jobId,
         '_internal_owner_email' => $ownerEmail,
     ];

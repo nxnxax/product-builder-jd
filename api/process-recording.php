@@ -385,6 +385,8 @@ function ensure_recording_jobs_table(PDO $pdo): bool {
             'transcript_encrypted' => 'LONGTEXT NULL DEFAULT NULL',
             'summary_json_encrypted' => 'LONGTEXT NULL DEFAULT NULL',
             'progress_pct'         => 'TINYINT NOT NULL DEFAULT 0',
+            // 앱팀 옵션 b — 그룹 자동 전송용 컨테이너 (앱이 보내면 FCM payload 에 포함됨)
+            'group_id'             => 'VARCHAR(36) NULL DEFAULT NULL',
         ];
         foreach ($needAlter as $col => $def) {
             if (!empty($cols) && !in_array($col, $cols, true)) {
@@ -564,6 +566,7 @@ $recordedAt   = trim((string)($body['recorded_at'] ?? ''));
 $phoneNumber  = trim((string)($body['phone_number'] ?? ''));
 $durationSec  = (int)($body['duration_sec'] ?? 0);
 $origFilename = trim((string)($body['original_filename'] ?? ''));
+$groupIdHint  = trim((string)($body['group_id'] ?? ''));  // 앱이 보내면 recording_jobs 에 저장 + FCM payload 에 포함
 // 앱이 폰 contacts lookup 결과로 매칭한 이름. 있으면 LLM 출력보다 우선 적용 (룰 §1).
 $customerNameHint = trim((string)($body['customer_name_hint'] ?? ''));
 if (mb_strlen($customerNameHint) > 80) $customerNameHint = mb_substr($customerNameHint, 0, 80);
@@ -666,9 +669,9 @@ if ($asyncMode) {
     $asyncJobId = uuid_v4();
     $insJob = $pdo->prepare("INSERT INTO recording_jobs
         (id, owner_email, status, storage_path, client_request_id,
-         audio_sha256, duration_sec, customer_name_hint, phone_number, recorded_at)
+         audio_sha256, duration_sec, customer_name_hint, phone_number, recorded_at, group_id)
         VALUES (:id, :o, 'queued', :sp, :k,
-                :sha, :dur, :hint, :ph, :ra)");
+                :sha, :dur, :hint, :ph, :ra, :gid)");
     $insJob->execute([
         ':id'  => $asyncJobId,
         ':o'   => $ownerEmail,
@@ -679,6 +682,7 @@ if ($asyncMode) {
         ':hint' => $customerNameHint !== '' ? $customerNameHint : null,
         ':ph'  => $phoneNumber !== '' ? $phoneNumber : null,
         ':ra'  => $consultAt !== '' ? $consultAt : null,
+        ':gid' => $groupIdHint !== '' ? $groupIdHint : null,
     ]);
 
     // 즉시 응답 — client 연결 종료. 이후 코드는 백그라운드.
@@ -1505,6 +1509,8 @@ if ($asyncMode) {
                 'job_id'          => (string)$asyncJobId,
                 'customer_log_id' => (string)$rowId,
                 'consult_at'      => (string)($savedRow['consult_at'] ?? ''),
+                // 앱팀 옵션 b — 앱이 보낸 group_id 다시 emit. 앱이 sendCustomerLogToGroup 호출 시 사용.
+                'group_id'        => (string)($groupIdHint ?? ''),
             ],
         ]);
         if (!empty($fcmResult['sent'])) {
