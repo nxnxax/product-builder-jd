@@ -748,15 +748,85 @@ if ($sttProvider === 'whisper') {
     curl_close($ch);
     if ($sttResp === false) jerror('upstream_failed', 'Whisper 호출 실패: ' . $sttErr, 502);
     $sttData = json_decode((string)$sttResp, true);
-    if ($sttStatus < 200 || $sttStatus >= 300) {
+
+    /* 런타임 fallback — Whisper 가 화이트리스트 ext (예: m4a) 라도 codec/container 변종으로 4xx 거부하는 케이스.
+     * NCP 설정이 있고 사전 fallback 이 적용 안 됐을 때만 한 번 CLOVA 재시도. */
+    if ($sttStatus >= 400 && $sttStatus < 500 && $sttFallbackReason === '') {
+        $clovaInvokeUrlR = load_env_value('NCP_CLOVA_INVOKE_URL');
+        $clovaSecretR    = load_env_value('NCP_CLOVA_SECRET');
+        if ($clovaInvokeUrlR !== '' && $clovaSecretR !== '') {
+            $whisperErrMsg = is_array($sttData) ? ($sttData['error']['message'] ?? json_encode($sttData)) : substr((string)$sttResp, 0, 200);
+            $sttFallbackReason = 'whisper_runtime_' . $sttStatus;
+            error_log('[process-recording] STT runtime fallback: whisper ' . $sttStatus . ' → clova (ext=' . $srcExt . ', filename=' . $origFilename . ', owner=' . $ownerEmail . ', whisper_err=' . $whisperErrMsg . ')');
+
+            $clovaParamsR = json_encode([
+                'language'      => 'ko-KR',
+                'completion'    => 'sync',
+                'fullText'      => true,
+                'wordAlignment' => false,
+                'diarization'   => ['enable' => true, 'speakerCountMin' => 2, 'speakerCountMax' => 2],
+                'resultToObs'   => false,
+            ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+            $ch2 = curl_init(rtrim($clovaInvokeUrlR, '/') . '/recognizer/upload');
+            curl_setopt_array($ch2, [
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_POST => true,
+                CURLOPT_POSTFIELDS => [
+                    'media'  => new CURLFile($realPath, $sttMime, $sttPostname),
+                    'params' => $clovaParamsR,
+                ],
+                CURLOPT_HTTPHEADER => ['X-CLOVASPEECH-API-KEY: ' . $clovaSecretR],
+                CURLOPT_TIMEOUT => 180,
+                CURLOPT_CONNECTTIMEOUT => 10,
+            ]);
+            $sttResp = curl_exec($ch2);
+            $sttStatus = (int)curl_getinfo($ch2, CURLINFO_HTTP_CODE);
+            $sttErr = curl_error($ch2);
+            curl_close($ch2);
+            if ($sttResp === false) jerror('upstream_failed', 'Clova fallback 호출 실패: ' . $sttErr, 502);
+            $sttData = json_decode((string)$sttResp, true);
+            if ($sttStatus < 200 || $sttStatus >= 300) {
+                $msg = is_array($sttData) ? ($sttData['message'] ?? json_encode($sttData)) : substr((string)$sttResp, 0, 300);
+                jerror('upstream_failed', 'Clova fallback ' . $sttStatus . ': ' . $msg, 502);
+            }
+            $transcript = trim((string)($sttData['text'] ?? ''));
+            if ($transcript === '' && !empty($sttData['segments']) && is_array($sttData['segments'])) {
+                $parts = [];
+                foreach ($sttData['segments'] as $seg) {
+                    $segText = trim((string)($seg['text'] ?? ''));
+                    if ($segText === '') continue;
+                    $speakerLabel = $seg['speaker']['label'] ?? ($seg['speaker'] ?? null);
+                    $parts[] = ($speakerLabel !== null ? '[화자' . $speakerLabel . '] ' : '') . $segText;
+                }
+                $transcript = implode("\n", $parts);
+            }
+            if ($transcript === '') jerror('upstream_failed', 'Clova fallback STT 결과가 비어있습니다.', 502);
+            $sttModelName = 'naver-clova-speech';
+            // duration: 앱이 보낸 duration_sec 우선, 없으면 CLOVA segments
+            if ($durationSec > 0) {
+                $durationSeconds = $durationSec;
+            } elseif (!empty($sttData['segments']) && is_array($sttData['segments'])) {
+                $lastSeg = end($sttData['segments']);
+                if (isset($lastSeg['end'])) {
+                    $durationSeconds = (int)round(((int)$lastSeg['end']) / 1000);
+                }
+            }
+        } else {
+            // NCP 설정 없음 → 친절한 메시지 노출
+            jerror('upstream_failed', '녹음 파일 형식을 인식할 수 없습니다. 영맨 고객센터에 문의해 주세요.', 415);
+        }
+    } elseif ($sttStatus < 200 || $sttStatus >= 300) {
         $msg = is_array($sttData) ? ($sttData['error']['message'] ?? json_encode($sttData)) : substr((string)$sttResp, 0, 300);
         jerror('upstream_failed', 'Whisper ' . $sttStatus . ': ' . $msg, 502);
+    } else {
+        // Whisper 성공
+        $transcript = trim((string)($sttData['text'] ?? ''));
+        if ($transcript === '') jerror('upstream_failed', 'Whisper STT 결과가 비어있습니다.', 502);
+        $sttModelName = 'openai-whisper-1';
+        // 앱이 보낸 duration_sec (MediaStore Audio.Media.DURATION) 우선. 0 이면 Whisper response 의 duration 폴백.
+        $durationSeconds = $durationSec > 0 ? $durationSec : (int)round((float)($sttData['duration'] ?? 0));
     }
-    $transcript = trim((string)($sttData['text'] ?? ''));
-    if ($transcript === '') jerror('upstream_failed', 'Whisper STT 결과가 비어있습니다.', 502);
-    $sttModelName = 'openai-whisper-1';
-    // 앱이 보낸 duration_sec (MediaStore Audio.Media.DURATION) 우선. 0 이면 Whisper response 의 duration 폴백.
-    $durationSeconds = $durationSec > 0 ? $durationSec : (int)round((float)($sttData['duration'] ?? 0));
 } else {
     /* ----- Naver CLOVA Speech (Long Sentence Recognition) -----
      * 3gpp/AMR (Samsung T전화 등) / m4a/mp4 등 다양한 컨테이너 네이티브 지원이라

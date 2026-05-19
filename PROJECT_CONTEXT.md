@@ -84,7 +84,10 @@ CALL_RECORDING_BACKEND.md — 통화 녹취 → AI 요약 백엔드 spec
 - **STT provider toggle (2026-05-19 추가)**: `STT_PROVIDER` 환경변수로 분기
   - `clova` (기본): Naver CLOVA Speech LSR — 화자분리 포함, 회당 **~180원**
   - `whisper`: OpenAI Whisper API — 화자분리 없음, 회당 **~50원** (-72%)
-  - **자동 fallback (옵션 c, 앱팀 합의, 화이트리스트 방식)**: STT_PROVIDER=whisper 라도 확장자가 Whisper 화이트리스트(`flac/m4a/mp3/mp4/mpeg/mpga/oga/ogg/wav/webm`) 외 (예: `aac/opus/3gpp/3gp/amr/빈 ext`) 면 자동 CLOVA. 앱 변경 없이 모든 디바이스 호환. NCP 설정 없으면 친절한 415 메시지.
+  - **자동 fallback (옵션 c, 앱팀 합의, 2단 안전망)**:
+    1. **사전 fallback** (확장자 기반): Whisper 화이트리스트(`flac/m4a/mp3/mp4/mpeg/mpga/oga/ogg/wav/webm`) 외 (예: `aac/opus/3gpp/3gp/amr/빈 ext`) 면 자동 CLOVA.
+    2. **런타임 fallback** (4xx 응답 기반): Whisper 가 화이트리스트 ext 라도 codec/container 변종으로 4xx 거부하면 즉시 CLOVA 재시도 (예: 한국 ROM 의 m4a 변종).
+    - 두 단계로 사장님 어떤 디바이스든 호환. NCP 설정 없으면 친절한 415 메시지.
   - **확장자 판별**: `original_filename` 우선 (앱이 multipart 의 Content-Type 을 'audio/mp4' 로 하드코딩하므로 헤더 신뢰 불가). fallback: 서버 저장 파일명.
   - **duration 추출**: 앱이 보낸 `duration_sec` (MediaStore Audio.Media.DURATION) 우선. 0 이면 STT response 의 duration 폴백.
   - `ai_model` 컬럼은 동적 생성 (`{stt}+{llm}` 패턴)
