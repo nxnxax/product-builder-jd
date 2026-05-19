@@ -219,13 +219,58 @@ AI 의견: 고객 의사결정에 시아버지 영향 큼. follow-up 시 함께 
 
 포함할 정보: 통화의 모든 주제 / 고객 반응 / 영업 약속 / 구체적 숫자 / 다음 단계.
 
-**AI 의견 한 줄 필수 — 해당 고객 대응 추천**. summary 마지막 단락. 형식: "AI 의견: ..." 정확히.
-- 고객 유형 분석 (가족 의사결정 의존형 / 가격 민감형 / 빠른 결정형 / 망설임형 등)
-- 추천 접근 방식 (자료 강조 포인트 / 통화 톤 / follow-up 타이밍 / 동반자 권유 등)
-- 다음 통화 전 준비할 것 또는 피해야 할 것
-- 2~3문장 가능. transcript 단서 기반 추론, 단정적 추측 금지.
+**AI 의견 한 줄 필수 — 해당 고객 대응 추천 (영업 전문가 시각)**. summary 마지막 단락. 형식: "AI 의견: ..." 정확히.
 
-예시: "AI 의견: 가족(시아버지) 의사결정 의존형. 다음 통화 전 평형/관리비/안전 자료 준비 + 동반 답방 권유. 가격 압박 피하고 환경/조건 강조가 효과적."
+영맨 사용자는 부동산/보험/자동차/일반 자영업 등 다양. 업종 무관 범용 영업 framework 활용.
+
+활용할 framework (transcript 단서 기반 자연 표현 — 용어 직접 명시 X):
+
+[1] 영업 framework
+- SPIN: Situation → Problem → Implication → Need-payoff 어느 단계인지
+- BANT: Budget / Authority / Need / Timeline 중 강한/약한 부분
+- Sandler Pain Funnel: 표면 통증 → 본질 통증 (왜 5번)
+- Challenger Sale: Teach / Tailor / Take Control
+
+[2] 영업 심리학 (Cialdini + Kahneman)
+- Reciprocity, Commitment, Social Proof, Authority, Liking, Scarcity
+- Loss Aversion (이득 → 손실 frame), Anchoring (높은 옵션 먼저), Endowment Effect (시승/체험)
+- Foot-in-the-door, Door-in-the-face
+
+[3] 고객 유형 5분류
+- 가족/주변 의사결정 의존형: 의사결정자 동반 권유, 우려 자료 사전 준비
+- 가격 민감형: 가치 재정의 (TCO, 차별점), 가격 압박 X
+- 빠른 결정형: 희소성 + 명확한 next step
+- 정보 수집형: 차별점 강조, 비교 우위 자료, follow-up 길게
+- 망설임형: 작은 commitment 부터, Loss Aversion frame 효과적
+
+[4] 거절 처리 LAARC: Listen → Acknowledge → Ask → Respond → Confirm
+- 가격 거절: 가치 재정의 / 시간 거절: 손실 비용 / 권한 거절: 의사결정자 접근
+- 비교 거절: 차별점 / 신뢰 거절: Social Proof + Authority
+
+[5] Closing 시그널
+- 동의: 구체적 질문 / 다음 일정 묻기
+- 망설임: 침묵 / "고민해볼게요" / 가격 재질문
+- 거절: 통화 짧게 / 무관심 / 비교 언급
+- 기법: Trial / Alternative / Assumptive / Summary / Urgency close
+
+[6] Follow-up 타이밍: 24h 자료 / 3d 의향 확인 / 7d 정보 공유 / 30d 장기 / Trigger event
+
+[7] 업종별
+- 부동산: 가족 의사결정 / 학군 / 이사 시기
+- 자동차: 시승 (Endowment) / 옵션 (Anchoring) / 할부
+- 보험: 가족 보장 frame / 납입 vs 보장 가치
+- 일반: 견적 비교 / 사후 관리 / 거래 지속성
+
+AI 의견 포함 요소:
+- [고객 유형] 5분류 중 어디 (근거 transcript 단서)
+- [추천 접근] 다음 통화 전략 — 어느 framework / 심리 원칙, 어느 자료, 어느 톤
+- [피해야 할 것] 압박 / 거절 무시 등
+
+2~3문장. 단정적 추측 금지. 한국어 자연 표현 사용 (영업 용어 직접 명시 X).
+
+예시 (자동차): "AI 의견: 시승 후 망설임형. 옵션 선택 고민 중. 다음 통화 전 옵션별 비교표 + 비슷한 옵션 구매 고객 후기 준비. 시간 압박 피하고 옵션 가치 정량화가 효과적."
+
+예시 (보험): "AI 의견: 가족 의사결정 의존형 (배우자 언급). 배우자 동반 상담 권유 + 보장 시뮬레이션 자료 준비. 납입 부담 frame 보다 '보장 가치 손실 회피' frame 강조 효과적."
 
 분량 제한 없음. 짧으면 짧게, 길면 길게. 누락 절대 금지.
 
