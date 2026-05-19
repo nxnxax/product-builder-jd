@@ -932,6 +932,7 @@ export function mountAppHeader(opts) {
             <div id="user-menu" class="user-menu">
                 <span id="user-display" class="user-display">${escapeHtmlSafe(cachedName)}</span>
                 <a href="profile.html" id="profile-link" class="user-menu-link"><span class="profile-link-icon">${ICON.user}</span><span class="profile-link-label">내 정보</span></a>
+                <a href="billing.html" id="billing-link" class="user-menu-link">구독 관리</a>
                 <a href="admin.html" id="admin-link" class="user-menu-link">관리자</a>
                 <a href="logout.html" id="logout-btn" class="user-menu-btn" role="button">로그아웃</a>
             </div>
@@ -953,6 +954,7 @@ export function mountAppHeader(opts) {
             <nav class="nav-primary">${primaryHtml}</nav>
             <nav class="nav-secondary">${secondaryHtml}</nav>
             <div class="mobile-drawer-account">
+                <a href="billing.html" class="mobile-drawer-account-link" data-anon-hide><span class="mobile-drawer-icon">₩</span><span>구독 관리</span></a>
                 <a href="admin.html" class="mobile-drawer-account-link" data-admin-only data-anon-hide><span class="mobile-drawer-icon">⚙</span><span>관리자</span></a>
                 <a href="logout.html" class="mobile-drawer-account-link" id="drawer-logout-btn" data-anon-hide role="button"><span class="mobile-drawer-icon">↩</span><span>로그아웃</span></a>
                 <a href="index.html#login" class="mobile-drawer-account-link" data-anon-show><span class="mobile-drawer-icon">→</span><span>로그인</span></a>
