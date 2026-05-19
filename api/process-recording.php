@@ -1298,7 +1298,12 @@ summary 와 별개로 각 필드 채움. summary 와 중복돼도 OK — 각 필
 
 - 단정적이지 않은 사실은 추측하지 말 것 (interest/inquiry/budget_condition/next_action 도 동일).
 - 개인정보(주민번호, 카드번호 등)는 마스킹.
-- JSON 외 다른 텍스트 출력 금지.
+- **출력 형식 (절대 규칙)**:
+  · 정확히 JSON 객체 1개만 출력
+  · markdown code block (```json) 금지
+  · JSON 외 어떤 텍스트도 포함 금지 (앞뒤 설명, 주석, "다음은 결과입니다" 같은 도입문 모두 금지)
+  · 출력은 '{' 로 시작해서 '}' 로 끝나야 함
+  · JSON 안의 string value 에 줄바꿈은 \\n 으로 표시 (raw newline 금지)
 
 ==== 영업 전문가 지식 (AI 의견 작성용 framework — 업종 무관 범용) ====
 
@@ -1464,6 +1469,8 @@ if ($llmProvider === 'anthropic') {
             ],
             'messages' => [
                 ['role' => 'user', 'content' => $transcript],
+                // Prefill 패턴 — Claude 응답이 무조건 '{' 로 시작하도록 강제. JSON 파싱 안정성.
+                ['role' => 'assistant', 'content' => '{'],
             ],
         ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
         CURLOPT_HTTPHEADER => [
@@ -1484,7 +1491,8 @@ if ($llmProvider === 'anthropic') {
         $msg = is_array($llmData) ? ($llmData['error']['message'] ?? json_encode($llmData)) : substr((string)$llmResp, 0, 300);
         jerror('upstream_failed', 'Claude ' . $llmStatus . ': ' . $msg, 502);
     }
-    $llmText = (string)($llmData['content'][0]['text'] ?? '');
+    // Claude 응답은 prefill '{' 다음부터 시작하므로 다시 붙여서 완전한 JSON 으로 복원.
+    $llmText = '{' . (string)($llmData['content'][0]['text'] ?? '');
 } else {
     /* ----- OpenAI Chat Completions ----- */
     $ch = curl_init('https://api.openai.com/v1/chat/completions');
@@ -1521,12 +1529,35 @@ if ($llmProvider === 'anthropic') {
 }
 $parsed = json_decode($llmText, true);
 if (!is_array($parsed)) {
-    // 한 번 더 시도 — 평문 안에 JSON 블록이 섞인 경우 추출.
-    if (preg_match('/\{[\s\S]*\}/', $llmText, $m)) {
-        $parsed = json_decode($m[0], true);
+    // fallback 1: markdown code block 안의 JSON 추출 (```json ... ```)
+    if (preg_match('/```(?:json)?\s*(\{[\s\S]*?\})\s*```/i', $llmText, $m)) {
+        $parsed = json_decode($m[1], true);
     }
 }
-if (!is_array($parsed)) jerror('upstream_failed', 'LLM JSON 파싱 실패.', 502);
+if (!is_array($parsed)) {
+    // fallback 2: 응답 안의 첫 { 부터 매칭되는 } 까지 brace counting 으로 추출
+    $start = strpos($llmText, '{');
+    if ($start !== false) {
+        $depth = 0;
+        $end = -1;
+        for ($i = $start; $i < strlen($llmText); $i++) {
+            if ($llmText[$i] === '{') $depth++;
+            elseif ($llmText[$i] === '}') {
+                $depth--;
+                if ($depth === 0) { $end = $i; break; }
+            }
+        }
+        if ($end > $start) {
+            $jsonCandidate = substr($llmText, $start, $end - $start + 1);
+            $parsed = json_decode($jsonCandidate, true);
+        }
+    }
+}
+if (!is_array($parsed)) {
+    // 디버깅용 — Claude 응답 raw 일부 error_log 에 남김 (다음 진단 자료)
+    error_log('[process-recording] LLM JSON 파싱 실패. text 일부: ' . substr($llmText, 0, 500));
+    jerror('upstream_failed', 'LLM JSON 파싱 실패. (Claude 응답이 예상 형식과 다름. 다시 시도해주세요.)', 502);
+}
 
 $llmName    = isset($parsed['customer_name'])    ? trim((string)$parsed['customer_name'])    : '';
 // 룰 §1: 앱이 전달한 contacts hint 가 있으면 LLM 출력보다 우선.

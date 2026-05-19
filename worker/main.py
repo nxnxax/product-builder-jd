@@ -386,21 +386,46 @@ async def summarize_claude(transcript: str) -> dict:
                     {"type": "text", "text": CLAUDE_SYSTEM_PROMPT,
                      "cache_control": {"type": "ephemeral"}},
                 ],
-                "messages": [{"role": "user", "content": transcript}],
+                "messages": [
+                    {"role": "user", "content": transcript},
+                    # Prefill 패턴 — Claude 응답이 무조건 '{' 로 시작 → JSON 파싱 안정성
+                    {"role": "assistant", "content": "{"},
+                ],
             },
         )
         if resp.status_code >= 400:
             raise HTTPException(status_code=502, detail=f"Claude {resp.status_code}: {resp.text[:200]}")
         data = resp.json()
-        text = data.get("content", [{}])[0].get("text", "")
-        # JSON 파싱 (markdown code block 안에 있을 수도)
+        # prefill '{' 다시 붙여서 완전한 JSON 으로 복원
+        text = "{" + data.get("content", [{}])[0].get("text", "")
+        # JSON 파싱 (다층 fallback)
         import json, re
         try:
             return json.loads(text)
         except json.JSONDecodeError:
-            match = re.search(r"\{[\s\S]*\}", text)
-            if match:
-                return json.loads(match.group())
+            pass
+        # fallback 1: markdown code block (```json ... ```)
+        match = re.search(r"```(?:json)?\s*(\{[\s\S]*?\})\s*```", text, re.IGNORECASE)
+        if match:
+            try:
+                return json.loads(match.group(1))
+            except json.JSONDecodeError:
+                pass
+        # fallback 2: brace counting (첫 { 부터 매칭되는 } 까지)
+        start = text.find("{")
+        if start != -1:
+            depth = 0
+            for i in range(start, len(text)):
+                if text[i] == "{":
+                    depth += 1
+                elif text[i] == "}":
+                    depth -= 1
+                    if depth == 0:
+                        try:
+                            return json.loads(text[start:i+1])
+                        except json.JSONDecodeError:
+                            break
+        log.error("Claude JSON 파싱 실패. text 일부: %s", text[:500])
         raise HTTPException(status_code=502, detail=f"Claude JSON 파싱 실패: {text[:300]}")
 
 
