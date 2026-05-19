@@ -214,20 +214,47 @@ export async function initSupabase() {
                 try { _bridgeLogin(currentSession); } catch {}
             }
             if (event === 'SIGNED_OUT') {
-                // 앱(WebView) 안에서는 사용자가 명시적으로 logout.html 을 거친 경우에만
-                // 네이티브에 로그아웃 통보. supabase 의 transient refresh 실패로 SIGNED_OUT
-                // 이 발화돼도 앱은 토큰 유지 → 재진입/재시도 시 복구 가능.
-                // logout.html 은 cleanup 진입 직전 `erp.userInitiatedLogout='1'` 을 set.
+                // 앱팀 진단 (2026-05-20): TOKEN_REFRESHED 직후 240~276ms 안에 SIGNED_OUT
+                // 자동 발생 → RN 에 auth.logout 전달 → 사용자 통화 PoC 불가.
+                //
+                // 새 safety net 3단계 (위에서 아래로 평가):
+                // 1. 최근 60초 안에 refresh 성공 기록 있으면 → 무조건 transient (logout 무시)
+                //    Supabase JS 의 TOKEN_REFRESHED → SIGNED_OUT race 차단.
+                // 2. 앱 안 (_bridgeIsInApp) 이면 logout.html 명시 진입 (sessionStorage flag) 만 logout
+                //    default = false (앱 안 SIGNED_OUT 은 보수적으로 transient 추정)
+                // 3. 앱 밖 (브라우저) 이면 logout 통과 (사용자 명시 의도)
                 const inApp = _bridgeIsInApp();
-                let userInitiated = true;
+                const recentRefreshMs = _refreshLastSuccessAt > 0 ? (Date.now() - _refreshLastSuccessAt) : Infinity;
+                const recentRefreshSuccess = recentRefreshMs < 60_000;
+
+                // 진단 로그 — 앱팀이 ErrorLog 에서 확인 가능
+                try {
+                    console.log('[auth] SIGNED_OUT', {
+                        inApp,
+                        recentRefreshMs: recentRefreshMs === Infinity ? 'never' : Math.round(recentRefreshMs),
+                        userInitiatedFlag: (typeof sessionStorage !== 'undefined') ? sessionStorage.getItem('erp.userInitiatedLogout') : null,
+                        sessionExists: !!session,
+                    });
+                } catch {}
+
+                if (recentRefreshSuccess) {
+                    // [safety 1] 최근 60초 안 refresh 성공 → transient SIGNED_OUT, logout 무시
+                    try { _runRefreshOnce(); } catch {}
+                    return;
+                }
+
+                let userInitiated = false;  // ← default FALSE (보수적)
                 if (inApp) {
                     try { userInitiated = sessionStorage.getItem('erp.userInitiatedLogout') === '1'; } catch {}
+                } else {
+                    // 앱 밖 (일반 브라우저) — SIGNED_OUT 은 사용자 의도일 가능성 높음
+                    userInitiated = true;
                 }
+
                 if (userInitiated) {
                     try { _bridgeLogout(); } catch {}
                 } else {
-                    // 앱 안 transient SIGNED_OUT — 마지막 토큰으로 refresh 한 번 더 시도.
-                    // cooldown + inflight dedup 적용된 공통 헬퍼.
+                    // 앱 안 transient SIGNED_OUT — refresh 한 번 더 시도.
                     try { _runRefreshOnce(); } catch {}
                 }
             }
