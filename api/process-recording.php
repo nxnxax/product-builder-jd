@@ -684,19 +684,21 @@ $sttProviderRequested = strtolower(trim((string)load_env_value('STT_PROVIDER')))
 $origExt = $origFilename !== '' ? strtolower(pathinfo($origFilename, PATHINFO_EXTENSION)) : '';
 $srcExt = $origExt !== '' ? $origExt : strtolower(pathinfo($realPath, PATHINFO_EXTENSION));
 
-/* STT auto-fallback (옵션 c): Whisper 가 미지원하는 3gpp/amr 포맷은 자동으로 CLOVA 로 폴백.
- * NCP 설정이 없으면 415 유지. 앱 코드 변경 없이 모든 디바이스 호환. */
+/* STT auto-fallback (옵션 c): Whisper 화이트리스트 방식.
+ * Whisper API 가 명시한 지원 포맷 외 모두 CLOVA 로 자동 fallback (aac/opus/3gpp/amr 등 + 미지정 ext 도 포함).
+ * NCP 설정이 없으면 그대로 whisper 호출 → API 가 400 반환. 앱 코드 변경 없이 모든 디바이스 호환. */
+$whisperSupportedExts = ['flac', 'm4a', 'mp3', 'mp4', 'mpeg', 'mpga', 'oga', 'ogg', 'wav', 'webm'];
 $sttProvider = $sttProviderRequested;
 $sttFallbackReason = '';
-if ($sttProvider === 'whisper' && in_array($srcExt, ['3gp', '3gpp', 'amr'], true)) {
+if ($sttProvider === 'whisper' && !in_array($srcExt, $whisperSupportedExts, true)) {
     $clovaInvokeUrlCheck = load_env_value('NCP_CLOVA_INVOKE_URL');
     $clovaSecretCheck    = load_env_value('NCP_CLOVA_SECRET');
     if ($clovaInvokeUrlCheck !== '' && $clovaSecretCheck !== '') {
         $sttProvider = 'clova';
-        $sttFallbackReason = 'whisper_unsupported_format_' . $srcExt;
-        error_log('[process-recording] STT auto-fallback: whisper → clova (ext=' . $srcExt . ', owner=' . $ownerEmail . ')');
+        $sttFallbackReason = 'whisper_unsupported_format_' . ($srcExt !== '' ? $srcExt : 'unknown');
+        error_log('[process-recording] STT auto-fallback: whisper → clova (ext=' . $srcExt . ', filename=' . $origFilename . ', owner=' . $ownerEmail . ')');
     }
-    // NCP 설정 없으면 그대로 whisper → 아래 415 jerror.
+    // NCP 설정 없으면 그대로 whisper → Whisper API 가 400 반환 (사용자에게 메시지 노출).
 }
 $sttMimeMap = [
     'm4a' => 'audio/mp4',   'mp4' => 'audio/mp4',  'mp3' => 'audio/mpeg',
@@ -718,8 +720,10 @@ if ($sttProvider === 'whisper') {
      *   - 단가: $0.006/min (회당 ~50원)
      * 3gpp/AMR(삼성 T전화) 는 Whisper 미지원 가능성 — 그 경우 jerror 로 명시.
      */
-    if (in_array($srcExt, ['3gp', '3gpp', 'amr'], true)) {
-        jerror('upstream_failed', 'Whisper는 3gpp/AMR 포맷 미지원. STT_PROVIDER=clova 로 전환 필요.', 415);
+    /* 화이트리스트 외 포맷 차단 — 위 자동 fallback 이 NCP 미설정 등의 이유로 적용 안 됐을 때만 도달.
+     * 사용자에게 친절한 메시지 노출 (앱이 그대로 Alert 표시함). */
+    if (!in_array($srcExt, $whisperSupportedExts, true)) {
+        jerror('upstream_failed', '녹음 파일 형식을 인식할 수 없습니다. 영맨 고객센터에 문의해 주세요.', 415);
     }
     $ch = curl_init('https://api.openai.com/v1/audio/transcriptions');
     curl_setopt_array($ch, [
