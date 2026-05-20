@@ -128,8 +128,13 @@ function read_json_body() {
     $raw = file_get_contents('php://input');
     if ($raw === '' || $raw === false) return [];
     $json = json_decode($raw, true);
-    if (!is_array($json)) respond(['ok' => false, 'error' => 'JSON 형식이 올바르지 않습니다.'], 400);
-    return $json;
+    if (is_array($json)) return $json;
+    // form-encoded fallback (앱이 application/x-www-form-urlencoded 보낼 가능성).
+    parse_str($raw, $form);
+    if (is_array($form) && !empty($form)) return $form;
+    // multipart fallback — PHP 가 $_POST 에 채움.
+    if (!empty($_POST)) return $_POST;
+    respond(['ok' => false, 'error' => 'JSON 형식이 올바르지 않습니다.'], 400);
 }
 
 function normalize_resource($value) {
@@ -3945,23 +3950,56 @@ try {
                 respond(['status' => 'error', 'code' => 'upstream_failed', 'message' => 'ledger 마이그레이션 실패.'], 503);
             }
 
-            // 그룹 결정: body.group_id 가 있으면 검증, 없거나 invalid 면 default 그룹 자동.
-            // 디버깅: 사장님 2026-05-20 보고 — 앱이 보내는 group_id 누락/잘못 케이스 진단용 로그.
+            // 그룹 결정: body / query 양쪽 + camelCase fallback + multipart form ($_POST).
+            // 사장님 2026-05-20 보고 — 앱이 보내는 키 형식 불확실 → 다양한 경로 탐색.
             $gRow = null;
-            $gid = isset($body['group_id']) ? (int)$body['group_id'] : 0;
-            if ($gid <= 0 && isset($body['groupId'])) { $gid = (int)$body['groupId']; }  // camelCase fallback
-            error_log('[send_to_group] owner=' . $owner . ' cid=' . $cid . ' raw_group_id=' . var_export($body['group_id'] ?? null, true) . ' resolved_gid=' . $gid);
+            $gid = 0;
+            $gidSource = 'none';
+            $candidates = [
+                ['body.group_id',   $body['group_id'] ?? null],
+                ['body.groupId',    $body['groupId'] ?? null],
+                ['body.groupID',    $body['groupID'] ?? null],
+                ['body.gid',        $body['gid'] ?? null],
+                ['body.ledger_group_id', $body['ledger_group_id'] ?? null],
+                ['query.group_id',  $_GET['group_id'] ?? null],
+                ['query.groupId',   $_GET['groupId'] ?? null],
+                ['post.group_id',   $_POST['group_id'] ?? null],
+                ['post.groupId',    $_POST['groupId'] ?? null],
+            ];
+            foreach ($candidates as [$src, $val]) {
+                if ($val === null || $val === '') continue;
+                $iv = (int)$val;
+                if ($iv > 0) { $gid = $iv; $gidSource = $src; break; }
+            }
+            error_log('[send_to_group] owner=' . $owner . ' cid=' . $cid . ' gid=' . $gid . ' src=' . $gidSource . ' body_keys=' . implode(',', array_keys($body ?? [])));
+            $resolvedGroupReason = '';
             if ($gid > 0) {
                 $gStmt = $pdo->prepare("SELECT * FROM ledger_groups
                     WHERE id = :id AND owner_email = :o AND page_type = 'customer' LIMIT 1");
                 $gStmt->execute([':id' => $gid, ':o' => $owner]);
                 $gRow = $gStmt->fetch() ?: null;
-                if (!$gRow) error_log('[send_to_group] gid ' . $gid . ' not found for owner ' . $owner);
+                if (!$gRow) {
+                    error_log('[send_to_group] gid ' . $gid . ' not found for owner ' . $owner);
+                    $resolvedGroupReason = 'gid_not_found_or_wrong_page_type';
+                } else {
+                    $resolvedGroupReason = 'explicit_gid';
+                }
+            } else {
+                $resolvedGroupReason = 'no_gid_in_payload';
             }
             if (!$gRow) {
                 $gRow = ensure_customer_log_default_group($pdo, $owner);
                 if (!$gRow) respond(['status' => 'error', 'code' => 'upstream_failed', 'message' => '기본 그룹 자동 생성 실패.'], 503);
+                $resolvedGroupReason .= '+default_fallback';
             }
+            // 디버그 정보 — 응답에도 포함. 앱이 무시해도 운영자 직접 호출 시 확인 가능.
+            $_sendDebug = [
+                'gid_received'      => $gid,
+                'gid_source'        => $gidSource,
+                'group_resolved_to' => (int)$gRow['id'],
+                'group_name'        => (string)$gRow['name'],
+                'reason'            => $resolvedGroupReason,
+            ];
 
             // 사장님 2026-05-20 — idempotent 분기는 "같은 customer_log + 같은 group" 일 때만 적용.
             // 다른 그룹으로 추가 mirror 허용 (멀티-그룹 미러). 기존 linked 는 첫 group 만 가리킴.
@@ -3977,6 +4015,7 @@ try {
                         'customer_log' => customer_log_row($clRow),
                         'ledger_record' => ledger_record_row($exLrRow),
                         'group' => ledger_group_row($gRow),
+                        '_send_debug' => $_sendDebug,
                     ]);
                 }
                 // 다른 그룹 — fall-through 해서 새 ledger_record INSERT/MERGE 진행.
@@ -4105,6 +4144,7 @@ try {
                     'customer_log'  => $clRow2 ? customer_log_row($clRow2) : null,
                     'ledger_record' => $lrRow  ? ledger_record_row($lrRow) : null,
                     'group' => ledger_group_row($gRow),
+                    '_send_debug' => $_sendDebug,
                 ]);
             }
 
@@ -4179,6 +4219,7 @@ try {
                 'customer_log' => $clRow2 ? customer_log_row($clRow2) : null,
                 'ledger_record' => $lrRow ? ledger_record_row($lrRow) : null,
                 'group' => ledger_group_row($gRow),
+                '_send_debug' => $_sendDebug,
             ]);
         }
 
