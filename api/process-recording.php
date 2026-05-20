@@ -735,6 +735,23 @@ if ($asyncMode) {
     } catch (Throwable $e) { /* 컬럼 미존재 — 'auto' 기본 */ }
     $reviewRequiredInt = ($reviewMode === 'review') ? 1 : 0;
 
+    // 사장님 2026-05-20 — 통화 후 모달 타임아웃 / 사용자 결정 없음 케이스.
+    // 앱이 group_id 안 보내거나 body.pending_review=true 면 review 강제.
+    // → customer_log 자동 INSERT skip + recording_jobs.status='ready_to_review'
+    // → 미확인요약 페이지(unreviewed.html)에 자동 노출 → 사장님 검토 후 confirm.
+    //
+    // 명시 group_id 보낸 경우 (앱의 "양식에 전송" 클릭) 는 기존 동작 그대로:
+    //   - review_mode='auto': 즉시 customer_log INSERT + send_to_group mirror
+    //   - review_mode='review': 사용자 명시 의도이므로 그래도 mirror (review_required=0 강제)
+    $pendingReviewFlag = !empty($body['pending_review']);
+    if ($groupIdHint === '' || $pendingReviewFlag) {
+        $reviewRequiredInt = 1;
+        error_log('[process-recording] review_required forced — gid_empty=' . ($groupIdHint === '' ? '1' : '0') . ' pending_flag=' . ($pendingReviewFlag ? '1' : '0'));
+    } elseif ($groupIdHint !== '' && $reviewMode === 'review') {
+        // review 모드 사용자가 명시 group_id 보내면 즉시 mirror 의도 → review 강제 해제.
+        $reviewRequiredInt = 0;
+    }
+
     // 새 job 생성. 사용자 token 검증은 이미 끝났으므로 cron worker 가 server secret 으로 처리할 수 있음.
     $asyncJobId = uuid_v4();
     $insJob = $pdo->prepare("INSERT INTO recording_jobs
