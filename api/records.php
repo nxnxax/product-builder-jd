@@ -3941,41 +3941,45 @@ try {
             $clRow = $clStmt->fetch();
             if (!$clRow) respond(['status' => 'error', 'code' => 'not_found', 'message' => 'customer_log 없거나 권한 없음.'], 404);
 
-            // 같은 customer_log 가 이미 전송됨 → idempotent: 기존 ledger_record 반환.
-            if (!empty($clRow['linked_ledger_record_id'])) {
-                $exLr = $pdo->prepare('SELECT * FROM ledger_records WHERE id = :id AND owner_email = :o LIMIT 1');
-                $exLr->execute([':id' => (int)$clRow['linked_ledger_record_id'], ':o' => $owner]);
-                $exLrRow = $exLr->fetch();
-                if ($exLrRow) {
-                    $exGr = $pdo->prepare('SELECT * FROM ledger_groups WHERE id = :id AND owner_email = :o LIMIT 1');
-                    $exGr->execute([':id' => (int)$exLrRow['group_id'], ':o' => $owner]);
-                    $exGrRow = $exGr->fetch();
-                    respond([
-                        'status' => 'ok',
-                        'duplicate' => true,
-                        'customer_log' => customer_log_row($clRow),
-                        'ledger_record' => ledger_record_row($exLrRow),
-                        'group' => $exGrRow ? ledger_group_row($exGrRow) : null,
-                    ]);
-                }
-            }
-
             if (!ensure_ledger_tables($pdo)) {
                 respond(['status' => 'error', 'code' => 'upstream_failed', 'message' => 'ledger 마이그레이션 실패.'], 503);
             }
 
             // 그룹 결정: body.group_id 가 있으면 검증, 없거나 invalid 면 default 그룹 자동.
+            // 디버깅: 사장님 2026-05-20 보고 — 앱이 보내는 group_id 누락/잘못 케이스 진단용 로그.
             $gRow = null;
             $gid = isset($body['group_id']) ? (int)$body['group_id'] : 0;
+            if ($gid <= 0 && isset($body['groupId'])) { $gid = (int)$body['groupId']; }  // camelCase fallback
+            error_log('[send_to_group] owner=' . $owner . ' cid=' . $cid . ' raw_group_id=' . var_export($body['group_id'] ?? null, true) . ' resolved_gid=' . $gid);
             if ($gid > 0) {
                 $gStmt = $pdo->prepare("SELECT * FROM ledger_groups
                     WHERE id = :id AND owner_email = :o AND page_type = 'customer' LIMIT 1");
                 $gStmt->execute([':id' => $gid, ':o' => $owner]);
                 $gRow = $gStmt->fetch() ?: null;
+                if (!$gRow) error_log('[send_to_group] gid ' . $gid . ' not found for owner ' . $owner);
             }
             if (!$gRow) {
                 $gRow = ensure_customer_log_default_group($pdo, $owner);
                 if (!$gRow) respond(['status' => 'error', 'code' => 'upstream_failed', 'message' => '기본 그룹 자동 생성 실패.'], 503);
+            }
+
+            // 사장님 2026-05-20 — idempotent 분기는 "같은 customer_log + 같은 group" 일 때만 적용.
+            // 다른 그룹으로 추가 mirror 허용 (멀티-그룹 미러). 기존 linked 는 첫 group 만 가리킴.
+            if (!empty($clRow['linked_ledger_record_id'])) {
+                $exLr = $pdo->prepare('SELECT * FROM ledger_records WHERE id = :id AND owner_email = :o LIMIT 1');
+                $exLr->execute([':id' => (int)$clRow['linked_ledger_record_id'], ':o' => $owner]);
+                $exLrRow = $exLr->fetch();
+                if ($exLrRow && (int)$exLrRow['group_id'] === (int)$gRow['id']) {
+                    // 같은 그룹 — idempotent 응답.
+                    respond([
+                        'status' => 'ok',
+                        'duplicate' => true,
+                        'customer_log' => customer_log_row($clRow),
+                        'ledger_record' => ledger_record_row($exLrRow),
+                        'group' => ledger_group_row($gRow),
+                    ]);
+                }
+                // 다른 그룹 — fall-through 해서 새 ledger_record INSERT/MERGE 진행.
             }
 
             // data_json 구성: customer_log → ledger 8필드 매핑.
