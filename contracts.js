@@ -16,7 +16,8 @@ import { attachColumnFilters, applyColumnFilters, openRowAddModal, attachPhoneAu
          saveImportSession, loadImportSession, clearImportSession,
          findBlankRecordIds, showSweepToast,
          attachCellClickHandlers,
-         isLedgerMobile, onLedgerViewportChange } from './ledger-shared.js?v=20260516-nickname-header';
+         isLedgerMobile, onLedgerViewportChange,
+         deepSearchMatch, normalizeSearchQuery } from './ledger-shared.js?v=20260520-search-deep';
 
 const PAGE_TYPE = 'contract';
 const TAX_RATE = 0.033;   // 실수령액 = commission * (1 - TAX_RATE)
@@ -508,15 +509,25 @@ async function createContractFromOrg(orgGroupId) {
     }
 }
 
-/* 검색 → 기존 DOM 행 hide/show. renderRecords() 호출 안 함 → input 보존 → IME 안 깨짐. */
+/* 검색 → 기존 DOM 행 hide/show. renderRecords() 호출 안 함 → input 보존 → IME 안 깨짐.
+ * 사장님 2026-05-20 요청 — textContent + record.data 재귀 deepSearchMatch 통합. */
 function filterDOMRowsBySearch(gid, query) {
     const card = document.querySelector(`.accordion-card[data-gid="${gid}"]`);
     if (!card) return;
-    const q = (query || '').trim().toLowerCase();
+    const normQ = normalizeSearchQuery(query);
     const rows = card.querySelectorAll('.ledger-cards > .ledger-card, .ledger-tbl tbody tr');
     rows.forEach(el => {
         if (el.querySelector('td[colspan]')) return;
-        const matched = !q || el.textContent.toLowerCase().includes(q);
+        let matched = !normQ;
+        if (!matched) {
+            const txt = (el.textContent || '').normalize('NFC').toLowerCase();
+            if (txt.includes(normQ)) matched = true;
+        }
+        if (!matched) {
+            const rid = el.dataset.id || el.querySelector('[data-id]')?.dataset.id;
+            const rec = rid ? records.find(r => String(r.id) === String(rid)) : null;
+            if (rec && deepSearchMatch(rec.data, normQ)) matched = true;
+        }
         el.style.display = matched ? '' : 'none';
     });
 }
@@ -534,17 +545,11 @@ function applyFilters(rows, groupId) {
         }
         return r.data?.[k];
     });
-    // 그룹별 텍스트 검색 — 행 안의 모든 값을 부분 매칭
+    // 그룹별 텍스트 검색 — 모든 항목 재귀 검색 (사장님 2026-05-20).
     if (groupId != null) {
-        const q = (searchByGroup[groupId] || '').trim().toLowerCase();
-        if (q !== '') {
-            out = out.filter(r => {
-                const d = r.data || {};
-                return Object.values(d).some(v => {
-                    if (v == null || v === '') return false;
-                    return String(v).toLowerCase().includes(q);
-                });
-            });
+        const normQ = normalizeSearchQuery(searchByGroup[groupId] || '');
+        if (normQ !== '') {
+            out = out.filter(r => deepSearchMatch(r.data || {}, normQ));
         }
     }
     return out;

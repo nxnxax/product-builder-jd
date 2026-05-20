@@ -15,7 +15,8 @@ import { attachColumnFilters, applyColumnFilters, openRowAddModal, attachPhoneAu
          saveImportSession, loadImportSession, clearImportSession,
          findBlankRecordIds, showSweepToast,
          attachCellClickHandlers,
-         isLedgerMobile, onLedgerViewportChange } from './ledger-shared.js?v=20260516-nickname-header';
+         isLedgerMobile, onLedgerViewportChange,
+         deepSearchMatch, normalizeSearchQuery } from './ledger-shared.js?v=20260520-search-deep';
 
 const MOBILE_PRIMARY_KEYS = ['customer', 'phone', 'date'];
 
@@ -263,28 +264,31 @@ async function loadRecords() {
 function filterDOMRowsBySearch(gid, query) {
     const card = document.querySelector(`.accordion-card[data-gid="${gid}"]`);
     if (!card) return;
-    const q = (query || '').trim().toLowerCase();
-    // Desktop 표 행 + Mobile 카드 모두 대상.
+    // 사장님 2026-05-20 요청 — textContent + record.data 재귀 matching 통합.
+    const normQ = normalizeSearchQuery(query);
     const rows = card.querySelectorAll('.ledger-cards > .ledger-card, .ledger-tbl tbody tr');
     rows.forEach(el => {
-        // 빈 상태 / colspan placeholder row 는 건드리지 않음.
         if (el.querySelector('td[colspan]')) return;
-        const matched = !q || el.textContent.toLowerCase().includes(q);
+        let matched = !normQ;
+        if (!matched) {
+            const txt = (el.textContent || '').normalize('NFC').toLowerCase();
+            if (txt.includes(normQ)) matched = true;
+        }
+        if (!matched) {
+            const rid = el.dataset.id || el.querySelector('[data-id]')?.dataset.id;
+            const rec = rid ? records.find(r => String(r.id) === String(rid)) : null;
+            if (rec && deepSearchMatch(rec.data, normQ)) matched = true;
+        }
         el.style.display = matched ? '' : 'none';
     });
 }
 
 function applyFilters(rows, groupId) {
     let out = applyColumnFilters(filterState.filters, rows, (r, k) => r.data?.[k]);
-    const q = (searchByGroup[groupId] || '').trim().toLowerCase();
-    if (q !== '') {
-        out = out.filter(r => {
-            const d = r.data || {};
-            return Object.values(d).some(v => {
-                if (v == null || v === '') return false;
-                return String(v).toLowerCase().includes(q);
-            });
-        });
+    // 사장님 2026-05-20 요청 — Object.values 의 [object Object] 문제 해결. file/ref inner value 까지 매칭.
+    const normQ = normalizeSearchQuery(searchByGroup[groupId] || '');
+    if (normQ !== '') {
+        out = out.filter(r => deepSearchMatch(r.data || {}, normQ));
     }
     return out;
 }

@@ -21,7 +21,8 @@ import {
     exportRecordsToExcel, pickExcelFile, parseExcelFile,
     suggestFieldMapping, openImportPreviewModal,
     attachCellClickHandlers,
-} from './ledger-shared.js?v=20260516-nickname-header';
+    deepSearchMatch, normalizeSearchQuery,
+} from './ledger-shared.js?v=20260520-search-deep';
 
 const PAGE_TYPE = 'custom';
 
@@ -527,17 +528,17 @@ function renderFormUse() {
     // 필터 적용된 records (컬럼 필터 + 텍스트 검색)
     let filteredRows = applyColumnFilters(filterState.filters, records, (r, k) => r.data?.[k]);
     if (searchQuery.trim()) {
-        const q = searchQuery.trim().toLowerCase();
+        // 사장님 2026-05-20 요청 — 전체 항목 검색. data 의 모든 value (담당자 메모/비고/file/ref 포함) 재귀 탐색.
+        // formula 계산 결과까지 매칭하기 위해 cellDisplay 도 보조로 검사.
+        const normQ = normalizeSearchQuery(searchQuery);
         filteredRows = filteredRows.filter(r => {
             const d = r.data || {};
+            if (deepSearchMatch(d, normQ)) return true;
+            // formula / toggle / switch 의 표시 텍스트도 매칭 대상.
             return fields.some(f => {
-                if (f.type === 'auto_number' || f.type === 'formula') return false;
-                const v = d[f.key];
-                if (v === undefined || v === null || v === '') return false;
-                if (f.type === 'file') return (v.name || '').toLowerCase().includes(q);
-                if (f.type === 'ref') return (v.label || '').toLowerCase().includes(q);
-                if (f.type === 'toggle' || f.type === 'switch') return false;
-                return String(v).toLowerCase().includes(q);
+                if (f.type !== 'formula' && f.type !== 'toggle' && f.type !== 'switch') return false;
+                const text = (cellDisplay(f, d[f.key], d, fields) || '').toString().normalize('NFC').toLowerCase();
+                return text && text.includes(normQ);
             });
         });
     }
@@ -597,15 +598,26 @@ function renderFormUse() {
     document.getElementById('bulkDelBtn')?.addEventListener('click', () => bulkDeleteSelected(form));
 
     // 텍스트 검색 — DOM 재생성 없이 기존 행만 hide/show. 한글 IME 조합 보존.
+    // 사장님 2026-05-20 요청 — textContent + record.data 재귀 deepSearchMatch 통합.
     const searchInput = document.getElementById('searchInput');
     if (searchInput) {
         let timer = null;
         const apply = (q) => {
-            const lower = (q || '').trim().toLowerCase();
-            // 양식 사용 모드의 행 (.ledger-card / table tbody tr) 만 대상
+            const normQ = normalizeSearchQuery(q);
             document.querySelectorAll('.accordion-card .ledger-cards > .ledger-card, .accordion-card .ledger-tbl tbody tr').forEach(el => {
                 if (el.querySelector('td[colspan]')) return;
-                const matched = !lower || el.textContent.toLowerCase().includes(lower);
+                let matched = !normQ;
+                if (!matched) {
+                    // 1차: textContent 매칭 (visible text — 모든 셀의 표시값 포함)
+                    const txt = (el.textContent || '').normalize('NFC').toLowerCase();
+                    if (txt.includes(normQ)) matched = true;
+                }
+                if (!matched) {
+                    // 2차: record.data 재귀 매칭 (textContent 못 잡는 케이스 — file/ref inner value, formula raw 입력 등)
+                    const rid = el.dataset.id || el.querySelector('[data-id]')?.dataset.id;
+                    const rec = rid ? records.find(r => String(r.id) === String(rid)) : null;
+                    if (rec && deepSearchMatch(rec.data, normQ)) matched = true;
+                }
                 el.style.display = matched ? '' : 'none';
             });
             searchQuery = q;

@@ -12,7 +12,8 @@ import { attachColumnFilters, applyColumnFilters, openRowAddModal, attachPhoneAu
          saveImportSession, loadImportSession, clearImportSession,
          findBlankRecordIds, showSweepToast,
          attachCellClickHandlers,
-         isLedgerMobile, onLedgerViewportChange } from './ledger-shared.js?v=20260516-nickname-header';
+         isLedgerMobile, onLedgerViewportChange,
+         deepSearchMatch, normalizeSearchQuery } from './ledger-shared.js?v=20260520-search-deep';
 
 const PAGE_TYPE = 'org';
 
@@ -352,15 +353,25 @@ async function loadRecords() {
     renderRecords();
 }
 
-/* 검색 → 기존 DOM 행 hide/show. renderRecords() 호출 안 함 → input 보존 → IME 안 깨짐. */
+/* 검색 → 기존 DOM 행 hide/show. renderRecords() 호출 안 함 → input 보존 → IME 안 깨짐.
+ * 사장님 2026-05-20 요청 — textContent + record.data 재귀 deepSearchMatch 통합. */
 function filterDOMRowsBySearch(gid, query) {
     const card = document.querySelector(`.accordion-card[data-gid="${gid}"]`);
     if (!card) return;
-    const q = (query || '').trim().toLowerCase();
+    const normQ = normalizeSearchQuery(query);
     const rows = card.querySelectorAll('.ledger-cards > .ledger-card, .ledger-tbl tbody tr');
     rows.forEach(el => {
         if (el.querySelector('td[colspan]')) return;
-        const matched = !q || el.textContent.toLowerCase().includes(q);
+        let matched = !normQ;
+        if (!matched) {
+            const txt = (el.textContent || '').normalize('NFC').toLowerCase();
+            if (txt.includes(normQ)) matched = true;
+        }
+        if (!matched) {
+            const rid = el.dataset.id || el.querySelector('[data-id]')?.dataset.id;
+            const rec = rid ? records.find(r => String(r.id) === String(rid)) : null;
+            if (rec && deepSearchMatch(rec.data, normQ)) matched = true;
+        }
         el.style.display = matched ? '' : 'none';
     });
 }
@@ -445,17 +456,11 @@ function renderGroupCard(group) {
     const isLeadMode = ownerRoleOf(group) === 'lead';
     const activeTeams = new Set(s.active_teams && s.active_teams.length > 0 ? s.active_teams : [1, 2, 3]);
 
-    // 컬럼 헤더 필터 + 그룹별 텍스트 검색 (input data-search-gid)
+    // 컬럼 헤더 필터 + 그룹별 텍스트 검색 — 모든 항목 재귀 검색 (사장님 2026-05-20).
     let filtered = applyColumnFilters(filterState.filters, groupRecs, (r, k) => r.data?.[k]);
-    const q = (searchByGroup[group.id] || '').trim().toLowerCase();
-    if (q !== '') {
-        filtered = filtered.filter(r => {
-            const d = r.data || {};
-            return Object.values(d).some(v => {
-                if (v == null || v === '') return false;
-                return String(v).toLowerCase().includes(q);
-            });
-        });
+    const normQ = normalizeSearchQuery(searchByGroup[group.id] || '');
+    if (normQ !== '') {
+        filtered = filtered.filter(r => deepSearchMatch(r.data || {}, normQ));
     }
 
     // 본부장은 어느 팀에도 속하지 않는 별도 셀.

@@ -428,6 +428,25 @@ export function applyColumnFilters(filters, rows, getValue) {
     });
 }
 
+/** 전체 텍스트 검색 — record.data 의 모든 value (object/array 포함) 를 재귀 탐색.
+ *  한글 자모 분리 케이스 NFC 정규화 + 대소문자 무시.
+ *  file({url, name}) / ref({value, label}) 같은 object 도 inner value 매칭.
+ *  보통 호출자가 normQ = query.trim().normalize('NFC').toLowerCase() 로 한 번 정규화 후 전달. */
+export function deepSearchMatch(v, normQ) {
+    if (!normQ) return true;
+    if (v == null || v === '') return false;
+    if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') {
+        return String(v).normalize('NFC').toLowerCase().includes(normQ);
+    }
+    if (Array.isArray(v)) return v.some(x => deepSearchMatch(x, normQ));
+    if (typeof v === 'object') return Object.values(v).some(x => deepSearchMatch(x, normQ));
+    return false;
+}
+
+export function normalizeSearchQuery(q) {
+    return (q || '').trim().normalize('NFC').toLowerCase();
+}
+
 /** 컬럼별 필터 dropdown 을 헤더 셀에 부착. */
 export function attachColumnFilters({ state, headers, fields, getRows, getValue, onChange, labelFor }) {
     ensureOutsideClickHandler();
