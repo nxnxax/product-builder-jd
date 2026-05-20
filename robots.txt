@@ -1,0 +1,52 @@
+# YOUNGMAN robots.txt
+# 외부 노출 페이지만 크롤 허용. 로그인 후 화면 / API / 업로드 디렉토리는 차단.
+
+User-agent: *
+Allow: /
+Allow: /Marketing.html
+Allow: /subscribe.html
+Allow: /privacy.html
+Allow: /terms.html
+Allow: /refund.html
+Allow: /auto-billing.html
+Allow: /lotto2233.html
+Allow: /kapp_premium.php
+
+# 로그인 후 화면 — 검색 결과 노출 금지 (PII 위험)
+Disallow: /admin.html
+Disallow: /profile.html
+Disallow: /customers.html
+Disallow: /contracts.html
+Disallow: /org.html
+Disallow: /forms.html
+Disallow: /board.html
+Disallow: /unreviewed.html
+Disallow: /upload.html
+Disallow: /download.html
+Disallow: /card-builder.html
+Disallow: /billing.html
+Disallow: /logout.html
+Disallow: /login-complete.html
+
+# 서버 API / 업로드
+Disallow: /api/
+Disallow: /uploads/
+Disallow: /records.php
+Disallow: /upload.php
+Disallow: /process-recording.php
+Disallow: /job-status.php
+Disallow: /recording-callback.php
+Disallow: /recording-audio.php
+Disallow: /audio_cleanup.php
+Disallow: /fcm_helpers.php
+Disallow: /billing/
+Disallow: /sms/
+
+# 운영 자료
+Disallow: /PLAY_DATA_SAFETY.md
+Disallow: /PROJECT_CONTEXT.md
+Disallow: /SMS_USER_GUIDE.txt
+Disallow: /BRIDGE_API.md
+Disallow: /CALL_RECORDING_BACKEND.md
+
+Sitemap: https://youngman-biz.com/sitemap.xml
