@@ -3709,6 +3709,48 @@ try {
             respond(['status' => 'ok']);
         }
 
+        // ─── ADMIN_JOB_DIAG (사장님 2026-05-20 진단용 — admin only) ───
+        // GET/POST: action=admin_job_diag, body/query.job_ids=콤마구분 또는 배열
+        // 응답: 각 job_id 의 진단 컬럼 모두 (owner 무관 — admin 권한).
+        if ($action === 'admin_job_diag') {
+            if (!is_admin_email($owner)) {
+                respond(['status' => 'error', 'code' => 'forbidden', 'message' => 'admin 전용 endpoint.'], 403);
+            }
+            ensure_recording_jobs_table($pdo);
+            // job_ids 다양한 형식 fallback
+            $raw = $body['job_ids'] ?? $_GET['job_ids'] ?? '';
+            $ids = [];
+            if (is_array($raw)) {
+                foreach ($raw as $v) { $v = trim((string)$v); if ($v !== '') $ids[] = $v; }
+            } else {
+                foreach (explode(',', (string)$raw) as $v) { $v = trim($v); if ($v !== '') $ids[] = $v; }
+            }
+            if (!$ids) respond(['status' => 'error', 'code' => 'invalid_request', 'message' => 'job_ids 필요.'], 400);
+            $ids = array_slice($ids, 0, 50);
+            $placeholders = implode(',', array_fill(0, count($ids), '?'));
+            try {
+                $sql = "SELECT id, owner_email, status, review_required, customer_log_id, storage_path,
+                               client_request_id, audio_sha256, duration_sec, customer_name_hint, phone_number,
+                               recorded_at, retry_count, error_message, fcm_sent_at, started_at, completed_at,
+                               progress_pct, group_id, created_at, updated_at,
+                               (status = 'ready_to_review') AS is_ready_to_review,
+                               (fcm_sent_at IS NOT NULL) AS fcm_sent
+                        FROM recording_jobs WHERE id IN (" . $placeholders . ")";
+                $stmt = $pdo->prepare($sql);
+                $stmt->execute($ids);
+                $rows = $stmt->fetchAll();
+            } catch (Throwable $e) {
+                respond(['status' => 'error', 'code' => 'upstream_failed', 'message' => 'SELECT 실패: ' . $e->getMessage()], 503);
+            }
+            $found = [];
+            foreach ($rows as $r) { $found[(string)$r['id']] = $r; }
+            $result = [];
+            foreach ($ids as $reqId) {
+                $result[$reqId] = isset($found[$reqId]) ? $found[$reqId] : null;
+            }
+            respond(['status' => 'ok', 'items' => $result, 'requested_count' => count($ids), 'found_count' => count($rows)]);
+        }
+
         // ─── TRANSCRIPTS_BY_PHONE (사장님 2026-05-20 — 회차별 대화내용 전문보기) ───
         // GET /records.php?resource=customer-log&action=transcripts_by_phone&phone=01012345678
         // 같은 phone 의 모든 customer_log row 의 transcript 복호화 반환 (회차별 매칭용).
