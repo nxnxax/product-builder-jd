@@ -109,7 +109,8 @@ if (strtolower((string)$jobRow['owner_email']) !== $ownerEmail) {
 /* 실패 케이스 처리 */
 if ($statusReq !== 'completed') {
     $newRetry = (int)($jobRow['retry_count'] ?? 0) + 1;
-    $newStatus = ($statusReq === 'failed_permanent' || $newRetry >= 3)
+    // 앱팀 2026-05-20 2차 요청 — max_retry = 2.
+    $newStatus = ($statusReq === 'failed_permanent' || $newRetry >= 2)
         ? 'failed_permanent' : 'failed_retryable';
     try {
         $pdo->prepare("UPDATE recording_jobs SET

@@ -424,7 +424,61 @@ async def summarize_claude(transcript: str) -> dict:
                             return json.loads(text[start:i+1])
                         except json.JSONDecodeError:
                             break
-        log.error("Claude JSON 파싱 실패. text 일부: %s", text[:500])
+        # fallback 3: 앱팀 2026-05-20 2차 요청 — Claude 에 repair 1회 요청.
+        log.warning("Claude JSON 파싱 1~3단 실패 — repair 호출 시도. text 일부: %s", text[:300])
+        repair_sys = (
+            "다음 텍스트를 지정된 JSON schema 에 맞게 유효한 JSON 으로만 변환하세요. 설명 없이 JSON 만 반환하세요.\n"
+            "schema: {\"customer_name\":string, \"summary\":string, \"interest\":string, "
+            "\"inquiry\":string, \"budget_condition\":string, \"next_action\":string}"
+        )
+        try:
+            r_resp = await client.post(
+                "https://api.anthropic.com/v1/messages",
+                headers={
+                    "x-api-key": ANTHROPIC_API_KEY,
+                    "anthropic-version": "2023-06-01",
+                    "content-type": "application/json",
+                },
+                json={
+                    "model": "claude-sonnet-4-6",
+                    "max_tokens": 1500,
+                    "temperature": 0,
+                    "system": repair_sys,
+                    "messages": [{"role": "user", "content": text}],
+                },
+            )
+            if r_resp.status_code < 400:
+                r_text = r_resp.json().get("content", [{}])[0].get("text", "")
+                try:
+                    parsed = json.loads(r_text)
+                    log.info("Claude JSON repair 성공")
+                    return parsed
+                except json.JSONDecodeError:
+                    m2 = re.search(r"```(?:json)?\s*(\{[\s\S]*?\})\s*```", r_text, re.IGNORECASE)
+                    if m2:
+                        try:
+                            parsed = json.loads(m2.group(1))
+                            log.info("Claude JSON repair 성공 (markdown)")
+                            return parsed
+                        except json.JSONDecodeError:
+                            pass
+                    rs = r_text.find("{")
+                    if rs != -1:
+                        rd = 0
+                        for ri in range(rs, len(r_text)):
+                            if r_text[ri] == "{": rd += 1
+                            elif r_text[ri] == "}":
+                                rd -= 1
+                                if rd == 0:
+                                    try:
+                                        parsed = json.loads(r_text[rs:ri+1])
+                                        log.info("Claude JSON repair 성공 (brace)")
+                                        return parsed
+                                    except json.JSONDecodeError:
+                                        break
+        except Exception:
+            log.exception("Claude repair 호출 자체 실패")
+        log.error("Claude JSON 파싱 + repair 모두 실패. text 일부: %s", text[:500])
         raise HTTPException(status_code=502, detail=f"Claude JSON 파싱 실패: {text[:300]}")
 
 

@@ -646,15 +646,16 @@ if ($existing) {
     } catch (Throwable $e) { /* plan 컬럼 없음 — 무시 */ }
     jout([
         'ok' => true,
-        'status' => 'ok',
+        'duplicate' => true,
         'error_code' => 'JOB_EXISTS',   // 이미 처리 완료 (customer_log row 존재) — 앱이 기존 결과 사용.
+        'status' => 'saved',            // 앱팀 2차 요청 — 실제 job_status 통일.
+        'message' => '이미 처리 완료된 작업입니다.',
         'customer_log' => customer_log_row($existing),
         'plan' => [
             'plan' => $planRow['plan'] ?? 'free',
             'free_summaries_used' => (int)($planRow['free_summaries_used'] ?? 0),
             'free_quota' => customer_log_free_quota(),
         ],
-        'duplicate' => true,
     ]);
 }
 
@@ -678,13 +679,16 @@ if ($asyncMode) {
         $jStat = (string)$existingJob['status'];
         // 처리 완료 (saved/ready_to_review/completed) 면 JOB_EXISTS, 아직 처리 중이면 JOB_DUPLICATE.
         $existsErr = in_array($jStat, ['completed', 'saved', 'ready_to_review'], true) ? 'JOB_EXISTS' : 'JOB_DUPLICATE';
+        $msg = in_array($jStat, ['completed', 'saved'], true) ? '이미 처리 완료된 작업입니다.'
+             : ($jStat === 'ready_to_review' ? '검토 대기 중인 작업입니다.' : '이미 처리 중인 작업입니다.');
         jout([
             'ok' => true,
-            'status' => 'queued',
+            'duplicate' => true,
             'error_code' => $existsErr,
             'job_id' => (string)$existingJob['id'],
-            'duplicate' => true,
-            'job_status' => $jStat,
+            'status' => $jStat,          // 앱팀 2차 요청 — 실제 job_status 통일.
+            'job_status' => $jStat,      // backwards compat.
+            'message' => $msg,
             'customer_log_id' => $existingJob['customer_log_id'] ?? null,
         ], 200);
     }
@@ -706,14 +710,17 @@ if ($asyncMode) {
         if ($shaJob) {
             $jStat = (string)$shaJob['status'];
             $existsErr = in_array($jStat, ['completed', 'saved', 'ready_to_review'], true) ? 'JOB_EXISTS' : 'JOB_DUPLICATE';
+            $msg = in_array($jStat, ['completed', 'saved'], true) ? '이미 처리 완료된 작업입니다.'
+                 : ($jStat === 'ready_to_review' ? '검토 대기 중인 작업입니다.' : '이미 처리 중인 작업입니다.');
             jout([
                 'ok' => true,
-                'status' => 'queued',
-                'error_code' => $existsErr,
-                'job_id' => (string)$shaJob['id'],
                 'duplicate' => true,
                 'duplicate_reason' => 'audio_sha256',
+                'error_code' => $existsErr,
+                'job_id' => (string)$shaJob['id'],
+                'status' => $jStat,
                 'job_status' => $jStat,
+                'message' => $msg,
                 'customer_log_id' => $shaJob['customer_log_id'] ?? null,
             ], 200);
         }
@@ -1617,9 +1624,118 @@ if (!is_array($parsed)) {
     }
 }
 if (!is_array($parsed)) {
-    // 디버깅용 — Claude 응답 raw 일부 error_log 에 남김 (다음 진단 자료)
-    error_log('[process-recording] LLM JSON 파싱 실패. text 일부: ' . substr($llmText, 0, 500));
-    jerror('upstream_failed', 'LLM JSON 파싱 실패. (Claude 응답이 예상 형식과 다름. 다시 시도해주세요.)', 502);
+    /* fallback 3: 앱팀 2026-05-20 2차 요청 — LLM 에 repair 1회 요청. */
+    $repairSys = "다음 텍스트를 지정된 JSON schema 에 맞게 유효한 JSON 으로만 변환하세요. 설명 없이 JSON 만 반환하세요.\n"
+               . "schema: {\"customer_name\":string, \"summary\":string, \"interest\":string, \"inquiry\":string, \"budget_condition\":string, \"next_action\":string}";
+    $repairText = '';
+    if ($llmProvider === 'anthropic') {
+        $rch = curl_init('https://api.anthropic.com/v1/messages');
+        curl_setopt_array($rch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_POST => true,
+            CURLOPT_POSTFIELDS => json_encode([
+                'model' => $llmModel,
+                'max_tokens' => 1500,
+                'temperature' => 0,
+                'system' => $repairSys,
+                'messages' => [['role' => 'user', 'content' => $llmText]],
+            ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+            CURLOPT_HTTPHEADER => [
+                'x-api-key: ' . $anthropicKey,
+                'anthropic-version: 2023-06-01',
+                'content-type: application/json',
+            ],
+            CURLOPT_TIMEOUT => 30,
+            CURLOPT_CONNECTTIMEOUT => 10,
+        ]);
+        $rResp = curl_exec($rch);
+        $rStatus = (int)curl_getinfo($rch, CURLINFO_HTTP_CODE);
+        curl_close($rch);
+        if ($rResp !== false && $rStatus >= 200 && $rStatus < 300) {
+            $rData = json_decode((string)$rResp, true);
+            $repairText = (string)($rData['content'][0]['text'] ?? '');
+        }
+    } else {
+        $rch = curl_init('https://api.openai.com/v1/chat/completions');
+        curl_setopt_array($rch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_POST => true,
+            CURLOPT_POSTFIELDS => json_encode([
+                'model' => $llmModel,
+                'messages' => [
+                    ['role' => 'system', 'content' => $repairSys],
+                    ['role' => 'user', 'content' => $llmText],
+                ],
+                'temperature' => 0,
+                'response_format' => ['type' => 'json_object'],
+            ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+            CURLOPT_HTTPHEADER => [
+                'Authorization: Bearer ' . $apiKey,
+                'Content-Type: application/json',
+            ],
+            CURLOPT_TIMEOUT => 30,
+            CURLOPT_CONNECTTIMEOUT => 10,
+        ]);
+        $rResp = curl_exec($rch);
+        $rStatus = (int)curl_getinfo($rch, CURLINFO_HTTP_CODE);
+        curl_close($rch);
+        if ($rResp !== false && $rStatus >= 200 && $rStatus < 300) {
+            $rData = json_decode((string)$rResp, true);
+            $repairText = (string)($rData['choices'][0]['message']['content'] ?? '');
+        }
+    }
+    /* repair 응답에 같은 3단 파싱 적용 */
+    if ($repairText !== '') {
+        $rParsed = json_decode($repairText, true);
+        if (!is_array($rParsed) && preg_match('/```(?:json)?\s*(\{[\s\S]*?\})\s*```/i', $repairText, $rm)) {
+            $rParsed = json_decode($rm[1], true);
+        }
+        if (!is_array($rParsed)) {
+            $rs = strpos($repairText, '{');
+            if ($rs !== false) {
+                $rd = 0; $re = -1;
+                for ($ri = $rs; $ri < strlen($repairText); $ri++) {
+                    if ($repairText[$ri] === '{') $rd++;
+                    elseif ($repairText[$ri] === '}') { $rd--; if ($rd === 0) { $re = $ri; break; } }
+                }
+                if ($re > $rs) $rParsed = json_decode(substr($repairText, $rs, $re - $rs + 1), true);
+            }
+        }
+        if (is_array($rParsed)) {
+            error_log('[process-recording] LLM JSON repair 성공.');
+            $parsed = $rParsed;
+        }
+    }
+}
+if (!is_array($parsed)) {
+    /* 최종 실패 — recording_jobs failed_retryable + 200 응답 (앱팀 2026-05-20 2차 요청).
+     * 502 던지면 앱이 일반 실패 처리 → 무한 재시도/모달 반복 원인. */
+    error_log('[process-recording] LLM JSON 파싱 + repair 모두 실패. text 일부: ' . substr($llmText, 0, 500));
+    if ($asyncMode && $asyncJobId) {
+        // recording_jobs failed_retryable + 오디오 유지 (cron worker 재시도 위해 storage_path 유지).
+        try {
+            $pdo->prepare("UPDATE recording_jobs SET
+                    status = 'failed_retryable',
+                    error_message = :em,
+                    updated_at = NOW()
+                WHERE id = :id")
+                ->execute([
+                    ':em' => 'LLM_JSON_PARSE_FAILED',
+                    ':id' => $asyncJobId,
+                ]);
+        } catch (Throwable $e) {}
+        exit;   // async 모드 — client 응답은 이미 'queued' 로 갔음. polling 으로 status 받음.
+    }
+    // sync 모드 — 200 + retryable 응답.
+    jout([
+        'ok' => false,
+        'error_code' => 'RETRYABLE_SERVER_ERROR',
+        'status' => 'failed_retryable',
+        'retryable' => true,
+        'message' => 'LLM JSON 파싱 실패 — 자동 재시도 대기.',
+        'last_error' => 'LLM_JSON_PARSE_FAILED',
+        'http_status' => 200,
+    ], 200);
 }
 
 $llmName    = isset($parsed['customer_name'])    ? trim((string)$parsed['customer_name'])    : '';
@@ -1740,9 +1856,21 @@ try {
         ':cri' => $clientReqId,
     ]);
 } catch (Throwable $e) {
-    // UNIQUE (owner_email, client_request_id) 충돌이 동시 요청에서 발생할 수 있음 — 24h 외 충돌은 409.
+    // UNIQUE (owner_email, client_request_id) 충돌이 동시 요청에서 발생할 수 있음.
+    // 앱팀 2026-05-20 2차 요청 — 409 대신 200 + duplicate=true. 앱은 polling 으로 전환.
     if (strpos((string)$e->getMessage(), 'Duplicate') !== false) {
-        jerror('duplicate_request', '중복 요청. 잠시 후 다시 시도해주세요.', 409);
+        $dup = $pdo->prepare('SELECT * FROM customer_log WHERE owner_email = :o AND client_request_id = :k LIMIT 1');
+        $dup->execute([':o' => $ownerEmail, ':k' => $clientReqId]);
+        $dupRow = $dup->fetch();
+        jout([
+            'ok' => true,
+            'duplicate' => true,
+            'error_code' => 'JOB_EXISTS',
+            'job_id' => $asyncJobId ?: ($dupRow['client_request_id'] ?? null),
+            'status' => 'saved',   // customer_log row 존재 → 처리 완료.
+            'message' => '이미 처리 완료된 작업입니다.',
+            'customer_log' => $dupRow ? customer_log_row($dupRow) : null,
+        ], 200);
     }
     error_log('[process-recording] insert failed: ' . $e->getMessage());
     jerror('upstream_failed', 'DB 저장 실패.', 500);

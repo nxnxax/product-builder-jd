@@ -91,7 +91,7 @@ try {
                                  recorded_at, retry_count, status, group_id
         FROM recording_jobs
         WHERE (status = 'queued')
-           OR (status = 'failed_retryable' AND retry_count < 3 AND updated_at < (NOW() - INTERVAL 1 MINUTE))
+           OR (status = 'failed_retryable' AND retry_count < 2 AND updated_at < (NOW() - INTERVAL 1 MINUTE))
         ORDER BY created_at ASC
         LIMIT :n");
     $sel->bindValue(':n', $limit, PDO::PARAM_INT);
@@ -159,9 +159,9 @@ foreach ($jobs as $job) {
     curl_close($ch);
 
     if ($resp === false || $httpStatus < 200 || $httpStatus >= 300) {
-        /* 실패 처리 — retry_count++ */
+        /* 실패 처리 — retry_count++. 앱팀 2026-05-20 요청 — max_retry = 2. */
         $newRetry = $retryCount + 1;
-        $newStatus = $newRetry < 3 ? 'failed_retryable' : 'failed_permanent';
+        $newStatus = $newRetry < 2 ? 'failed_retryable' : 'failed_permanent';
         $errMsg = $curlErr !== '' ? $curlErr : substr((string)$resp, 0, 800);
         try {
             $pdo->prepare("UPDATE recording_jobs SET
