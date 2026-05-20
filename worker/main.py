@@ -292,17 +292,64 @@ CHUNK_DURATION_SEC = 5 * 60        # 청크당 5분
 MAX_PARALLEL_CHUNKS = 6            # 동시 Whisper 호출 최대 6개 (OpenAI rate limit 회피)
 
 
-def ffmpeg_split_audio(audio_bytes: bytes, chunk_sec: int = CHUNK_DURATION_SEC) -> List[bytes]:
-    """ffmpeg 로 audio 를 청크로 분할. 청크별 bytes 반환.
-    실패 시 [audio_bytes] (단일 청크) 반환 — fallback."""
+def transcode_to_mp3(audio_bytes: bytes, src_suffix: str = ".m4a") -> tuple[bytes, str]:
+    """모든 입력 audio 를 mp3 로 통일 변환 (사장님 2026-05-21).
+    이유: iPhone m4a (ALAC / Apple AAC 변종) 가 Whisper 400 "Invalid file format" 반환.
+    16kHz mono 64kbps mp3 로 normalize → Whisper 안정 처리.
+    성공: (mp3_bytes, '.mp3'). 실패: (audio_bytes, src_suffix) — 원본 그대로 fallback.
+    """
     try:
-        with tempfile.NamedTemporaryFile(suffix=".m4a", delete=False) as tmp_in:
+        with tempfile.NamedTemporaryFile(suffix=src_suffix, delete=False) as tmp_in:
+            tmp_in.write(audio_bytes)
+            in_path = tmp_in.name
+        out_path = in_path + ".mp3"
+        cmd = [
+            "ffmpeg", "-y", "-i", in_path,
+            "-vn",                  # video stream 제거
+            "-acodec", "libmp3lame",
+            "-ar", "16000",         # Whisper 권장 sample rate
+            "-ac", "1",             # mono
+            "-b:a", "64k",          # 음성용 적정 비트레이트
+            out_path,
+        ]
+        result = subprocess.run(cmd, capture_output=True, timeout=180)
+        if result.returncode != 0:
+            log.warning("transcode_to_mp3 실패 (rc=%d): %s",
+                        result.returncode, result.stderr[:300].decode("utf-8", errors="ignore"))
+            try: os.unlink(in_path)
+            except Exception: pass
+            return audio_bytes, src_suffix
+        with open(out_path, "rb") as f:
+            mp3_bytes = f.read()
+        try:
+            os.unlink(in_path); os.unlink(out_path)
+        except Exception:
+            pass
+        log.info("transcode_to_mp3 성공: %d → %d bytes", len(audio_bytes), len(mp3_bytes))
+        return mp3_bytes, ".mp3"
+    except FileNotFoundError:
+        log.error("ffmpeg 미설치 — transcode skip")
+        return audio_bytes, src_suffix
+    except subprocess.TimeoutExpired:
+        log.error("transcode_to_mp3 timeout (>180s)")
+        return audio_bytes, src_suffix
+    except Exception:
+        log.exception("transcode_to_mp3 예외")
+        return audio_bytes, src_suffix
+
+
+def ffmpeg_split_audio(audio_bytes: bytes, chunk_sec: int = CHUNK_DURATION_SEC, src_suffix: str = ".mp3") -> List[bytes]:
+    """ffmpeg 로 audio 를 청크로 분할. 청크별 bytes 반환.
+    실패 시 [audio_bytes] (단일 청크) 반환 — fallback.
+    src_suffix: 입력 컨테이너 확장자 (.mp3 / .m4a). 출력도 동일."""
+    try:
+        with tempfile.NamedTemporaryFile(suffix=src_suffix, delete=False) as tmp_in:
             tmp_in.write(audio_bytes)
             in_path = tmp_in.name
 
-        # ffmpeg 출력 패턴: chunk_000.m4a, chunk_001.m4a, ...
+        # ffmpeg 출력 패턴: chunk_000.<ext>, chunk_001.<ext>, ...
         out_dir = tempfile.mkdtemp(prefix="youngman-chunks-")
-        out_pattern = os.path.join(out_dir, "chunk_%03d.m4a")
+        out_pattern = os.path.join(out_dir, f"chunk_%03d{src_suffix}")
 
         cmd = [
             "ffmpeg", "-y", "-i", in_path,
@@ -319,7 +366,7 @@ def ffmpeg_split_audio(audio_bytes: bytes, chunk_sec: int = CHUNK_DURATION_SEC) 
 
         chunks = []
         for fname in sorted(os.listdir(out_dir)):
-            if fname.startswith("chunk_") and fname.endswith(".m4a"):
+            if fname.startswith("chunk_") and fname.endswith(src_suffix):
                 with open(os.path.join(out_dir, fname), "rb") as f:
                     chunks.append(f.read())
 
@@ -349,14 +396,15 @@ def ffmpeg_split_audio(audio_bytes: bytes, chunk_sec: int = CHUNK_DURATION_SEC) 
         return [audio_bytes]
 
 
-async def transcribe_chunks_parallel(chunks: List[bytes]) -> List[str]:
-    """청크별 Whisper 병렬 호출. asyncio.gather + semaphore 로 rate limit 회피."""
+async def transcribe_chunks_parallel(chunks: List[bytes], ext: str = ".mp3") -> List[str]:
+    """청크별 Whisper 병렬 호출. asyncio.gather + semaphore 로 rate limit 회피.
+    ext: 청크 컨테이너 확장자 (.mp3 / .m4a). transcode_to_mp3 결과에 따라 호출자가 전달."""
     semaphore = asyncio.Semaphore(MAX_PARALLEL_CHUNKS)
 
     async def transcribe_one(idx: int, chunk_bytes: bytes) -> str:
         async with semaphore:
             try:
-                result = await transcribe_whisper(chunk_bytes, f"chunk_{idx:03d}.m4a")
+                result = await transcribe_whisper(chunk_bytes, f"chunk_{idx:03d}{ext}")
                 text = result.get("text", "").strip()
                 log.info("chunk %d transcribed: %d chars", idx, len(text))
                 return text
@@ -511,19 +559,25 @@ async def process_job(req: ProcessRequest) -> None:
             audio_bytes = audio_resp.content
         log.info("audio 다운로드 완료: %d bytes", len(audio_bytes))
 
+        # 1.5. mp3 통일 변환 (사장님 2026-05-21 — iPhone m4a Whisper 400 우회).
+        # 모든 입력을 16kHz mono mp3 로 normalize → Whisper 안정 처리.
+        # ffmpeg 실패 시 원본 그대로 (fallback). 처리 시간 +5~10초.
+        audio_bytes, audio_suffix = transcode_to_mp3(audio_bytes, src_suffix=".m4a")
+        log.info("mp3 변환 완료: suffix=%s, bytes=%d", audio_suffix, len(audio_bytes))
+
         # 2. STT — 10분+ 통화는 청크 분할 + 병렬 처리
         if req.duration_sec >= CHUNK_THRESHOLD_SEC:
             log.info("긴 통화 (%ds) 청크 분할 시작", req.duration_sec)
-            chunks = ffmpeg_split_audio(audio_bytes, CHUNK_DURATION_SEC)
+            chunks = ffmpeg_split_audio(audio_bytes, CHUNK_DURATION_SEC, src_suffix=audio_suffix)
             log.info("청크 %d 개, 병렬 Whisper 시작 (max parallel=%d)", len(chunks), MAX_PARALLEL_CHUNKS)
-            partial_transcripts = await transcribe_chunks_parallel(chunks)
+            partial_transcripts = await transcribe_chunks_parallel(chunks, ext=audio_suffix)
             if not partial_transcripts:
                 raise HTTPException(status_code=502, detail="모든 청크 STT 실패")
             # 청크별 transcript 를 시간 순으로 합침 (각 청크 사이 공백 구분)
             transcript = "\n\n".join(partial_transcripts)
             log.info("STT 완료 (청크 모드): %d chunks → %d chars", len(partial_transcripts), len(transcript))
         else:
-            stt = await transcribe_whisper(audio_bytes, "audio.m4a")
+            stt = await transcribe_whisper(audio_bytes, "audio" + audio_suffix)
             transcript = stt["text"]
             if not transcript:
                 raise HTTPException(status_code=502, detail="STT 결과 비어있음")
