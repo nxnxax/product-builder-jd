@@ -583,7 +583,10 @@ function renderBottomNav(activeKey) {
         { key: 'customers.html', label: '고객관리대장',   href: 'customers.html', icon: ICON.users, main: true },
     ];
     if (inApp) {
-        items.push({ key: 'unreviewed.html', label: '미확인 요약', href: 'unreviewed.html', icon: ICON.inbox, badgeKey: 'unreviewed' });
+        // 앱팀 2026-05-21 — native UnreviewedSummariesScreen 으로 deep link.
+        // RN 의 onNativeRoute 가 'unreviewed' pathname 받으면 native 화면 navigate.
+        // 영맨 web 의 unreviewed.html 은 외부 브라우저 / fallback 용으로 그대로 유지.
+        items.push({ key: 'unreviewed.html', label: '미확인 요약', href: 'youngman://record/unreviewed', icon: ICON.inbox, badgeKey: 'unreviewed' });
     } else {
         const slot1Item = slot1Key
             ? { key: slot1Key, label: resolveSlotLabel(slot1Key), href: slot1Key, icon: ICON.building }
