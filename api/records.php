@@ -3639,6 +3639,40 @@ try {
             respond(['status' => 'ok']);
         }
 
+        // ─── TRANSCRIPTS_BY_PHONE (사장님 2026-05-20 — 회차별 대화내용 전문보기) ───
+        // GET /records.php?resource=customer-log&action=transcripts_by_phone&phone=01012345678
+        // 같은 phone 의 모든 customer_log row 의 transcript 복호화 반환 (회차별 매칭용).
+        if ($action === 'transcripts_by_phone') {
+            $phoneIn = trim((string)($body['phone'] ?? $_GET['phone'] ?? ''));
+            if ($phoneIn === '') respond(['status' => 'error', 'code' => 'invalid_request', 'message' => 'phone 필요.'], 400);
+            $phoneLookup = customer_phone_lookup_key($phoneIn);
+            if (!$phoneLookup) respond(['status' => 'error', 'code' => 'invalid_request', 'message' => 'phone 형식 오류.'], 400);
+            try {
+                $stmt = $pdo->prepare('SELECT id, consult_at, transcript, ai_model
+                    FROM customer_log
+                    WHERE owner_email = :o AND customer_phone_lookup = :pl
+                    ORDER BY consult_at ASC, id ASC LIMIT 200');
+                $stmt->execute([':o' => $owner, ':pl' => $phoneLookup]);
+                $rows = $stmt->fetchAll();
+            } catch (Throwable $e) {
+                respond(['status' => 'error', 'code' => 'upstream_failed', 'message' => '조회 실패.'], 503);
+            }
+            $items = array_map(function($r) {
+                $tr = '';
+                if (!empty($r['transcript'])) {
+                    $dec = youngman_decrypt($r['transcript']);
+                    if (is_string($dec)) $tr = $dec;
+                }
+                return [
+                    'id' => (string)$r['id'],
+                    'consult_at' => (string)($r['consult_at'] ?? ''),
+                    'transcript' => $tr,
+                    'ai_model' => (string)($r['ai_model'] ?? ''),
+                ];
+            }, $rows ?: []);
+            respond(['status' => 'ok', 'items' => $items, 'count' => count($items)]);
+        }
+
         // ─── LIST_UNREVIEWED (사장님 2026-05-20 — "미확인 요약" 페이지) ───
         // GET /records.php?resource=customer-log&action=list_unreviewed
         // ready_to_review 상태의 recording_jobs 리스트 + summary_json 복호화 (preview 용).

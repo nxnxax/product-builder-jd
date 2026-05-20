@@ -796,7 +796,12 @@ function openRowDetailModal(rec, group, fields) {
         } else if (f.type === 'date') {
             display = escapeHtml(String(v).replace(/-/g, '.'));
         } else if (f.type === 'textarea') {
-            display = `<div class="row-detail-textarea">${escapeHtml(sanitizeContent(v))}</div>`;
+            // 사장님 2026-05-20 요청 — content 필드의 회차별 요약 마지막에 "대화내용 전문보기" 버튼 inject.
+            if (f.key === 'content') {
+                display = renderContentWithTranscriptButtons(sanitizeContent(v));
+            } else {
+                display = `<div class="row-detail-textarea">${escapeHtml(sanitizeContent(v))}</div>`;
+            }
         } else {
             display = escapeHtml(String(v));
         }
@@ -828,6 +833,105 @@ function openRowDetailModal(rec, group, fields) {
     md.querySelector('[data-close]').addEventListener('click', close);
     md.querySelector('[data-edit]').addEventListener('click', () => { close(); editRow(rec.id); });
     md.addEventListener('click', (e) => { if (e.target === md) close(); });
+    // 대화내용 전문보기 버튼 bind (사장님 2026-05-20).
+    bindTranscriptButtons(md, d.phone || d.phone_number || '');
+}
+
+/* 회차별 content 분할 + "대화내용 전문보기" 버튼 inject (사장님 2026-05-20 요청).
+ * 패턴: "📞 YYYY-MM-DD HH:MM:SS 통화 (N회차)" 헤더 마다 새 block 시작.
+ * 각 block 끝에 data-transcript-ts 버튼 노출. 클릭 시 같은 phone 의 transcript fetch + inline expand. */
+function renderContentWithTranscriptButtons(text) {
+    const src = String(text ?? '');
+    if (!src.trim()) return `<div class="row-detail-textarea"></div>`;
+    const re = /📞\s*(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})\s*통화\s*\((\d+)회차\)/g;
+    const headers = [];
+    let m;
+    while ((m = re.exec(src)) !== null) {
+        headers.push({ index: m.index, end: m.index + m[0].length, ts: m[1], round: m[2] });
+    }
+    if (headers.length === 0) {
+        // 회차 헤더 없음 — 그대로 표시 (옛 데이터 케이스).
+        return `<div class="row-detail-textarea">${escapeHtml(src)}</div>`;
+    }
+    let html = '';
+    for (let i = 0; i < headers.length; i++) {
+        const h = headers[i];
+        const blockEnd = i + 1 < headers.length ? headers[i + 1].index : src.length;
+        const block = src.slice(h.index, blockEnd).replace(/\s+$/, '');
+        html += `
+            <div class="content-round-block" data-round="${escapeAttr(h.round)}">
+                <div class="content-round-body">${escapeHtml(block)}</div>
+                <button type="button" class="content-transcript-btn" data-transcript-ts="${escapeAttr(h.ts)}" data-transcript-round="${escapeAttr(h.round)}">
+                    📄 대화내용 전문보기
+                </button>
+                <div class="content-transcript-panel" data-transcript-panel hidden></div>
+            </div>`;
+    }
+    return `<div class="row-detail-textarea content-rounds">${html}</div>`;
+}
+
+/* phone 별 customer_log transcript 캐시 (모달 1회 fetch). */
+const _transcriptCacheByPhone = new Map();
+
+async function fetchTranscriptsByPhone(phone) {
+    if (!phone) return [];
+    if (_transcriptCacheByPhone.has(phone)) return _transcriptCacheByPhone.get(phone);
+    try {
+        const r = await api('customer-log', { query: 'action=transcripts_by_phone&phone=' + encodeURIComponent(phone) });
+        const items = Array.isArray(r?.items) ? r.items : [];
+        _transcriptCacheByPhone.set(phone, items);
+        return items;
+    } catch (e) {
+        console.warn('[transcripts] fetch 실패', e);
+        return [];
+    }
+}
+
+/* timestamp 와 가장 가까운 transcript row 찾기 (1분 이내 매칭 — 같은 통화로 간주). */
+function _findTranscriptByTimestamp(items, ts) {
+    if (!items.length) return null;
+    const targetMs = new Date(String(ts).replace(' ', 'T')).getTime();
+    if (!Number.isFinite(targetMs)) return null;
+    let best = null;
+    let bestDiff = Infinity;
+    for (const it of items) {
+        const itMs = new Date(String(it.consult_at).replace(' ', 'T')).getTime();
+        if (!Number.isFinite(itMs)) continue;
+        const diff = Math.abs(itMs - targetMs);
+        if (diff < bestDiff) { bestDiff = diff; best = it; }
+    }
+    // 1분(60_000ms) 이내면 매칭. 그보다 멀면 null (data 누락 가능성).
+    return bestDiff <= 60_000 ? best : null;
+}
+
+function bindTranscriptButtons(rootEl, phone) {
+    if (!rootEl) return;
+    rootEl.querySelectorAll('[data-transcript-ts]').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            const ts = btn.dataset.transcriptTs;
+            const panel = btn.parentElement.querySelector('[data-transcript-panel]');
+            if (!panel) return;
+            // toggle close
+            if (!panel.hasAttribute('hidden')) {
+                panel.setAttribute('hidden', '');
+                btn.textContent = '📄 대화내용 전문보기';
+                return;
+            }
+            btn.disabled = true;
+            btn.textContent = '⏳ 불러오는 중...';
+            const items = await fetchTranscriptsByPhone(phone);
+            const match = _findTranscriptByTimestamp(items, ts);
+            btn.disabled = false;
+            btn.textContent = '▲ 전문 접기';
+            if (!match || !match.transcript) {
+                panel.innerHTML = '<div class="content-transcript-empty">해당 회차의 전문이 저장되어 있지 않습니다.</div>';
+            } else {
+                panel.innerHTML = '<div class="content-transcript-text">' + escapeHtml(match.transcript) + '</div>';
+            }
+            panel.removeAttribute('hidden');
+        });
+    });
 }
 
 function closeRowDetailModal() {

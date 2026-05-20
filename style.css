@@ -2600,6 +2600,31 @@ select:focus {
 .row-detail-pill.off { background: #f1f5f9; color: #64748b; }
 .row-detail-num { font-variant-numeric: tabular-nums; font-weight: 600; }
 
+/* 회차별 content + 전문보기 버튼 (사장님 2026-05-20) */
+.row-detail-textarea.content-rounds { padding: 4px; background: transparent; max-height: 60vh; }
+.content-round-block { background: rgba(20, 14, 8, 0.025); padding: 12px 14px; border-radius: 8px; margin-bottom: 10px; }
+.content-round-block:last-child { margin-bottom: 0; }
+.content-round-body { white-space: pre-wrap; line-height: 1.65; font-size: 13.5px; color: var(--fg-secondary, #4f4943); }
+.content-transcript-btn {
+    margin-top: 10px;
+    border: 1px solid var(--ledger-line-strong, rgba(20,14,8,.16));
+    background: #fff;
+    color: #4f4943;
+    font-size: 13px;
+    padding: 7px 13px;
+    border-radius: 7px;
+    cursor: pointer;
+    font-family: inherit;
+    font-weight: 500;
+    transition: all 160ms;
+}
+.content-transcript-btn:hover { background: #fbf7ef; color: #0e0d0c; border-color: #c8362c; }
+.content-transcript-btn:disabled { opacity: .6; cursor: wait; }
+.content-transcript-panel { margin-top: 10px; padding: 12px 14px; background: #fff; border: 1px solid rgba(20,14,8,.09); border-radius: 8px; }
+.content-transcript-panel[hidden] { display: none; }
+.content-transcript-text { white-space: pre-wrap; line-height: 1.7; font-size: 13.5px; color: #2a2520; max-height: 40vh; overflow-y: auto; }
+.content-transcript-empty { color: #8a847e; font-size: 13px; text-align: center; padding: 16px 0; }
+
 @media (max-width: 480px) {
     .row-detail-row { flex-direction: column; gap: 4px; padding: 10px 0; }
     .row-detail-label { flex: 0 0 auto; }
