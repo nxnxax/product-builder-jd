@@ -3735,9 +3735,12 @@ try {
                 if (is_array($arr)) {
                     respond([
                         'status' => 'ok',
+                        'ok' => true,
                         'cached' => true,
+                        'processing' => false,
                         'job_id' => $jobId,
                         'job_status' => (string)$jRow['status'],
+                        'customer_name' => (string)($arr['customer_name'] ?? ''),
                         'summary' => $arr,
                         'duration_sec' => (int)($jRow['duration_sec'] ?? 0),
                         'recorded_at' => $jRow['recorded_at'] ?? null,
@@ -3818,30 +3821,123 @@ try {
                 if ($jRow2 && in_array((string)$jRow2['status'], ['failed_permanent', 'dismissed'], true)) break;
             }
             if (!$summary) {
-                // 처리 지연 — 200 + processing 응답 (native crash 방지 + 재시도 가능)
+                // 영구 실패 vs 처리 중 분기 + detail 필드 일관 포함.
+                $currentStatus = $jRow2 ? (string)$jRow2['status'] : 'processing';
+                $isPermFail = in_array($currentStatus, ['failed_permanent', 'dismissed'], true);
+                $errCode = $isPermFail ? 'STT_FAILED' : 'PROCESSING';
+                $msg = $isPermFail
+                    ? 'AI 요약 처리에 실패했습니다. 음성 파일이 인식 불가능한 형식입니다.'
+                    : 'AI 요약 처리 중입니다. 잠시 후 다시 시도해주세요.';
                 respond([
                     'status' => 'ok',
                     'ok' => false,
-                    'error_code' => 'PROCESSING',
-                    'processing' => true,
+                    'error_code' => $errCode,
+                    'processing' => !$isPermFail,
+                    'retryable' => !$isPermFail,
+                    'retry_after_seconds' => $isPermFail ? 0 : 10,
                     'job_id' => $jobId,
-                    'job_status' => $jRow2 ? (string)$jRow2['status'] : 'processing',
-                    'retryable' => true,
-                    'retry_after_seconds' => 10,
-                    'message' => 'AI 요약 처리 중입니다. 잠시 후 다시 시도해주세요.',
+                    'job_status' => $currentStatus,
+                    'message' => $msg,
                     'last_error' => $jRow2['error_message'] ?? null,
+                    // detail 필드 일관 포함 — native NaN/null 방지
+                    'cached' => false,
+                    'customer_name' => '',
+                    'summary' => null,
+                    'duration_sec' => $jRow2 ? (int)($jRow2['duration_sec'] ?? 0) : 0,
+                    'recorded_at' => $jRow2['recorded_at'] ?? null,
+                    'phone_number' => $jRow2['phone_number'] ?? null,
                 ], 200);
             }
             respond([
                 'status' => 'ok',
+                'ok' => true,
                 'cached' => false,
+                'processing' => false,
                 'job_id' => $jobId,
                 'job_status' => $jRow2 ? (string)$jRow2['status'] : 'unknown',
+                'customer_name' => (string)($summary['customer_name'] ?? ''),
                 'summary' => $summary,
                 'duration_sec' => (int)($jRow2['duration_sec'] ?? 0),
                 'recorded_at' => $jRow2['recorded_at'] ?? null,
                 'phone_number' => $jRow2['phone_number'] ?? null,
             ]);
+        }
+
+        // ─── SUMMARY_STATUS (사장님 2026-05-21 — 근본 구조 개선: native polling 용 단일 endpoint) ───
+        // GET /records.php?resource=customer-log&action=summary_status&job_id=xxx
+        // 빠른 row 조회만 (< 500ms). long-running 없음.
+        // native 가 5초 마다 호출하여 status 변화 감지. trigger_summarize/confirm 의 PROCESSING
+        // 응답 받으면 이 endpoint 로 polling 전환.
+        if ($action === 'summary_status') {
+            ensure_recording_jobs_table($pdo);
+            $jobId = trim((string)($body['job_id'] ?? $_GET['job_id'] ?? ''));
+            if ($jobId === '') respond(['status' => 'error', 'code' => 'invalid_request', 'message' => 'job_id 필요.'], 400);
+            try {
+                $jStmt = $pdo->prepare('SELECT id, status, summary_json_encrypted, customer_log_id, duration_sec, recorded_at, group_id, phone_number, error_message
+                    FROM recording_jobs WHERE id = :id AND owner_email = :o LIMIT 1');
+                $jStmt->execute([':id' => $jobId, ':o' => $owner]);
+                $jRow = $jStmt->fetch();
+            } catch (Throwable $e) {
+                respond(['status' => 'error', 'code' => 'upstream_failed', 'message' => '조회 실패.'], 503);
+            }
+            if (!$jRow) respond(['status' => 'error', 'code' => 'not_found', 'message' => '해당 job 없거나 권한 없음.'], 404);
+            $curStatus = (string)$jRow['status'];
+            // 결과 준비됨 (summary_json_encrypted 채워짐)
+            if (!empty($jRow['summary_json_encrypted'])) {
+                $dec = youngman_decrypt($jRow['summary_json_encrypted']);
+                $arr = is_string($dec) ? json_decode($dec, true) : null;
+                if (is_array($arr)) {
+                    respond([
+                        'status' => 'ok',
+                        'ok' => true,
+                        'processing' => false,
+                        'job_id' => $jobId,
+                        'job_status' => $curStatus,
+                        'customer_log_id' => $jRow['customer_log_id'] ?? null,
+                        'customer_name' => (string)($arr['customer_name'] ?? ''),
+                        'summary' => $arr,
+                        'duration_sec' => (int)($jRow['duration_sec'] ?? 0),
+                        'recorded_at' => $jRow['recorded_at'] ?? null,
+                        'phone_number' => $jRow['phone_number'] ?? null,
+                    ]);
+                }
+            }
+            // 영구 실패
+            if (in_array($curStatus, ['failed_permanent', 'dismissed'], true)) {
+                respond([
+                    'status' => 'ok',
+                    'ok' => false,
+                    'error_code' => 'STT_FAILED',
+                    'processing' => false,
+                    'retryable' => false,
+                    'job_id' => $jobId,
+                    'job_status' => $curStatus,
+                    'message' => 'AI 요약 처리에 실패했습니다.',
+                    'last_error' => $jRow['error_message'] ?? null,
+                    'customer_name' => '',
+                    'summary' => null,
+                    'duration_sec' => (int)($jRow['duration_sec'] ?? 0),
+                    'recorded_at' => $jRow['recorded_at'] ?? null,
+                    'phone_number' => $jRow['phone_number'] ?? null,
+                ], 200);
+            }
+            // 처리 중 (audio_pending / queued / processing / stt_processing / llm_processing / failed_retryable)
+            respond([
+                'status' => 'ok',
+                'ok' => false,
+                'error_code' => 'PROCESSING',
+                'processing' => true,
+                'retryable' => true,
+                'retry_after_seconds' => 5,
+                'job_id' => $jobId,
+                'job_status' => $curStatus,
+                'message' => 'AI 요약 처리 중입니다.',
+                'customer_name' => '',
+                'summary' => null,
+                'duration_sec' => (int)($jRow['duration_sec'] ?? 0),
+                'recorded_at' => $jRow['recorded_at'] ?? null,
+                'phone_number' => $jRow['phone_number'] ?? null,
+            ], 200);
         }
 
         // ─── DISCARD (사장님 2026-05-21 — 미확인요약 카드 즉시 삭제) ───
