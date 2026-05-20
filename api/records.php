@@ -1327,9 +1327,15 @@ function ensure_recording_jobs_table(PDO $pdo): bool {
                 id CHAR(36) NOT NULL PRIMARY KEY,
                 owner_email VARCHAR(255) NOT NULL,
                 customer_log_id CHAR(36) NULL DEFAULT NULL,
-                status VARCHAR(16) NOT NULL DEFAULT 'queued',
+                status VARCHAR(20) NOT NULL DEFAULT 'queued',
                 storage_path VARCHAR(512) NULL DEFAULT NULL,
                 client_request_id VARCHAR(64) NULL DEFAULT NULL,
+                audio_sha256 CHAR(64) NULL DEFAULT NULL,
+                duration_sec INT NOT NULL DEFAULT 0,
+                customer_name_hint VARCHAR(80) NULL DEFAULT NULL,
+                phone_number VARCHAR(60) NULL DEFAULT NULL,
+                recorded_at DATETIME NULL DEFAULT NULL,
+                retry_count INT NOT NULL DEFAULT 0,
                 error_message TEXT NULL DEFAULT NULL,
                 fcm_sent_at DATETIME NULL DEFAULT NULL,
                 started_at DATETIME NULL DEFAULT NULL,
@@ -1338,9 +1344,39 @@ function ensure_recording_jobs_table(PDO $pdo): bool {
                 updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                 INDEX idx_rj_owner_status (owner_email, status),
                 INDEX idx_rj_status_created (status, created_at),
+                INDEX idx_rj_sha256 (owner_email, audio_sha256),
                 UNIQUE KEY uniq_rj_idempotency (owner_email, client_request_id)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
         ");
+        // lazy ALTER — 기존 테이블 schema 동기화 (process-recording.php 와 동일).
+        $cols = [];
+        try {
+            foreach ($pdo->query("SHOW COLUMNS FROM recording_jobs")->fetchAll() as $c) $cols[] = $c['Field'];
+        } catch (Throwable $e) {}
+        $needAlter = [
+            'audio_sha256'           => 'CHAR(64) NULL DEFAULT NULL',
+            'duration_sec'           => 'INT NOT NULL DEFAULT 0',
+            'customer_name_hint'     => 'VARCHAR(80) NULL DEFAULT NULL',
+            'phone_number'           => 'VARCHAR(60) NULL DEFAULT NULL',
+            'recorded_at'            => 'DATETIME NULL DEFAULT NULL',
+            'retry_count'            => 'INT NOT NULL DEFAULT 0',
+            'transcript_encrypted'   => 'LONGTEXT NULL DEFAULT NULL',
+            'summary_json_encrypted' => 'LONGTEXT NULL DEFAULT NULL',
+            'progress_pct'           => 'TINYINT NOT NULL DEFAULT 0',
+            'group_id'               => 'VARCHAR(36) NULL DEFAULT NULL',
+            'review_required'        => 'TINYINT(1) NOT NULL DEFAULT 0',
+        ];
+        foreach ($needAlter as $col => $def) {
+            if (!empty($cols) && !in_array($col, $cols, true)) {
+                try { $pdo->exec("ALTER TABLE recording_jobs ADD COLUMN `{$col}` {$def}"); }
+                catch (Throwable $e) { error_log('[records] ALTER recording_jobs.' . $col . ': ' . $e->getMessage()); }
+            }
+        }
+        // status 컬럼 길이 확장 (옛 16→20, ready_to_review/failed_retryable 등 수용)
+        if (!empty($cols) && in_array('status', $cols, true)) {
+            try { $pdo->exec("ALTER TABLE recording_jobs MODIFY COLUMN status VARCHAR(20) NOT NULL DEFAULT 'queued'"); }
+            catch (Throwable $e) {}
+        }
         return $done = true;
     } catch (Throwable $e) {
         error_log('[records] ensure_recording_jobs_table failed: ' . $e->getMessage());
@@ -3643,6 +3679,7 @@ try {
         // GET /records.php?resource=customer-log&action=transcripts_by_phone&phone=01012345678
         // 같은 phone 의 모든 customer_log row 의 transcript 복호화 반환 (회차별 매칭용).
         if ($action === 'transcripts_by_phone') {
+            ensure_customer_log_table($pdo);
             $phoneIn = trim((string)($body['phone'] ?? $_GET['phone'] ?? ''));
             if ($phoneIn === '') respond(['status' => 'error', 'code' => 'invalid_request', 'message' => 'phone 필요.'], 400);
             $phoneLookup = customer_phone_lookup_key($phoneIn);
@@ -3677,6 +3714,8 @@ try {
         // GET /records.php?resource=customer-log&action=list_unreviewed
         // ready_to_review 상태의 recording_jobs 리스트 + summary_json 복호화 (preview 용).
         if ($action === 'list_unreviewed') {
+            // schema 동기화 — 새 컬럼 (summary_json_encrypted/recorded_at/phone_number/duration_sec/group_id) 보장.
+            ensure_recording_jobs_table($pdo);
             $limit = (int)($body['limit'] ?? $_GET['limit'] ?? 50);
             if ($limit < 1) $limit = 50;
             if ($limit > 200) $limit = 200;
@@ -3690,7 +3729,9 @@ try {
                 $stmt->execute([':o' => $owner]);
                 $rows = $stmt->fetchAll();
             } catch (Throwable $e) {
-                respond(['status' => 'error', 'code' => 'upstream_failed', 'message' => '조회 실패: ' . $e->getMessage()], 503);
+                error_log('[records list_unreviewed] SELECT failed: ' . $e->getMessage());
+                // 503 대신 빈 결과 + 진단 — 앱이 무한 실패 모달 안 띄움.
+                respond(['status' => 'ok', 'items' => [], 'count' => 0, '_warn' => 'schema_mismatch']);
             }
             $items = array_map(function($r) {
                 $name = '고객';
