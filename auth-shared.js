@@ -856,17 +856,16 @@ function renderAppFooter() {
         <div class="app-footer-inner">
             <div>
                 <div class="app-footer-brand">
-                    <img src="logo_main.png" alt="">
                     <span>어센트라 (Ascentra)</span>
                 </div>
-                <p class="app-footer-info">
-                    <span><b class="label">회사명</b> 어센트라(Ascentra)</span>
-                    <span><b class="label">대표</b> 장동훈</span>
-                    <span><b class="label">사업자등록번호</b> 393-39-01518</span>
-                    <span><b class="label">대표번호</b> 1800-5743</span>
-                    <span><b class="label">주소</b> 경기도 화성시 효행로 30, 202호</span>
-                    <span><b class="label">이메일</b> <a href="mailto:nxnxax@gmail.com">nxnxax@gmail.com</a></span>
-                </p>
+                <dl class="app-footer-info">
+                    <dt>회사명</dt><dd>어센트라(Ascentra)</dd>
+                    <dt>대표</dt><dd>장동훈</dd>
+                    <dt>사업자등록번호</dt><dd>393-39-01518</dd>
+                    <dt>대표번호</dt><dd>1800-5743</dd>
+                    <dt>주소</dt><dd>경기도 화성시 효행로 30, 202호</dd>
+                    <dt>이메일</dt><dd><a href="mailto:nxnxax@gmail.com">nxnxax@gmail.com</a></dd>
+                </dl>
                 <div class="app-footer-bottom">&copy; ${year} Ascentra. All rights reserved.</div>
             </div>
             <nav class="app-footer-links" aria-label="법적 고지">

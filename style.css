@@ -3823,46 +3823,41 @@ select:focus {
     display: flex;
     align-items: center;
     gap: 10px;
-    margin-bottom: 10px;
+    margin-bottom: 14px;
     color: rgba(255, 255, 255, 0.92);
     font-weight: 600;
-    font-size: 14px;
+    font-size: 15px;
     letter-spacing: -0.01em;
 }
-.app-footer-brand img {
-    height: 22px;
-    width: auto;
-    filter: brightness(0) invert(1);
-    opacity: 0.92;
-}
+/* 사장님 2026-05-21 — footer brand 의 logo img 제거됨 (logo silhouette 가 가로 점선 노이즈로 보임).
+ * 헤더에 이미 영맨 로고 노출되므로 footer 는 텍스트만으로 충분.
+ * 아래 img 셀렉터는 혹시 다른 페이지가 img 사용할 케이스 대비 보존. */
+.app-footer-brand img { display: none; }
+/* dl 2-column grid — 모든 값(dd) 시작점 정확히 같은 x 좌표. */
 .app-footer-info {
     margin: 0;
-    color: rgba(255, 255, 255, 0.5);
-    font-size: 12.5px;
-    display: flex;
-    flex-direction: column;
-    gap: 7px;
-}
-.app-footer-info span {
-    display: flex;
+    color: rgba(255, 255, 255, 0.55);
+    font-size: 13px;
+    display: grid;
+    grid-template-columns: 110px 1fr;
+    gap: 8px 12px;
     align-items: baseline;
-    gap: 10px;
-    white-space: normal;
 }
-.app-footer-info .label {
-    flex: 0 0 auto;
-    width: 100px;
+.app-footer-info dt {
     color: rgba(255, 255, 255, 0.42);
     font-weight: 500;
     white-space: nowrap;
+    margin: 0;
+}
+.app-footer-info dd {
+    margin: 0;
+    word-break: keep-all;
 }
 @media (max-width: 720px) {
-    .app-footer-info .label { width: 96px; }
-    .app-footer-info { gap: 6px; font-size: 12px; }
+    .app-footer-info { grid-template-columns: 96px 1fr; gap: 7px 10px; font-size: 12.5px; }
 }
 @media (max-width: 400px) {
-    .app-footer-info .label { width: 88px; }
-    .app-footer-info span { gap: 8px; }
+    .app-footer-info { grid-template-columns: 88px 1fr; gap: 6px 8px; }
 }
 .app-footer-info a {
     color: inherit;

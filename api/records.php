@@ -3792,20 +3792,40 @@ try {
             if ($resp === false) {
                 respond(['status' => 'error', 'code' => 'upstream_failed', 'message' => 'STT/LLM 호출 실패: ' . $cErr], 502);
             }
-            error_log('[trigger_summarize] job=' . $jobId . ' http=' . $httpStatus);
-            // 처리 완료 후 row 재조회 — summary_json_encrypted 캐시 확인
-            $jStmt2 = $pdo->prepare("SELECT * FROM recording_jobs WHERE id = :id AND owner_email = :o LIMIT 1");
-            $jStmt2->execute([':id' => $jobId, ':o' => $owner]);
-            $jRow2 = $jStmt2->fetch();
+            error_log('[trigger_summarize] job=' . $jobId . ' http=' . $httpStatus . ' resp=' . substr((string)$resp, 0, 200));
+            // 사장님 2026-05-21 — Railway 위임 시 process-recording.php 는 즉시 202 응답 후
+            // 백그라운드 처리. recording-callback.php 가 결과 받아 summary_json_encrypted 저장.
+            // 결과 채워질 때까지 polling (5초 간격 max 90초).
+            $jRow2 = null;
             $summary = null;
-            if ($jRow2 && !empty($jRow2['summary_json_encrypted'])) {
-                $dec = youngman_decrypt($jRow2['summary_json_encrypted']);
-                $arr = is_string($dec) ? json_decode($dec, true) : null;
-                if (is_array($arr)) $summary = $arr;
+            $maxAttempts = 18;   // 5초 × 18 = 90초
+            for ($attempt = 0; $attempt < $maxAttempts; $attempt++) {
+                $jStmt2 = $pdo->prepare("SELECT * FROM recording_jobs WHERE id = :id AND owner_email = :o LIMIT 1");
+                $jStmt2->execute([':id' => $jobId, ':o' => $owner]);
+                $jRow2 = $jStmt2->fetch();
+                if ($jRow2 && !empty($jRow2['summary_json_encrypted'])) {
+                    $dec = youngman_decrypt($jRow2['summary_json_encrypted']);
+                    $arr = is_string($dec) ? json_decode($dec, true) : null;
+                    if (is_array($arr)) { $summary = $arr; break; }
+                }
+                // 영구 실패 케이스 — 더 기다릴 필요 없음.
+                if ($jRow2 && in_array((string)$jRow2['status'], ['failed_permanent', 'dismissed'], true)) {
+                    break;
+                }
+                sleep(5);
             }
             if (!$summary) {
-                respond(['status' => 'error', 'code' => 'upstream_failed',
-                    'message' => 'STT/LLM 처리 결과 비어있음. http=' . $httpStatus . ' 응답=' . substr((string)$resp, 0, 200)], 502);
+                // failed_retryable 또는 처리 지연 — 200 + retryable 응답 (앱 무한 재시도/모달 반복 방지).
+                respond([
+                    'status' => 'ok',
+                    'ok' => false,
+                    'error_code' => 'RETRYABLE_SERVER_ERROR',
+                    'job_id' => $jobId,
+                    'job_status' => $jRow2 ? (string)$jRow2['status'] : 'unknown',
+                    'retryable' => true,
+                    'message' => 'STT 처리 시간이 길어졌습니다. 잠시 후 다시 시도해주세요.',
+                    'last_error' => $jRow2['error_message'] ?? null,
+                ], 200);
             }
             respond([
                 'status' => 'ok',
@@ -4113,12 +4133,17 @@ try {
                     $respC = curl_exec($chC);
                     $httpC = (int)curl_getinfo($chC, CURLINFO_HTTP_CODE);
                     curl_close($chC);
-                    error_log('[confirm auto-trigger] job=' . $jobId . ' http=' . $httpC);
-                    // row 재조회
-                    $jStmtR = $pdo->prepare('SELECT id, status, summary_json_encrypted, customer_log_id, duration_sec, recorded_at, group_id, phone_number, client_request_id
-                        FROM recording_jobs WHERE id = :id AND owner_email = :o LIMIT 1');
-                    $jStmtR->execute([':id' => $jobId, ':o' => $owner]);
-                    $jRow = $jStmtR->fetch() ?: $jRow;
+                    error_log('[confirm auto-trigger] job=' . $jobId . ' http=' . $httpC . ' resp=' . substr((string)$respC, 0, 200));
+                    // 사장님 2026-05-21 — Railway 위임 시 polling (5초 × 18 = 90초)
+                    for ($ca = 0; $ca < 18; $ca++) {
+                        $jStmtR = $pdo->prepare('SELECT id, status, summary_json_encrypted, customer_log_id, duration_sec, recorded_at, group_id, phone_number, client_request_id, error_message
+                            FROM recording_jobs WHERE id = :id AND owner_email = :o LIMIT 1');
+                        $jStmtR->execute([':id' => $jobId, ':o' => $owner]);
+                        $jRow = $jStmtR->fetch() ?: $jRow;
+                        if ($jRow && !empty($jRow['summary_json_encrypted'])) break;
+                        if ($jRow && in_array((string)$jRow['status'], ['failed_permanent', 'dismissed'], true)) break;
+                        sleep(5);
+                    }
                 }
             }
             if (!in_array((string)$jRow['status'], ['ready_to_review', 'completed', 'saved'], true)) {

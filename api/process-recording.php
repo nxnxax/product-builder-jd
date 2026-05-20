@@ -795,7 +795,10 @@ if ($asyncMode) {
      * Railway 가 없으면: 기존 cafe24 자체 처리 흐름 (Phase 1 / Path B 그대로).
      * Railway 호출 실패해도 cron worker (Path B) 가 5분 후 재시도. */
     $railwayUrl = load_env_value('RAILWAY_WORKER_URL');
-    if ($railwayUrl !== '' && !$isInternalWorker) {
+    // 사장님 2026-05-21 — internal worker 흐름도 Railway 위임 허용 (cafe24 ffmpeg 미설치라
+    // m4a Whisper 400 거부 케이스 우회). trigger_summarize / cron retry 모두 Railway 의
+    // mp3 transcode 거쳐 안정 STT.
+    if ($railwayUrl !== '') {
         try {
             // signed audio URL 생성 (10분 유효, HMAC-SHA256)
             $expires = time() + 600;
