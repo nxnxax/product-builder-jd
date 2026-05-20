@@ -509,6 +509,58 @@ function supabase_admin_find_user_id(string $base, string $serviceKey, string $e
 }
 
 /**
+ * Supabase admin — user 영구 삭제. service_role 키 필요.
+ * Play 정책 — 사용자 계정 삭제 시 auth.users 도 함께 제거.
+ */
+function supabase_admin_delete_user(string $base, string $serviceKey, string $userId): bool {
+    if ($base === '' || $serviceKey === '' || $userId === '') return false;
+    $url = $base . '/auth/v1/admin/users/' . urlencode($userId);
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_CUSTOMREQUEST => 'DELETE',
+        CURLOPT_HTTPHEADER => [
+            'Authorization: Bearer ' . $serviceKey,
+            'apikey: ' . $serviceKey,
+        ],
+        CURLOPT_TIMEOUT => 10,
+        CURLOPT_SSL_VERIFYPEER => true,
+    ]);
+    $body = curl_exec($ch);
+    $http = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    if (!is_string($body) || $http >= 400) {
+        error_log('[supabase admin delete_user] http=' . $http . ' body=' . substr((string)$body, 0, 300));
+        return false;
+    }
+    return true;
+}
+
+/**
+ * 사용자 업로드 폴더 재귀 삭제 (account-delete 용). user_dir_segment = upload.php 와 동일 hash.
+ */
+function delete_user_upload_dir(string $email): int {
+    $seg = 'u_' . substr(hash('sha256', strtolower(trim($email))), 0, 16);
+    $deleted = 0;
+    foreach ([__DIR__, dirname(__DIR__)] as $base) {
+        foreach (['uploads', 'uploads/recordings'] as $sub) {
+            $dir = $base . '/' . $sub . '/' . $seg;
+            if (!is_dir($dir)) continue;
+            $it = new RecursiveIteratorIterator(
+                new RecursiveDirectoryIterator($dir, RecursiveDirectoryIterator::SKIP_DOTS),
+                RecursiveIteratorIterator::CHILD_FIRST
+            );
+            foreach ($it as $f) {
+                if ($f->isFile()) { @unlink($f->getPathname()); $deleted++; }
+                elseif ($f->isDir()) { @rmdir($f->getPathname()); }
+            }
+            @rmdir($dir);
+        }
+    }
+    return $deleted;
+}
+
+/**
  * Supabase admin — user 비밀번호 변경. service_role 키 필요.
  */
 function supabase_admin_set_password(string $base, string $serviceKey, string $userId, string $newPassword): bool {
@@ -2443,10 +2495,21 @@ try {
         $emailCol = $store ? quote_identifier($store['email_column']) : null;
         $tableQ   = $store ? quote_identifier($store['table']) : null;
 
+        // Play 정책 준수 — 사용자 데이터 완전 삭제 (2026-05-20 보강).
+        // 추가 테이블: customer_log / recording_jobs / usage_logs / user_fcm_tokens / payments
+        // 추가 자산: uploads/<user_seg>/ 파일 + Supabase auth.users row.
         $deleted = [
             'ledger_records' => 0, 'ledger_groups' => 0,
             'customers' => 0, 'employees' => 0,
             'mobile_api_tokens' => 0, 'member' => 0,
+            'customer_log' => 0, 'recording_jobs' => 0,
+            'usage_logs' => 0, 'user_fcm_tokens' => 0,
+            'sms_credentials' => 0,
+            'community_posts' => 0,
+            'subscriptions' => 0,
+            'payments' => 0,
+            'audio_files' => 0,
+            'supabase_user' => false,
         ];
 
         try {
@@ -2485,7 +2548,68 @@ try {
                 $deleted['mobile_api_tokens'] = $s->rowCount();
             } catch (Throwable $e) {}
 
-            // 5) 마지막으로 member 행 — 이게 삭제되면 records.php 가 가입된 회원이 아니라고 판정.
+            // 5) customer_log — 통화 요약 결과 (PII 암호문)
+            try {
+                $s = $pdo->prepare('DELETE FROM customer_log WHERE owner_email = :o');
+                $s->execute([':o' => $email]);
+                $deleted['customer_log'] = $s->rowCount();
+            } catch (Throwable $e) {}
+
+            // 6) recording_jobs — 통화 처리 job (transcript/summary 암호문 포함)
+            try {
+                $s = $pdo->prepare('DELETE FROM recording_jobs WHERE owner_email = :o');
+                $s->execute([':o' => $email]);
+                $deleted['recording_jobs'] = $s->rowCount();
+            } catch (Throwable $e) {}
+
+            // 7) usage_logs — 분 단위 사용 기록
+            try {
+                $s = $pdo->prepare('DELETE FROM usage_logs WHERE owner_email = :o');
+                $s->execute([':o' => $email]);
+                $deleted['usage_logs'] = $s->rowCount();
+            } catch (Throwable $e) {}
+
+            // 8) user_fcm_tokens — FCM 토큰
+            try {
+                $s = $pdo->prepare('DELETE FROM user_fcm_tokens WHERE owner_email = :o');
+                $s->execute([':o' => $email]);
+                $deleted['user_fcm_tokens'] = $s->rowCount();
+            } catch (Throwable $e) {}
+
+            // 8-1) sms_credentials — Solapi/Aligo 자격증명 (민감 — 즉시 완전 삭제)
+            try {
+                $s = $pdo->prepare('DELETE FROM sms_credentials WHERE owner_email = :o');
+                $s->execute([':o' => $email]);
+                $deleted['sms_credentials'] = $s->rowCount();
+            } catch (Throwable $e) {}
+
+            // 8-2) community_posts — 작성자 익명화 (다른 사용자 열람 일관성 유지)
+            try {
+                $s = $pdo->prepare("UPDATE community_posts SET author_email = CONCAT('deleted_', SUBSTRING(MD5(:o), 1, 16)) WHERE author_email = :o");
+                $s->execute([':o' => $email]);
+                $deleted['community_posts'] = $s->rowCount();
+            } catch (Throwable $e) {}
+
+            // 8-3) subscriptions — 전자상거래법 보관 의무. owner_email 익명화.
+            try {
+                $s = $pdo->prepare("UPDATE subscriptions SET owner_email = CONCAT('deleted_', SUBSTRING(MD5(:o), 1, 16)) WHERE owner_email = :o");
+                $s->execute([':o' => $email]);
+                $deleted['subscriptions'] = $s->rowCount();
+            } catch (Throwable $e) {}
+
+            // 9) payments — 결제 내역.
+            // 단, 전자상거래법상 결제 기록은 5년 보관 의무 → email 컬럼만 null 로 마스킹 (row 자체는 유지).
+            // members 의 personal info 제거됨 + payments 의 owner_email 마스킹 으로 GDPR/Play 정책 + 법령 양립.
+            try {
+                $cols = table_columns($pdo, 'payments');
+                if (in_array('owner_email', $cols, true)) {
+                    $s = $pdo->prepare("UPDATE payments SET owner_email = CONCAT('deleted_', SUBSTRING(MD5(:o), 1, 16)) WHERE owner_email = :o");
+                    $s->execute([':o' => $email]);
+                    $deleted['payments'] = $s->rowCount();
+                }
+            } catch (Throwable $e) {}
+
+            // 10) 마지막으로 member 행 — 이게 삭제되면 records.php 가 가입된 회원이 아니라고 판정.
             if ($store && $emailCol && $tableQ) {
                 $s = $pdo->prepare("DELETE FROM {$tableQ} WHERE LOWER({$emailCol}) = :email");
                 $s->execute([':email' => $email]);
@@ -2498,8 +2622,31 @@ try {
             respond(['ok' => false, 'error' => '탈퇴 처리 중 오류: ' . $e->getMessage()], 500);
         }
 
-        // 활동 로그 — 트랜잭션 밖에서 (실패해도 탈퇴 자체엔 영향 없음)
-        record_activity($pdo, $email, 'account.delete', json_encode($deleted, JSON_UNESCAPED_UNICODE));
+        // 11) 업로드 파일 삭제 (트랜잭션 밖 — 파일 IO 는 commit 후)
+        try {
+            $deleted['audio_files'] = delete_user_upload_dir($email);
+        } catch (Throwable $e) {
+            error_log('[account-delete] upload dir 삭제 실패: ' . $e->getMessage());
+        }
+
+        // 12) Supabase auth.users 삭제 (Play 정책 — 인증 row 도 함께)
+        try {
+            $svcKey = (string)($auth['service_key'] ?? '');
+            $svcBase = (string)($auth['supabase_url'] ?? '');
+            if ($svcKey !== '' && $svcBase !== '') {
+                $uid = supabase_admin_find_user_id($svcBase, $svcKey, $email);
+                if ($uid) {
+                    $deleted['supabase_user'] = supabase_admin_delete_user($svcBase, $svcKey, $uid);
+                }
+            }
+        } catch (Throwable $e) {
+            error_log('[account-delete] supabase user 삭제 실패: ' . $e->getMessage());
+        }
+
+        // 활동 로그 — 트랜잭션 밖에서 (실패해도 탈퇴 자체엔 영향 없음).
+        // owner_email 자리에 hash 사용 (탈퇴자 email 평문 보관 금지).
+        $hashedEmail = 'deleted_' . substr(hash('sha256', $email), 0, 16);
+        record_activity($pdo, $hashedEmail, 'account.delete', json_encode($deleted, JSON_UNESCAPED_UNICODE));
 
         respond(['ok' => true, 'deleted' => $deleted]);
     }
