@@ -77,8 +77,10 @@ if ($providedToken === '' || !hash_equals($expectedToken, $providedToken)) {
 
 /* ========== 옵션 ========== */
 $dryRun = !empty($_GET['dry_run']);
-$maxAgeHours = (int)($_GET['max_age_hours'] ?? 24);
-if ($maxAgeHours < 1) $maxAgeHours = 24;
+// 사장님 2026-05-21 — 24h → 168h(7일). 사용자 검토 여유 위해 audio 보존 기간 연장.
+// 미확인요약 페이지에서 7일간 검토 가능. 그 이후 자동 삭제 (개인정보 최소화).
+$maxAgeHours = (int)($_GET['max_age_hours'] ?? 168);
+if ($maxAgeHours < 1) $maxAgeHours = 168;
 if ($maxAgeHours > 24 * 30) $maxAgeHours = 24 * 30;   // 30일 한도
 
 $maxFiles = (int)($_GET['max_files'] ?? 1000);
