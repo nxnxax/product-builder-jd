@@ -3898,12 +3898,7 @@ select:focus {
         grid-template-columns: 1fr;
         gap: 14px;
     }
-    .app-footer-info span + span::before { display: none; }
-    .app-footer-info span {
-        display: block;
-        margin-top: 2px;
-        white-space: normal;
-    }
+    /* span 의 flex row 동작은 위 새 정의 (라벨/값 가로 정렬) 가 우선 — override 하지 않음 */
 }
 
 /* ============================================================ Policy pages
