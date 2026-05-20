@@ -3819,6 +3819,59 @@ try {
             ]);
         }
 
+        // ─── DISCARD (사장님 2026-05-21 — 미확인요약 카드 즉시 삭제) ───
+        // POST body: { action: 'discard', job_id }
+        // recording_jobs.status='dismissed' + audio 파일 즉시 unlink.
+        // 이미 dismissed/saved 면 idempotent 200.
+        if ($action === 'discard') {
+            ensure_recording_jobs_table($pdo);
+            $jobId = trim((string)($body['job_id'] ?? $_GET['job_id'] ?? ''));
+            if ($jobId === '') respond(['status' => 'error', 'code' => 'invalid_request', 'message' => 'job_id 필요.'], 400);
+            try {
+                $jStmt = $pdo->prepare('SELECT id, status, storage_path FROM recording_jobs WHERE id = :id AND owner_email = :o LIMIT 1');
+                $jStmt->execute([':id' => $jobId, ':o' => $owner]);
+                $jRow = $jStmt->fetch();
+            } catch (Throwable $e) {
+                respond(['status' => 'error', 'code' => 'upstream_failed', 'message' => '조회 실패.'], 503);
+            }
+            if (!$jRow) respond(['status' => 'error', 'code' => 'not_found', 'message' => '해당 job 없거나 권한 없음.'], 404);
+
+            $prevStatus = (string)$jRow['status'];
+            $alreadyDone = in_array($prevStatus, ['dismissed', 'saved'], true);
+
+            // audio 파일 즉시 삭제 (storage 회수)
+            $audioRemoved = false;
+            if (!empty($jRow['storage_path'])) {
+                foreach ([__DIR__, dirname(__DIR__)] as $base) {
+                    $cand = $base . '/' . ltrim((string)$jRow['storage_path'], '/');
+                    $real = @realpath($cand);
+                    if ($real && is_file($real)) {
+                        if (@unlink($real)) $audioRemoved = true;
+                        break;
+                    }
+                }
+            }
+
+            // status 'dismissed' UPDATE (idempotent)
+            if (!$alreadyDone) {
+                try {
+                    $pdo->prepare("UPDATE recording_jobs SET status = 'dismissed', updated_at = NOW() WHERE id = :id AND owner_email = :o")
+                        ->execute([':id' => $jobId, ':o' => $owner]);
+                } catch (Throwable $e) {
+                    error_log('[discard] UPDATE 실패: ' . $e->getMessage());
+                }
+            }
+
+            respond([
+                'status' => 'ok',
+                'job_id' => $jobId,
+                'previous_status' => $prevStatus,
+                'new_status' => $alreadyDone ? $prevStatus : 'dismissed',
+                'audio_removed' => $audioRemoved,
+                'idempotent' => $alreadyDone,
+            ]);
+        }
+
         // ─── ADMIN_JOB_DIAG (사장님 2026-05-20 진단용 — admin only) ───
         // GET/POST: action=admin_job_diag, body/query.job_ids=콤마구분 또는 배열
         // 응답: 각 job_id 의 진단 컬럼 모두 (owner 무관 — admin 권한).
