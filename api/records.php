@@ -3745,61 +3745,68 @@ try {
                     ]);
                 }
             }
-            // 캐시 miss — internal HTTP 로 process-recording.php 호출
+            // 캐시 miss — Railway worker /process 직접 호출 (process-recording 우회).
+            // 사장님 2026-05-21 — cafe24 ffmpeg 미설치로 m4a Whisper 400 거부. Railway 의 mp3 transcode 강제.
             $workerTok = '';
+            $railwayUrl = '';
             foreach ([__DIR__, dirname(__DIR__)] as $dir) {
                 $f = $dir . '/.env';
                 if (!is_file($f)) continue;
                 foreach (file($f, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as $l) {
-                    if (preg_match('/^\s*RECORDING_WORKER_TOKEN\s*=\s*(.*)$/i', $l, $mm)) {
-                        $workerTok = trim($mm[1], "\"' \t"); break 2;
+                    if ($workerTok === '' && preg_match('/^\s*RECORDING_WORKER_TOKEN\s*=\s*(.*)$/i', $l, $mm)) {
+                        $workerTok = trim($mm[1], "\"' \t");
+                    }
+                    if ($railwayUrl === '' && preg_match('/^\s*RAILWAY_WORKER_URL\s*=\s*(.*)$/i', $l, $mm2)) {
+                        $railwayUrl = trim($mm2[1], "\"' \t");
                     }
                 }
+                if ($workerTok !== '' && $railwayUrl !== '') break;
             }
-            if ($workerTok === '') respond(['status' => 'error', 'code' => 'upstream_failed', 'message' => 'RECORDING_WORKER_TOKEN 미설정.'], 503);
+            if ($workerTok === '' || $railwayUrl === '') {
+                respond(['status' => 'error', 'code' => 'upstream_failed', 'message' => 'Railway worker 미설정.'], 503);
+            }
 
-            $host = $_SERVER['HTTP_HOST'] ?? 'youngman-biz.com';
-            $internalUrl = 'https://' . $host . '/process-recording.php?internal=1';
+            // signed audio URL (HMAC, 10분)
+            $expires = time() + 600;
+            $audioToken = hash_hmac('sha256', $jobId . '.' . $expires, $workerTok);
+            $audioUrl = 'https://youngman-biz.com/recording-audio.php?job_id=' . urlencode($jobId) . '&token=' . urlencode($audioToken) . '&expires=' . $expires;
+
+            // status='processing' UPDATE
+            try {
+                $pdo->prepare("UPDATE recording_jobs SET status = 'processing', started_at = NOW(), updated_at = NOW() WHERE id = :id AND owner_email = :o")
+                    ->execute([':id' => $jobId, ':o' => $owner]);
+            } catch (Throwable $e) {}
+
             $payload = [
-                'storage_path' => (string)($jRow['storage_path'] ?? ''),
-                'client_request_id' => (string)($jRow['client_request_id'] ?? $jobId),
+                'job_id' => $jobId,
+                'owner_email' => $owner,
+                'audio_url' => $audioUrl,
                 'duration_sec' => (int)($jRow['duration_sec'] ?? 0),
                 'customer_name_hint' => (string)($jRow['customer_name_hint'] ?? ''),
-                'phone_number' => (string)($jRow['phone_number'] ?? ''),
-                'recorded_at' => (string)($jRow['recorded_at'] ?? ''),
-                'group_id' => '',   // 미리보기 — group_id 비움 → review_required 강제 → summary 캐시 저장
-                'mode' => 'sync',
-                'defer_summarize' => false,
-                '_internal_job_id' => $jobId,
-                '_internal_owner_email' => $owner,
+                'group_id' => '',   // 미리보기 — review_required=1 강제
             ];
-            $ch = curl_init($internalUrl);
+            $ch = curl_init(rtrim($railwayUrl, '/') . '/process');
             curl_setopt_array($ch, [
                 CURLOPT_RETURNTRANSFER => true,
                 CURLOPT_POST => true,
                 CURLOPT_POSTFIELDS => json_encode($payload, JSON_UNESCAPED_UNICODE),
                 CURLOPT_HTTPHEADER => [
                     'Content-Type: application/json',
-                    'X-Internal-Worker-Token: ' . $workerTok,
+                    'X-Worker-Token: ' . $workerTok,
                 ],
-                CURLOPT_TIMEOUT => 230,
+                CURLOPT_TIMEOUT => 15,        // Railway 는 즉시 202 응답
                 CURLOPT_CONNECTTIMEOUT => 10,
             ]);
             $resp = curl_exec($ch);
             $httpStatus = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
-            $cErr = curl_error($ch);
             curl_close($ch);
-            if ($resp === false) {
-                respond(['status' => 'error', 'code' => 'upstream_failed', 'message' => 'STT/LLM 호출 실패: ' . $cErr], 502);
-            }
-            error_log('[trigger_summarize] job=' . $jobId . ' http=' . $httpStatus . ' resp=' . substr((string)$resp, 0, 200));
-            // 사장님 2026-05-21 — Railway 위임 시 process-recording.php 는 즉시 202 응답 후
-            // 백그라운드 처리. recording-callback.php 가 결과 받아 summary_json_encrypted 저장.
-            // 결과 채워질 때까지 polling (5초 간격 max 90초).
+            error_log('[trigger_summarize] Railway dispatch job=' . $jobId . ' http=' . $httpStatus);
+            // Railway 가 백그라운드 처리. recording-callback.php 가 결과 받아 summary_json_encrypted 저장.
+            // 30초 polling (5초 × 6). native fetch timeout 60초 이내.
             $jRow2 = null;
             $summary = null;
-            $maxAttempts = 18;   // 5초 × 18 = 90초
-            for ($attempt = 0; $attempt < $maxAttempts; $attempt++) {
+            for ($attempt = 0; $attempt < 6; $attempt++) {
+                sleep(5);
                 $jStmt2 = $pdo->prepare("SELECT * FROM recording_jobs WHERE id = :id AND owner_email = :o LIMIT 1");
                 $jStmt2->execute([':id' => $jobId, ':o' => $owner]);
                 $jRow2 = $jStmt2->fetch();
@@ -3808,22 +3815,18 @@ try {
                     $arr = is_string($dec) ? json_decode($dec, true) : null;
                     if (is_array($arr)) { $summary = $arr; break; }
                 }
-                // 영구 실패 케이스 — 더 기다릴 필요 없음.
-                if ($jRow2 && in_array((string)$jRow2['status'], ['failed_permanent', 'dismissed'], true)) {
-                    break;
-                }
-                sleep(5);
+                if ($jRow2 && in_array((string)$jRow2['status'], ['failed_permanent', 'dismissed'], true)) break;
             }
             if (!$summary) {
-                // failed_retryable 또는 처리 지연 — 200 + retryable 응답 (앱 무한 재시도/모달 반복 방지).
+                // 처리 지연 — 200 + processing 응답 (native crash 방지 + 재시도 가능)
                 respond([
                     'status' => 'ok',
                     'ok' => false,
-                    'error_code' => 'RETRYABLE_SERVER_ERROR',
+                    'error_code' => 'PROCESSING',
                     'job_id' => $jobId,
-                    'job_status' => $jRow2 ? (string)$jRow2['status'] : 'unknown',
+                    'job_status' => $jRow2 ? (string)$jRow2['status'] : 'processing',
                     'retryable' => true,
-                    'message' => 'STT 처리 시간이 길어졌습니다. 잠시 후 다시 시도해주세요.',
+                    'message' => 'STT 처리 중입니다. 잠시 후 다시 시도해주세요.',
                     'last_error' => $jRow2['error_message'] ?? null,
                 ], 200);
             }
@@ -4090,65 +4093,80 @@ try {
                     'job_id' => $jobId,
                 ]);
             }
-            // 사장님 2026-05-21 — audio_pending 또는 failed_retryable 상태면 자동 trigger_summarize.
-            // STT/LLM 안 됐으면 confirm 안에서 internal HTTP 로 즉시 처리.
+            // 사장님 2026-05-21 — audio_pending / failed_retryable + 캐시 없으면 Railway worker 직접 호출.
+            // cafe24 ffmpeg 미설치로 m4a Whisper 400 거부 → Railway mp3 transcode 강제.
             if (in_array((string)$jRow['status'], ['audio_pending', 'failed_retryable', 'queued'], true) && empty($jRow['summary_json_encrypted'])) {
-                $workerTokInline = '';
+                $workerTokC = ''; $railwayUrlC = '';
                 foreach ([__DIR__, dirname(__DIR__)] as $dir) {
                     $f = $dir . '/.env';
                     if (!is_file($f)) continue;
                     foreach (file($f, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as $l) {
-                        if (preg_match('/^\s*RECORDING_WORKER_TOKEN\s*=\s*(.*)$/i', $l, $mm2)) {
-                            $workerTokInline = trim($mm2[1], "\"' \t"); break 2;
+                        if ($workerTokC === '' && preg_match('/^\s*RECORDING_WORKER_TOKEN\s*=\s*(.*)$/i', $l, $mmA)) {
+                            $workerTokC = trim($mmA[1], "\"' \t");
+                        }
+                        if ($railwayUrlC === '' && preg_match('/^\s*RAILWAY_WORKER_URL\s*=\s*(.*)$/i', $l, $mmB)) {
+                            $railwayUrlC = trim($mmB[1], "\"' \t");
                         }
                     }
+                    if ($workerTokC !== '' && $railwayUrlC !== '') break;
                 }
-                if ($workerTokInline !== '') {
-                    $hostInline = $_SERVER['HTTP_HOST'] ?? 'youngman-biz.com';
-                    $internalUrlC = 'https://' . $hostInline . '/process-recording.php?internal=1';
+                if ($workerTokC !== '' && $railwayUrlC !== '') {
+                    // signed audio URL (10분)
+                    $expC = time() + 600;
+                    $audTokC = hash_hmac('sha256', $jobId . '.' . $expC, $workerTokC);
+                    $audUrlC = 'https://youngman-biz.com/recording-audio.php?job_id=' . urlencode($jobId) . '&token=' . urlencode($audTokC) . '&expires=' . $expC;
+                    // status='processing' UPDATE
+                    try {
+                        $pdo->prepare("UPDATE recording_jobs SET status = 'processing', started_at = NOW(), updated_at = NOW() WHERE id = :id AND owner_email = :o")
+                            ->execute([':id' => $jobId, ':o' => $owner]);
+                    } catch (Throwable $e) {}
                     $payloadC = [
-                        'storage_path' => (string)($jRow['storage_path'] ?? ''),
-                        'client_request_id' => (string)($jRow['client_request_id'] ?? $jobId),
+                        'job_id' => $jobId,
+                        'owner_email' => $owner,
+                        'audio_url' => $audUrlC,
                         'duration_sec' => (int)($jRow['duration_sec'] ?? 0),
-                        'phone_number' => (string)($jRow['phone_number'] ?? ''),
-                        'recorded_at' => (string)($jRow['recorded_at'] ?? ''),
                         'group_id' => '',
-                        'mode' => 'sync',
-                        'defer_summarize' => false,
-                        '_internal_job_id' => $jobId,
-                        '_internal_owner_email' => $owner,
                     ];
-                    $chC = curl_init($internalUrlC);
+                    $chC = curl_init(rtrim($railwayUrlC, '/') . '/process');
                     curl_setopt_array($chC, [
                         CURLOPT_RETURNTRANSFER => true,
                         CURLOPT_POST => true,
                         CURLOPT_POSTFIELDS => json_encode($payloadC, JSON_UNESCAPED_UNICODE),
                         CURLOPT_HTTPHEADER => [
                             'Content-Type: application/json',
-                            'X-Internal-Worker-Token: ' . $workerTokInline,
+                            'X-Worker-Token: ' . $workerTokC,
                         ],
-                        CURLOPT_TIMEOUT => 230,
+                        CURLOPT_TIMEOUT => 15,
                         CURLOPT_CONNECTTIMEOUT => 10,
                     ]);
                     $respC = curl_exec($chC);
                     $httpC = (int)curl_getinfo($chC, CURLINFO_HTTP_CODE);
                     curl_close($chC);
-                    error_log('[confirm auto-trigger] job=' . $jobId . ' http=' . $httpC . ' resp=' . substr((string)$respC, 0, 200));
-                    // 사장님 2026-05-21 — Railway 위임 시 polling (5초 × 18 = 90초)
-                    for ($ca = 0; $ca < 18; $ca++) {
+                    error_log('[confirm Railway dispatch] job=' . $jobId . ' http=' . $httpC);
+                    // 30초 polling (5초 × 6)
+                    for ($ca = 0; $ca < 6; $ca++) {
+                        sleep(5);
                         $jStmtR = $pdo->prepare('SELECT id, status, summary_json_encrypted, customer_log_id, duration_sec, recorded_at, group_id, phone_number, client_request_id, error_message
                             FROM recording_jobs WHERE id = :id AND owner_email = :o LIMIT 1');
                         $jStmtR->execute([':id' => $jobId, ':o' => $owner]);
                         $jRow = $jStmtR->fetch() ?: $jRow;
                         if ($jRow && !empty($jRow['summary_json_encrypted'])) break;
                         if ($jRow && in_array((string)$jRow['status'], ['failed_permanent', 'dismissed'], true)) break;
-                        sleep(5);
                     }
                 }
             }
-            if (!in_array((string)$jRow['status'], ['ready_to_review', 'completed', 'saved'], true)) {
-                respond(['status' => 'error', 'code' => 'invalid_state',
-                    'message' => 'STT 처리 미완료 또는 실패 (현재: ' . $jRow['status'] . '). 잠시 후 다시 시도해주세요.'], 409);
+            if (!in_array((string)$jRow['status'], ['ready_to_review', 'completed', 'saved'], true) && empty($jRow['summary_json_encrypted'])) {
+                // 처리 미완료 — 200 + processing 응답 (native crash 방지)
+                respond([
+                    'status' => 'ok',
+                    'ok' => false,
+                    'error_code' => 'PROCESSING',
+                    'job_id' => $jobId,
+                    'job_status' => (string)$jRow['status'],
+                    'retryable' => true,
+                    'message' => 'STT 처리 중입니다. 잠시 후 다시 시도해주세요.',
+                    'last_error' => $jRow['error_message'] ?? null,
+                ], 200);
             }
 
             // summary_json_encrypted 복호화
