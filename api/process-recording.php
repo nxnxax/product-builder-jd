@@ -1876,6 +1876,43 @@ try {
     jerror('upstream_failed', 'DB 저장 실패.', 500);
 }
 
+/* ========== 자동 send_to_group mirror (사장님 2026-05-20) ==========
+ * 앱이 통화 후 모달의 "양식에 전송" AutoSubmit 으로 group_id 보내면 자동 mirror.
+ * group_id 빈 값이면 default 그룹 자동 (기존 흐름과 동일).
+ * X-Worker-Token 헤더 + body.owner_email 로 records.php 의 send_to_group 액션 우회 인증. */
+try {
+    $sendUrl = 'https://youngman-biz.com/records.php?resource=customer-log';
+    $sendPayload = [
+        'action'      => 'customer_log_send_to_group',
+        'id'          => $rowId,
+        'owner_email' => $ownerEmail,
+    ];
+    if ($groupIdHint !== '') $sendPayload['group_id'] = (int)$groupIdHint;
+    $workerTok = load_env_value('RECORDING_WORKER_TOKEN');
+    if ($workerTok !== '') {
+        $sCh = curl_init($sendUrl);
+        curl_setopt_array($sCh, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_POST => true,
+            CURLOPT_POSTFIELDS => json_encode($sendPayload, JSON_UNESCAPED_UNICODE),
+            CURLOPT_HTTPHEADER => [
+                'Content-Type: application/json',
+                'X-Worker-Token: ' . $workerTok,
+            ],
+            CURLOPT_TIMEOUT => 30,
+            CURLOPT_CONNECTTIMEOUT => 5,
+        ]);
+        $sResp = curl_exec($sCh);
+        $sStat = (int)curl_getinfo($sCh, CURLINFO_HTTP_CODE);
+        curl_close($sCh);
+        error_log('[process-recording] auto send_to_group cl=' . $rowId . ' gid=' . $groupIdHint . ' http=' . $sStat);
+    } else {
+        error_log('[process-recording] auto send_to_group skip — RECORDING_WORKER_TOKEN 미설정');
+    }
+} catch (Throwable $e) {
+    error_log('[process-recording] auto send_to_group 실패: ' . $e->getMessage());
+}
+
 /* ========== 사용량 카운트 ==========
  *   - admin allowlist: 카운트 안 함
  *   - pro: 카운트 안 함 (무제한)

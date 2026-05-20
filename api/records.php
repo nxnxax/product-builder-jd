@@ -3538,37 +3538,66 @@ try {
        ({status:'ok',...} / {status:'error', code, message}) 으로 통일.
        ============================================================ */
     if ($resource === 'customer-log') {
-        // ── 자체 인증 (Supabase /auth/v1/user 직접 호출 패턴) ──
-        $clHdr = read_authorization_header();
-        if (!preg_match('/^Bearer\s+(.+)$/i', $clHdr, $clM)) {
-            respond(['status' => 'error', 'code' => 'unauthorized', 'message' => '로그인이 필요합니다.'], 401);
+        // ── 자체 인증 ──
+        // 사장님 2026-05-20 — X-Worker-Token (RECORDING_WORKER_TOKEN) 인증 우회 분기 추가.
+        // recording-callback.php / process-recording.php 가 internal HTTP 로 send_to_group 호출 시 사용.
+        // X-Worker-Token + body.owner_email 일치하면 Supabase 검증 skip.
+        $workerTok = trim((string)($_SERVER['HTTP_X_WORKER_TOKEN'] ?? ''));
+        $expectedWorkerTok = (function() {
+            foreach ([__DIR__, dirname(__DIR__)] as $dir) {
+                $envP = $dir . '/.env';
+                if (!is_file($envP)) continue;
+                foreach (file($envP, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as $line) {
+                    if (preg_match('/^\s*(?:export\s+)?RECORDING_WORKER_TOKEN\s*=\s*(.*)$/i', $line, $m)) {
+                        return trim($m[1], "\"' \t");
+                    }
+                }
+            }
+            return '';
+        })();
+        $clEmail = '';
+        $isInternalWorker = false;
+        if ($workerTok !== '' && $expectedWorkerTok !== '' && hash_equals($expectedWorkerTok, $workerTok)) {
+            $emailIn = strtolower(trim((string)($body['owner_email'] ?? $_GET['owner_email'] ?? '')));
+            if ($emailIn !== '' && filter_var($emailIn, FILTER_VALIDATE_EMAIL)) {
+                $clEmail = $emailIn;
+                $isInternalWorker = true;
+            } else {
+                respond(['status' => 'error', 'code' => 'unauthorized', 'message' => 'worker token 유효하지만 body.owner_email 누락.'], 401);
+            }
+        } else {
+            // 기존 Supabase /auth/v1/user 검증 흐름.
+            $clHdr = read_authorization_header();
+            if (!preg_match('/^Bearer\s+(.+)$/i', $clHdr, $clM)) {
+                respond(['status' => 'error', 'code' => 'unauthorized', 'message' => '로그인이 필요합니다.'], 401);
+            }
+            $clToken = trim($clM[1]);
+            $clBase  = !empty($auth['supabase_url']) ? rtrim((string)$auth['supabase_url'], '/') : '';
+            $clKey   = (string)($auth['anon_key'] ?? '');
+            if ($clBase === '' || $clKey === '') {
+                respond(['status' => 'error', 'code' => 'unauthorized', 'message' => '서버 인증 설정 누락 (supabase_url / anon_key).'], 500);
+            }
+            $clCh = curl_init($clBase . '/auth/v1/user');
+            curl_setopt_array($clCh, [
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_HTTPHEADER => ['Authorization: Bearer ' . $clToken, 'apikey: ' . $clKey],
+                CURLOPT_TIMEOUT => 8,
+                CURLOPT_CONNECTTIMEOUT => 5,
+            ]);
+            $clResp = curl_exec($clCh);
+            $clStatus = (int)curl_getinfo($clCh, CURLINFO_HTTP_CODE);
+            curl_close($clCh);
+            if ($clStatus !== 200 || !$clResp) {
+                respond(['status' => 'error', 'code' => 'unauthorized',
+                    'message' => '토큰 검증 실패 (Supabase ' . $clStatus . '). 다시 로그인해주세요.'], 401);
+            }
+            $clData = json_decode((string)$clResp, true);
+            $clEmail = strtolower(trim((string)($clData['email'] ?? '')));
+            if ($clEmail === '') {
+                respond(['status' => 'error', 'code' => 'unauthorized', 'message' => '토큰에서 이메일 추출 실패.'], 401);
+            }
         }
-        $clToken = trim($clM[1]);
-        $clBase  = !empty($auth['supabase_url']) ? rtrim((string)$auth['supabase_url'], '/') : '';
-        $clKey   = (string)($auth['anon_key'] ?? '');
-        if ($clBase === '' || $clKey === '') {
-            respond(['status' => 'error', 'code' => 'unauthorized', 'message' => '서버 인증 설정 누락 (supabase_url / anon_key).'], 500);
-        }
-        $clCh = curl_init($clBase . '/auth/v1/user');
-        curl_setopt_array($clCh, [
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_HTTPHEADER => ['Authorization: Bearer ' . $clToken, 'apikey: ' . $clKey],
-            CURLOPT_TIMEOUT => 8,
-            CURLOPT_CONNECTTIMEOUT => 5,
-        ]);
-        $clResp = curl_exec($clCh);
-        $clStatus = (int)curl_getinfo($clCh, CURLINFO_HTTP_CODE);
-        curl_close($clCh);
-        if ($clStatus !== 200 || !$clResp) {
-            respond(['status' => 'error', 'code' => 'unauthorized',
-                'message' => '토큰 검증 실패 (Supabase ' . $clStatus . '). 다시 로그인해주세요.'], 401);
-        }
-        $clData = json_decode((string)$clResp, true);
-        $clEmail = strtolower(trim((string)($clData['email'] ?? '')));
-        if ($clEmail === '') {
-            respond(['status' => 'error', 'code' => 'unauthorized', 'message' => '토큰에서 이메일 추출 실패.'], 401);
-        }
-        $authUser = ['email' => $clEmail, 'sub' => $clData['id'] ?? null];
+        $authUser = ['email' => $clEmail, 'sub' => null];
 
         // ── 테이블/컬럼 보장 ──
         if (!ensure_customer_log_table($pdo)) {

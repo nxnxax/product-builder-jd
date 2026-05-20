@@ -255,6 +255,45 @@ try {
     error_log('[recording-callback] recording_jobs UPDATE 실패: ' . $e->getMessage());
 }
 
+/* 자동 send_to_group mirror (사장님 2026-05-20) — 통화 후 모달의 "양식에 전송" AutoSubmit 경로.
+ * 앱이 process-recording.php request body 에 group_id 보내면 → recording_jobs 저장 → Railway 처리 →
+ * 여기서 customer_log INSERT 후 자동으로 records.php?action=send_to_group 호출하여 ledger_records 에 mirror.
+ * group_id 명시 안 됐어도 default 그룹으로 자동 mirror (사장님 기존 default 그룹 흐름 보존). */
+try {
+    $sendUrl = rtrim((string)rc_load_env('CAFE24_BASE_URL') ?: 'https://youngman-biz.com', '/')
+             . '/records.php?resource=customer-log';
+    $sendPayload = [
+        'action'      => 'customer_log_send_to_group',
+        'id'          => $customerLogId,
+        'owner_email' => $ownerEmail,
+    ];
+    if ($groupId !== '') $sendPayload['group_id'] = (int)$groupId;
+    $sCh = curl_init($sendUrl);
+    curl_setopt_array($sCh, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST => true,
+        CURLOPT_POSTFIELDS => json_encode($sendPayload, JSON_UNESCAPED_UNICODE),
+        CURLOPT_HTTPHEADER => [
+            'Content-Type: application/json',
+            'X-Worker-Token: ' . $expected,
+        ],
+        CURLOPT_TIMEOUT => 30,
+        CURLOPT_CONNECTTIMEOUT => 5,
+    ]);
+    $sResp = curl_exec($sCh);
+    $sStat = (int)curl_getinfo($sCh, CURLINFO_HTTP_CODE);
+    curl_close($sCh);
+    error_log('[recording-callback] auto send_to_group job=' . $jobId . ' gid=' . $groupId . ' http=' . $sStat);
+    if ($sResp !== false && $sStat >= 200 && $sStat < 300) {
+        $sData = json_decode((string)$sResp, true);
+        if (is_array($sData) && isset($sData['_send_debug'])) {
+            error_log('[recording-callback] _send_debug: ' . json_encode($sData['_send_debug'], JSON_UNESCAPED_UNICODE));
+        }
+    }
+} catch (Throwable $e) {
+    error_log('[recording-callback] auto send_to_group 실패: ' . $e->getMessage());
+}
+
 /* FCM call_summary_ready 발송 */
 try {
     require_once __DIR__ . '/fcm_helpers.php';
