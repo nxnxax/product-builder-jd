@@ -127,7 +127,8 @@ foreach ($jobs as $job) {
         continue;
     }
 
-    /* internal HTTP 호출 — sync 모드 (응답까지 대기). 4분 timeout. */
+    /* internal HTTP 호출 — sync 모드 (응답까지 대기). 4분 timeout.
+     * 사장님 2026-05-21 — defer_summarize=false 명시: cron retry 는 STT/LLM 강제 실행. */
     $payload = [
         'storage_path' => $job['storage_path'],
         'client_request_id' => $job['client_request_id'] ?: $jobId,
@@ -137,6 +138,7 @@ foreach ($jobs as $job) {
         'recorded_at' => (string)($job['recorded_at'] ?? ''),
         'group_id' => (string)($job['group_id'] ?? ''),
         'mode' => 'sync',
+        'defer_summarize' => false,
         '_internal_job_id' => $jobId,
         '_internal_owner_email' => $ownerEmail,
     ];

@@ -752,16 +752,23 @@ if ($asyncMode) {
         $reviewRequiredInt = 0;
     }
 
+    // 사장님 2026-05-21 — 새 default = audio_pending. STT/LLM 자동 실행 금지 (비용 절감).
+    // 사용자가 "요약보기" 또는 "양식 전송" 클릭 시에만 records.php?action=trigger_summarize / confirm 호출되어 STT 발동.
+    // body.defer_summarize=false 명시 (cron retry / internal worker 등) 일 때만 즉시 STT/LLM 진행.
+    $deferSummarize = !isset($body['defer_summarize']) || !empty($body['defer_summarize']);
+    $initialStatus = $deferSummarize ? 'audio_pending' : 'queued';
+
     // 새 job 생성. 사용자 token 검증은 이미 끝났으므로 cron worker 가 server secret 으로 처리할 수 있음.
     $asyncJobId = uuid_v4();
     $insJob = $pdo->prepare("INSERT INTO recording_jobs
         (id, owner_email, status, storage_path, client_request_id,
          audio_sha256, duration_sec, customer_name_hint, phone_number, recorded_at, group_id, review_required)
-        VALUES (:id, :o, 'queued', :sp, :k,
+        VALUES (:id, :o, :st, :sp, :k,
                 :sha, :dur, :hint, :ph, :ra, :gid, :rr)");
     $insJob->execute([
         ':id'  => $asyncJobId,
         ':o'   => $ownerEmail,
+        ':st'  => $initialStatus,
         ':sp'  => $storagePath,
         ':k'   => $clientReqId,
         ':sha' => $audioSha256,
@@ -775,6 +782,13 @@ if ($asyncMode) {
 
     // 즉시 응답 — client 연결 종료. 이후 코드는 백그라운드.
     respond_async_queued($asyncJobId);
+
+    // 사장님 2026-05-21 — defer_summarize=true (default) 면 audio_pending 으로 두고 즉시 종료.
+    // STT/LLM 자동 안 함. 사용자가 trigger_summarize / confirm 호출 시 발동.
+    if ($deferSummarize) {
+        error_log('[process-recording] defer_summarize=true — STT/LLM skip, status=audio_pending, job=' . $asyncJobId);
+        exit;
+    }
 
     /* Railway worker 분기 (선택 — RAILWAY_WORKER_URL 환경변수 있을 때만).
      * Railway 가 있으면: STT/LLM 처리를 Railway 에 위임 + cafe24 는 callback 만 기다림.

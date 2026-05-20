@@ -3709,6 +3709,116 @@ try {
             respond(['status' => 'ok']);
         }
 
+        // ─── TRIGGER_SUMMARIZE (사장님 2026-05-21 — "요약보기" 사용자 액션) ───
+        // POST body: { job_id }
+        // 흐름: 1) recording_jobs row 확인 (owner 격리)
+        //       2) summary_json_encrypted 캐시 있으면 그대로 반환 (재요청 시 STT 비용 0)
+        //       3) 캐시 없으면 internal HTTP 로 process-recording.php?internal=1 호출 (defer_summarize=false)
+        //          → STT + LLM → summary_json_encrypted 저장 → status='ready_to_review'
+        //       4) 결과 반환
+        if ($action === 'trigger_summarize') {
+            ensure_recording_jobs_table($pdo);
+            $jobId = trim((string)($body['job_id'] ?? $_GET['job_id'] ?? ''));
+            if ($jobId === '') respond(['status' => 'error', 'code' => 'invalid_request', 'message' => 'job_id 필요.'], 400);
+            try {
+                $jStmt = $pdo->prepare("SELECT * FROM recording_jobs WHERE id = :id AND owner_email = :o LIMIT 1");
+                $jStmt->execute([':id' => $jobId, ':o' => $owner]);
+                $jRow = $jStmt->fetch();
+            } catch (Throwable $e) {
+                respond(['status' => 'error', 'code' => 'upstream_failed', 'message' => '조회 실패: ' . $e->getMessage()], 503);
+            }
+            if (!$jRow) respond(['status' => 'error', 'code' => 'not_found', 'message' => '해당 job 없거나 권한 없음.'], 404);
+            // 캐시 hit
+            if (!empty($jRow['summary_json_encrypted'])) {
+                $dec = youngman_decrypt($jRow['summary_json_encrypted']);
+                $arr = is_string($dec) ? json_decode($dec, true) : null;
+                if (is_array($arr)) {
+                    respond([
+                        'status' => 'ok',
+                        'cached' => true,
+                        'job_id' => $jobId,
+                        'job_status' => (string)$jRow['status'],
+                        'summary' => $arr,
+                        'duration_sec' => (int)($jRow['duration_sec'] ?? 0),
+                        'recorded_at' => $jRow['recorded_at'] ?? null,
+                        'phone_number' => $jRow['phone_number'] ?? null,
+                    ]);
+                }
+            }
+            // 캐시 miss — internal HTTP 로 process-recording.php 호출
+            $workerTok = '';
+            foreach ([__DIR__, dirname(__DIR__)] as $dir) {
+                $f = $dir . '/.env';
+                if (!is_file($f)) continue;
+                foreach (file($f, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as $l) {
+                    if (preg_match('/^\s*RECORDING_WORKER_TOKEN\s*=\s*(.*)$/i', $l, $mm)) {
+                        $workerTok = trim($mm[1], "\"' \t"); break 2;
+                    }
+                }
+            }
+            if ($workerTok === '') respond(['status' => 'error', 'code' => 'upstream_failed', 'message' => 'RECORDING_WORKER_TOKEN 미설정.'], 503);
+
+            $host = $_SERVER['HTTP_HOST'] ?? 'youngman-biz.com';
+            $internalUrl = 'https://' . $host . '/process-recording.php?internal=1';
+            $payload = [
+                'storage_path' => (string)($jRow['storage_path'] ?? ''),
+                'client_request_id' => (string)($jRow['client_request_id'] ?? $jobId),
+                'duration_sec' => (int)($jRow['duration_sec'] ?? 0),
+                'customer_name_hint' => (string)($jRow['customer_name_hint'] ?? ''),
+                'phone_number' => (string)($jRow['phone_number'] ?? ''),
+                'recorded_at' => (string)($jRow['recorded_at'] ?? ''),
+                'group_id' => '',   // 미리보기 — group_id 비움 → review_required 강제 → summary 캐시 저장
+                'mode' => 'sync',
+                'defer_summarize' => false,
+                '_internal_job_id' => $jobId,
+                '_internal_owner_email' => $owner,
+            ];
+            $ch = curl_init($internalUrl);
+            curl_setopt_array($ch, [
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_POST => true,
+                CURLOPT_POSTFIELDS => json_encode($payload, JSON_UNESCAPED_UNICODE),
+                CURLOPT_HTTPHEADER => [
+                    'Content-Type: application/json',
+                    'X-Internal-Worker-Token: ' . $workerTok,
+                ],
+                CURLOPT_TIMEOUT => 230,
+                CURLOPT_CONNECTTIMEOUT => 10,
+            ]);
+            $resp = curl_exec($ch);
+            $httpStatus = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            $cErr = curl_error($ch);
+            curl_close($ch);
+            if ($resp === false) {
+                respond(['status' => 'error', 'code' => 'upstream_failed', 'message' => 'STT/LLM 호출 실패: ' . $cErr], 502);
+            }
+            error_log('[trigger_summarize] job=' . $jobId . ' http=' . $httpStatus);
+            // 처리 완료 후 row 재조회 — summary_json_encrypted 캐시 확인
+            $jStmt2 = $pdo->prepare("SELECT * FROM recording_jobs WHERE id = :id AND owner_email = :o LIMIT 1");
+            $jStmt2->execute([':id' => $jobId, ':o' => $owner]);
+            $jRow2 = $jStmt2->fetch();
+            $summary = null;
+            if ($jRow2 && !empty($jRow2['summary_json_encrypted'])) {
+                $dec = youngman_decrypt($jRow2['summary_json_encrypted']);
+                $arr = is_string($dec) ? json_decode($dec, true) : null;
+                if (is_array($arr)) $summary = $arr;
+            }
+            if (!$summary) {
+                respond(['status' => 'error', 'code' => 'upstream_failed',
+                    'message' => 'STT/LLM 처리 결과 비어있음. http=' . $httpStatus . ' 응답=' . substr((string)$resp, 0, 200)], 502);
+            }
+            respond([
+                'status' => 'ok',
+                'cached' => false,
+                'job_id' => $jobId,
+                'job_status' => $jRow2 ? (string)$jRow2['status'] : 'unknown',
+                'summary' => $summary,
+                'duration_sec' => (int)($jRow2['duration_sec'] ?? 0),
+                'recorded_at' => $jRow2['recorded_at'] ?? null,
+                'phone_number' => $jRow2['phone_number'] ?? null,
+            ]);
+        }
+
         // ─── ADMIN_JOB_DIAG (사장님 2026-05-20 진단용 — admin only) ───
         // GET/POST: action=admin_job_diag, body/query.job_ids=콤마구분 또는 배열
         // 응답: 각 job_id 의 진단 컬럼 모두 (owner 무관 — admin 권한).
@@ -3796,9 +3906,11 @@ try {
             if ($limit < 1) $limit = 50;
             if ($limit > 200) $limit = 200;
             try {
-                $sql = "SELECT id, status, summary_json_encrypted, duration_sec, recorded_at, group_id, phone_number, created_at
+                // 사장님 2026-05-21 — audio_pending (껍데기, STT 안 됨) 도 포함.
+                // failed_retryable / failed_permanent 는 별도 status 라 표시 안 함 (사용자 재처리 가능 의미).
+                $sql = "SELECT id, status, summary_json_encrypted, duration_sec, recorded_at, group_id, phone_number, customer_name_hint, created_at
                     FROM recording_jobs
-                    WHERE owner_email = :o AND status = 'ready_to_review'
+                    WHERE owner_email = :o AND status IN ('audio_pending', 'ready_to_review')
                     ORDER BY COALESCE(recorded_at, created_at) DESC
                     LIMIT " . $limit;
                 $stmt = $pdo->prepare($sql);
@@ -3810,8 +3922,10 @@ try {
                 respond(['status' => 'ok', 'items' => [], 'count' => 0, '_warn' => 'schema_mismatch']);
             }
             $items = array_map(function($r) {
-                $name = '고객';
+                $name = (string)($r['customer_name_hint'] ?? '');  // 껍데기 fallback (앱이 보낸 contacts 매칭값)
+                if ($name === '') $name = '고객';
                 $sumPreview = '';
+                $stt_done = false;
                 if (!empty($r['summary_json_encrypted'])) {
                     $dec = youngman_decrypt($r['summary_json_encrypted']);
                     $arr = is_string($dec) ? json_decode($dec, true) : null;
@@ -3819,15 +3933,18 @@ try {
                         if (!empty($arr['customer_name'])) $name = trim((string)$arr['customer_name']);
                         $sumPreview = (string)($arr['summary'] ?? '');
                         if (mb_strlen($sumPreview) > 180) $sumPreview = mb_substr($sumPreview, 0, 177) . '...';
+                        $stt_done = true;
                     }
                 }
                 return [
                     'id' => (string)$r['id'],
                     'status' => (string)$r['status'],
+                    'stt_done' => $stt_done,           // 사장님 2026-05-21 — UI 가 "껍데기 / 요약 있음" 구분용
                     'customer_name' => $name,
                     'summary_preview' => $sumPreview,
                     'duration_sec' => (int)($r['duration_sec'] ?? 0),
                     'recorded_at' => $r['recorded_at'] ?: $r['created_at'],
+                    'phone_number' => $r['phone_number'] ?? null,
                     'group_id' => $r['group_id'] ?: null,
                 ];
             }, $rows ?: []);
@@ -3900,9 +4017,60 @@ try {
                     'job_id' => $jobId,
                 ]);
             }
-            if ((string)$jRow['status'] !== 'ready_to_review') {
+            // 사장님 2026-05-21 — audio_pending 또는 failed_retryable 상태면 자동 trigger_summarize.
+            // STT/LLM 안 됐으면 confirm 안에서 internal HTTP 로 즉시 처리.
+            if (in_array((string)$jRow['status'], ['audio_pending', 'failed_retryable', 'queued'], true) && empty($jRow['summary_json_encrypted'])) {
+                $workerTokInline = '';
+                foreach ([__DIR__, dirname(__DIR__)] as $dir) {
+                    $f = $dir . '/.env';
+                    if (!is_file($f)) continue;
+                    foreach (file($f, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as $l) {
+                        if (preg_match('/^\s*RECORDING_WORKER_TOKEN\s*=\s*(.*)$/i', $l, $mm2)) {
+                            $workerTokInline = trim($mm2[1], "\"' \t"); break 2;
+                        }
+                    }
+                }
+                if ($workerTokInline !== '') {
+                    $hostInline = $_SERVER['HTTP_HOST'] ?? 'youngman-biz.com';
+                    $internalUrlC = 'https://' . $hostInline . '/process-recording.php?internal=1';
+                    $payloadC = [
+                        'storage_path' => (string)($jRow['storage_path'] ?? ''),
+                        'client_request_id' => (string)($jRow['client_request_id'] ?? $jobId),
+                        'duration_sec' => (int)($jRow['duration_sec'] ?? 0),
+                        'phone_number' => (string)($jRow['phone_number'] ?? ''),
+                        'recorded_at' => (string)($jRow['recorded_at'] ?? ''),
+                        'group_id' => '',
+                        'mode' => 'sync',
+                        'defer_summarize' => false,
+                        '_internal_job_id' => $jobId,
+                        '_internal_owner_email' => $owner,
+                    ];
+                    $chC = curl_init($internalUrlC);
+                    curl_setopt_array($chC, [
+                        CURLOPT_RETURNTRANSFER => true,
+                        CURLOPT_POST => true,
+                        CURLOPT_POSTFIELDS => json_encode($payloadC, JSON_UNESCAPED_UNICODE),
+                        CURLOPT_HTTPHEADER => [
+                            'Content-Type: application/json',
+                            'X-Internal-Worker-Token: ' . $workerTokInline,
+                        ],
+                        CURLOPT_TIMEOUT => 230,
+                        CURLOPT_CONNECTTIMEOUT => 10,
+                    ]);
+                    $respC = curl_exec($chC);
+                    $httpC = (int)curl_getinfo($chC, CURLINFO_HTTP_CODE);
+                    curl_close($chC);
+                    error_log('[confirm auto-trigger] job=' . $jobId . ' http=' . $httpC);
+                    // row 재조회
+                    $jStmtR = $pdo->prepare('SELECT id, status, summary_json_encrypted, customer_log_id, duration_sec, recorded_at, group_id, phone_number, client_request_id
+                        FROM recording_jobs WHERE id = :id AND owner_email = :o LIMIT 1');
+                    $jStmtR->execute([':id' => $jobId, ':o' => $owner]);
+                    $jRow = $jStmtR->fetch() ?: $jRow;
+                }
+            }
+            if (!in_array((string)$jRow['status'], ['ready_to_review', 'completed', 'saved'], true)) {
                 respond(['status' => 'error', 'code' => 'invalid_state',
-                    'message' => 'ready_to_review 상태의 job 만 confirm 가능 (현재: ' . $jRow['status'] . ').'], 409);
+                    'message' => 'STT 처리 미완료 또는 실패 (현재: ' . $jRow['status'] . '). 잠시 후 다시 시도해주세요.'], 409);
             }
 
             // summary_json_encrypted 복호화
