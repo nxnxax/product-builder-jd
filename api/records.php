@@ -3492,6 +3492,50 @@ try {
             respond(['status' => 'ok']);
         }
 
+        // ─── LIST_UNREVIEWED (사장님 2026-05-20 — "미확인 요약" 페이지) ───
+        // GET /records.php?resource=customer-log&action=list_unreviewed
+        // ready_to_review 상태의 recording_jobs 리스트 + summary_json 복호화 (preview 용).
+        if ($action === 'list_unreviewed') {
+            $limit = (int)($body['limit'] ?? $_GET['limit'] ?? 50);
+            if ($limit < 1) $limit = 50;
+            if ($limit > 200) $limit = 200;
+            try {
+                $sql = "SELECT id, status, summary_json_encrypted, duration_sec, recorded_at, group_id, phone_number, created_at
+                    FROM recording_jobs
+                    WHERE owner_email = :o AND status = 'ready_to_review'
+                    ORDER BY COALESCE(recorded_at, created_at) DESC
+                    LIMIT " . $limit;
+                $stmt = $pdo->prepare($sql);
+                $stmt->execute([':o' => $owner]);
+                $rows = $stmt->fetchAll();
+            } catch (Throwable $e) {
+                respond(['status' => 'error', 'code' => 'upstream_failed', 'message' => '조회 실패: ' . $e->getMessage()], 503);
+            }
+            $items = array_map(function($r) {
+                $name = '고객';
+                $sumPreview = '';
+                if (!empty($r['summary_json_encrypted'])) {
+                    $dec = youngman_decrypt($r['summary_json_encrypted']);
+                    $arr = is_string($dec) ? json_decode($dec, true) : null;
+                    if (is_array($arr)) {
+                        if (!empty($arr['customer_name'])) $name = trim((string)$arr['customer_name']);
+                        $sumPreview = (string)($arr['summary'] ?? '');
+                        if (mb_strlen($sumPreview) > 180) $sumPreview = mb_substr($sumPreview, 0, 177) . '...';
+                    }
+                }
+                return [
+                    'id' => (string)$r['id'],
+                    'status' => (string)$r['status'],
+                    'customer_name' => $name,
+                    'summary_preview' => $sumPreview,
+                    'duration_sec' => (int)($r['duration_sec'] ?? 0),
+                    'recorded_at' => $r['recorded_at'] ?: $r['created_at'],
+                    'group_id' => $r['group_id'] ?: null,
+                ];
+            }, $rows ?: []);
+            respond(['status' => 'ok', 'items' => $items, 'count' => count($items)]);
+        }
+
         // ─── PREVIEW (앱팀 2026-05-20 — ready_to_review job 의 summary_json 복호화 반환) ───
         // GET /records.php?resource=customer-log&action=preview&job_id=xxx
         // 사용자 검토 화면에서 호출. recording_jobs.review_required=1 인 job 만.
