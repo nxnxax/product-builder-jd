@@ -2586,7 +2586,9 @@ select:focus {
     background: rgba(20, 14, 8, 0.025);
     padding: 10px 12px;
     border-radius: 6px;
-    /* 스크롤은 모달 body 한 곳에서만 처리 — nested scroll 휠 잠금 방지. */
+    max-height: 240px;            /* 5~7줄 정도. 그 이상은 안쪽 스크롤 — 아래 행(메모/비고) 보존 */
+    overflow-y: auto;
+    overscroll-behavior: contain; /* 안쪽 끝 도달 시 부모로 휠 이벤트 전파 차단 → 휠 잠금 체감 X */
 }
 .row-detail-pill {
     display: inline-block;
@@ -2600,7 +2602,13 @@ select:focus {
 .row-detail-num { font-variant-numeric: tabular-nums; font-weight: 600; }
 
 /* 회차별 content + 전문보기 버튼 (사장님 2026-05-20) */
-.row-detail-textarea.content-rounds { padding: 4px; background: transparent; /* 모달 body 스크롤 단일화 — 자체 overflow 제거 */ }
+.row-detail-textarea.content-rounds {
+    padding: 4px;
+    background: transparent;
+    max-height: 320px;            /* 회차 여러 개 케이스 — 약간 더 길게. 아래 행 (메모/비고) 가시성 보존 */
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
 .content-round-block { background: rgba(20, 14, 8, 0.025); padding: 12px 14px; border-radius: 8px; margin-bottom: 10px; }
 .content-round-block:last-child { margin-bottom: 0; }
 .content-round-body { white-space: pre-wrap; line-height: 1.65; font-size: 13.5px; color: var(--fg-secondary, #4f4943); }
