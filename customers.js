@@ -798,7 +798,7 @@ function openRowDetailModal(rec, group, fields) {
         } else if (f.type === 'textarea') {
             // 사장님 2026-05-20 요청 — content 필드의 회차별 요약 마지막에 "대화내용 전문보기" 버튼 inject.
             if (f.key === 'content') {
-                display = renderContentWithTranscriptButtons(sanitizeContent(v));
+                display = renderContentWithTranscriptButtons(sanitizeContent(v), d);
             } else {
                 display = `<div class="row-detail-textarea">${escapeHtml(sanitizeContent(v))}</div>`;
             }
@@ -837,21 +837,32 @@ function openRowDetailModal(rec, group, fields) {
     bindTranscriptButtons(md, d.phone || d.phone_number || '');
 }
 
-/* 회차별 content 분할 + "대화내용 전문보기" 버튼 inject (사장님 2026-05-20 요청).
+/* 회차별 content 분할 + "전문보기" 버튼 inject (사장님 2026-05-20 요청).
  * 패턴: "📞 YYYY-MM-DD HH:MM:SS 통화 (N회차)" 헤더 마다 새 block 시작.
- * 각 block 끝에 data-transcript-ts 버튼 노출. 클릭 시 같은 phone 의 transcript fetch + inline expand. */
-function renderContentWithTranscriptButtons(text) {
+ * 각 block 끝에 data-transcript-ts 버튼 노출. 클릭 시 phone 의 transcript fetch + 큰 모달 표시.
+ * 옛 1회차 데이터(헤더 없음) 도 record.data 의 date/call_count 로 fake header fallback 적용. */
+function renderContentWithTranscriptButtons(text, rowData) {
     const src = String(text ?? '');
     if (!src.trim()) return `<div class="row-detail-textarea"></div>`;
-    const re = /📞\s*(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})\s*통화\s*\((\d+)회차\)/g;
+    const re = /📞\s*(\d{4}-\d{2}-\d{2}(?:\s+\d{2}:\d{2}:\d{2})?)\s*통화\s*\((\d+)회차\)/g;
     const headers = [];
     let m;
     while ((m = re.exec(src)) !== null) {
         headers.push({ index: m.index, end: m.index + m[0].length, ts: m[1], round: m[2] });
     }
     if (headers.length === 0) {
-        // 회차 헤더 없음 — 그대로 표시 (옛 데이터 케이스).
-        return `<div class="row-detail-textarea">${escapeHtml(src)}</div>`;
+        // 옛 1회차 데이터 — 헤더 없이 본문만. fake header 생성해서 전문보기 버튼 노출.
+        const fallbackDate = (rowData && (rowData.date || rowData.consult_at)) || '';
+        const round = (rowData && rowData.call_count) ? String(rowData.call_count) : '1';
+        const tsForMatch = fallbackDate;   // YYYY-MM-DD 또는 YYYY-MM-DD HH:MM:SS
+        return `<div class="row-detail-textarea content-rounds">
+            <div class="content-round-block" data-round="${escapeAttr(round)}">
+                <div class="content-round-body">${fallbackDate ? `📞 ${escapeHtml(fallbackDate)} 통화 (${escapeHtml(round)}회차)\n\n` : ''}${escapeHtml(src)}</div>
+                <button type="button" class="content-transcript-btn" data-transcript-ts="${escapeAttr(tsForMatch)}" data-transcript-round="${escapeAttr(round)}" title="대화내용 전문보기">
+                    📄 전문보기
+                </button>
+            </div>
+        </div>`;
     }
     let html = '';
     for (let i = 0; i < headers.length; i++) {
@@ -861,10 +872,9 @@ function renderContentWithTranscriptButtons(text) {
         html += `
             <div class="content-round-block" data-round="${escapeAttr(h.round)}">
                 <div class="content-round-body">${escapeHtml(block)}</div>
-                <button type="button" class="content-transcript-btn" data-transcript-ts="${escapeAttr(h.ts)}" data-transcript-round="${escapeAttr(h.round)}">
-                    📄 대화내용 전문보기
+                <button type="button" class="content-transcript-btn" data-transcript-ts="${escapeAttr(h.ts)}" data-transcript-round="${escapeAttr(h.round)}" title="대화내용 전문보기">
+                    📄 전문보기
                 </button>
-                <div class="content-transcript-panel" data-transcript-panel hidden></div>
             </div>`;
     }
     return `<div class="row-detail-textarea content-rounds">${html}</div>`;
@@ -887,21 +897,33 @@ async function fetchTranscriptsByPhone(phone) {
     }
 }
 
-/* timestamp 와 가장 가까운 transcript row 찾기 (1분 이내 매칭 — 같은 통화로 간주). */
+/* timestamp 와 가장 가까운 transcript row 찾기. 매칭 우선순위:
+ *   1) 1분 이내 정확 매칭
+ *   2) 같은 날짜(YYYY-MM-DD) 매칭 — 옛 데이터의 헤더가 date 만인 케이스
+ *   3) items 1건만 있으면 그것 반환 (1회차 fallback) */
 function _findTranscriptByTimestamp(items, ts) {
     if (!items.length) return null;
-    const targetMs = new Date(String(ts).replace(' ', 'T')).getTime();
-    if (!Number.isFinite(targetMs)) return null;
-    let best = null;
-    let bestDiff = Infinity;
-    for (const it of items) {
-        const itMs = new Date(String(it.consult_at).replace(' ', 'T')).getTime();
-        if (!Number.isFinite(itMs)) continue;
-        const diff = Math.abs(itMs - targetMs);
-        if (diff < bestDiff) { bestDiff = diff; best = it; }
+    const tsStr = String(ts || '');
+    const targetMs = new Date(tsStr.replace(' ', 'T')).getTime();
+    if (Number.isFinite(targetMs)) {
+        let best = null, bestDiff = Infinity;
+        for (const it of items) {
+            const itMs = new Date(String(it.consult_at).replace(' ', 'T')).getTime();
+            if (!Number.isFinite(itMs)) continue;
+            const diff = Math.abs(itMs - targetMs);
+            if (diff < bestDiff) { bestDiff = diff; best = it; }
+        }
+        if (bestDiff <= 60_000) return best;
+        // 같은 날짜 매칭 (옛 데이터 — 헤더 timestamp 가 date 만인 케이스)
+        const dateOnly = tsStr.slice(0, 10);
+        if (dateOnly) {
+            const sameDate = items.find(it => String(it.consult_at).slice(0, 10) === dateOnly);
+            if (sameDate) return sameDate;
+        }
     }
-    // 1분(60_000ms) 이내면 매칭. 그보다 멀면 null (data 누락 가능성).
-    return bestDiff <= 60_000 ? best : null;
+    // 마지막 fallback — items 1건뿐이면 그것 반환
+    if (items.length === 1) return items[0];
+    return null;
 }
 
 function bindTranscriptButtons(rootEl, phone) {
@@ -910,27 +932,71 @@ function bindTranscriptButtons(rootEl, phone) {
         btn.addEventListener('click', async (e) => {
             e.stopPropagation();
             const ts = btn.dataset.transcriptTs;
-            const panel = btn.parentElement.querySelector('[data-transcript-panel]');
-            if (!panel) return;
-            // toggle close
-            if (!panel.hasAttribute('hidden')) {
-                panel.setAttribute('hidden', '');
-                btn.textContent = '📄 대화내용 전문보기';
-                return;
-            }
+            const round = btn.dataset.transcriptRound || '';
             btn.disabled = true;
+            const origText = btn.textContent;
             btn.textContent = '⏳ 불러오는 중...';
             const items = await fetchTranscriptsByPhone(phone);
             const match = _findTranscriptByTimestamp(items, ts);
             btn.disabled = false;
-            btn.textContent = '▲ 전문 접기';
-            if (!match || !match.transcript) {
-                panel.innerHTML = '<div class="content-transcript-empty">해당 회차의 전문이 저장되어 있지 않습니다.</div>';
-            } else {
-                panel.innerHTML = '<div class="content-transcript-text">' + escapeHtml(match.transcript) + '</div>';
-            }
-            panel.removeAttribute('hidden');
+            btn.textContent = origText;
+            openTranscriptModal({
+                ts,
+                round,
+                transcript: match?.transcript || '',
+                aiModel: match?.ai_model || '',
+            });
         });
+    });
+}
+
+/* 전문보기 별도 큰 모달 (사장님 2026-05-20 — 인라인 → 새 모달 분리). */
+function openTranscriptModal({ ts, round, transcript, aiModel }) {
+    document.querySelectorAll('.transcript-modal').forEach(m => m.remove());
+    const md = document.createElement('div');
+    md.className = 'modal-backdrop transcript-modal';
+    md.style.zIndex = '400';
+    const body = transcript
+        ? `<div class="transcript-modal-text">${escapeHtml(transcript)}</div>`
+        : `<div class="transcript-modal-empty">해당 회차의 전문이 저장되어 있지 않습니다.<br><small style="color:#a3a39a;font-size:12.5px;">옛 데이터(STT 도입 이전) 또는 customer_log row 누락 케이스.</small></div>`;
+    const sub = [
+        ts ? `🕐 ${escapeHtml(ts)}` : '',
+        round ? `${escapeHtml(round)}회차` : '',
+        aiModel ? `🤖 ${escapeHtml(aiModel)}` : '',
+    ].filter(Boolean).join(' · ');
+    md.innerHTML = `
+        <div class="modal-panel transcript-modal-panel">
+            <header class="modal-header">
+                <div>
+                    <h2>대화내용 전문</h2>
+                    <p class="modal-subtitle">${sub}</p>
+                </div>
+            </header>
+            <div class="modal-body transcript-modal-body">${body}</div>
+            <footer class="modal-footer">
+                <button class="tiny-btn" type="button" data-close>닫기</button>
+                ${transcript ? '<button class="tiny-btn primary" type="button" data-copy>복사</button>' : ''}
+            </footer>
+        </div>`;
+    document.body.appendChild(md);
+    const close = () => md.remove();
+    md.querySelector('[data-close]').addEventListener('click', close);
+    md.addEventListener('click', (e) => { if (e.target === md) close(); });
+    const copyBtn = md.querySelector('[data-copy]');
+    if (copyBtn) {
+        copyBtn.addEventListener('click', async () => {
+            try {
+                await navigator.clipboard.writeText(transcript);
+                copyBtn.textContent = '✓ 복사됨';
+                setTimeout(() => { copyBtn.textContent = '복사'; }, 1500);
+            } catch {
+                copyBtn.textContent = '복사 실패';
+                setTimeout(() => { copyBtn.textContent = '복사'; }, 1500);
+            }
+        });
+    }
+    document.addEventListener('keydown', function onEsc(e) {
+        if (e.key === 'Escape') { close(); document.removeEventListener('keydown', onEsc); }
     });
 }
 

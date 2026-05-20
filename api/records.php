@@ -4066,14 +4066,22 @@ try {
             // ═══ INSERT 분기 (신규 phone 또는 phone 없음) ═══
             $callCount = calculate_call_count($pdo, (int)$gRow['id'], $owner, $clPhone);
 
+            // 1회차도 회차 헤더 포함 — 전문보기 버튼 매칭 일관성 (사장님 2026-05-20).
+            $firstRound = max(1, $callCount);
+            $firstSection = "📞 {$todayDate} 통화 ({$firstRound}회차)\n\n" . $newSectionContent;
+            $firstMemo = '';
+            if ($clAgentMemo !== '') {
+                $firstMemo = "📝 {$todayDate}\n" . $clAgentMemo;
+            }
+
             $data = [
                 'managed'    => true,
                 'date'       => $todayDate,
                 'customer'   => $clName,
                 'phone'      => $clPhone,
                 'call_count' => $callCount,
-                'content'    => $newSectionContent,
-                'agent_memo' => $clAgentMemo,
+                'content'    => $firstSection,
+                'agent_memo' => $firstMemo,
                 'memo'       => '',
             ];
 
