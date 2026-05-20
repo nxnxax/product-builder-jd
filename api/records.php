@@ -102,6 +102,24 @@ $auth = is_file($authConfigPath) ? require $authConfigPath : ['require_auth' => 
 
 function respond($payload, $status = 200) {
     http_response_code($status);
+    // 앱팀 2026-05-20 요청 — 실패 응답에 error_code 자동 매핑.
+    // 호출처가 직접 error_code 지정했으면 우선. 키워드 휴리스틱은 fragile 하지만 backwards compat 우선.
+    if (is_array($payload) && empty($payload['ok']) && $status >= 400 && !isset($payload['error_code'])) {
+        $errMsg = (string)($payload['error'] ?? $payload['message'] ?? '');
+        $code = 'UNKNOWN';
+        if ($status === 401) {
+            if (preg_match('/만료|expired|exp\b/iu', $errMsg)) $code = 'AUTH_EXPIRED';
+            elseif (preg_match('/로그인이 필요|헤더|Bearer|no_token|토큰.*없/iu', $errMsg)) $code = 'AUTH_REQUIRED';
+            else $code = 'AUTH_INVALID';
+        } elseif ($status === 409) $code = 'JOB_DUPLICATE';
+        elseif ($status >= 500) $code = 'RETRYABLE_SERVER_ERROR';
+        elseif ($status === 404) $code = 'NOT_FOUND';
+        elseif ($status === 403) $code = 'FORBIDDEN';
+        elseif ($status === 400) $code = 'INVALID_REQUEST';
+        $payload['error_code'] = $code;
+        if (!isset($payload['http_status'])) $payload['http_status'] = $status;
+        if (!isset($payload['message']) && isset($payload['error'])) $payload['message'] = $payload['error'];
+    }
     echo json_encode($payload, JSON_UNESCAPED_UNICODE);
     exit;
 }
@@ -3472,6 +3490,175 @@ try {
             $del->execute([':id' => $id, ':o' => $owner]);
             if ($del->rowCount() === 0) respond(['status' => 'error', 'code' => 'not_found', 'message' => '존재하지 않거나 권한이 없습니다.'], 404);
             respond(['status' => 'ok']);
+        }
+
+        // ─── PREVIEW (앱팀 2026-05-20 — ready_to_review job 의 summary_json 복호화 반환) ───
+        // GET /records.php?resource=customer-log&action=preview&job_id=xxx
+        // 사용자 검토 화면에서 호출. recording_jobs.review_required=1 인 job 만.
+        if ($action === 'preview') {
+            $jobId = trim((string)($body['job_id'] ?? $_GET['job_id'] ?? ''));
+            if ($jobId === '') respond(['status' => 'error', 'code' => 'invalid_request', 'message' => 'job_id 필요.'], 400);
+            try {
+                $jStmt = $pdo->prepare('SELECT id, status, summary_json_encrypted, customer_log_id, duration_sec, recorded_at, group_id, phone_number, review_required
+                    FROM recording_jobs WHERE id = :id AND owner_email = :o LIMIT 1');
+                $jStmt->execute([':id' => $jobId, ':o' => $owner]);
+                $jRow = $jStmt->fetch();
+            } catch (Throwable $e) {
+                respond(['status' => 'error', 'code' => 'upstream_failed', 'message' => '조회 실패.'], 503);
+            }
+            if (!$jRow) respond(['status' => 'error', 'code' => 'not_found', 'message' => '해당 job 없음 또는 권한 없음.'], 404);
+
+            $summaryJson = null;
+            if (!empty($jRow['summary_json_encrypted'])) {
+                $dec = youngman_decrypt($jRow['summary_json_encrypted']);
+                $arr = is_string($dec) ? json_decode($dec, true) : null;
+                if (is_array($arr)) $summaryJson = $arr;
+            }
+            respond([
+                'status' => 'ok',
+                'job_id' => (string)$jRow['id'],
+                'job_status' => (string)$jRow['status'],
+                'review_required' => !empty($jRow['review_required']),
+                'customer_log_id' => $jRow['customer_log_id'] ?: null,
+                'duration_sec' => (int)($jRow['duration_sec'] ?? 0),
+                'recorded_at' => $jRow['recorded_at'] ?: null,
+                'group_id' => $jRow['group_id'] ?: null,
+                'phone_number' => $jRow['phone_number'] ?: null,
+                'summary' => $summaryJson,   // {customer_name, summary, interest, inquiry, budget_condition, next_action, transcript, ...}
+            ]);
+        }
+
+        // ─── CONFIRM (앱팀 2026-05-20 — ready_to_review → saved + customer_log INSERT) ───
+        // POST /records.php?resource=customer-log action=confirm
+        // body: { job_id, overrides?: {customer_name, summary, interest, inquiry, budget_condition, next_action, transcript, consult_at, phone_number, group_id} }
+        if ($action === 'confirm') {
+            $jobId = trim((string)($body['job_id'] ?? ''));
+            if ($jobId === '') respond(['status' => 'error', 'code' => 'invalid_request', 'message' => 'job_id 필요.'], 400);
+            $overrides = is_array($body['overrides'] ?? null) ? $body['overrides'] : [];
+            try {
+                $jStmt = $pdo->prepare('SELECT id, status, summary_json_encrypted, customer_log_id, duration_sec, recorded_at, group_id, phone_number, client_request_id
+                    FROM recording_jobs WHERE id = :id AND owner_email = :o LIMIT 1');
+                $jStmt->execute([':id' => $jobId, ':o' => $owner]);
+                $jRow = $jStmt->fetch();
+            } catch (Throwable $e) {
+                respond(['status' => 'error', 'code' => 'upstream_failed', 'message' => '조회 실패.'], 503);
+            }
+            if (!$jRow) respond(['status' => 'error', 'code' => 'not_found', 'message' => '해당 job 없음 또는 권한 없음.'], 404);
+
+            // 이미 confirm 된 경우 — 기존 customer_log 반환 (idempotent).
+            if (!empty($jRow['customer_log_id']) && in_array((string)$jRow['status'], ['saved', 'completed'], true)) {
+                $cl = $pdo->prepare('SELECT * FROM customer_log WHERE id = :id AND owner_email = :o LIMIT 1');
+                $cl->execute([':id' => $jRow['customer_log_id'], ':o' => $owner]);
+                $clRow = $cl->fetch();
+                respond([
+                    'status' => 'ok',
+                    'error_code' => 'JOB_EXISTS',
+                    'duplicate' => true,
+                    'customer_log' => $clRow ? customer_log_row($clRow) : null,
+                    'job_id' => $jobId,
+                ]);
+            }
+            if ((string)$jRow['status'] !== 'ready_to_review') {
+                respond(['status' => 'error', 'code' => 'invalid_state',
+                    'message' => 'ready_to_review 상태의 job 만 confirm 가능 (현재: ' . $jRow['status'] . ').'], 409);
+            }
+
+            // summary_json_encrypted 복호화
+            $summaryArr = [];
+            if (!empty($jRow['summary_json_encrypted'])) {
+                $dec = youngman_decrypt($jRow['summary_json_encrypted']);
+                $tmp = is_string($dec) ? json_decode($dec, true) : null;
+                if (is_array($tmp)) $summaryArr = $tmp;
+            }
+            // overrides 가 있으면 그쪽 우선
+            $pick = function(string $key, $fallback = '') use ($overrides, $summaryArr) {
+                if (array_key_exists($key, $overrides) && is_string($overrides[$key])) return trim($overrides[$key]);
+                if (array_key_exists($key, $summaryArr) && is_string($summaryArr[$key])) return trim($summaryArr[$key]);
+                return $fallback;
+            };
+            $customerName    = $pick('customer_name', '고객');
+            $phoneNumber     = $pick('phone_number', (string)($jRow['phone_number'] ?? ''));
+            $summary         = $pick('summary', '');
+            $interest        = $pick('interest', '');
+            $inquiry         = $pick('inquiry', '');
+            $budgetCondition = $pick('budget_condition', '');
+            $nextAction      = $pick('next_action', '');
+            $transcript      = $pick('transcript', '');
+            $consultAtIn     = $pick('consult_at', (string)($jRow['recorded_at'] ?? ''));
+            $groupId         = $pick('group_id', (string)($jRow['group_id'] ?? ''));
+            $aiModel         = is_string($summaryArr['ai_model'] ?? null) ? trim($summaryArr['ai_model']) : 'unknown';
+
+            $ts = $consultAtIn !== '' ? @strtotime($consultAtIn) : false;
+            $consultAt = $ts ? date('Y-m-d H:i:s', $ts) : date('Y-m-d H:i:s');
+            if ($summary === '') $summary = $transcript ?: '(요약 없음)';
+
+            $rowId = (function() {
+                $data = random_bytes(16);
+                $data[6] = chr(ord($data[6]) & 0x0f | 0x40);
+                $data[8] = chr(ord($data[8]) & 0x3f | 0x80);
+                return vsprintf('%s%s-%s-%s-%s-%s%s%s', str_split(bin2hex($data), 4));
+            })();
+            $phoneLookup = customer_phone_lookup_key($phoneNumber !== '' ? $phoneNumber : null);
+            try {
+                $ins = $pdo->prepare("INSERT INTO customer_log (
+                        id, owner_email, customer_phone_lookup,
+                        customer_name, phone_number,
+                        summary, interest, inquiry, budget_condition, next_action,
+                        transcript, consult_at, audio_storage_path, audio_kept,
+                        ai_model, ai_generated_at, source, client_request_id
+                    ) VALUES (
+                        :id, :o, :pl,
+                        :nm, :ph,
+                        :sum, :intr, :inq, :bg, :nx,
+                        :tr, :ca, :asp, 0,
+                        :am, NOW(), 'app-review', :cri
+                    )");
+                $ins->execute([
+                    ':id'  => $rowId,
+                    ':o'   => $owner,
+                    ':pl'  => $phoneLookup,
+                    ':nm'  => $customerName !== '' ? youngman_encrypt($customerName) : null,
+                    ':ph'  => $phoneNumber  !== '' ? youngman_encrypt($phoneNumber)  : null,
+                    ':sum' => youngman_encrypt($summary),
+                    ':intr'=> $interest !== '' ? youngman_encrypt($interest) : null,
+                    ':inq' => $inquiry  !== '' ? youngman_encrypt($inquiry)  : null,
+                    ':bg'  => $budgetCondition !== '' ? youngman_encrypt($budgetCondition) : null,
+                    ':nx'  => $nextAction !== '' ? youngman_encrypt($nextAction) : null,
+                    ':tr'  => $transcript !== '' ? youngman_encrypt($transcript) : null,
+                    ':ca'  => $consultAt,
+                    ':asp' => null,
+                    ':am'  => $aiModel,
+                    ':cri' => (string)($jRow['client_request_id'] ?? $jobId),
+                ]);
+            } catch (Throwable $e) {
+                if (strpos((string)$e->getMessage(), 'Duplicate') !== false) {
+                    respond(['status' => 'error', 'error_code' => 'JOB_DUPLICATE',
+                        'code' => 'duplicate_request', 'message' => '중복 요청.'], 409);
+                }
+                respond(['status' => 'error', 'code' => 'upstream_failed', 'message' => 'customer_log INSERT 실패: ' . $e->getMessage()], 500);
+            }
+
+            // recording_jobs status='saved' + customer_log_id 저장
+            try {
+                $pdo->prepare("UPDATE recording_jobs SET
+                        status = 'saved', customer_log_id = :cl, updated_at = NOW()
+                    WHERE id = :id AND owner_email = :o")
+                    ->execute([':cl' => $rowId, ':id' => $jobId, ':o' => $owner]);
+            } catch (Throwable $e) {
+                error_log('[records] recording_jobs saved UPDATE 실패: ' . $e->getMessage());
+            }
+
+            // 응답
+            $cl = $pdo->prepare('SELECT * FROM customer_log WHERE id = :id AND owner_email = :o LIMIT 1');
+            $cl->execute([':id' => $rowId, ':o' => $owner]);
+            $clRow = $cl->fetch();
+            respond([
+                'status' => 'ok',
+                'job_id' => $jobId,
+                'job_status' => 'saved',
+                'customer_log' => $clRow ? customer_log_row($clRow) : null,
+                'customer_log_id' => $rowId,
+            ]);
         }
 
         // ─── SEND TO GROUP (옵션 D — 양식 전송) ───

@@ -444,6 +444,8 @@ if (!function_exists('billing_ensure_tables')) {
                 'overage_top_up_count'     => 'INT NOT NULL DEFAULT 0',          // 이번달 충전 횟수
                 'overage_last_top_up_at'   => 'DATETIME NULL DEFAULT NULL',
                 'last_usage_warning_pct'   => 'INT NOT NULL DEFAULT 0',          // FCM 중복 발송 방지 (0/80/90/100)
+                // 통화 녹취 자동 저장 vs 검토 후 저장 (앱팀 2026-05-20 요청 — Native Outbox 흐름)
+                'recording_review_mode'    => "VARCHAR(16) NOT NULL DEFAULT 'auto'", // 'auto' = customer_log 자동 INSERT, 'review' = ready_to_review 단계 거침
             ];
             foreach ($addColumns as $col => $def) {
                 if (!empty($cols) && !in_array($col, $cols, true)) {

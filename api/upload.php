@@ -81,10 +81,10 @@ function get_bearer_token(): string {
     return '';
 }
 
-function fetch_user_email_via_supabase(string $token, array $auth): string {
+function fetch_user_email_via_supabase(string $token, array $auth, ?int &$statusOut = null): string {
     $url = rtrim((string)($auth['supabase_url'] ?? ''), '/');
     $key = (string)($auth['anon_key'] ?? '');
-    if (!$url || !$key || !$token) return '';
+    if (!$url || !$key || !$token) { $statusOut = 0; return ''; }
     $ch = curl_init($url . '/auth/v1/user');
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true,
@@ -98,9 +98,21 @@ function fetch_user_email_via_supabase(string $token, array $auth): string {
     $resp = curl_exec($ch);
     $status = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
     curl_close($ch);
+    $statusOut = $status;
     if ($status !== 200 || !$resp) return '';
     $data = json_decode((string)$resp, true);
     return strtolower(trim((string)($data['email'] ?? '')));
+}
+
+/* JWT exp 클레임 추출 — AUTH_EXPIRED 와 AUTH_INVALID 구분용 (앱팀 2026-05-20 요청). */
+function jwt_exp_seconds(string $token): ?int {
+    $parts = explode('.', $token);
+    if (count($parts) !== 3) return null;
+    $payload = base64_decode(strtr($parts[1], '-_', '+/'), true);
+    if (!$payload) return null;
+    $data = json_decode($payload, true);
+    if (!is_array($data) || !isset($data['exp'])) return null;
+    return (int)$data['exp'];
 }
 
 function require_auth_email(): string {
@@ -108,21 +120,46 @@ function require_auth_email(): string {
     if (!$token) {
         jout([
             'ok' => false,
+            'error_code' => 'AUTH_REQUIRED',
             'error' => '로그인이 필요합니다. (Authorization 헤더가 도달하지 않았어요. 페이지 새로고침 후 다시 시도해주세요.)',
+            'message' => '로그인이 필요합니다.',
+            'http_status' => 401,
             'debug' => 'no_token',
         ], 401);
     }
     $auth = load_supabase_auth();
     if (empty($auth['supabase_url']) || empty($auth['anon_key'])) {
-        jout(['ok' => false, 'error' => '서버 인증 설정이 누락됐습니다. 운영자에게 알려주세요.', 'debug' => 'missing_config'], 500);
-    }
-    $email = fetch_user_email_via_supabase($token, $auth);
-    if (!$email) {
         jout([
             'ok' => false,
-            'error' => '토큰 검증 실패. 잠시 후 다시 시도하거나 다시 로그인해주세요.',
+            'error_code' => 'RETRYABLE_SERVER_ERROR',
+            'error' => '서버 인증 설정이 누락됐습니다. 운영자에게 알려주세요.',
+            'message' => '서버 인증 설정 누락.',
+            'http_status' => 500,
+            'debug' => 'missing_config',
+        ], 500);
+    }
+    $authStatus = null;
+    $email = fetch_user_email_via_supabase($token, $auth, $authStatus);
+    if (!$email) {
+        $errorCode = 'AUTH_INVALID';
+        if ($authStatus === 401) {
+            $exp = jwt_exp_seconds($token);
+            if ($exp !== null && $exp < time()) $errorCode = 'AUTH_EXPIRED';
+        } elseif ($authStatus === 0 || $authStatus >= 500) {
+            $errorCode = 'RETRYABLE_SERVER_ERROR';
+        }
+        $http = $errorCode === 'RETRYABLE_SERVER_ERROR' ? 503 : 401;
+        jout([
+            'ok' => false,
+            'error_code' => $errorCode,
+            'error' => $errorCode === 'AUTH_EXPIRED' ? '토큰이 만료되었습니다. refresh 후 재시도하세요.'
+                     : ($errorCode === 'RETRYABLE_SERVER_ERROR' ? 'Supabase 호출 일시 실패. 잠시 후 재시도하세요.'
+                     : '세션이 무효합니다. 다시 로그인이 필요합니다.'),
+            'message' => '토큰 검증 실패.',
+            'http_status' => $http,
             'debug' => 'token_rejected',
-        ], 401);
+            'auth_status' => $authStatus,
+        ], $http);
     }
     return $email;
 }

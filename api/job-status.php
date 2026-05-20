@@ -39,8 +39,33 @@ header('Cache-Control: no-store');
 
 function js_jerror(string $code, string $msg, int $http = 400, array $extra = []): void {
     http_response_code($http);
-    echo json_encode(array_merge(['ok' => false, 'error' => $code, 'message' => $msg], $extra), JSON_UNESCAPED_UNICODE);
+    // 앱팀 2026-05-20 요청 — error_code 표준화: ok/error_code/message/http_status 추가.
+    if (!isset($extra['error_code'])) {
+        if ($http === 409) $extra['error_code'] = 'JOB_DUPLICATE';
+        elseif ($http >= 500) $extra['error_code'] = 'RETRYABLE_SERVER_ERROR';
+        elseif ($http === 401) $extra['error_code'] = 'AUTH_INVALID';
+        else $extra['error_code'] = strtoupper($code);
+    }
+    $payload = array_merge([
+        'ok' => false,
+        'error' => $code,
+        'error_code' => $extra['error_code'],
+        'message' => $msg,
+        'http_status' => $http,
+    ], $extra);
+    echo json_encode($payload, JSON_UNESCAPED_UNICODE);
     exit;
+}
+
+/* JWT exp 클레임 추출 — AUTH_EXPIRED 와 AUTH_INVALID 구분용. */
+function js_jwt_exp(string $token): ?int {
+    $parts = explode('.', $token);
+    if (count($parts) !== 3) return null;
+    $payload = base64_decode(strtr($parts[1], '-_', '+/'), true);
+    if (!$payload) return null;
+    $data = json_decode($payload, true);
+    if (!is_array($data) || !isset($data['exp'])) return null;
+    return (int)$data['exp'];
 }
 
 /* .env 직접 파싱 — cafe24 PHP 가 자동 로드 안 함 */
@@ -60,17 +85,17 @@ function js_load_env(string $key): string {
     return $cache[$key] ?? '';
 }
 
-/* Supabase 토큰으로 owner_email 확인 */
+/* Supabase 토큰으로 owner_email 확인 — error_code 표준 적용 */
 function js_owner_email_from_auth(): string {
     $hdr = $_SERVER['HTTP_AUTHORIZATION'] ?? ($_SERVER['HTTP_X_AUTHORIZATION'] ?? '');
     if (!preg_match('/Bearer\s+(.+)/i', (string)$hdr, $m)) {
-        js_jerror('unauthenticated', 'Authorization Bearer 헤더 누락.', 401);
+        js_jerror('unauthenticated', 'Authorization Bearer 헤더 누락.', 401, ['error_code' => 'AUTH_REQUIRED']);
     }
     $token = trim($m[1]);
-    if ($token === '') js_jerror('unauthenticated', '빈 토큰.', 401);
+    if ($token === '') js_jerror('unauthenticated', '빈 토큰.', 401, ['error_code' => 'AUTH_REQUIRED']);
 
     $supabaseUrlRaw = js_load_env('VITE_SUPABASE_URL');
-    if ($supabaseUrlRaw === '') js_jerror('upstream_failed', 'Supabase URL 미설정.', 503);
+    if ($supabaseUrlRaw === '') js_jerror('upstream_failed', 'Supabase URL 미설정.', 503, ['error_code' => 'RETRYABLE_SERVER_ERROR']);
     $rootUrl = preg_replace('#/(rest|auth)/v1/?.*$#', '', rtrim($supabaseUrlRaw, '/'));
 
     $ch = curl_init($rootUrl . '/auth/v1/user');
@@ -87,28 +112,46 @@ function js_owner_email_from_auth(): string {
     $status = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
     curl_close($ch);
     if ($resp === false || $status < 200 || $status >= 300) {
-        js_jerror('unauthenticated', '토큰 검증 실패 (Supabase ' . $status . ').', 401);
+        $errorCode = 'AUTH_INVALID';
+        if ($status === 401) {
+            $exp = js_jwt_exp($token);
+            if ($exp !== null && $exp < time()) $errorCode = 'AUTH_EXPIRED';
+        } elseif ($status === 0 || $status >= 500) {
+            $errorCode = 'RETRYABLE_SERVER_ERROR';
+        }
+        $http = $errorCode === 'RETRYABLE_SERVER_ERROR' ? 503 : 401;
+        js_jerror('unauthenticated', '토큰 검증 실패 (Supabase ' . $status . ').', $http, ['error_code' => $errorCode]);
     }
     $data = json_decode((string)$resp, true);
     $email = strtolower(trim((string)($data['email'] ?? '')));
-    if ($email === '') js_jerror('unauthenticated', '사용자 이메일 확인 불가.', 401);
+    if ($email === '') js_jerror('unauthenticated', '사용자 이메일 확인 불가.', 401, ['error_code' => 'AUTH_INVALID']);
     return $email;
 }
 
-/* status → 사용자 친화 label + progress 보정 */
+/* status → 사용자 친화 label + progress 보정 + retryable 분기 */
 function js_status_label(string $status, int $progressPct): array {
     $map = [
         'queued'             => ['대기 중...', max(5, $progressPct)],
+        'uploaded'           => ['업로드 완료, 처리 대기 중...', max(10, $progressPct)],
         'uploading'          => ['파일 업로드 중...', max(15, $progressPct)],
         'processing'         => ['처리 중...', max(20, $progressPct)],  // 레거시
-        'stt_processing'    => ['음성 텍스트 변환 중...', max(30, $progressPct)],
-        'llm_processing'    => ['AI 요약 중...', max(70, $progressPct)],
-        'completed'          => ['완료', 100],
+        'stt_processing'     => ['음성 텍스트 변환 중...', max(30, $progressPct)],
+        'llm_processing'     => ['AI 요약 중...', max(70, $progressPct)],
+        'ready_to_review'    => ['검토 대기 — 결과 준비됨', 100],
+        'saved'              => ['저장 완료', 100],
+        'completed'          => ['완료', 100],  // saved 와 동의어 (legacy auto-mode)
         'failed'             => ['처리 실패', 100],  // 레거시
-        'failed_retryable'  => ['일시 실패 — 자동 재시도 중', 50],
-        'failed_permanent'  => ['처리 실패 — 영맨 고객센터 문의', 100],
+        'failed_retryable'   => ['일시 실패 — 자동 재시도 중', 50],
+        'failed_permanent'   => ['처리 실패 — 영맨 고객센터 문의', 100],
     ];
     return $map[$status] ?? [$status, $progressPct];
+}
+
+/* status → retryable boolean (앱팀 outbox 분기용). null = 끝났거나 진행 중. */
+function js_retryable(string $status): ?bool {
+    if ($status === 'failed_retryable') return true;
+    if ($status === 'failed_permanent') return false;
+    return null;   // 진행 중이거나 완료된 케이스 — retryable 개념 N/A.
 }
 
 /* ========== 진입 ========== */
@@ -145,20 +188,40 @@ try {
 /* job 조회 — owner_email 격리 (PII 안전) */
 try {
     $sel = $pdo->prepare("SELECT id, status, progress_pct, customer_log_id, duration_sec,
-                                 retry_count, started_at, completed_at, error_message, updated_at, created_at
+                                 retry_count, started_at, completed_at, error_message, updated_at, created_at,
+                                 review_required
         FROM recording_jobs
         WHERE id = :id AND owner_email = :o LIMIT 1");
     $sel->execute([':id' => $jobId, ':o' => $ownerEmail]);
     $job = $sel->fetch();
 } catch (Throwable $e) {
-    js_jerror('upstream_failed', '조회 실패.', 503);
+    js_jerror('upstream_failed', '조회 실패.', 503, ['error_code' => 'RETRYABLE_SERVER_ERROR']);
 }
 
-if (!$job) js_jerror('not_found', '해당 job 을 찾을 수 없습니다.', 404);
+if (!$job) js_jerror('not_found', '해당 job 을 찾을 수 없습니다.', 404, ['error_code' => 'NOT_FOUND']);
 
 $status = (string)$job['status'];
 $progressPct = (int)($job['progress_pct'] ?? 0);
 [$stepLabel, $progressPct] = js_status_label($status, $progressPct);
+$retryable = js_retryable($status);
+
+// failure 시 error_code 매핑 (앱팀 outbox 분기용)
+$failureErrorCode = null;
+if ($status === 'failed_retryable') $failureErrorCode = 'RETRYABLE_SERVER_ERROR';
+elseif ($status === 'failed_permanent') $failureErrorCode = 'JOB_FAILED_PERMANENT';
+elseif ($status === 'failed') $failureErrorCode = 'JOB_FAILED_PERMANENT';   // 레거시 매핑
+
+// 결과 URL — saved/completed/ready_to_review 일 때 records.php 의 row 또는 job 자체.
+$resultUrl = null;
+if ($job['customer_log_id']) {
+    $resultUrl = '/records.php?resource=customer-log&id=' . urlencode((string)$job['customer_log_id']);
+} elseif ($status === 'ready_to_review') {
+    // customer_log 아직 없음 — 검토 대기. 앱이 confirm 액션 호출 시 INSERT 됨.
+    $resultUrl = '/records.php?resource=customer-log&action=preview&job_id=' . urlencode((string)$job['id']);
+}
+
+// audio_kept — 영맨은 처리 후 즉시 삭제 (24h 보존 모드 미구현). 추후 컬럼 추가 시 분기.
+$audioKept = false;
 
 echo json_encode([
     'ok' => true,
@@ -167,9 +230,14 @@ echo json_encode([
         'status' => $status,
         'step_label' => $stepLabel,
         'progress_pct' => $progressPct,
+        'retryable' => $retryable,
+        'audio_kept' => $audioKept,
+        'result_url' => $resultUrl,
+        'error_code' => $failureErrorCode,
         'customer_log_id' => $job['customer_log_id'] ?: null,
         'duration_sec' => (int)($job['duration_sec'] ?? 0),
         'retry_count' => (int)($job['retry_count'] ?? 0),
+        'review_required' => !empty($job['review_required']),
         'started_at' => $job['started_at'] ?: null,
         'completed_at' => $job['completed_at'] ?: null,
         'error_message' => $job['error_message'] ?: null,

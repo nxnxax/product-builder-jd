@@ -33,7 +33,24 @@ function jout(array $payload, int $code = 200): void {
     exit;
 }
 function jerror(string $code, string $message, int $status, array $extra = []): void {
-    jout(array_merge(['status' => 'error', 'code' => $code, 'message' => $message], $extra), $status);
+    // 앱팀 2026-05-20 요청 — error_code 표준화: ok/error_code/message/http_status 추가.
+    // 기존 status/code 도 backwards compat 으로 유지.
+    if (!isset($extra['error_code'])) {
+        // 기본 매핑 (호출처가 명시 안 했을 때).
+        if ($status === 409) $extra['error_code'] = 'JOB_DUPLICATE';
+        elseif ($status >= 500) $extra['error_code'] = 'RETRYABLE_SERVER_ERROR';
+        elseif ($status === 401) $extra['error_code'] = 'AUTH_INVALID';
+        else $extra['error_code'] = strtoupper($code);
+    }
+    $payload = array_merge([
+        'ok'          => false,
+        'status'      => 'error',
+        'code'        => $code,
+        'error_code'  => $extra['error_code'],
+        'message'     => $message,
+        'http_status' => $status,
+    ], $extra);
+    jout($payload, $status);
 }
 function load_env_value(string $key): string {
     foreach ([__DIR__, dirname(__DIR__)] as $dir) {
@@ -151,14 +168,27 @@ function fetch_user_email_via_supabase(string $token, array $auth, ?array &$diag
     return strtolower(trim((string)($data['email'] ?? '')));
 }
 
+/* JWT exp 클레임 추출 — AUTH_EXPIRED 와 AUTH_INVALID 구분용 (앱팀 2026-05-20 요청). */
+function jwt_exp_seconds(string $token): ?int {
+    $parts = explode('.', $token);
+    if (count($parts) !== 3) return null;
+    $payload = base64_decode(strtr($parts[1], '-_', '+/'), true);
+    if (!$payload) return null;
+    $data = json_decode($payload, true);
+    if (!is_array($data) || !isset($data['exp'])) return null;
+    return (int)$data['exp'];
+}
+
 function require_auth_email(): string {
     $token = get_bearer_token();
     if (!$token) jerror('unauthorized', '로그인이 필요합니다. 헤더 Authorization Bearer 없음.', 401, [
+        'error_code' => 'AUTH_REQUIRED',
         'debug' => ['stage' => 'no_bearer'],
     ]);
     $auth = load_supabase_auth();
     if (empty($auth['supabase_url']) || empty($auth['anon_key'])) {
         jerror('unauthorized', '서버 인증 설정 누락 (.env 의 Supabase URL/Anon Key).', 500, [
+            'error_code' => 'RETRYABLE_SERVER_ERROR',
             'debug' => ['stage' => 'env_missing', 'url_set' => !empty($auth['supabase_url']), 'key_set' => !empty($auth['anon_key'])],
         ]);
     }
@@ -166,11 +196,20 @@ function require_auth_email(): string {
     $email = fetch_user_email_via_supabase($token, $auth, $diag);
     if (!$email) {
         $st = $diag['auth_status'] ?? 0;
-        $hint = $st === 401 ? '세션이 만료되었습니다. 앱에서 다시 로그인하거나 새로고침 후 시도해주세요.'
-              : ($st === 404 ? 'Supabase URL 설정 오류 (path 잘못).'
-              : ($st === 0   ? 'Supabase 호출 네트워크 실패.'
-              : 'Supabase 응답 ' . $st . '.'));
-        jerror('unauthorized', '토큰 검증 실패. ' . $hint, 401, [
+        // AUTH_EXPIRED vs AUTH_INVALID 구분 — JWT exp 가 과거면 refresh 가능, 아니면 재로그인 필요.
+        $errorCode = 'AUTH_INVALID';
+        if ($st === 401) {
+            $exp = jwt_exp_seconds($token);
+            if ($exp !== null && $exp < time()) $errorCode = 'AUTH_EXPIRED';
+        } elseif ($st === 0 || $st >= 500) {
+            $errorCode = 'RETRYABLE_SERVER_ERROR';   // Supabase 자체 장애
+        }
+        $hint = $errorCode === 'AUTH_EXPIRED' ? '토큰이 만료되었습니다. refresh 후 재시도하세요.'
+              : ($errorCode === 'RETRYABLE_SERVER_ERROR' ? 'Supabase 호출 일시 실패. 잠시 후 재시도하세요.'
+              : '세션이 무효합니다. 다시 로그인이 필요합니다.');
+        $httpCode = $errorCode === 'RETRYABLE_SERVER_ERROR' ? 503 : 401;
+        jerror('unauthorized', $hint, $httpCode, [
+            'error_code' => $errorCode,
             'debug' => array_merge(['stage' => 'supabase_call'], (array)$diag),
         ]);
     }
@@ -387,6 +426,8 @@ function ensure_recording_jobs_table(PDO $pdo): bool {
             'progress_pct'         => 'TINYINT NOT NULL DEFAULT 0',
             // 앱팀 옵션 b — 그룹 자동 전송용 컨테이너 (앱이 보내면 FCM payload 에 포함됨)
             'group_id'             => 'VARCHAR(36) NULL DEFAULT NULL',
+            // 앱팀 2026-05-20 요청 — review_required = 1 이면 사용자 검토 후 saved 로 전환 (customer_log 자동 INSERT 안 함)
+            'review_required'      => 'TINYINT(1) NOT NULL DEFAULT 0',
         ];
         foreach ($needAlter as $col => $def) {
             if (!empty($cols) && !in_array($col, $cols, true)) {
@@ -604,7 +645,9 @@ if ($existing) {
         $planRow = $ps->fetch();
     } catch (Throwable $e) { /* plan 컬럼 없음 — 무시 */ }
     jout([
+        'ok' => true,
         'status' => 'ok',
+        'error_code' => 'JOB_EXISTS',   // 이미 처리 완료 (customer_log row 존재) — 앱이 기존 결과 사용.
         'customer_log' => customer_log_row($existing),
         'plan' => [
             'plan' => $planRow['plan'] ?? 'free',
@@ -632,16 +675,22 @@ if ($asyncMode) {
     $jobIdem->execute([':o' => $ownerEmail, ':k' => $clientReqId]);
     $existingJob = $jobIdem->fetch();
     if ($existingJob) {
+        $jStat = (string)$existingJob['status'];
+        // 처리 완료 (saved/ready_to_review/completed) 면 JOB_EXISTS, 아직 처리 중이면 JOB_DUPLICATE.
+        $existsErr = in_array($jStat, ['completed', 'saved', 'ready_to_review'], true) ? 'JOB_EXISTS' : 'JOB_DUPLICATE';
         jout([
+            'ok' => true,
             'status' => 'queued',
+            'error_code' => $existsErr,
             'job_id' => (string)$existingJob['id'],
             'duplicate' => true,
-            'job_status' => $existingJob['status'],
+            'job_status' => $jStat,
             'customer_log_id' => $existingJob['customer_log_id'] ?? null,
-        ], 202);
+        ], 200);
     }
-    // Path B audio_sha256 idempotency — 같은 파일(content hash) 이 24h 안에 있었으면 그 job 반환.
+    // Path B audio_sha256 idempotency — 같은 파일(content hash) 은 영구 dedup (앱팀 2026-05-20 요청).
     // client_request_id 가 달라도 파일이 같으면 차단. 앱 outbox 재시도 안전망.
+    // client_request_id 24h 제한은 유지 — 같은 ID 재사용 케이스에 한해서.
     $absForHash = __DIR__ . '/' . $storagePath;
     $realForHash = @realpath($absForHash);
     $audioSha256 = null;
@@ -651,27 +700,41 @@ if ($asyncMode) {
     if ($audioSha256) {
         $shaIdem = $pdo->prepare("SELECT * FROM recording_jobs
             WHERE owner_email = :o AND audio_sha256 = :h
-              AND created_at >= (NOW() - INTERVAL 24 HOUR) LIMIT 1");
+            ORDER BY created_at DESC LIMIT 1");
         $shaIdem->execute([':o' => $ownerEmail, ':h' => $audioSha256]);
         $shaJob = $shaIdem->fetch();
         if ($shaJob) {
+            $jStat = (string)$shaJob['status'];
+            $existsErr = in_array($jStat, ['completed', 'saved', 'ready_to_review'], true) ? 'JOB_EXISTS' : 'JOB_DUPLICATE';
             jout([
+                'ok' => true,
                 'status' => 'queued',
+                'error_code' => $existsErr,
                 'job_id' => (string)$shaJob['id'],
                 'duplicate' => true,
                 'duplicate_reason' => 'audio_sha256',
-                'job_status' => $shaJob['status'],
+                'job_status' => $jStat,
                 'customer_log_id' => $shaJob['customer_log_id'] ?? null,
-            ], 202);
+            ], 200);
         }
     }
+    // 앱팀 2026-05-20 요청 — members.recording_review_mode 가 'review' 면 customer_log 자동 INSERT 우회.
+    $reviewMode = 'auto';
+    try {
+        $rmStmt = $pdo->prepare('SELECT recording_review_mode FROM members WHERE email = :e LIMIT 1');
+        $rmStmt->execute([':e' => $ownerEmail]);
+        $rmRow = $rmStmt->fetch();
+        $reviewMode = strtolower(trim((string)($rmRow['recording_review_mode'] ?? 'auto')));
+    } catch (Throwable $e) { /* 컬럼 미존재 — 'auto' 기본 */ }
+    $reviewRequiredInt = ($reviewMode === 'review') ? 1 : 0;
+
     // 새 job 생성. 사용자 token 검증은 이미 끝났으므로 cron worker 가 server secret 으로 처리할 수 있음.
     $asyncJobId = uuid_v4();
     $insJob = $pdo->prepare("INSERT INTO recording_jobs
         (id, owner_email, status, storage_path, client_request_id,
-         audio_sha256, duration_sec, customer_name_hint, phone_number, recorded_at, group_id)
+         audio_sha256, duration_sec, customer_name_hint, phone_number, recorded_at, group_id, review_required)
         VALUES (:id, :o, 'queued', :sp, :k,
-                :sha, :dur, :hint, :ph, :ra, :gid)");
+                :sha, :dur, :hint, :ph, :ra, :gid, :rr)");
     $insJob->execute([
         ':id'  => $asyncJobId,
         ':o'   => $ownerEmail,
@@ -683,6 +746,7 @@ if ($asyncMode) {
         ':ph'  => $phoneNumber !== '' ? $phoneNumber : null,
         ':ra'  => $consultAt !== '' ? $consultAt : null,
         ':gid' => $groupIdHint !== '' ? $groupIdHint : null,
+        ':rr'  => $reviewRequiredInt,
     ]);
 
     // 즉시 응답 — client 연결 종료. 이후 코드는 백그라운드.
@@ -1568,6 +1632,75 @@ $llmBudg    = isset($parsed['budget_condition']) ? trim((string)$parsed['budget_
 $llmNext    = isset($parsed['next_action'])      ? trim((string)$parsed['next_action'])      : '';
 
 if ($llmSummary === '') $llmSummary = $transcript;   // 최후 폴백 — 빈 summary 는 NOT NULL 위반.
+
+/* ========== review_mode 분기 (앱팀 2026-05-20 요청) ==========
+ * recording_review_mode = 'review' 인 사용자는 customer_log 자동 INSERT 안 함.
+ * recording_jobs 만 status='ready_to_review' + summary_json_encrypted 저장.
+ * 사용자가 records.php?resource=customer-log action=confirm 호출 시 customer_log INSERT + status='saved'.
+ * 사용량 카운트도 saved 시점에 records.php 에서 처리 (검토 후 폐기 케이스 보호). */
+$reviewRequiredFinal = false;
+if ($asyncMode && $asyncJobId) {
+    try {
+        $rqStmt = $pdo->prepare('SELECT review_required FROM recording_jobs WHERE id = :id LIMIT 1');
+        $rqStmt->execute([':id' => $asyncJobId]);
+        $rqRow = $rqStmt->fetch();
+        $reviewRequiredFinal = !empty($rqRow['review_required']);
+    } catch (Throwable $e) { /* 컬럼 미존재 — false */ }
+}
+if ($reviewRequiredFinal) {
+    /* recording_jobs UPDATE — ready_to_review */
+    try {
+        $summaryJsonPayload = json_encode([
+            'customer_name'    => $llmName,
+            'phone_number'     => $phoneNumber,
+            'summary'          => $llmSummary,
+            'interest'         => $llmIntr,
+            'inquiry'          => $llmInq,
+            'budget_condition' => $llmBudg,
+            'next_action'      => $llmNext,
+            'transcript'       => $transcript,
+            'consult_at'       => $consultAt,
+            'group_id'         => $groupIdHint,
+            'ai_model'         => $sttModelName . '+' . $llmModel,
+            'duration_sec'     => (int)$durationSeconds,
+        ], JSON_UNESCAPED_UNICODE);
+        $pdo->prepare("UPDATE recording_jobs
+            SET status = 'ready_to_review',
+                progress_pct = 100,
+                completed_at = NOW(),
+                summary_json_encrypted = :sj,
+                updated_at = NOW()
+            WHERE id = :id")
+            ->execute([
+                ':sj' => $summaryJsonPayload !== false ? youngman_encrypt($summaryJsonPayload) : null,
+                ':id' => $asyncJobId,
+            ]);
+    } catch (Throwable $e) {
+        error_log('[process-recording] ready_to_review update failed: ' . $e->getMessage());
+    }
+
+    /* FCM 알림 — 검토 대기 type */
+    try {
+        require_once __DIR__ . '/fcm_helpers.php';
+        $sumPreview = $llmSummary;
+        if (mb_strlen($sumPreview) > 60) $sumPreview = mb_substr($sumPreview, 0, 57) . '...';
+        send_fcm_to_user($pdo, $ownerEmail, [
+            'title' => '통화 요약 검토 대기 — ' . ($llmName !== '' ? $llmName : '고객'),
+            'body'  => $sumPreview !== '' ? $sumPreview : '새 통화 요약을 검토해주세요.',
+            'data'  => [
+                'type'    => 'call_summary_ready_to_review',
+                'job_id'  => (string)$asyncJobId,
+                'group_id'=> (string)($groupIdHint ?? ''),
+            ],
+        ]);
+    } catch (Throwable $e) { error_log('[process-recording] review FCM 실패: ' . $e->getMessage()); }
+
+    /* 오디오 즉시 삭제 */
+    @unlink($realPath);
+    if ($convertedPath !== null && is_file($convertedPath)) @unlink($convertedPath);
+    @rmdir(dirname($realPath));
+    exit;
+}
 
 /* ========== Insert customer_log ========== */
 $rowId = uuid_v4();

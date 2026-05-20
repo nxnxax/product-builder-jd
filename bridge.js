@@ -143,6 +143,46 @@ function requestFcmToken() { postToApp('app.fcm.request', null); }
 function setStatusBar(style, color) { postToApp('app.statusBar', { style, color }); }
 function haptic(type) { postToApp('app.haptic', { type: type || 'light' }); }
 
+// ─── Heartbeat (앱팀 2026-05-20 요청) ────────────────────────────────
+// WebView 가 살아있음을 RN 에 주기적으로 알림. RN 의 Native Fallback Refresh 분기 기준.
+//   - 페이지 로드 직후 1회
+//   - 30초 setInterval
+//   - 세션 변경 / refresh 시작·종료 시 즉시
+// 60s 이상 안 오면 RN 은 WebView 사망으로 간주 → Native fallback 우선.
+let _sessionSnapshot = { hasSession: false, expiresAt: null };
+let _refreshInflightFlag = false;
+const HEARTBEAT_INTERVAL_MS = 30_000;
+
+function sendHeartbeat() {
+    if (!isInApp()) return;
+    try {
+        postToApp('bridge.heartbeat', {
+            bridgeReady: true,
+            hasSession: !!_sessionSnapshot.hasSession,
+            expiresAt: _sessionSnapshot.expiresAt || null,
+            refreshInflight: !!_refreshInflightFlag,
+            timestamp: Date.now(),
+        });
+    } catch {}
+}
+
+// auth-shared.js 가 호출 — 세션 변경 시 RN 에 즉시 통보.
+function setSessionSnapshot(session) {
+    _sessionSnapshot = session && session.access_token ? {
+        hasSession: true,
+        expiresAt: session.expires_at || null,
+    } : { hasSession: false, expiresAt: null };
+    sendHeartbeat();
+}
+
+// auth-shared.js 가 호출 — _refreshInflight 진입/해제 시 RN 에 즉시 통보.
+function setRefreshInflight(flag) {
+    const next = !!flag;
+    if (_refreshInflightFlag === next) return;
+    _refreshInflightFlag = next;
+    sendHeartbeat();
+}
+
 // ─── 기본 핸들러 (override 가능) ──────────────────────────────────────
 // 앱이 onBack 호출 시 — 모달/드로어가 열려있으면 닫고 true 반환,
 // 아니면 false 반환해서 앱이 라우터 pop 또는 종료를 처리하게 함.
@@ -208,6 +248,10 @@ const YoungmanBridge = {
     // 디버깅용 — 현재 캐시된 앱 정보
     getAppInfo,
     getFcmToken,
+    // Heartbeat (앱팀 2026-05-20)
+    sendHeartbeat,
+    setSessionSnapshot,
+    setRefreshInflight,
 };
 
 if (typeof window !== 'undefined') {
@@ -223,6 +267,11 @@ if (typeof window !== 'undefined') {
         page: location.pathname,
         userAgent: navigator.userAgent,
     });
+    // Heartbeat — 페이지 로드 직후 + 30초 interval (앱팀 2026-05-20).
+    if (isInApp()) {
+        setTimeout(sendHeartbeat, 200);
+        setInterval(sendHeartbeat, HEARTBEAT_INTERVAL_MS);
+    }
 }
 
 export {
@@ -239,6 +288,9 @@ export {
     haptic,
     getAppInfo,
     getFcmToken,
+    sendHeartbeat,
+    setSessionSnapshot,
+    setRefreshInflight,
 };
 
 export default YoungmanBridge;

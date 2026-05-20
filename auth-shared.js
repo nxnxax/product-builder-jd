@@ -4,7 +4,12 @@
  */
 
 // 네이티브 앱 (React Native WebView) 브리지 — 브라우저에서는 모든 호출 no-op.
-import { notifyLogin as _bridgeLogin, notifyLogout as _bridgeLogout } from './bridge.js?v=20260517-bridge-v2';
+import {
+    notifyLogin as _bridgeLogin,
+    notifyLogout as _bridgeLogout,
+    setSessionSnapshot as _bridgeSnap,
+    setRefreshInflight as _bridgeRefreshFlag,
+} from './bridge.js?v=20260520-bridge-v3';
 
 const API_URL = 'records.php';
 
@@ -128,20 +133,37 @@ function _refreshInCooldown() {
     return (Date.now() - _refreshLastSuccessAt) < REFRESH_COOLDOWN_MS;
 }
 function _markRefreshSuccess() { _refreshLastSuccessAt = Date.now(); }
-/* 공통 inflight refresh — 모든 핸들러가 같은 Promise 공유 + cooldown 자동 적용 */
+/* 공통 inflight refresh — 모든 핸들러가 같은 Promise 공유 + cooldown 자동 적용
+ * 앱팀 2026-05-20 요청 — Promise.race + 12s timeout wrapper.
+ *   refreshSession() 자체가 hang 하면 finally 가 영원히 안 닿는 케이스 차단.
+ *   timeout 발동 시 _refreshInflight 강제 해제 → 다음 요청은 재시도 가능. */
+const REFRESH_TIMEOUT_MS = 12_000;
 async function _runRefreshOnce() {
     if (_refreshInCooldown()) return currentSession?.access_token || null;
     if (!_refreshInflight) {
+        // bridge.js heartbeat 에 refresh 진입 통보 — RN 이 stuck 감지 가능.
+        try { _bridgeRefreshFlag(true); } catch {}
         _refreshInflight = (async () => {
+            const refreshPromise = supabaseClient.auth.refreshSession();
+            const timeoutPromise = new Promise((_, reject) =>
+                setTimeout(() => reject(new Error('refresh_timeout_12s')), REFRESH_TIMEOUT_MS)
+            );
             try {
-                const { data, error } = await supabaseClient.auth.refreshSession();
+                const result = await Promise.race([refreshPromise, timeoutPromise]);
+                const { data, error } = result || {};
                 if (!error && data?.session) {
                     currentSession = data.session;
                     _markRefreshSuccess();
                     try { _bridgeLogin(data.session); } catch {}
+                    try { _bridgeSnap(data.session); } catch {}
                 }
-            } catch {}
-            finally { _refreshInflight = null; }
+            } catch (e) {
+                try { console.warn('[auth] refresh failed/timeout', e?.message || e); } catch {}
+            }
+            finally {
+                _refreshInflight = null;
+                try { _bridgeRefreshFlag(false); } catch {}
+            }
         })();
     }
     await _refreshInflight;
@@ -201,10 +223,14 @@ export async function initSupabase() {
         }
         // 초기 진입 시 이미 로그인 상태면 앱에 토큰 전달 (FCM 매핑/푸시 알림용)
         if (currentSession?.access_token) { try { _bridgeLogin(currentSession); } catch {} }
+        // bridge heartbeat session snapshot — 페이지 로드 직후 1회 (앱팀 2026-05-20).
+        try { _bridgeSnap(currentSession); } catch {}
         supabaseClient.auth.onAuthStateChange((event, session) => {
             const had = !!currentSession?.user;
             currentSession = session || null;
             cacheUserEmail(currentSession?.user?.email);
+            // bridge heartbeat session snapshot — 모든 auth 변경 이벤트에서 RN 에 통보.
+            try { _bridgeSnap(currentSession); } catch {}
             // 로그인 전환 시점에 사용자 정의 양식 목록을 서버에서 새로 가져와
             // 슬롯 dropdown 에 즉시 반영. 같은 디바이스에서 로그아웃→재로그인
             // 케이스의 양식 누락 문제 fix.
