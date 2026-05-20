@@ -583,7 +583,7 @@ function renderBottomNav(activeKey) {
         { key: 'customers.html', label: '고객관리대장',   href: 'customers.html', icon: ICON.users, main: true },
     ];
     if (inApp) {
-        items.push({ key: 'unreviewed.html', label: '미확인 요약', href: 'unreviewed.html', icon: ICON.inbox });
+        items.push({ key: 'unreviewed.html', label: '미확인 요약', href: 'unreviewed.html', icon: ICON.inbox, badgeKey: 'unreviewed' });
     } else {
         const slot1Item = slot1Key
             ? { key: slot1Key, label: resolveSlotLabel(slot1Key), href: slot1Key, icon: ICON.building }
@@ -603,9 +603,20 @@ function renderBottomNav(activeKey) {
         const isHome = item.key === 'index.html' && (path === '' || path === 'index.html');
         const isActive = isHome || path === item.key;
         const cls = `mobile-bottom-nav-item${isActive ? ' active' : ''}${item.main ? ' main' : ''}`;
+        const badgeAttr = item.badgeKey ? ` data-badge-key="${escapeHtmlSafe(item.badgeKey)}"` : '';
+        // 앱팀 2026-05-21 — badge 자리 미리 슬롯. setUnreviewedCount(n) 호출 시 채워짐.
+        // localStorage 캐시 hit 시 페이지 로드 직후 즉시 노출 (깜빡임 방지).
+        let initialBadge = '';
+        if (item.badgeKey === 'unreviewed') {
+            const cached = (() => { try { return parseInt(localStorage.getItem('yman_unreviewed_count') || '0', 10); } catch { return 0; } })();
+            if (cached > 0) {
+                const txt = cached > 99 ? '99+' : String(cached);
+                initialBadge = `<span class="mobile-bottom-nav-badge" data-badge>${escapeHtmlSafe(txt)}</span>`;
+            }
+        }
         return `
-            <a class="${cls}" href="${item.href}">
-                <span class="mobile-bottom-nav-icon">${item.icon}</span>
+            <a class="${cls}"${badgeAttr} href="${item.href}">
+                <span class="mobile-bottom-nav-icon">${item.icon}${initialBadge}</span>
                 <span class="mobile-bottom-nav-label">${escapeHtmlSafe(item.label)}</span>
             </a>
         `;
@@ -619,6 +630,36 @@ function renderBottomNav(activeKey) {
     nav.style.gridTemplateColumns = `repeat(${items.length}, minmax(0, 1fr))`;
     nav.innerHTML = html;
     document.body.appendChild(nav);
+}
+
+// 앱팀 2026-05-21 — bridge API: setUnreviewedCount(n)
+// 앱이 30s 폴링 또는 page load 시 호출. 빨간 badge 갱신.
+// n=0 면 badge 숨김. n>99 면 "99+".
+function applyUnreviewedBadge(n) {
+    const count = Math.max(0, parseInt(n, 10) || 0);
+    try { localStorage.setItem('yman_unreviewed_count', String(count)); } catch {}
+    document.querySelectorAll('[data-badge-key="unreviewed"]').forEach(item => {
+        const icon = item.querySelector('.mobile-bottom-nav-icon');
+        if (!icon) return;
+        let badge = icon.querySelector('[data-badge]');
+        if (count <= 0) {
+            if (badge) badge.remove();
+            return;
+        }
+        const txt = count > 99 ? '99+' : String(count);
+        if (!badge) {
+            badge = document.createElement('span');
+            badge.className = 'mobile-bottom-nav-badge';
+            badge.setAttribute('data-badge', '');
+            icon.appendChild(badge);
+        }
+        badge.textContent = txt;
+    });
+}
+if (typeof window !== 'undefined') {
+    // bridge.js 의 YoungmanBridge 가 이미 있으면 method 추가, 없으면 stub 생성.
+    if (!window.YoungmanBridge) window.YoungmanBridge = {};
+    window.YoungmanBridge.setUnreviewedCount = applyUnreviewedBadge;
 }
 
 // 헤더 없이 bottom nav 만 그리는 경량 export — 외부 다운로드 등 비로그인 페이지용.
@@ -816,7 +857,12 @@ function renderAppFooter() {
                     <span>어센트라 (Ascentra)</span>
                 </div>
                 <p class="app-footer-info">
-                    <span>대표 장동훈</span><span>사업자등록번호 393-39-01518</span><span>경기도 화성시 효행로 30, 202호</span><span><a href="mailto:nxnxax@gmail.com">nxnxax@gmail.com</a></span>
+                    <span><b class="label">회사명</b> 어센트라(Ascentra)</span>
+                    <span><b class="label">대표</b> 장동훈</span>
+                    <span><b class="label">사업자등록번호</b> 393-39-01518</span>
+                    <span><b class="label">대표번호</b> 1800-5743</span>
+                    <span><b class="label">주소</b> 경기도 화성시 효행로 30, 202호</span>
+                    <span><b class="label">이메일</b> <a href="mailto:nxnxax@gmail.com">nxnxax@gmail.com</a></span>
                 </p>
                 <div class="app-footer-bottom">&copy; ${year} Ascentra. All rights reserved.</div>
             </div>
