@@ -3829,10 +3829,15 @@ select:focus {
     font-size: 15px;
     letter-spacing: -0.01em;
 }
-/* 사장님 2026-05-21 — footer brand 의 logo img 제거됨 (logo silhouette 가 가로 점선 노이즈로 보임).
- * 헤더에 이미 영맨 로고 노출되므로 footer 는 텍스트만으로 충분.
- * 아래 img 셀렉터는 혹시 다른 페이지가 img 사용할 케이스 대비 보존. */
-.app-footer-brand img { display: none; }
+/* footer 영맨 로고 — height 충분히 키워서 silhouette 점선 노이즈 안 보이게.
+ * 22px 너무 작으면 인장/calligraphy 디테일이 회색 점선처럼 보임. 30px 가 안정. */
+.app-footer-brand img {
+    display: block;
+    height: 30px;
+    width: auto;
+    filter: brightness(0) invert(1);
+    opacity: 0.85;
+}
 /* dl 2-column grid — 모든 값(dd) 시작점 정확히 같은 x 좌표. */
 .app-footer-info {
     margin: 0;

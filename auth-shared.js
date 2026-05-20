@@ -856,6 +856,7 @@ function renderAppFooter() {
         <div class="app-footer-inner">
             <div>
                 <div class="app-footer-brand">
+                    <img src="logo_main.png" alt="영맨">
                     <span>어센트라 (Ascentra)</span>
                 </div>
                 <dl class="app-footer-info">
