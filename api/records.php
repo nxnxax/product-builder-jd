@@ -3823,10 +3823,12 @@ try {
                     'status' => 'ok',
                     'ok' => false,
                     'error_code' => 'PROCESSING',
+                    'processing' => true,
                     'job_id' => $jobId,
                     'job_status' => $jRow2 ? (string)$jRow2['status'] : 'processing',
                     'retryable' => true,
-                    'message' => 'STT 처리 중입니다. 잠시 후 다시 시도해주세요.',
+                    'retry_after_seconds' => 10,
+                    'message' => 'AI 요약 처리 중입니다. 잠시 후 다시 시도해주세요.',
                     'last_error' => $jRow2['error_message'] ?? null,
                 ], 200);
             }
@@ -4156,15 +4158,17 @@ try {
                 }
             }
             if (!in_array((string)$jRow['status'], ['ready_to_review', 'completed', 'saved'], true) && empty($jRow['summary_json_encrypted'])) {
-                // 처리 미완료 — 200 + processing 응답 (native crash 방지)
+                // 처리 미완료 — 200 + processing 응답 (native 가 '전송중' UI 유지)
                 respond([
                     'status' => 'ok',
                     'ok' => false,
                     'error_code' => 'PROCESSING',
+                    'processing' => true,
                     'job_id' => $jobId,
                     'job_status' => (string)$jRow['status'],
                     'retryable' => true,
-                    'message' => 'STT 처리 중입니다. 잠시 후 다시 시도해주세요.',
+                    'retry_after_seconds' => 10,
+                    'message' => '전송중입니다. 잠시만 기다려주세요.',
                     'last_error' => $jRow['error_message'] ?? null,
                 ], 200);
             }
@@ -4254,6 +4258,53 @@ try {
                 error_log('[records] recording_jobs saved UPDATE 실패: ' . $e->getMessage());
             }
 
+            // 사장님 2026-05-21 — customer_log INSERT 후 자동 send_to_group (ledger_records mirror).
+            // 빠진 mirror 가 "전송 완료 떠도 고객관리대장에 안 들어옴" 의 원인.
+            $mirrorResult = null;
+            try {
+                $sendWorkerTok = '';
+                foreach ([__DIR__, dirname(__DIR__)] as $dir) {
+                    $f = $dir . '/.env';
+                    if (!is_file($f)) continue;
+                    foreach (file($f, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as $l) {
+                        if (preg_match('/^\s*RECORDING_WORKER_TOKEN\s*=\s*(.*)$/i', $l, $mmS)) {
+                            $sendWorkerTok = trim($mmS[1], "\"' \t"); break 2;
+                        }
+                    }
+                }
+                if ($sendWorkerTok !== '') {
+                    $hostSend = $_SERVER['HTTP_HOST'] ?? 'youngman-biz.com';
+                    $sendUrl = 'https://' . $hostSend . '/records.php?resource=customer-log';
+                    $sendPayload = [
+                        'action' => 'customer_log_send_to_group',
+                        'id' => $rowId,
+                        'owner_email' => $owner,
+                    ];
+                    if ($groupId !== '') $sendPayload['group_id'] = (int)$groupId;
+                    $chS = curl_init($sendUrl);
+                    curl_setopt_array($chS, [
+                        CURLOPT_RETURNTRANSFER => true,
+                        CURLOPT_POST => true,
+                        CURLOPT_POSTFIELDS => json_encode($sendPayload, JSON_UNESCAPED_UNICODE),
+                        CURLOPT_HTTPHEADER => [
+                            'Content-Type: application/json',
+                            'X-Worker-Token: ' . $sendWorkerTok,
+                        ],
+                        CURLOPT_TIMEOUT => 30,
+                        CURLOPT_CONNECTTIMEOUT => 5,
+                    ]);
+                    $sRespRaw = curl_exec($chS);
+                    $sStatRaw = (int)curl_getinfo($chS, CURLINFO_HTTP_CODE);
+                    curl_close($chS);
+                    if ($sRespRaw !== false && $sStatRaw >= 200 && $sStatRaw < 300) {
+                        $mirrorResult = json_decode((string)$sRespRaw, true);
+                    }
+                    error_log('[confirm send_to_group] cl=' . $rowId . ' gid=' . $groupId . ' http=' . $sStatRaw);
+                }
+            } catch (Throwable $e) {
+                error_log('[confirm send_to_group] 실패: ' . $e->getMessage());
+            }
+
             // 응답
             $cl = $pdo->prepare('SELECT * FROM customer_log WHERE id = :id AND owner_email = :o LIMIT 1');
             $cl->execute([':id' => $rowId, ':o' => $owner]);
@@ -4264,6 +4315,9 @@ try {
                 'job_status' => 'saved',
                 'customer_log' => $clRow ? customer_log_row($clRow) : null,
                 'customer_log_id' => $rowId,
+                'ledger_record' => is_array($mirrorResult) ? ($mirrorResult['ledger_record'] ?? null) : null,
+                'group' => is_array($mirrorResult) ? ($mirrorResult['group'] ?? null) : null,
+                'message' => '고객관리대장 전송 완료',
             ]);
         }
 
