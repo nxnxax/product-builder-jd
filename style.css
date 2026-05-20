@@ -3829,14 +3829,18 @@ select:focus {
     font-size: 15px;
     letter-spacing: -0.01em;
 }
-/* footer 영맨 로고 — height 충분히 키워서 silhouette 점선 노이즈 안 보이게.
- * 22px 너무 작으면 인장/calligraphy 디테일이 회색 점선처럼 보임. 30px 가 안정. */
+/* footer 영맨 로고 — logo_main.png 의 하단 baseline/underline 데코 라인이
+ * silhouette 처리 후 흰색 가로줄로 보이는 문제 fix. clip-path 로 하단 6px 잘라냄. */
 .app-footer-brand img {
     display: block;
-    height: 30px;
+    height: 34px;
     width: auto;
+    max-width: 140px;
     filter: brightness(0) invert(1);
     opacity: 0.85;
+    object-fit: cover;
+    object-position: left top;
+    clip-path: inset(0 0 6px 0);
 }
 /* dl 2-column grid — 모든 값(dd) 시작점 정확히 같은 x 좌표. */
 .app-footer-info {
