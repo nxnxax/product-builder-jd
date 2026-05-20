@@ -854,13 +854,15 @@ function renderContentWithTranscriptButtons(text, rowData) {
         // 옛 1회차 데이터 — 헤더 없이 본문만. fake header 생성해서 전문보기 버튼 노출.
         const fallbackDate = (rowData && (rowData.date || rowData.consult_at)) || '';
         const round = (rowData && rowData.call_count) ? String(rowData.call_count) : '1';
-        const tsForMatch = fallbackDate;   // YYYY-MM-DD 또는 YYYY-MM-DD HH:MM:SS
+        const tsForMatch = fallbackDate;
         return `<div class="row-detail-textarea content-rounds">
             <div class="content-round-block" data-round="${escapeAttr(round)}">
                 <div class="content-round-body">${fallbackDate ? `📞 ${escapeHtml(fallbackDate)} 통화 (${escapeHtml(round)}회차)\n\n` : ''}${escapeHtml(src)}</div>
-                <button type="button" class="content-transcript-btn" data-transcript-ts="${escapeAttr(tsForMatch)}" data-transcript-round="${escapeAttr(round)}" title="대화내용 전문보기">
-                    📄 전문보기
-                </button>
+                <div class="content-round-foot">
+                    <button type="button" class="content-transcript-btn" data-transcript-ts="${escapeAttr(tsForMatch)}" data-transcript-round="${escapeAttr(round)}" title="대화내용 전문보기">
+                        <span class="ico">📄</span><span>전문보기</span>
+                    </button>
+                </div>
             </div>
         </div>`;
     }
@@ -872,9 +874,11 @@ function renderContentWithTranscriptButtons(text, rowData) {
         html += `
             <div class="content-round-block" data-round="${escapeAttr(h.round)}">
                 <div class="content-round-body">${escapeHtml(block)}</div>
-                <button type="button" class="content-transcript-btn" data-transcript-ts="${escapeAttr(h.ts)}" data-transcript-round="${escapeAttr(h.round)}" title="대화내용 전문보기">
-                    📄 전문보기
-                </button>
+                <div class="content-round-foot">
+                    <button type="button" class="content-transcript-btn" data-transcript-ts="${escapeAttr(h.ts)}" data-transcript-round="${escapeAttr(h.round)}" title="대화내용 전문보기">
+                        <span class="ico">📄</span><span>전문보기</span>
+                    </button>
+                </div>
             </div>`;
     }
     return `<div class="row-detail-textarea content-rounds">${html}</div>`;
