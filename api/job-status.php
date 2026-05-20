@@ -87,12 +87,38 @@ function js_load_env(string $key): string {
 
 /* Supabase 토큰으로 owner_email 확인 — error_code 표준 적용 */
 function js_owner_email_from_auth(): string {
-    $hdr = $_SERVER['HTTP_AUTHORIZATION'] ?? ($_SERVER['HTTP_X_AUTHORIZATION'] ?? '');
-    if (!preg_match('/Bearer\s+(.+)/i', (string)$hdr, $m)) {
+    // 앱팀 2026-05-21 보고 — 같은 토큰으로 다른 endpoint 200 인데 여기만 401.
+    // 원인: $_SERVER['HTTP_AUTHORIZATION'] 만으로는 cafe24 일부 환경에서 헤더 누락.
+    // records.php / upload.php 와 동일한 다중 fallback 적용.
+    $hdr = (string)($_SERVER['HTTP_AUTHORIZATION'] ?? $_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? $_SERVER['HTTP_X_AUTHORIZATION'] ?? '');
+    if ($hdr === '' && function_exists('apache_request_headers')) {
+        $req = @apache_request_headers();
+        if (is_array($req)) {
+            foreach ($req as $k => $v) {
+                if (strcasecmp((string)$k, 'authorization') === 0) { $hdr = (string)$v; break; }
+            }
+        }
+    }
+    if ($hdr === '' && function_exists('getallheaders')) {
+        $req = @getallheaders();
+        if (is_array($req)) {
+            foreach ($req as $k => $v) {
+                if (strcasecmp((string)$k, 'authorization') === 0) { $hdr = (string)$v; break; }
+            }
+        }
+    }
+    // 보조 헤더 X-Auth-Token / 쿼리 _token (multipart 우회 경로 동일 지원).
+    $token = '';
+    if (preg_match('/Bearer\s+(.+)/i', $hdr, $m)) {
+        $token = trim($m[1]);
+    } elseif (!empty($_SERVER['HTTP_X_AUTH_TOKEN'])) {
+        $token = trim((string)$_SERVER['HTTP_X_AUTH_TOKEN']);
+    } elseif (!empty($_GET['_token'])) {
+        $token = trim((string)$_GET['_token']);
+    }
+    if ($token === '') {
         js_jerror('unauthenticated', 'Authorization Bearer 헤더 누락.', 401, ['error_code' => 'AUTH_REQUIRED']);
     }
-    $token = trim($m[1]);
-    if ($token === '') js_jerror('unauthenticated', '빈 토큰.', 401, ['error_code' => 'AUTH_REQUIRED']);
 
     $supabaseUrlRaw = js_load_env('VITE_SUPABASE_URL');
     if ($supabaseUrlRaw === '') js_jerror('upstream_failed', 'Supabase URL 미설정.', 503, ['error_code' => 'RETRYABLE_SERVER_ERROR']);
