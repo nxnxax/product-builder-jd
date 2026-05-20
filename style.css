@@ -2586,8 +2586,7 @@ select:focus {
     background: rgba(20, 14, 8, 0.025);
     padding: 10px 12px;
     border-radius: 6px;
-    max-height: 50vh;
-    overflow-y: auto;
+    /* 스크롤은 모달 body 한 곳에서만 처리 — nested scroll 휠 잠금 방지. */
 }
 .row-detail-pill {
     display: inline-block;
@@ -2601,7 +2600,7 @@ select:focus {
 .row-detail-num { font-variant-numeric: tabular-nums; font-weight: 600; }
 
 /* 회차별 content + 전문보기 버튼 (사장님 2026-05-20) */
-.row-detail-textarea.content-rounds { padding: 4px; background: transparent; max-height: 60vh; }
+.row-detail-textarea.content-rounds { padding: 4px; background: transparent; /* 모달 body 스크롤 단일화 — 자체 overflow 제거 */ }
 .content-round-block { background: rgba(20, 14, 8, 0.025); padding: 12px 14px; border-radius: 8px; margin-bottom: 10px; }
 .content-round-block:last-child { margin-bottom: 0; }
 .content-round-body { white-space: pre-wrap; line-height: 1.65; font-size: 13.5px; color: var(--fg-secondary, #4f4943); }
