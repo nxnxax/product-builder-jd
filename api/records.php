@@ -4203,6 +4203,21 @@ try {
                 } elseif (!empty($jRow['group_id'])) {
                     $gidOverride = (string)$jRow['group_id'];
                 }
+                // 사장님 2026-05-21 진단 — native 가 어느 시점에도 group_id 안 보내는 케이스 (확정).
+                // first customer group 자동 default → callback fall-through INSERT 보장.
+                if ($gidOverride === '') {
+                    try {
+                        $gFirstStmt = $pdo->prepare("SELECT id FROM ledger_groups WHERE owner_email = :o AND page_type = 'customer' ORDER BY is_default DESC, id ASC LIMIT 1");
+                        $gFirstStmt->execute([':o' => $owner]);
+                        $gFirstRow = $gFirstStmt->fetch();
+                        if ($gFirstRow && !empty($gFirstRow['id'])) {
+                            $gidOverride = (string)$gFirstRow['id'];
+                            error_log('[confirm] group_id auto-default to first customer group: ' . $gidOverride);
+                        }
+                    } catch (Throwable $e) {
+                        error_log('[confirm] first customer group 조회 실패: ' . $e->getMessage());
+                    }
+                }
                 if ($gidOverride !== '' && (string)($jRow['group_id'] ?? '') !== $gidOverride) {
                     try {
                         $pdo->prepare("UPDATE recording_jobs SET group_id = :gid, updated_at = NOW() WHERE id = :id AND owner_email = :o")
