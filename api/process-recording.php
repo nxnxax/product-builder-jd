@@ -1784,74 +1784,12 @@ $llmNext    = isset($parsed['next_action'])      ? trim((string)$parsed['next_ac
 
 if ($llmSummary === '') $llmSummary = $transcript;   // 최후 폴백 — 빈 summary 는 NOT NULL 위반.
 
-/* ========== review_mode 분기 (앱팀 2026-05-20 요청) ==========
- * recording_review_mode = 'review' 인 사용자는 customer_log 자동 INSERT 안 함.
- * recording_jobs 만 status='ready_to_review' + summary_json_encrypted 저장.
- * 사용자가 records.php?resource=customer-log action=confirm 호출 시 customer_log INSERT + status='saved'.
- * 사용량 카운트도 saved 시점에 records.php 에서 처리 (검토 후 폐기 케이스 보호). */
+/* ========== review_mode 분기 (사장님 2026-05-21 미확인요약 폐기 결정으로 무력화) ==========
+ * 기존 review_required=1 흐름은 customer_log INSERT 안 하고 ready_to_review 로
+ * 두는 흐름. 사장님이 미확인요약 시스템 자체를 폐기하면서 이 분기 무력화.
+ * review_required 값 무관하게 항상 customer_log INSERT 진행 (아래 흐름).
+ * 데이터 누락 0 + sync 응답에 customer_log 포함 보장 + async callback INSERT 보장. */
 $reviewRequiredFinal = false;
-if ($asyncMode && $asyncJobId) {
-    try {
-        $rqStmt = $pdo->prepare('SELECT review_required FROM recording_jobs WHERE id = :id LIMIT 1');
-        $rqStmt->execute([':id' => $asyncJobId]);
-        $rqRow = $rqStmt->fetch();
-        $reviewRequiredFinal = !empty($rqRow['review_required']);
-    } catch (Throwable $e) { /* 컬럼 미존재 — false */ }
-}
-if ($reviewRequiredFinal) {
-    /* recording_jobs UPDATE — ready_to_review */
-    try {
-        $summaryJsonPayload = json_encode([
-            'customer_name'    => $llmName,
-            'phone_number'     => $phoneNumber,
-            'summary'          => $llmSummary,
-            'interest'         => $llmIntr,
-            'inquiry'          => $llmInq,
-            'budget_condition' => $llmBudg,
-            'next_action'      => $llmNext,
-            'transcript'       => $transcript,
-            'consult_at'       => $consultAt,
-            'group_id'         => $groupIdHint,
-            'ai_model'         => $sttModelName . '+' . $llmModel,
-            'duration_sec'     => (int)$durationSeconds,
-        ], JSON_UNESCAPED_UNICODE);
-        $pdo->prepare("UPDATE recording_jobs
-            SET status = 'ready_to_review',
-                progress_pct = 100,
-                completed_at = NOW(),
-                summary_json_encrypted = :sj,
-                updated_at = NOW()
-            WHERE id = :id")
-            ->execute([
-                ':sj' => $summaryJsonPayload !== false ? youngman_encrypt($summaryJsonPayload) : null,
-                ':id' => $asyncJobId,
-            ]);
-    } catch (Throwable $e) {
-        error_log('[process-recording] ready_to_review update failed: ' . $e->getMessage());
-    }
-
-    /* FCM 알림 — 검토 대기 type */
-    try {
-        require_once __DIR__ . '/fcm_helpers.php';
-        $sumPreview = $llmSummary;
-        if (mb_strlen($sumPreview) > 60) $sumPreview = mb_substr($sumPreview, 0, 57) . '...';
-        send_fcm_to_user($pdo, $ownerEmail, [
-            'title' => '통화 요약 검토 대기 — ' . ($llmName !== '' ? $llmName : '고객'),
-            'body'  => $sumPreview !== '' ? $sumPreview : '새 통화 요약을 검토해주세요.',
-            'data'  => [
-                'type'    => 'call_summary_ready_to_review',
-                'job_id'  => (string)$asyncJobId,
-                'group_id'=> (string)($groupIdHint ?? ''),
-            ],
-        ]);
-    } catch (Throwable $e) { error_log('[process-recording] review FCM 실패: ' . $e->getMessage()); }
-
-    /* 오디오 즉시 삭제 */
-    @unlink($realPath);
-    if ($convertedPath !== null && is_file($convertedPath)) @unlink($convertedPath);
-    @rmdir(dirname($realPath));
-    exit;
-}
 
 /* ========== Insert customer_log ========== */
 $rowId = uuid_v4();
