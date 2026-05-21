@@ -451,32 +451,18 @@ function ensure_recording_jobs_table(PDO $pdo): bool {
 }
 
 /**
- * placeholder-first 즉시 응답 — fastcgi_finish_request 로 client 연결 종료 후 백그라운드 계속.
- * 사장님 2026-05-21 §7 — sync + async 통합. customer_log placeholder 응답에 포함.
+ * async mode 즉시 응답 — fastcgi_finish_request 로 client 연결 종료 후 백그라운드 계속.
  */
-function respond_async_queued(string $jobId, ?array $customerLogRow = null, $mirrorResult = null, ?array $planInfo = null): void {
-    http_response_code(200);   // 사장님 §7 — 202 대신 200 (sync 호환)
+function respond_async_queued(string $jobId): void {
+    http_response_code(202);
     header('Content-Type: application/json; charset=utf-8');
     header('Cache-Control: no-store');
     header('X-Content-Type-Options: nosniff');
-    $resp = [
-        'status' => 'processing',
-        'ok' => true,
+    echo json_encode([
+        'status' => 'queued',
         'job_id' => $jobId,
         'mode'   => 'async',
-        'placeholder' => true,
-    ];
-    if ($customerLogRow !== null) {
-        $resp['customer_log'] = customer_log_row($customerLogRow);
-    }
-    if (is_array($mirrorResult)) {
-        $resp['ledger_record'] = $mirrorResult['ledger_record'] ?? null;
-        $resp['group'] = $mirrorResult['group'] ?? null;
-    }
-    if (is_array($planInfo)) {
-        $resp['plan'] = $planInfo;
-    }
-    echo json_encode($resp, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     if (function_exists('fastcgi_finish_request')) {
         fastcgi_finish_request();
     }
@@ -626,12 +612,9 @@ $groupIdHint  = trim((string)($body['group_id'] ?? ''));  // 앱이 보내면 re
 $customerNameHint = trim((string)($body['customer_name_hint'] ?? ''));
 if (mb_strlen($customerNameHint) > 80) $customerNameHint = mb_substr($customerNameHint, 0, 80);
 
-// 사장님 2026-05-21 §7 — placeholder-first 통합. sync 모드 폐기.
-// 모든 호출이 placeholder customer_log INSERT + 즉시 응답 + background STT/LLM + UPDATE.
-// cafe24 gateway 30s timeout 504 사례 해결 + 사용자 체감 응답 시간 7~60s → 1~2s.
-// body.mode='async' 호환 — 응답에 customer_log placeholder 포함하여 native sync 가정과도 호환.
-$asyncMode = true;
-$_originalModeRequested = strtolower(trim((string)($body['mode'] ?? '')));   // 진단용 — sync/async/누락 어느 것이었는지 로그
+// Phase 2 M2: async mode 옵션. body.mode = 'async' 이면 즉시 job_id 응답 + 백그라운드 처리.
+// 기본 'sync' — 완료까지 응답 hold (기존 흐름 유지).
+$asyncMode = (strtolower(trim((string)($body['mode'] ?? ''))) === 'async');
 
 if ($storagePath === '') jerror('invalid_audio', 'storage_path 누락.', 400);
 if ($clientReqId === '') jerror('invalid_audio', 'client_request_id 누락.', 400);
@@ -808,92 +791,8 @@ if ($asyncMode) {
         ':rr'  => $reviewRequiredInt,
     ]);
 
-    // 사장님 2026-05-21 §7 — placeholder customer_log INSERT + ledger mirror + 즉시 응답.
-    // cafe24 gateway 30s timeout 504 해소 + 사용자 체감 응답 시간 7~60s → 1~2s.
-    // background STT/LLM 완료 후 customer_log UPDATE (Line 1856+ catch 분기에서 처리).
-    $placeholderClId = null;
-    $placeholderClRow = null;
-    $placeholderMirrorResult = null;
-    try {
-        $placeholderClId = uuid_v4();
-        $phoneLookupP = customer_phone_lookup_key($phoneNumber !== '' ? $phoneNumber : null);
-        $placeholderName = $customerNameHint !== '' ? $customerNameHint : '처리중...';
-        $placeholderSummary = 'AI 분석 중';
-
-        $insClP = $pdo->prepare("INSERT INTO customer_log (
-                id, owner_email, customer_phone_lookup,
-                customer_name, phone_number,
-                summary, consult_at,
-                audio_storage_path, audio_kept,
-                ai_model, ai_generated_at, source, client_request_id
-            ) VALUES (
-                :id, :o, :pl,
-                :nm, :ph,
-                :sum, :ca,
-                :asp, 0,
-                'pending', NOW(), 'app-placeholder', :cri
-            )");
-        $insClP->execute([
-            ':id'  => $placeholderClId,
-            ':o'   => $ownerEmail,
-            ':pl'  => $phoneLookupP,
-            ':nm'  => youngman_encrypt($placeholderName),
-            ':ph'  => $phoneNumber !== '' ? youngman_encrypt($phoneNumber) : null,
-            ':sum' => youngman_encrypt($placeholderSummary),
-            ':ca'  => $consultAt,
-            ':asp' => $storagePath,
-            ':cri' => $clientReqId,
-        ]);
-
-        // recording_jobs.customer_log_id UPDATE
-        $pdo->prepare("UPDATE recording_jobs SET customer_log_id = :cl, status = 'processing', updated_at = NOW() WHERE id = :id")
-            ->execute([':cl' => $placeholderClId, ':id' => $asyncJobId]);
-
-        // 응답용 placeholder row 조회
-        $selClP = $pdo->prepare('SELECT * FROM customer_log WHERE id = :id LIMIT 1');
-        $selClP->execute([':id' => $placeholderClId]);
-        $placeholderClRow = $selClP->fetch();
-
-        error_log('[process-recording §7] placeholder customer_log INSERT: cl=' . $placeholderClId . ' job=' . $asyncJobId . ' mode_req=' . ($_originalModeRequested ?: '(none)'));
-
-        // 즉시 ledger mirror (placeholder content)
-        $workerTokInnerP = load_env_value('RECORDING_WORKER_TOKEN');
-        if ($workerTokInnerP !== '') {
-            $sendUrlP = 'https://' . ($_SERVER['HTTP_HOST'] ?? 'youngman-biz.com') . '/records.php?resource=customer-log';
-            $sendPayloadP = [
-                'action'      => 'customer_log_send_to_group',
-                'id'          => $placeholderClId,
-                'owner_email' => $ownerEmail,
-            ];
-            if ($groupIdHint !== '') $sendPayloadP['group_id'] = (int)$groupIdHint;
-            $chMP = curl_init($sendUrlP);
-            curl_setopt_array($chMP, [
-                CURLOPT_RETURNTRANSFER => true,
-                CURLOPT_POST => true,
-                CURLOPT_POSTFIELDS => json_encode($sendPayloadP, JSON_UNESCAPED_UNICODE),
-                CURLOPT_HTTPHEADER => [
-                    'Content-Type: application/json',
-                    'X-Worker-Token: ' . $workerTokInnerP,
-                ],
-                CURLOPT_TIMEOUT => 10,
-                CURLOPT_CONNECTTIMEOUT => 3,
-            ]);
-            $mirrRespP = curl_exec($chMP);
-            $mirrHttpP = (int)curl_getinfo($chMP, CURLINFO_HTTP_CODE);
-            curl_close($chMP);
-            if ($mirrRespP !== false && $mirrHttpP >= 200 && $mirrHttpP < 300) {
-                $placeholderMirrorResult = json_decode((string)$mirrRespP, true);
-            }
-            error_log('[process-recording §7] placeholder mirror cl=' . $placeholderClId . ' http=' . $mirrHttpP);
-        }
-    } catch (Throwable $e) {
-        error_log('[process-recording §7] placeholder INSERT/mirror 실패: ' . $e->getMessage());
-        // 실패해도 background STT 진행 → Line 1856 INSERT 가 처리
-    }
-
     // 즉시 응답 — client 연결 종료. 이후 코드는 백그라운드.
-    // 사장님 §7 — customer_log placeholder + ledger mirror 응답에 포함 (native sync 가정 호환).
-    respond_async_queued($asyncJobId, $placeholderClRow, $placeholderMirrorResult);
+    respond_async_queued($asyncJobId);
 
     /* Railway worker 분기 (선택 — RAILWAY_WORKER_URL 환경변수 있을 때만).
      * Railway 가 있으면: STT/LLM 처리를 Railway 에 위임 + cafe24 는 callback 만 기다림.
@@ -1930,52 +1829,24 @@ try {
         ':cri' => $clientReqId,
     ]);
 } catch (Throwable $e) {
-    // 사장님 2026-05-21 §7 — placeholder INSERT (앞쪽 코드 블록) 와 client_request_id 충돌이 정상 흐름.
-    // 응답은 이미 fastcgi_finish_request 후라 jout/jerror 출력 안 됨. background UPDATE 로 처리.
+    // UNIQUE (owner_email, client_request_id) 충돌이 동시 요청에서 발생할 수 있음.
+    // 앱팀 2026-05-20 2차 요청 — 409 대신 200 + duplicate=true. 앱은 polling 으로 전환.
     if (strpos((string)$e->getMessage(), 'Duplicate') !== false) {
-        $dupQ = $pdo->prepare('SELECT id FROM customer_log WHERE owner_email = :o AND client_request_id = :k LIMIT 1');
-        $dupQ->execute([':o' => $ownerEmail, ':k' => $clientReqId]);
-        $dupRowQ = $dupQ->fetch();
-        if ($dupRowQ && !empty($dupRowQ['id'])) {
-            $rowId = (string)$dupRowQ['id'];   // placeholder ID 로 변경 (이하 흐름에서 사용)
-            try {
-                $updClP = $pdo->prepare("UPDATE customer_log SET
-                        customer_name = :nm,
-                        phone_number = COALESCE(:ph, phone_number),
-                        summary = :sum,
-                        interest = COALESCE(:intr, interest),
-                        inquiry = COALESCE(:inq, inquiry),
-                        budget_condition = COALESCE(:bg, budget_condition),
-                        next_action = COALESCE(:nx, next_action),
-                        transcript = :tr,
-                        ai_model = :am,
-                        ai_generated_at = NOW(),
-                        source = 'app-auto'
-                    WHERE id = :id AND owner_email = :o");
-                $updClP->execute([
-                    ':nm'  => $llmName !== '' ? youngman_encrypt($llmName) : null,
-                    ':ph'  => $phoneNumber !== '' ? youngman_encrypt($phoneNumber) : null,
-                    ':sum' => youngman_encrypt($llmSummary),
-                    ':intr'=> $llmIntr !== '' ? youngman_encrypt($llmIntr) : null,
-                    ':inq' => $llmInq !== '' ? youngman_encrypt($llmInq) : null,
-                    ':bg'  => $llmBudg !== '' ? youngman_encrypt($llmBudg) : null,
-                    ':nx'  => $llmNext !== '' ? youngman_encrypt($llmNext) : null,
-                    ':tr'  => youngman_encrypt($transcript),
-                    ':am'  => $sttModelName . '+' . $llmModel,
-                    ':id'  => $rowId,
-                    ':o'   => $ownerEmail,
-                ]);
-                error_log('[process-recording §7] placeholder customer_log UPDATE: cl=' . $rowId);
-            } catch (Throwable $eUpd) {
-                error_log('[process-recording §7] placeholder UPDATE 실패: ' . $eUpd->getMessage());
-            }
-        }
-        // background 계속 — auto send_to_group refresh 로 진행
-    } else {
-        error_log('[process-recording] insert failed: ' . $e->getMessage());
-        // fastcgi_finish_request 후라 jerror 출력 안 됨. exit 로 background 종료.
-        exit;
+        $dup = $pdo->prepare('SELECT * FROM customer_log WHERE owner_email = :o AND client_request_id = :k LIMIT 1');
+        $dup->execute([':o' => $ownerEmail, ':k' => $clientReqId]);
+        $dupRow = $dup->fetch();
+        jout([
+            'ok' => true,
+            'duplicate' => true,
+            'error_code' => 'JOB_EXISTS',
+            'job_id' => $asyncJobId ?: ($dupRow['client_request_id'] ?? null),
+            'status' => 'saved',   // customer_log row 존재 → 처리 완료.
+            'message' => '이미 처리 완료된 작업입니다.',
+            'customer_log' => $dupRow ? customer_log_row($dupRow) : null,
+        ], 200);
     }
+    error_log('[process-recording] insert failed: ' . $e->getMessage());
+    jerror('upstream_failed', 'DB 저장 실패.', 500);
 }
 
 /* ========== 자동 send_to_group mirror (사장님 2026-05-20) ==========
@@ -1988,7 +1859,6 @@ try {
         'action'      => 'customer_log_send_to_group',
         'id'          => $rowId,
         'owner_email' => $ownerEmail,
-        'refresh'     => true,   // 사장님 §7 — placeholder mirror 가 이미 ledger_record 생성. 여기서 latest section UPDATE.
     ];
     if ($groupIdHint !== '') $sendPayload['group_id'] = (int)$groupIdHint;
     $workerTok = load_env_value('RECORDING_WORKER_TOKEN');

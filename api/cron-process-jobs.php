@@ -92,7 +92,6 @@ try {
         FROM recording_jobs
         WHERE (status = 'queued')
            OR (status = 'failed_retryable' AND retry_count < 2 AND updated_at < (NOW() - INTERVAL 1 MINUTE))
-           OR (status = 'processing' AND retry_count < 2 AND updated_at < (NOW() - INTERVAL 10 MINUTE))
         ORDER BY created_at ASC
         LIMIT :n");
     $sel->bindValue(':n', $limit, PDO::PARAM_INT);
