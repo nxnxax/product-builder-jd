@@ -4194,6 +4194,25 @@ try {
             // 사장님 2026-05-21 — audio_pending / failed_retryable + 캐시 없으면 Railway worker 직접 호출.
             // cafe24 ffmpeg 미설치로 m4a Whisper 400 거부 → Railway mp3 transcode 강제.
             if (in_array((string)$jRow['status'], ['audio_pending', 'failed_retryable', 'queued'], true) && empty($jRow['summary_json_encrypted'])) {
+                // 사장님 2026-05-21 구조 fix — overrides.group_id 가 있으면 recording_jobs.group_id 미리 UPDATE.
+                // callback 이 jobRow.group_id 보고 review_required=1 분기에서 fall-through INSERT + mirror 결정.
+                // 결과: confirm 의 30초 polling timeout 의존 제거 = 데이터 누락 0 보장.
+                $gidOverride = '';
+                if (is_string($overrides['group_id'] ?? null) && trim($overrides['group_id']) !== '') {
+                    $gidOverride = trim($overrides['group_id']);
+                } elseif (!empty($jRow['group_id'])) {
+                    $gidOverride = (string)$jRow['group_id'];
+                }
+                if ($gidOverride !== '' && (string)($jRow['group_id'] ?? '') !== $gidOverride) {
+                    try {
+                        $pdo->prepare("UPDATE recording_jobs SET group_id = :gid, updated_at = NOW() WHERE id = :id AND owner_email = :o")
+                            ->execute([':gid' => $gidOverride, ':id' => $jobId, ':o' => $owner]);
+                        $jRow['group_id'] = $gidOverride;
+                    } catch (Throwable $e) {
+                        error_log('[confirm] group_id UPDATE 실패: ' . $e->getMessage());
+                    }
+                }
+
                 $workerTokC = ''; $railwayUrlC = '';
                 foreach ([__DIR__, dirname(__DIR__)] as $dir) {
                     $f = $dir . '/.env';
@@ -4223,7 +4242,7 @@ try {
                         'owner_email' => $owner,
                         'audio_url' => $audUrlC,
                         'duration_sec' => (int)($jRow['duration_sec'] ?? 0),
-                        'group_id' => '',
+                        'group_id' => $gidOverride,
                     ];
                     $chC = curl_init(rtrim($railwayUrlC, '/') . '/process');
                     curl_setopt_array($chC, [

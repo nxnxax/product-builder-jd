@@ -122,6 +122,19 @@ if ($statusReq !== 'completed') {
     exit;
 }
 
+/* 사장님 2026-05-21 — 중복 callback idempotency 가드.
+ * 이미 customer_log INSERT 된 경우 (Railway retry 등) skip + 기존 결과 반환. */
+if (!empty($jobRow['customer_log_id'])) {
+    echo json_encode([
+        'ok' => true,
+        'job_id' => $jobId,
+        'status' => 'completed',
+        'duplicate' => true,
+        'customer_log_id' => $jobRow['customer_log_id'],
+    ], JSON_UNESCAPED_UNICODE);
+    exit;
+}
+
 /* 성공 케이스 — customer_log INSERT */
 $customerName    = trim((string)($body['customer_name'] ?? ''));
 $summary         = trim((string)($body['summary'] ?? ''));
@@ -141,7 +154,12 @@ if ($customerName === '') $customerName = '고객';
 
 /* review_mode 분기 (앱팀 2026-05-20) — review_required=1 이면 customer_log INSERT 우회.
  * recording_jobs status='ready_to_review' + summary_json_encrypted 저장.
- * 사용자가 records.php?resource=customer-log action=confirm 호출 시 INSERT + status='saved'. */
+ * 사용자가 records.php?resource=customer-log action=confirm 호출 시 INSERT + status='saved'.
+ *
+ * 사장님 2026-05-21 구조 fix — group_id 명시되어 있으면 (사용자가 모달에서 그룹 선택 완료)
+ * review 무시하고 즉시 INSERT + mirror 진행. confirm polling timeout 의존 제거 = 데이터 누락 0 보장.
+ *   - group_id 없음 = 미확인요약 페이지 검토 대기 (기존 동작)
+ *   - group_id 있음 = 사용자 명시 의도 → fall-through 자동 INSERT */
 if (!empty($jobRow['review_required'])) {
     try {
         $summaryJsonPayload = json_encode([
@@ -169,27 +187,31 @@ if (!empty($jobRow['review_required'])) {
     } catch (Throwable $e) {
         rc_jerror('ready_to_review UPDATE 실패: ' . $e->getMessage(), 502);
     }
-    /* FCM call_summary_ready_to_review */
-    try {
-        require_once __DIR__ . '/fcm_helpers.php';
-        $sumPreview = $summary;
-        if (mb_strlen($sumPreview) > 60) $sumPreview = mb_substr($sumPreview, 0, 57) . '...';
-        send_fcm_to_user($pdo, $ownerEmail, [
-            'title' => '통화 요약 검토 대기 — ' . $customerName,
-            'body'  => $sumPreview,
-            'data'  => [
-                'type'   => 'call_summary_ready_to_review',
-                'job_id' => $jobId,
-                'group_id'=> $groupId,
-            ],
-        ]);
-    } catch (Throwable $e) { error_log('[recording-callback] review FCM 실패: ' . $e->getMessage()); }
-    echo json_encode([
-        'ok' => true,
-        'job_id' => $jobId,
-        'status' => 'ready_to_review',
-    ], JSON_UNESCAPED_UNICODE);
-    exit;
+    // group_id 명시되어 있으면 즉시 INSERT + mirror 자동 진행 (fall-through).
+    if ($groupId === '') {
+        /* FCM call_summary_ready_to_review */
+        try {
+            require_once __DIR__ . '/fcm_helpers.php';
+            $sumPreview = $summary;
+            if (mb_strlen($sumPreview) > 60) $sumPreview = mb_substr($sumPreview, 0, 57) . '...';
+            send_fcm_to_user($pdo, $ownerEmail, [
+                'title' => '통화 요약 검토 대기 — ' . $customerName,
+                'body'  => $sumPreview,
+                'data'  => [
+                    'type'   => 'call_summary_ready_to_review',
+                    'job_id' => $jobId,
+                    'group_id'=> $groupId,
+                ],
+            ]);
+        } catch (Throwable $e) { error_log('[recording-callback] review FCM 실패: ' . $e->getMessage()); }
+        echo json_encode([
+            'ok' => true,
+            'job_id' => $jobId,
+            'status' => 'ready_to_review',
+        ], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    error_log('[recording-callback] review_required=1 + group_id=' . $groupId . ' — fall-through to auto INSERT + mirror');
 }
 
 /* customer_log row ID 생성 */

@@ -756,6 +756,13 @@ if ($asyncMode) {
     // 사용자가 "요약보기" 또는 "양식 전송" 클릭 시에만 records.php?action=trigger_summarize / confirm 호출되어 STT 발동.
     // body.defer_summarize=false 명시 (cron retry / internal worker 등) 일 때만 즉시 STT/LLM 진행.
     $deferSummarize = !isset($body['defer_summarize']) || !empty($body['defer_summarize']);
+    // 사장님 2026-05-21 비상 fix — group_id 명시 + review_required=0 = "양식으로 전송" 직행 클릭 의도.
+    // native 가 defer_summarize=false 안 보내도 즉시 STT/LLM 발동해야 customer_log INSERT + send_to_group mirror 작동.
+    // (Line 743-745 주석 의도와 일치 — "명시 group_id = 기존 즉시 처리")
+    if ($deferSummarize && !isset($body['defer_summarize']) && $groupIdHint !== '' && !$pendingReviewFlag && $reviewRequiredInt === 0) {
+        $deferSummarize = false;
+        error_log('[process-recording] auto-submit detected (gid=' . $groupIdHint . ') — defer_summarize forced false');
+    }
     $initialStatus = $deferSummarize ? 'audio_pending' : 'queued';
 
     // 새 job 생성. 사용자 token 검증은 이미 끝났으므로 cron worker 가 server secret 으로 처리할 수 있음.
