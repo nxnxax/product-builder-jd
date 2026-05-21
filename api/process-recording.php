@@ -900,6 +900,14 @@ if ($asyncMode) {
      * Railway 가 없으면: 기존 cafe24 자체 처리 흐름 (Phase 1 / Path B 그대로).
      * Railway 호출 실패해도 cron worker (Path B) 가 5분 후 재시도. */
     $railwayUrl = load_env_value('RAILWAY_WORKER_URL');
+    // 사장님 2026-05-22 진단 — Railway dispatch 결과를 recording_jobs.error_message 에 기록.
+    if ($railwayUrl === '') {
+        try {
+            $pdo->prepare("UPDATE recording_jobs SET error_message = 'RAILWAY_WORKER_URL .env 미설정 — cafe24 자체 STT fallback' WHERE id = :id")
+                ->execute([':id' => $asyncJobId]);
+        } catch (Throwable $e) {}
+        error_log('[process-recording §diag] RAILWAY_WORKER_URL empty for job=' . $asyncJobId);
+    }
     if ($railwayUrl !== '' && !$isInternalWorker) {
         try {
             // signed audio URL 생성 (10분 유효, HMAC-SHA256)
@@ -945,15 +953,23 @@ if ($asyncMode) {
                 error_log('[process-recording] Railway dispatched: job=' . $asyncJobId . ', http=' . $rwStatus);
                 // Railway 처리 위임 완료 — cafe24 측 STT/LLM 흐름 스킵.
                 // 처리 결과는 Railway → /recording-callback.php 로 받음.
-                // job 상태는 그대로 'processing'. cron worker 가 5분 후 status='processing' 인 채로 오래된 job 발견 시 자동 재시도.
                 exit;
             } else {
-                error_log('[process-recording] Railway dispatch 실패 (cafe24 자체 처리 fallback): http=' . $rwStatus . ', resp=' . substr((string)$rwResp, 0, 200));
-                // 실패 시 cafe24 자체 처리 흐름으로 fallback (아래 코드 진행)
+                // 사장님 2026-05-22 진단 — Railway dispatch 실패 원인 DB 기록.
+                $diagMsg = sprintf('Railway dispatch 실패 http=%d url=%s resp=%s', $rwStatus, $railwayUrl, substr((string)$rwResp, 0, 200));
+                try {
+                    $pdo->prepare("UPDATE recording_jobs SET error_message = :em WHERE id = :id")
+                        ->execute([':em' => $diagMsg, ':id' => $asyncJobId]);
+                } catch (Throwable $e) {}
+                error_log('[process-recording §diag] ' . $diagMsg);
             }
         } catch (Throwable $e) {
-            error_log('[process-recording] Railway dispatch exception: ' . $e->getMessage());
-            // 예외 시 cafe24 자체 처리로 fallback
+            $diagMsg = 'Railway dispatch exception: ' . $e->getMessage();
+            try {
+                $pdo->prepare("UPDATE recording_jobs SET error_message = :em WHERE id = :id")
+                    ->execute([':em' => $diagMsg, ':id' => $asyncJobId]);
+            } catch (Throwable $e2) {}
+            error_log('[process-recording §diag] ' . $diagMsg);
         }
     }
 
