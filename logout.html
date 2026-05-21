@@ -110,6 +110,8 @@
             } catch { return false; }
         })();
 
+        // 사장님 2026-05-21 hotfix — module top-level `return` 은 SyntaxError.
+        // login-complete.html 의 a2385b8 와 동일 패턴. if 블록 안에 전체 흐름 통합.
         if (_isExplicitLogout) {
             // 0) 사용자 의도적 로그아웃 플래그 set — auth-shared.js 가 SIGNED_OUT 시점에 이 플래그를 보고만 logout 통보.
             try { sessionStorage.setItem('erp.userInitiatedLogout', '1'); } catch {}
@@ -119,50 +121,49 @@
                 const b = await import('./bridge.js?v=20260517-bridge-v2');
                 b.notifyLogout();
             } catch {}
+
+            // 1) Supabase signOut — scope: 'global' 로 서버의 모든 refresh token revoke.
+            //    다른 브라우저/디바이스에서 silent refresh 로 살아나는 시나리오 차단.
+            try {
+                const mod = await import('./auth-shared.js?v=20260517-session-persist');
+                const result = await mod.initSupabase().catch(() => null);
+                const client = result?.client;
+                if (client?.auth?.signOut) {
+                    // global scope — 서버의 모든 refresh token revoke.
+                    // 실패해도 storage 직접 cleanup 으로 보강.
+                    await Promise.race([
+                        client.auth.signOut({ scope: 'global' }).catch(() => {
+                            // global 권한 부족하면 local fallback
+                            return client.auth.signOut().catch(() => {});
+                        }),
+                        new Promise(r => setTimeout(r, 1200)),   // 1.2초 timeout
+                    ]);
+                }
+            } catch {}
+
+            // 2) storage 광범위 정리
+            clearStorage();
+            // 3) 100ms 양보 (signOut 비동기 storage write 완료 대비) + 한 번 더
+            await new Promise(r => setTimeout(r, 100));
+            clearStorage();
+
+            // 4) 새 URL 로 replace — cache-bust query 로 bfcache 회피.
+            try { window.location.replace(TARGET); }
+            catch { try { window.location.href = TARGET; } catch {} }
+
+            // 5) 1.5초 fallback — 여전히 본 페이지면 강제 이동.
+            setTimeout(() => {
+                if (window.location.pathname.endsWith('logout.html')) {
+                    try { window.location.href = TARGET; } catch {}
+                    setTimeout(() => { try { window.location.reload(); } catch {} }, 800);
+                }
+            }, 1500);
         } else {
             // explicit 아닌 진입 (history.back / redirect race) — logout 의도 아님.
             // 사용자에게 안내 후 메인 페이지로 이동.
             try { console.warn('[logout.html] not explicit, redirecting to index'); } catch {}
             try { window.location.replace('/'); } catch {}
-            return;
         }
-
-        // 1) Supabase signOut — scope: 'global' 로 서버의 모든 refresh token revoke.
-        //    다른 브라우저/디바이스에서 silent refresh 로 살아나는 시나리오 차단.
-        try {
-            const mod = await import('./auth-shared.js?v=20260517-session-persist');
-            const result = await mod.initSupabase().catch(() => null);
-            const client = result?.client;
-            if (client?.auth?.signOut) {
-                // global scope — 서버의 모든 refresh token revoke.
-                // 실패해도 storage 직접 cleanup 으로 보강.
-                await Promise.race([
-                    client.auth.signOut({ scope: 'global' }).catch(() => {
-                        // global 권한 부족하면 local fallback
-                        return client.auth.signOut().catch(() => {});
-                    }),
-                    new Promise(r => setTimeout(r, 1200)),   // 1.2초 timeout
-                ]);
-            }
-        } catch {}
-
-        // 2) storage 광범위 정리
-        clearStorage();
-        // 3) 100ms 양보 (signOut 비동기 storage write 완료 대비) + 한 번 더
-        await new Promise(r => setTimeout(r, 100));
-        clearStorage();
-
-        // 4) 새 URL 로 replace — cache-bust query 로 bfcache 회피.
-        try { window.location.replace(TARGET); }
-        catch { try { window.location.href = TARGET; } catch {} }
-
-        // 5) 1.5초 fallback — 여전히 본 페이지면 강제 이동.
-        setTimeout(() => {
-            if (window.location.pathname.endsWith('logout.html')) {
-                try { window.location.href = TARGET; } catch {}
-                setTimeout(() => { try { window.location.reload(); } catch {} }, 800);
-            }
-        }, 1500);
     </script>
 </body>
 </html>
