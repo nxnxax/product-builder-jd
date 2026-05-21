@@ -656,8 +656,8 @@
         <!-- ================== HERO (1단락 — AI 고객관리) ================== -->
         <section class="hero floating-host" id="features">
             <div class="hero-inner">
-                <a class="hero-flagship-cta hero-flagship-cta-mobile" href="subscribe.html" data-plan-cta>
-                    <span class="flagship-text">AI 통화 요약 + 고객관리 원터치 전송 서비스 신청</span>
+                <a class="hero-flagship-cta hero-flagship-cta-mobile" href="tester.html" data-plan-cta>
+                    <span class="flagship-text">테스트기간 무료이벤트 다운로드 바로가기</span>
                 </a>
                 <div class="hero-copy">
                     <span class="hero-eyebrow">YOUNGMAN · AI 고객관리 플랫폼</span>
@@ -665,8 +665,8 @@
                         고객관리, 이제<br>
                         <span class="accent">전화만 하세요.</span>
                     </h1>
-                    <a class="hero-flagship-cta hero-flagship-cta-pc" href="subscribe.html" data-plan-cta>
-                        <span class="flagship-text">AI 통화 요약 + 고객관리 원터치 전송 서비스 신청</span>
+                    <a class="hero-flagship-cta hero-flagship-cta-pc" href="tester.html" data-plan-cta>
+                        <span class="flagship-text">테스트기간 무료이벤트 다운로드 바로가기</span>
                     </a>
                     <p class="hero-lead">
                         통화 후 <strong>AI 가 고객과의 대화내용을 사람보다 더 꼼꼼하게</strong> 정리해드립니다.<br>
@@ -1077,13 +1077,26 @@
         mountAppHeader();
         mountAppFooter();
 
-        // Hero flagship CTA — plan 별 텍스트/링크/표시 분기.
-        //   비로그인 / free / trialing → 신청 (subscribe.html)
-        //   plus / premium → 업그레이드 (billing.html)
-        //   pro → 숨김
+        // 사장님 2026-05-21 임시 — 결제사 승인 전까지 베타 다운로드 CTA 로 override.
+        // 결제사 승인 후 원복: 아래 임시 분기 제거하면 plan 별 분기 (subscribe.html) 자동 복원.
         async function updateFlagshipCta() {
             const els = document.querySelectorAll('[data-plan-cta]');
             if (!els.length) return;
+
+            // ── [임시 — 결제사 승인 후 이 블록만 제거] ──
+            els.forEach(el => {
+                const textEl = el.querySelector('.flagship-text');
+                if (textEl) textEl.textContent = '테스트기간 무료이벤트 다운로드 바로가기';
+                el.setAttribute('href', 'tester.html');
+                el.style.display = '';   // pro 사용자도 노출 (테스트기간 모두 다운로드)
+            });
+            return;
+            // ── [임시 끝] ──
+
+            // [원복용] plan 별 텍스트/링크/표시 분기:
+            //   비로그인 / free / trialing → 신청 (subscribe.html)
+            //   plus / premium → 업그레이드 (subscribe.html, Upgrade to Pro)
+            //   pro → 숨김
             let plan = '';
             try {
                 await initSupabase();
@@ -1101,7 +1114,6 @@
                     if (textEl) textEl.textContent = 'AI 요약 무제한을 원하신다면 Upgrade to Pro';
                     el.setAttribute('href', 'subscribe.html');
                 } else {
-                    // free / trialing / 비로그인 / 그 외 — default 신청 텍스트
                     if (textEl) textEl.textContent = 'AI 통화 요약 + 고객관리 원터치 전송 서비스 신청';
                     el.setAttribute('href', 'subscribe.html');
                 }
