@@ -735,63 +735,31 @@ if ($asyncMode) {
             ], 200);
         }
     }
-    // 앱팀 2026-05-20 요청 — members.recording_review_mode 가 'review' 면 customer_log 자동 INSERT 우회.
-    $reviewMode = 'auto';
-    try {
-        $rmStmt = $pdo->prepare('SELECT recording_review_mode FROM members WHERE email = :e LIMIT 1');
-        $rmStmt->execute([':e' => $ownerEmail]);
-        $rmRow = $rmStmt->fetch();
-        $reviewMode = strtolower(trim((string)($rmRow['recording_review_mode'] ?? 'auto')));
-    } catch (Throwable $e) { /* 컬럼 미존재 — 'auto' 기본 */ }
-    $reviewRequiredInt = ($reviewMode === 'review') ? 1 : 0;
+    // 사장님 2026-05-21 — 미확인요약 시스템 폐기 + STT 자동 처리 복원.
+    // defer_summarize / pending_review / review_required / recording_review_mode 모두 무시.
+    // 모든 통화 즉시 자동 STT + customer_log placeholder INSERT + ledger mirror.
+    // 데이터 누락 0 보장 + 통화 직후 사장님 고객관리대장에서 즉시 row 확인.
+    $deferSummarize = false;
+    $pendingReviewFlag = false;
+    $reviewRequiredInt = 0;
 
-    // 사장님 2026-05-20 — 통화 후 모달 타임아웃 / 사용자 결정 없음 케이스.
-    // 앱이 group_id 안 보내거나 body.pending_review=true 면 review 강제.
-    // → customer_log 자동 INSERT skip + recording_jobs.status='ready_to_review'
-    // → 미확인요약 페이지(unreviewed.html)에 자동 노출 → 사장님 검토 후 confirm.
-    //
-    // 명시 group_id 보낸 경우 (앱의 "양식에 전송" 클릭) 는 기존 동작 그대로:
-    //   - review_mode='auto': 즉시 customer_log INSERT + send_to_group mirror
-    //   - review_mode='review': 사용자 명시 의도이므로 그래도 mirror (review_required=0 강제)
-    $pendingReviewFlag = !empty($body['pending_review']);
-    if ($groupIdHint === '' || $pendingReviewFlag) {
-        $reviewRequiredInt = 1;
-        error_log('[process-recording] review_required forced — gid_empty=' . ($groupIdHint === '' ? '1' : '0') . ' pending_flag=' . ($pendingReviewFlag ? '1' : '0'));
-    } elseif ($groupIdHint !== '' && $reviewMode === 'review') {
-        // review 모드 사용자가 명시 group_id 보내면 즉시 mirror 의도 → review 강제 해제.
-        $reviewRequiredInt = 0;
-    }
-
-    // 사장님 2026-05-21 — 새 default = audio_pending. STT/LLM 자동 실행 금지 (비용 절감).
-    // 사용자가 "요약보기" 또는 "양식 전송" 클릭 시에만 records.php?action=trigger_summarize / confirm 호출되어 STT 발동.
-    // body.defer_summarize=false 명시 (cron retry / internal worker 등) 일 때만 즉시 STT/LLM 진행.
-    $deferSummarize = !isset($body['defer_summarize']) || !empty($body['defer_summarize']);
-
-    // 사장님 2026-05-21 비상 fix v3 — native 가 group_id 도 defer_summarize 도 안 보내는 케이스 확정.
-    // 사장님 결정: 데이터 누락 0 우선 → defer 미명시면 first customer group 자동 + 즉시 처리.
-    // 명시적 defer_summarize=true 만 audio_pending 유지 (native 가 미확인요약 흐름 의도 표명한 경우).
-    // 비용 트레이드오프: 자동 STT 비용 증가하지만 audio_cleanup 7일 + 잘못된 그룹은 ledger 에서 이동 가능.
-    if ($deferSummarize && !isset($body['defer_summarize']) && !$pendingReviewFlag) {
-        if ($groupIdHint === '') {
-            try {
-                $gFirstStmt = $pdo->prepare("SELECT id FROM ledger_groups WHERE owner_email = :o AND page_type = 'customer' ORDER BY is_default DESC, id ASC LIMIT 1");
-                $gFirstStmt->execute([':o' => $ownerEmail]);
-                $gFirstRow = $gFirstStmt->fetch();
-                if ($gFirstRow && !empty($gFirstRow['id'])) {
-                    $groupIdHint = (string)$gFirstRow['id'];
-                    $reviewRequiredInt = 0;
-                    error_log('[process-recording] auto-default group_id=' . $groupIdHint . ' (native 미명시 — fix v3)');
-                }
-            } catch (Throwable $e) {
-                error_log('[process-recording] first customer group 조회 실패: ' . $e->getMessage());
+    // group_id 없으면 first customer group 자동 채움. 조회 실패 시에도 mirror 단계의
+    // customer_log_send_to_group 의 ensure_customer_log_default_group fallback 으로 안전.
+    if ($groupIdHint === '') {
+        try {
+            $gFirstStmt = $pdo->prepare("SELECT id FROM ledger_groups WHERE owner_email = :o AND page_type = 'customer' ORDER BY is_default DESC, id ASC LIMIT 1");
+            $gFirstStmt->execute([':o' => $ownerEmail]);
+            $gFirstRow = $gFirstStmt->fetch();
+            if ($gFirstRow && !empty($gFirstRow['id'])) {
+                $groupIdHint = (string)$gFirstRow['id'];
+                error_log('[process-recording] auto-default group_id=' . $groupIdHint);
             }
-        }
-        if ($groupIdHint !== '' && $reviewRequiredInt === 0) {
-            $deferSummarize = false;
-            error_log('[process-recording] defer_summarize forced false — 데이터 누락 0 보장 (fix v3)');
+        } catch (Throwable $e) {
+            error_log('[process-recording] first customer group 조회 실패: ' . $e->getMessage());
         }
     }
-    $initialStatus = $deferSummarize ? 'audio_pending' : 'queued';
+
+    $initialStatus = 'queued';   // 항상 즉시 STT 처리
 
     // 새 job 생성. 사용자 token 검증은 이미 끝났으므로 cron worker 가 server secret 으로 처리할 수 있음.
     $asyncJobId = uuid_v4();
@@ -815,13 +783,13 @@ if ($asyncMode) {
         ':rr'  => $reviewRequiredInt,
     ]);
 
-    // 사장님 2026-05-21 근본 구조 fix v4 (ChatGPT 권장 채택) —
-    // process-recording 이 customer_log placeholder INSERT + 즉시 ledger mirror.
-    // 데이터 누락 0 보장: AI 완료/callback timing 에 무관하게 통화 즉시 row 생성.
+    // 사장님 2026-05-21 근본 구조 fix v5 — 미확인요약 폐기 후 모든 통화에 placeholder INSERT.
+    // group_id 없어도 진행 (mirror 의 ensure_customer_log_default_group fallback 으로 안전).
+    // 데이터 누락 0 보장: AI 완료/callback timing 무관하게 통화 즉시 row 생성.
     // callback (recording-callback.php) 은 UPDATE ONLY 로 전환.
     $customerLogId = null;
     $mirrorResult = null;
-    if (!$deferSummarize && $groupIdHint !== '') {
+    if (true) {  // defer 제거, group_id 조건도 제거 (default fallback 의존)
         try {
             $clId = uuid_v4();
             $placeholderName = $customerNameHint !== '' ? $customerNameHint : '처리중...';
@@ -870,8 +838,9 @@ if ($asyncMode) {
                     'action'      => 'customer_log_send_to_group',
                     'id'          => $clId,
                     'owner_email' => $ownerEmail,
-                    'group_id'    => (int)$groupIdHint,
                 ];
+                if ($groupIdHint !== '') $sendPayload['group_id'] = (int)$groupIdHint;
+                // group_id 비어있으면 customer_log_send_to_group 가 ensure_customer_log_default_group 로 자동 생성
                 $chM = curl_init($sendUrl);
                 curl_setopt_array($chM, [
                     CURLOPT_RETURNTRANSFER => true,

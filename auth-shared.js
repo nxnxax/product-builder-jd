@@ -576,26 +576,19 @@ function renderBottomNav(activeKey) {
     // 사용자가 한 번도 슬롯 선택 안 했으면 '+ 신규 양식 신청' 으로 표시 (빈 fallback).
     const slot1Key = (() => { try { return localStorage.getItem(slotKey('slot1')) || ''; } catch { return ''; } })();
     const slot2Key = (() => { try { return localStorage.getItem(slotKey('slot2')) || ''; } catch { return ''; } })();
-    // 앱: slot1/2 (신규양식) 자리에 "미확인 요약" 1개 노출. 웹: slot1/2 그대로 (사장님 2026-05-20 요청).
+    // 사장님 2026-05-21 — 미확인요약 시스템 폐기. 신규양식 슬롯 1/2 로 복원 (앱/웹 동일).
     const inApp = _bridgeIsInApp();
     const items = [
         { key: 'index.html',     label: '홈',             href: 'index.html',     icon: ICON.home },
         { key: 'customers.html', label: '고객관리대장',   href: 'customers.html', icon: ICON.users, main: true },
     ];
-    if (inApp) {
-        // 앱팀 2026-05-21 — native UnreviewedSummariesScreen 으로 deep link.
-        // RN 의 onNativeRoute 가 'unreviewed' pathname 받으면 native 화면 navigate.
-        // 영맨 web 의 unreviewed.html 은 외부 브라우저 / fallback 용으로 그대로 유지.
-        items.push({ key: 'unreviewed.html', label: '미확인 요약', href: 'youngman://record/unreviewed', icon: ICON.inbox, badgeKey: 'unreviewed' });
-    } else {
-        const slot1Item = slot1Key
-            ? { key: slot1Key, label: resolveSlotLabel(slot1Key), href: slot1Key, icon: ICON.building }
-            : { key: 'forms.html?new=1&slot=slot1', label: '+ 신규 양식', href: 'forms.html?new=1&slot=slot1', icon: ICON.building };
-        const slot2Item = slot2Key
-            ? { key: slot2Key, label: resolveSlotLabel(slot2Key), href: slot2Key, icon: ICON.fileText }
-            : { key: 'forms.html?new=1&slot=slot2', label: '+ 신규 양식', href: 'forms.html?new=1&slot=slot2', icon: ICON.fileText };
-        items.push(slot1Item, slot2Item);
-    }
+    const slot1Item = slot1Key
+        ? { key: slot1Key, label: resolveSlotLabel(slot1Key), href: slot1Key, icon: ICON.building }
+        : { key: 'forms.html?new=1&slot=slot1', label: '+ 신규 양식', href: 'forms.html?new=1&slot=slot1', icon: ICON.building };
+    const slot2Item = slot2Key
+        ? { key: slot2Key, label: resolveSlotLabel(slot2Key), href: slot2Key, icon: ICON.fileText }
+        : { key: 'forms.html?new=1&slot=slot2', label: '+ 신규 양식', href: 'forms.html?new=1&slot=slot2', icon: ICON.fileText };
+    items.push(slot1Item, slot2Item);
     // 앱 (RN WebView) 일 때만 최우측 '설정' 추가 — deep link 로 RN native
     // Settings 모달 호출 (모달 닫힘 시간 / 알림음 / 빈도 / 실시간 감지 4항목).
     // 웹 브라우저에는 노출 안 함 (window.YoungmanBridge 없음 + UA 미매칭).
