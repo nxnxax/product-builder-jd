@@ -744,6 +744,24 @@ if ($asyncMode) {
     //   - review_mode='auto': 즉시 customer_log INSERT + send_to_group mirror
     //   - review_mode='review': 사용자 명시 의도이므로 그래도 mirror (review_required=0 강제)
     $pendingReviewFlag = !empty($body['pending_review']);
+
+    // 사장님 2026-05-21 fallback — native 가 모달 "양식으로 전송" 클릭 시 group_id 누락 케이스 확정.
+    // first customer group (is_default=1 우선) 자동 채움 → review_required=0 → callback 자동 INSERT.
+    // 앱팀 fix (native 가 group_id 명시 보내도록) 전까지 안전망. 잘못된 그룹은 사장님이 ledger 에서 이동 가능.
+    if ($groupIdHint === '' && !$pendingReviewFlag) {
+        try {
+            $gFirstStmt = $pdo->prepare("SELECT id FROM ledger_groups WHERE owner_email = :o AND page_type = 'customer' ORDER BY is_default DESC, id ASC LIMIT 1");
+            $gFirstStmt->execute([':o' => $ownerEmail]);
+            $gFirstRow = $gFirstStmt->fetch();
+            if ($gFirstRow && !empty($gFirstRow['id'])) {
+                $groupIdHint = (string)$gFirstRow['id'];
+                error_log('[process-recording] auto-default group_id=' . $groupIdHint . ' (native group_id 미명시 fallback)');
+            }
+        } catch (Throwable $e) {
+            error_log('[process-recording] first customer group 조회 실패: ' . $e->getMessage());
+        }
+    }
+
     if ($groupIdHint === '' || $pendingReviewFlag) {
         $reviewRequiredInt = 1;
         error_log('[process-recording] review_required forced — gid_empty=' . ($groupIdHint === '' ? '1' : '0') . ' pending_flag=' . ($pendingReviewFlag ? '1' : '0'));
