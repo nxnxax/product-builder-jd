@@ -453,26 +453,16 @@ function ensure_recording_jobs_table(PDO $pdo): bool {
 /**
  * async mode 즉시 응답 — fastcgi_finish_request 로 client 연결 종료 후 백그라운드 계속.
  */
-function respond_async_queued(string $jobId, ?string $customerLogId = null, $mirrorResult = null): void {
+function respond_async_queued(string $jobId): void {
     http_response_code(202);
     header('Content-Type: application/json; charset=utf-8');
     header('Cache-Control: no-store');
     header('X-Content-Type-Options: nosniff');
-    $resp = [
+    echo json_encode([
         'status' => 'queued',
         'job_id' => $jobId,
         'mode'   => 'async',
-    ];
-    // 사장님 2026-05-21 근본 구조 fix v4 — placeholder customer_log INSERT 결과 응답에 포함.
-    if ($customerLogId !== null) {
-        $resp['customer_log_id'] = $customerLogId;
-        $resp['placeholder_created'] = true;
-        if (is_array($mirrorResult)) {
-            $resp['ledger_record'] = $mirrorResult['ledger_record'] ?? null;
-            $resp['group'] = $mirrorResult['group'] ?? null;
-        }
-    }
-    echo json_encode($resp, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     if (function_exists('fastcgi_finish_request')) {
         fastcgi_finish_request();
     }
@@ -735,43 +725,43 @@ if ($asyncMode) {
             ], 200);
         }
     }
-    // 사장님 2026-05-21 — 미확인요약 시스템 폐기 + STT 자동 처리 복원.
-    // defer_summarize / pending_review / review_required / recording_review_mode 모두 무시.
-    // 모든 통화 즉시 자동 STT + customer_log placeholder INSERT + ledger mirror.
-    // 데이터 누락 0 보장 + 통화 직후 사장님 고객관리대장에서 즉시 row 확인.
-    $deferSummarize = false;
-    $pendingReviewFlag = false;
-    $reviewRequiredInt = 0;
+    // 앱팀 2026-05-20 요청 — members.recording_review_mode 가 'review' 면 customer_log 자동 INSERT 우회.
+    $reviewMode = 'auto';
+    try {
+        $rmStmt = $pdo->prepare('SELECT recording_review_mode FROM members WHERE email = :e LIMIT 1');
+        $rmStmt->execute([':e' => $ownerEmail]);
+        $rmRow = $rmStmt->fetch();
+        $reviewMode = strtolower(trim((string)($rmRow['recording_review_mode'] ?? 'auto')));
+    } catch (Throwable $e) { /* 컬럼 미존재 — 'auto' 기본 */ }
+    $reviewRequiredInt = ($reviewMode === 'review') ? 1 : 0;
 
-    // group_id 없으면 first customer group 자동 채움. 조회 실패 시에도 mirror 단계의
-    // customer_log_send_to_group 의 ensure_customer_log_default_group fallback 으로 안전.
-    if ($groupIdHint === '') {
-        try {
-            $gFirstStmt = $pdo->prepare("SELECT id FROM ledger_groups WHERE owner_email = :o AND page_type = 'customer' ORDER BY is_default DESC, id ASC LIMIT 1");
-            $gFirstStmt->execute([':o' => $ownerEmail]);
-            $gFirstRow = $gFirstStmt->fetch();
-            if ($gFirstRow && !empty($gFirstRow['id'])) {
-                $groupIdHint = (string)$gFirstRow['id'];
-                error_log('[process-recording] auto-default group_id=' . $groupIdHint);
-            }
-        } catch (Throwable $e) {
-            error_log('[process-recording] first customer group 조회 실패: ' . $e->getMessage());
-        }
+    // 사장님 2026-05-20 — 통화 후 모달 타임아웃 / 사용자 결정 없음 케이스.
+    // 앱이 group_id 안 보내거나 body.pending_review=true 면 review 강제.
+    // → customer_log 자동 INSERT skip + recording_jobs.status='ready_to_review'
+    // → 미확인요약 페이지(unreviewed.html)에 자동 노출 → 사장님 검토 후 confirm.
+    //
+    // 명시 group_id 보낸 경우 (앱의 "양식에 전송" 클릭) 는 기존 동작 그대로:
+    //   - review_mode='auto': 즉시 customer_log INSERT + send_to_group mirror
+    //   - review_mode='review': 사용자 명시 의도이므로 그래도 mirror (review_required=0 강제)
+    $pendingReviewFlag = !empty($body['pending_review']);
+    if ($groupIdHint === '' || $pendingReviewFlag) {
+        $reviewRequiredInt = 1;
+        error_log('[process-recording] review_required forced — gid_empty=' . ($groupIdHint === '' ? '1' : '0') . ' pending_flag=' . ($pendingReviewFlag ? '1' : '0'));
+    } elseif ($groupIdHint !== '' && $reviewMode === 'review') {
+        // review 모드 사용자가 명시 group_id 보내면 즉시 mirror 의도 → review 강제 해제.
+        $reviewRequiredInt = 0;
     }
-
-    $initialStatus = 'queued';   // 항상 즉시 STT 처리
 
     // 새 job 생성. 사용자 token 검증은 이미 끝났으므로 cron worker 가 server secret 으로 처리할 수 있음.
     $asyncJobId = uuid_v4();
     $insJob = $pdo->prepare("INSERT INTO recording_jobs
         (id, owner_email, status, storage_path, client_request_id,
          audio_sha256, duration_sec, customer_name_hint, phone_number, recorded_at, group_id, review_required)
-        VALUES (:id, :o, :st, :sp, :k,
+        VALUES (:id, :o, 'queued', :sp, :k,
                 :sha, :dur, :hint, :ph, :ra, :gid, :rr)");
     $insJob->execute([
         ':id'  => $asyncJobId,
         ':o'   => $ownerEmail,
-        ':st'  => $initialStatus,
         ':sp'  => $storagePath,
         ':k'   => $clientReqId,
         ':sha' => $audioSha256,
@@ -783,104 +773,15 @@ if ($asyncMode) {
         ':rr'  => $reviewRequiredInt,
     ]);
 
-    // 사장님 2026-05-21 근본 구조 fix v5 — 미확인요약 폐기 후 모든 통화에 placeholder INSERT.
-    // group_id 없어도 진행 (mirror 의 ensure_customer_log_default_group fallback 으로 안전).
-    // 데이터 누락 0 보장: AI 완료/callback timing 무관하게 통화 즉시 row 생성.
-    // callback (recording-callback.php) 은 UPDATE ONLY 로 전환.
-    $customerLogId = null;
-    $mirrorResult = null;
-    if (true) {  // defer 제거, group_id 조건도 제거 (default fallback 의존)
-        try {
-            $clId = uuid_v4();
-            $placeholderName = $customerNameHint !== '' ? $customerNameHint : '처리중...';
-            $placeholderSummary = '(AI 요약 준비 중...)';
-            $phoneLookup = customer_phone_lookup_key($phoneNumber !== '' ? $phoneNumber : null);
-            $clConsultAt = $consultAt !== '' ? $consultAt : date('Y-m-d H:i:s');
-
-            $insCl = $pdo->prepare("INSERT INTO customer_log (
-                    id, owner_email, customer_phone_lookup,
-                    customer_name, phone_number,
-                    summary, consult_at,
-                    audio_storage_path, audio_kept,
-                    ai_model, ai_generated_at, source, client_request_id
-                ) VALUES (
-                    :id, :o, :pl,
-                    :nm, :ph,
-                    :sum, :ca,
-                    :asp, 0,
-                    'pending', NOW(), 'app-auto-pending', :cri
-                )");
-            $insCl->execute([
-                ':id'  => $clId,
-                ':o'   => $ownerEmail,
-                ':pl'  => $phoneLookup,
-                ':nm'  => youngman_encrypt($placeholderName),
-                ':ph'  => $phoneNumber !== '' ? youngman_encrypt($phoneNumber) : null,
-                ':sum' => youngman_encrypt($placeholderSummary),
-                ':ca'  => $clConsultAt,
-                ':asp' => $storagePath,
-                ':cri' => $clientReqId,
-            ]);
-            $customerLogId = $clId;
-
-            // recording_jobs.customer_log_id 즉시 UPDATE
-            $pdo->prepare("UPDATE recording_jobs SET customer_log_id = :cl, updated_at = NOW() WHERE id = :id")
-                ->execute([':cl' => $clId, ':id' => $asyncJobId]);
-
-            error_log('[process-recording] placeholder customer_log INSERT: cl=' . $clId . ' job=' . $asyncJobId);
-
-            // 즉시 ledger mirror — internal HTTP call (worker token 인증 우회)
-            $workerTokInner = load_env_value('RECORDING_WORKER_TOKEN');
-            if ($workerTokInner) {
-                $hostInner = $_SERVER['HTTP_HOST'] ?? 'youngman-biz.com';
-                $sendUrl = 'https://' . $hostInner . '/records.php?resource=customer-log';
-                $sendPayload = [
-                    'action'      => 'customer_log_send_to_group',
-                    'id'          => $clId,
-                    'owner_email' => $ownerEmail,
-                ];
-                if ($groupIdHint !== '') $sendPayload['group_id'] = (int)$groupIdHint;
-                // group_id 비어있으면 customer_log_send_to_group 가 ensure_customer_log_default_group 로 자동 생성
-                $chM = curl_init($sendUrl);
-                curl_setopt_array($chM, [
-                    CURLOPT_RETURNTRANSFER => true,
-                    CURLOPT_POST => true,
-                    CURLOPT_POSTFIELDS => json_encode($sendPayload, JSON_UNESCAPED_UNICODE),
-                    CURLOPT_HTTPHEADER => [
-                        'Content-Type: application/json',
-                        'X-Worker-Token: ' . $workerTokInner,
-                    ],
-                    CURLOPT_TIMEOUT => 10,
-                    CURLOPT_CONNECTTIMEOUT => 3,
-                ]);
-                $mirrResp = curl_exec($chM);
-                $mirrHttp = (int)curl_getinfo($chM, CURLINFO_HTTP_CODE);
-                curl_close($chM);
-                if ($mirrResp !== false && $mirrHttp >= 200 && $mirrHttp < 300) {
-                    $mirrorResult = json_decode((string)$mirrResp, true);
-                }
-                error_log('[process-recording] placeholder mirror cl=' . $clId . ' gid=' . $groupIdHint . ' http=' . $mirrHttp);
-            }
-        } catch (Throwable $e) {
-            error_log('[process-recording] placeholder customer_log INSERT/mirror 실패: ' . $e->getMessage());
-            // 실패해도 recording_jobs 는 있으니 callback 이 backward compat INSERT 시도
-        }
-    }
-
     // 즉시 응답 — client 연결 종료. 이후 코드는 백그라운드.
-    respond_async_queued($asyncJobId, $customerLogId, $mirrorResult);
-
-    // 사장님 2026-05-21 — 미확인요약 시스템 폐기로 defer 분기 제거. 항상 Railway STT 진행.
+    respond_async_queued($asyncJobId);
 
     /* Railway worker 분기 (선택 — RAILWAY_WORKER_URL 환경변수 있을 때만).
      * Railway 가 있으면: STT/LLM 처리를 Railway 에 위임 + cafe24 는 callback 만 기다림.
      * Railway 가 없으면: 기존 cafe24 자체 처리 흐름 (Phase 1 / Path B 그대로).
      * Railway 호출 실패해도 cron worker (Path B) 가 5분 후 재시도. */
     $railwayUrl = load_env_value('RAILWAY_WORKER_URL');
-    // 사장님 2026-05-21 — internal worker 흐름도 Railway 위임 허용 (cafe24 ffmpeg 미설치라
-    // m4a Whisper 400 거부 케이스 우회). trigger_summarize / cron retry 모두 Railway 의
-    // mp3 transcode 거쳐 안정 STT.
-    if ($railwayUrl !== '') {
+    if ($railwayUrl !== '' && !$isInternalWorker) {
         try {
             // signed audio URL 생성 (10분 유효, HMAC-SHA256)
             $expires = time() + 600;
