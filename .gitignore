@@ -17,3 +17,7 @@ api/supabase_config.php
 *.csv
 *.pdf
 *.zip
+
+# APK 빌드 산출물 — git 추적 금지 (cafe24 FTP 직접 업로드: /download/youngman-latest.apk)
+*.apk
+*.aab

@@ -26,3 +26,11 @@ RewriteRule ^(.*)$ https://%{HTTP_HOST}/$1 [R=301,L]
 <FilesMatch "(^|/)\.env(\.|$)">
     Require all denied
 </FilesMatch>
+
+# 사장님 2026-05-21 — APK 다운로드 (베타 테스터용).
+# /download/youngman-latest.apk → Android 패키지 인스톨러 자동 열림.
+AddType application/vnd.android.package-archive .apk
+<FilesMatch "\.apk$">
+    Header set Content-Disposition "attachment; filename=\"youngman-latest.apk\""
+    Header set Cache-Control "public, max-age=300"
+</FilesMatch>
