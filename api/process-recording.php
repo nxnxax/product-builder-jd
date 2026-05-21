@@ -756,12 +756,30 @@ if ($asyncMode) {
     // 사용자가 "요약보기" 또는 "양식 전송" 클릭 시에만 records.php?action=trigger_summarize / confirm 호출되어 STT 발동.
     // body.defer_summarize=false 명시 (cron retry / internal worker 등) 일 때만 즉시 STT/LLM 진행.
     $deferSummarize = !isset($body['defer_summarize']) || !empty($body['defer_summarize']);
-    // 사장님 2026-05-21 비상 fix — group_id 명시 + review_required=0 = "양식으로 전송" 직행 클릭 의도.
-    // native 가 defer_summarize=false 안 보내도 즉시 STT/LLM 발동해야 customer_log INSERT + send_to_group mirror 작동.
-    // (Line 743-745 주석 의도와 일치 — "명시 group_id = 기존 즉시 처리")
-    if ($deferSummarize && !isset($body['defer_summarize']) && $groupIdHint !== '' && !$pendingReviewFlag && $reviewRequiredInt === 0) {
-        $deferSummarize = false;
-        error_log('[process-recording] auto-submit detected (gid=' . $groupIdHint . ') — defer_summarize forced false');
+
+    // 사장님 2026-05-21 비상 fix v3 — native 가 group_id 도 defer_summarize 도 안 보내는 케이스 확정.
+    // 사장님 결정: 데이터 누락 0 우선 → defer 미명시면 first customer group 자동 + 즉시 처리.
+    // 명시적 defer_summarize=true 만 audio_pending 유지 (native 가 미확인요약 흐름 의도 표명한 경우).
+    // 비용 트레이드오프: 자동 STT 비용 증가하지만 audio_cleanup 7일 + 잘못된 그룹은 ledger 에서 이동 가능.
+    if ($deferSummarize && !isset($body['defer_summarize']) && !$pendingReviewFlag) {
+        if ($groupIdHint === '') {
+            try {
+                $gFirstStmt = $pdo->prepare("SELECT id FROM ledger_groups WHERE owner_email = :o AND page_type = 'customer' ORDER BY is_default DESC, id ASC LIMIT 1");
+                $gFirstStmt->execute([':o' => $ownerEmail]);
+                $gFirstRow = $gFirstStmt->fetch();
+                if ($gFirstRow && !empty($gFirstRow['id'])) {
+                    $groupIdHint = (string)$gFirstRow['id'];
+                    $reviewRequiredInt = 0;
+                    error_log('[process-recording] auto-default group_id=' . $groupIdHint . ' (native 미명시 — fix v3)');
+                }
+            } catch (Throwable $e) {
+                error_log('[process-recording] first customer group 조회 실패: ' . $e->getMessage());
+            }
+        }
+        if ($groupIdHint !== '' && $reviewRequiredInt === 0) {
+            $deferSummarize = false;
+            error_log('[process-recording] defer_summarize forced false — 데이터 누락 0 보장 (fix v3)');
+        }
     }
     $initialStatus = $deferSummarize ? 'audio_pending' : 'queued';
 
