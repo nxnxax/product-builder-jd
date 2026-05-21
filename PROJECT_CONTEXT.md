@@ -1,388 +1,372 @@
 # PROJECT_CONTEXT — youngman-biz.com
 
-*최종 갱신: 2026-05-20 새벽 (Phase 2 + 인증 fix Path A 쿨다운 + **Path B AI lifecycle 분리 (recording_jobs 상태 머신 + audio_sha256 idempotency + cron worker)** 풀스택 ship)*
+*최종 갱신: 2026-05-21 (KST 16:30 세션 종료) — **STT On-Demand + 미확인요약 시스템 완전 폐기. STT 자동 처리 복원. 모달 양식전송/요약보기 두 흐름 모두 사장님 PoC 정상.***
+
+---
 
 ## 1. 사이트 목적
 
 **YOUNGMAN / 영맨** — 1인 사업자용 AI 영업 플랫폼.
-- CRM(고객) / HRM(조직도·계약자) / 마케팅 도구 / 로또 분석 / 단체 SMS 통합
-- 한국 캘리그라피 + 인장(seal-red #c8362c), Apple/Linear 미니멀 톤
-- 라이브: https://youngman-biz.com (Cafe24 호스팅 + Supabase Auth + MariaDB + PHP API)
-- 인증: Supabase Cloud + JWT (sb_publishable_ 키, **PHP session 안 씀**)
-- 최근 추가: RN Android WebView 앱 + 통화 녹취 → AI 요약 (Whisper+Claude) → CRM + **분 단위 과금 + 자동 충전** + PortOne V2 정기결제
+- 슬로건: "단 한 건의 고객정보 누락 없이 관리"
+- CRM(고객) / HRM(조직도·계약자) / 마케팅 / 로또 / 단체 SMS / **AI 통화 요약 → CRM 자동 전송**
+- 디자인: 한국 캘리그라피 + 인장(seal-red `#c8362c`), Apple/Linear 미니멀
+- 라이브: https://youngman-biz.com (Cafe24 + Supabase + MariaDB + PHP)
+- 결제: PortOne V2 + 토스페이먼츠 정기결제
+- 앱: RN Android WebView + bridge.js
+- 고객층: 보험/자동차/중고차/일반 자영업 다양 — AI 업종 무관 범용
+
+---
 
 ## 2. 주요 파일 구조
 
 ```
-[프론트 페이지]
-index.html / login-complete.html / logout.html
-profile.html(.js) / admin.html(.js)
-org.html(.js) / contracts.html(.js) / customers.html(.js)
-forms.html(.js) / board.html(.js) / card-builder.html / lotto2233.html
-Marketing.html / kapp_premium.php
-terms.html / privacy.html
-refund.html / auto-billing.html       — 정책 (PortOne 심사 통과 필수)
-subscribe.html / billing.html          — 구독 결제 UI (분 단위)
+[프론트]
+index.html / login-complete.html / logout.html / profile.html / admin.html
+org.html / contracts.html / customers.html / forms.html / board.html
+card-builder.html / lotto2233.html / Marketing.html / kapp_premium.php
+terms.html / privacy.html / refund.html / auto-billing.html
+subscribe.html / billing.html / unreviewed.html (미확인 요약)
 
 [공통 JS]
-auth-shared.js          — Supabase + 헤더/footer + 인증 + bridge.js import
-                          + _refreshInflight dedup + window.YoungmanBridge.refreshSession() hook
-bridge.js               — RN Android WebView 앱 브리지 (window.YoungmanBridge)
-ledger-shared.js        — 관리대장 공통
+auth-shared.js  — Supabase + 헤더/footer/bottom-nav + 인증 + setUnreviewedCount badge
+bridge.js       — RN WebView 브리지 (heartbeat 포함)
+ledger-shared.js — 관리대장 공통 (deepSearchMatch 포함)
 
-[PHP API — cafe24 webroot 평면 배포]
-api/records.php         — 모든 CRUD (customers/employees/ledger-*/admin-*/auth-*/
-                          find-*/sms-*/mobile-tokens/customer-log/app-fcm-token/recording-job)
-                          + auth-profile 에 분 단위 + overage_* 필드 반환
-                          + overage_enabled 본인 토글 PATCH
-                          + admin-members PATCH 에 summary_limit_minutes / overage_balance_minutes 입력
-api/process-recording.php — 통화 녹취 → STT (Whisper/CLOVA 3단 fallback) → Claude Sonnet 4.6 요약
-                          → customer_log + 분 단위 차감 + 자동 충전 트리거
-                          + **X-Internal-Worker-Token 헤더 시 user auth skip (cron worker 호출용)**
-api/cron-process-jobs.php — **Path B (2026-05-20)**: recording_jobs queued/failed_retryable 작업
-                          를 server secret 으로 background 처리. AI lifecycle 을 사용자 token 분리.
-api/job-status.php       — **속도 개선 (2026-05-20)**: 앱 polling endpoint.
-                          GET ?job_id=xxx + Authorization Bearer → status/progress_pct/step_label 즉시 반환.
-                          앱이 1~2초 간격 polling 으로 진행률 표시 (queued→stt_processing→llm_processing→completed).
-api/fcm_helpers.php     — FCM HTTP v1
-api/audio_cleanup.php   — 24h audio cron cleanup
-api/sms/...             — SMS 발송
-api/crypto_helpers.php  — AES-256-GCM (enc:v1: prefix)
-api/ledger-mobile.php   — 모바일 앱 Bearer 토큰
-api/upload.php          — 파일 업로드
-api/billing_helpers.php — PortOne V2 헬퍼 + plan_default_summary_limit_minutes()
-                          + overage_top_up_seconds()/amount_won()/per_minute_won()
-                          + charge_overage_top_up() — 자동 충전 결제
-api/billing/verify-payment.php       — 빌링키로 첫 결제 + DB 갱신
-api/billing/webhook-portone.php      — Webhook 수신 (Standard Webhooks 검증)
-api/billing/cancel-subscription.php  — 해지 (cancel_at_period_end=1)
-api/billing/cron-renew.php           — 매일 KST 03:00 정기결제 cron
-api/billing/config.php               — storeId/channelKey publishable
+[PHP API — cafe24 webroot flat]
+api/records.php           — 모든 CRUD + customer-log resource (trigger_summarize / confirm /
+                             discard / summary_status / list_unreviewed / transcripts_by_phone /
+                             admin_job_diag / send_to_group)
+api/process-recording.php — 통화 audio 업로드. STT/LLM 자동 X (defer_summarize=true default).
+api/recording-callback.php — Railway worker 결과 수신 (review_required 분기)
+api/cron-process-jobs.php  — 매 5분 cron. failed_retryable retry (max=2)
+api/job-status.php         — 앱 polling (7단계 auth fallback)
+api/recording-audio.php    — HMAC signed audio URL (10분)
+api/audio_cleanup.php      — 7일 cron cleanup (사장님 결정)
+api/upload.php             — multipart audio 수신
+api/billing_helpers.php / billing/* — 결제
 
-[디자인 / 자산 / 문서]
-style.css / logo_main.png
-BRIDGE_API.md             — 앱 ↔ 웹 메시지 스펙
-CALL_RECORDING_BACKEND.md — 통화 녹취 → AI 요약 백엔드 spec
+[Railway worker]
+worker/main.py  — Whisper + Claude + transcode_to_mp3 (m4a → mp3 통일)
 
-[CI]
-.github/workflows/deploy.yml                  — FTP 배포 + .env 어셈블 (STT_PROVIDER, LLM_PROVIDER 포함)
-.github/workflows/audio-cleanup-schedule.yml  — 매일 KST 04:00 audio cleanup
-.github/workflows/billing-renew.yml           — 매일 KST 03:00 빌링키 자동 결제 cron
-.github/workflows/process-jobs.yml            — **매 5분 cron-process-jobs.php (Phase 2 Path B)**
+[운영 문서]
+PLAY_DATA_SAFETY.md — Play Console Data Safety raw 답안집
+SEO: robots.txt, sitemap.xml
 ```
+
+---
 
 ## 3. 현재 완성된 기능
 
-- ✅ Supabase Auth (이메일 + Google OAuth, 회원가입/로그인/로그아웃/비번 변경)
-- ✅ 인증 일원화 (logout.html / login-complete.html 단일 transition)
-- ✅ **인증 race condition fix (2026-05-20)** — `_refreshInflight` 전역 dedup, 임계점 60→300초, 5곳 핸들러 (ensureFreshAccessToken / apiRequest 401 retry / SIGNED_OUT / onAppResume / visibilitychange) 공유
-- ✅ **Path A — refresh cooldown 25초 (commit 15f0959, ChatGPT 권장)** — `_refreshLastSuccessAt` + `_runRefreshOnce()` 공통 헬퍼. "방금 refresh 성공 후 또 refresh" 현상 차단 (timeout 누적 / SESSION_DEAD_EVENT 오발동 방지)
-- ✅ **속도 개선 (2026-05-20)** — ChatGPT 권장 "2~3분 무반응 → 1~2초 안에 처리중 표시" 핵심:
-    - recording_jobs status 8단계 세분화: `queued / uploading / stt_processing / llm_processing / completed / failed / failed_retryable / failed_permanent`
-    - `progress_pct` 컬럼 + 각 단계 진입 시 자동 UPDATE (30 → 70 → 100)
-    - `transcript_encrypted` / `summary_json_encrypted` 컬럼 — 중간 결과 임시 저장 (AES-256-GCM)
-    - `/api/job-status.php` 신규 — 앱이 1~2초 간격 polling. Authorization Bearer + owner_email 격리. status_label 한국어 자동 변환
-    - **앱팀 작업 필요**: ProcessingScreen + polling + progress UI + completed 시 ConfirmRecording 자동 이동
-- ✅ **FCM 사용량 알림 + 자동 충전 알림 (commit ee7138b)**:
-    - `send_usage_warning_fcm()`: 80/90/100% 도달 시 자동 발송. `last_usage_warning_pct` 컬럼으로 중복 차단
-    - `send_overage_charged_fcm()`: 자동 충전 결제 성공 후 사후 통지 (전자상거래법)
-    - process-recording.php / billing_helpers.php 가 자동 트리거
-- ✅ **admin.html 분 단위 UI (commit b831ce5)**:
-    - 회원 편집 모달: 분 단위 한도 (override) / 자동 충전 잔액 (분) / 자동 충전 동의 토글 / 분 단위 사용량
-    - records.php admin-members PATCH 가 새 필드 받음 (commit 1aea481)
-- ✅ **group_id 컨테이너 + FCM payload 포함 (commit ee2f396, 앱팀 옵션 b)**:
-    - recording_jobs.group_id 컬럼 + body['group_id'] 받기
-    - call_summary_ready FCM payload 에 group_id emit
-    - customer_log_send_to_group 흐름은 lock-in 코드 — 앱이 FCM 받은 후 별도 호출
-- ✅ **Phase 2 외부 worker — Railway (2026-05-20 새벽 ship)**:
-    - worker/main.py — Python FastAPI. cafe24 가 webhook 호출 → 즉시 202 + 백그라운드 처리
-    - audio 다운로드 → Whisper → Claude → cafe24 callback
-    - api/recording-callback.php / api/recording-audio.php 신규
-    - process-recording.php 가 RAILWAY_WORKER_URL 환경변수 있으면 Railway 호출 + 종료, 없으면 cafe24 자체 처리 (호환 100%)
-    - X-Worker-Token 양방향 인증 (RECORDING_WORKER_TOKEN 공유)
-    - audio URL: HMAC-SHA256 signed URL, 10분 만료
-    - **사장님 작업 필요**: Railway 가입 + GitHub repo 연동 (root=worker/) + 환경변수 등록 + GitHub Secret RAILWAY_WORKER_URL 등록
-    - 환경변수 없으면 영맨 그대로 작동 (점진적 마이그레이션)
-- ✅ **긴 통화 청크 분할 (2026-05-20 ship)**:
-    - duration_sec >= 10분 (600초) 이면 ffmpeg 로 5분씩 분할
-    - `asyncio.gather` + `Semaphore(6)` 청크 병렬 Whisper (OpenAI rate limit 회피)
-    - 청크별 transcript 합쳐서 Claude 단일 호출 (60분 통화 ≈ 12,000자 — context 충분)
-    - `worker/nixpacks.toml` 에 ffmpeg 추가 (Railway 자동 설치)
-    - 효과: 60분 통화 = ~50초 (병렬 STT 30초 + Claude 20초). cafe24 PHP 240초 timeout 무관.
-    - 청크 분할 실패 시 단일 처리 fallback (안전망)
-    - 환경변수 추가 필요 없음 — 환경변수 그대로 두고 worker 재배포만 트리거
-- ✅ **Path B — AI 작업 lifecycle 사용자 token 분리 (commit 곧 push)** — 영맨 슬로건 "단 한 건의 고객정보 누락 없이 관리" 만족 목적:
-    - recording_jobs 확장: audio_sha256 / duration_sec / customer_name_hint / phone_number / recorded_at / retry_count 컬럼 lazy ALTER. status (16→20) 길이 확장
-    - audio_sha256 idempotency: 24h 내 같은 파일 hash 면 그 job 반환 (앱 outbox 재시도 안전망)
-    - process-recording.php 의 `X-Internal-Worker-Token` 헤더 인식: 일치하면 user auth skip + `_internal_owner_email` 사용
-    - api/cron-process-jobs.php: server secret 인증 → queued / failed_retryable LIMIT 5 SELECT → internal HTTP 로 process-recording 호출 → 실패 시 retry_count++ + failed_retryable (3번째 failed_permanent)
-    - .github/workflows/process-jobs.yml: 매 5분 schedule (RECORDING_WORKER_TOKEN secret 필요)
-    - **앱 종료 / 토큰 만료 / 첫 호출 실패해도 job 은 반드시 끝남** — 통화 누락 0건 보장
-- ✅ **앱팀 5가지 인증 점검 반영 (2026-05-20)** — `storage: localStorage` 명시 / `window.YoungmanBridge.refreshSession()` 글로벌 hook / `window.supabase` 노출 / TOKEN_REFRESHED 시 _bridgeLogin 자동
-- ✅ 고아 user 자동 복구 (ensureMemberRowOnce)
-- ✅ 로그인 유지 체크박스 (pagehide/beforeunload 자동 sb-* 삭제)
-- ✅ 아이디/비밀번호 찾기 (SMS 인증)
-- ✅ RN Android 앱 브리지 (bridge.js, isInApp 2단계 신호)
-- ✅ 앱 안 Google 로그인 (native SDK + signInWithIdToken + nonce hash)
-- ✅ 카카오톡 등 in-app browser Google 로그인 안내
-- ✅ 조직도/계약자/고객 관리대장 통합 (page_type 기반)
-- ✅ PII 사용자별 격리 + AES-256-GCM 암호화
-- ✅ 단체 SMS 발송 (Solapi/Aligo) + 잔액 카드
-- ✅ 모바일 하단 네비게이션 (4탭) + bfcache reload
-- ✅ 사용자 정의 양식 빌더 (forms Phase 1~3, 8타입)
-- ✅ forms 수식 함수 라이브러리 + 캐스케이드 picker
-- ✅ 양식 슬롯 시스템 (slot1=조직도/slot2=계약자, caret hover dropdown)
-- ✅ 모바일 카드 별도 DOM 렌더
-- ✅ 모바일 API 토큰 발급 UI (profile)
-- ✅ 회원 탈퇴 + NICE 휴대폰 본인확인 약관
-- ✅ **헤더 user-menu + 모바일 drawer 에 "구독 관리" 링크 (2026-05-19)**
+### 인증
+- Supabase + Google OAuth + 6중 race guard + bridge.js heartbeat
+- `_runRefreshOnce` Promise.race + 12s timeout
+- 7단계 auth header fallback (records / upload / process-recording / job-status)
+- error_code 표준 6종: AUTH_EXPIRED / AUTH_INVALID / AUTH_REQUIRED / JOB_DUPLICATE / JOB_EXISTS / RETRYABLE_SERVER_ERROR
 
-### ✅ 통화 녹취 → AI 요약 → CRM (Phase 1+2 라이브)
+### CRM / HRM
+- 조직도/계약자/고객 관리대장 (page_type) + AES-256-GCM 암호화
+- 양식 빌더 (Phase 1~3, 8타입)
+- 검색 강화: `deepSearchMatch` (object/array inner value 재귀 + NFC 정규화)
+- 회차별 content 분할 + "대화내용 전문보기" 버튼 (customers 상세 모달)
+- 단체 SMS + 잔액 카드
 
-- **STT provider toggle (`STT_PROVIDER` env)**: `clova` (CLOVA Speech LSR, 화자분리, 회당 ~180원) / `whisper` (OpenAI Whisper, ~50원)
-  - **3단 fallback (whisper 활성화 시)**:
-    1. 사전 (확장자): 화이트리스트(`flac/m4a/mp3/mp4/mpeg/mpga/oga/ogg/wav/webm`) 외 → CLOVA
-    2. 사전 (사이즈): Whisper 25MB 제한 초과 → CLOVA (긴 통화 안전)
-    3. 런타임 (4xx): Whisper 가 codec 변종으로 거부 → CLOVA 재시도
-  - 확장자 판별: `original_filename` 우선 (앱이 Content-Type 항상 'audio/mp4' 하드코딩이라 신뢰 불가)
-  - duration: 앱 `duration_sec` 우선 (MediaStore Audio.Media.DURATION), STT response 폴백
-- **LLM provider toggle (`LLM_PROVIDER` env)**: `openai` (gpt-4o-mini, 메모 수준, 회당 ~1원) / `anthropic` (Claude Sonnet 4.6 + prompt caching, **보고서 수준**, 회당 ~7~21원)
-  - prompt caching: system 메시지 `cache_control: ephemeral` → 5분 TTL hit 시 input 90% 절감
-- **사장님 명시 만족 — 2026-05-20**: Whisper + Claude Sonnet 4.6 조합 "성능 진짜 대박" production 확정. **gpt-4o-mini 회귀 비추, Opus 4.7 도 오버킬.**
-- **Phase 2 분 단위 과금 (2026-05-20 풀스택 ship)**:
-  - members 컬럼 (lazy ALTER): `summary_limit_minutes` / `usage_seconds_period` / `overage_enabled` / `overage_balance_seconds` / `overage_top_up_count` / `overage_last_top_up_at`
-  - `plan_default_summary_limit_minutes()`: Free=30 / Plus=300 / Pro=1000 / trialing=30
-  - process-recording.php 흐름:
-    1. 사전 체크: 한도+잔액 부족 시 자동 충전 트리거 (overage_enabled=1 일 때만)
-    2. 미동의 + 한도 초과 → 403 plan_required
-    3. 처리 후 차감: usage_seconds_period += duration / 한도 초과분은 overage_balance_seconds 에서 차감
-  - 레거시 회 단위 흐름 병행 운영 (분 컬럼 없는 환경 폴백)
-- **자동 충전 (`charge_overage_top_up()`)**: ₩5,000 / 71분 (4,286초) = 분당 70원. PortOne billingKey 로 임의 시점 결제. payments 테이블에 PAID row 저장.
-- **billing.html**: 사용량 분 단위 표시 + 자동 충전 토글 (PATCH `/records.php?resource=auth-profile` body: `{overage_enabled}`) + 잔액 표시
-- **subscribe.html**: 새 가격 features (Free 30분 / Plus 300분 / Pro 1,000분 + 자동 충전 안내)
-- **auto-billing.html**: 제6조 자동 충전 약관 (해지 가능 명시)
-- **18분 통화 PoC 성공 (2026-05-20)** — Whisper+Claude e2e 흐름 검증됨
-- **옵션 D 라운드 4 완성 (기존)**: 8필드 매핑 + phone merge + backfill catch-up + 카드 expanded 보존
+### 통화 녹취 — STT 자동 처리 흐름 (2026-05-21 최종 회귀)
+**핵심 정책 — 사장님 결정 (KST 오후 비상 후)**: STT On-Demand + 미확인요약 시스템 완전 폐기.
+통화 종료 시 자동 STT + customer_log INSERT + ledger mirror.
 
-### ✅ 구독 결제 시스템 — PortOne V2 + 토스페이먼츠 (2026-05-19 풀스택)
+```
+통화 종료 → /process-recording.php (sync 기본 mode)
+   → recording_jobs INSERT (status='queued')
+   → Railway worker /process 호출 (m4a → mp3 → Whisper → Claude)
+   → 영맨 응답 hold (sync) 또는 callback (async)
+   → customer_log INSERT (영맨이 wait 후 일괄 INSERT)
+   → auto send_to_group mirror → ledger_records row 자동 생성
+sync 응답: { ok, customer_log: {...}, plan: {...} }
+async 응답: { status: 'queued', job_id, mode: 'async' } + callback 후 FCM
+```
 
-- **요금제 (2026-05-20 분 단위 전환)**: Free(0/30분) / Plus(₩19,000 / 300분) / Pro(₩39,000 / 1,000분)
-- **결제 흐름** (2단계 — 토스는 IssueBillingKeyAndPay 미지원):
-  1. 클라이언트: PortOne SDK `requestIssueBillingKey({ billingKeyMethod:'CARD', ... })` → 카드 등록 창 → billingKey
-  2. 서버: `/billing/verify-payment.php` POST → PortOne API `POST /payments/{id}/billing-key` → status=PAID
-- **모바일**: REDIRECTION 모드 자동 적용 (토스 페이지 전체 화면 이동 + 복귀)
-- **정기결제 cron**: 매일 KST 03:00 → `/billing/cron-renew.php`. 실패 시 past_due. cancel_at_period_end=1 + 만료 시 free 강등
-- **Webhook**: PortOne 콘솔 → `/billing/webhook-portone.php` (Standard Webhooks signature 검증)
-- **해지**: cancel_at_period_end=1 + PortOne 빌링키 DELETE. 기간 만료 시 cron 이 free 로 강등
-- **summary_limit 자동 동기화**: plan 변경 시 verify-payment / cron-renew / admin PATCH 모두 자동 (회 + 분 둘 다)
-- **premium → plus alias**: 'premium' 값을 'plus' 로 자동 마이그레이션 + UI alias
-- **admin > 회원 관리**: 회원 표에 플랜/사용량/다음 결제일 컬럼. 편집 모달에 구독 플랜 / 구독 상태 / 사용량 / 만료일 입력 + 빠른 버튼
-- **정책 페이지**: refund.html (환불정책) + auto-billing.html (자동결제 + 자동 충전). 사업자정보 (어센트라 / 393-39-01518)
+### 영맨 측 정합성 보장 (앱팀과 협의 §B-1~B-9)
+- **sync (mode 누락 또는 'sync')**: STT/LLM 완료 후 customer_log row 포함 응답
+- **async (mode='async')**: 즉시 202 응답 + callback 시점 customer_log INSERT + FCM
+- **dedup**: client_request_id 24h (customer_log) + audio_sha256 영구 (async)
+- **idempotency**: customer_log_send_to_group 의 (customer_log_id + group_id) 키
+- **group_id fallback** (commit 37c3261): native 가 안 보내면 first customer group 자동
+- **review_required 제거** (commit d978738): 미확인요약 폐기 결정 정합 — 항상 INSERT
 
-### ✅ 메인 페이지 flagship CTA (2026-05-19)
+### 폐기된 endpoint / 시스템 (사용 안 함)
+- **unreviewed.html** (deleted 2026-05-21)
+- **하단 nav "미확인 요약" 메뉴** (auth-shared.js 에서 신규양식 슬롯으로 복원)
+- **list_unreviewed / trigger_summarize / confirm / discard / summary_status / preview**
+  → 코드 자체는 records.php 에 잔존 (46e01c6 시점 복원). deprecated 가드 Phase 11c 후속
+- **bridge.setUnreviewedCount API** (badge 없음)
+- **recording_review_mode** 컬럼 (사용 안 함, schema 그대로)
+- **recording_jobs.review_required** 컬럼 (사용 안 함, schema 그대로)
 
-- "AI 통화 요약 + 고객관리 원터치 전송 서비스 신청" — 매출 최우선 CTA
-- 위치: PC = "전화만 하세요" 직후 / 모바일 = 스마트폰 SVG 와 eyebrow 사이 정중앙
-- 디자인: 황금색 메탈릭 + shimmer + 흰 텍스트
-- plan 별 분기: 비로그인/free/trialing → subscribe / plus/premium → upgrade text / pro → 숨김
-- **모바일 nowrap 반응형 fix (2026-05-19)**: clamp() 로 폭에 맞춰 글자/패딩 자동 스케일
+### 유지 endpoint
+- **admin_job_diag** — admin only 진단 (사장님 콘솔에서 직접 호출)
+- **customer_log_send_to_group** — auto mirror + worker token 우회 + 9개 키 fallback
+- **transcripts_by_phone** — 회차별 전문 조회
 
-## 4. 아직 미완성인 기능
+### Play Console 대비 (2026-05-20 ship)
+- account-delete 완전 — members + customer_log + recording_jobs + audio + Supabase auth.users
+- privacy.html / terms.html 통화녹음/AI/Plus(19000)/Pro(39000)/자동결제 명시
+- PLAY_DATA_SAFETY.md (raw 답안집)
 
-- ⏳ **26분+ 통화 PoC 재시도** — 인증 race condition fix (commit 1aea481) 검증 필요. 사장님 재로그인 후 통화 1건 시도하면 결판.
-- ⏳ **admin.html UI follow-up** — 회원 편집 모달에 분 단위 입력 + 수동 충전 부여 UI (백엔드는 records.php 에 이미 ALTER 됨)
-- ⏳ **FCM payload 협의** — Phase 2 분 사용량 임박/초과 알림: `usage_warning { type, threshold(80/90/100), used_min, limit_min, period_end }` / `overage_charged { type, amount, added_min, new_balance_min }`. 앱팀 협의 후 영맨 서버에서 발송 구현.
-- ⏳ **기존 회원 마이그레이션 검증** — lazy ALTER 의 plan 별 default 가 잘 적용됐는지 production DB 확인 필요
-- ⏳ **PortOne 콘솔 Webhook URL 등록** — `https://youngman-biz.com/billing/webhook-portone.php` (사용자 직접)
-- ⏳ **정식 토스 키 발급 후 라이브 결제 검증** — 테스트 키 환경에서 `NOT_SUPPORTED_CARD_TYPE` 으로 e2e 결제 검증 미완
-- ⏳ **GitHub Actions M4 audio-cleanup workflow_dispatch dry_run** — 사용자 트리거 미완
-- ⏳ **AI 요약 두 모드 분기** — 대화형(legacy)/요약정리형(PPT). profile.html 라디오 + members.ai_summary_mode + prompt 분기. PPT prompt 는 `37fca8b` 에 보존
-- ⏳ **card-builder UX** — Recraft overlay primary + AI/템플릿 토글
-- ⏳ **PII 평문 → 암호문 일괄 backfill 스크립트** (lazy 외 일괄)
-- ⏳ **forms 수식 inline help** — 함수/path 카탈로그 모달
-- ⏳ **profile/admin 디자인 일관성 감사**
-- ⏳ **Supabase Email Template 한글화** (Dashboard 수동)
-- ⏳ **Marketing.html 브리지 포함 검토**
+### SEO (2026-05-20 ship)
+- robots.txt + sitemap.xml
+- index.html / Marketing.html / subscribe.html / 정책 페이지 — OG/Twitter/canonical/JSON-LD
+- 로그인 후 페이지 — `noindex, nofollow`
+
+### Footer (2026-05-21)
+- 6줄 라벨 (회사명 / 대표 / 사업자등록번호 / 대표번호 1800-5743 / 주소 / 이메일)
+- `<dl><dt><dd>` grid 110px×1fr — 모바일에서도 값 정렬 일관
+- 영맨 로고 — `clip-path: inset(0 0 6px 0)` 으로 하단 흰 가로줄 노이즈 제거
+
+---
+
+## 4. 다음 세션 인계 (2026-05-21 KST 16:30 세션 종료 시점)
+
+### ✅ 비상 안정화 완료
+- 통화 종료 → 모달 → **"양식으로 전송" 직격** 흐름 사장님 PoC 정상 (commit d978738 이후)
+- 통화 종료 → 모달 → **"요약보기" → 양식 전송** 흐름 정상
+- 앱팀 R2 빌드 ship (race fix + state reset by client_request_id + Overlay single-owner lock)
+- 영맨 review_required 분기 무력화 — 데이터 누락 0 보장
+
+### 다음 세션 후속 작업 (낮은 우선순위, 비상 X)
+
+**[C-2] 401/403 응답 표준화 + _auth_debug 필드 (redact 적용)**
+- records.php 의 인증 미들웨어 검토 + error_code 표준 6종 보장
+- 진단용 _auth_debug 필드 추가 (sensitive 정보 redact)
+- 앱팀 환영. 비상 종료 후 진행.
+
+**[C-3] deprecated endpoint Sunset/Deprecation HTTP header**
+- list_unreviewed / trigger_summarize / discard / summary_status / preview / confirm
+- Sunset: Wed, 01 Jul 2026 00:00:00 GMT
+- 앱팀 다음 빌드에 cleanup 진행 예정
+
+**[C-4] group_id fallback 강화**
+- ledger_groups page_type='customer' row 없을 때 ensure_customer_log_default_group() 호출
+- 앱팀이 이미 group_id 명시 전송하므로 fallback 의존 0. 안전망 강화.
+
+**[§3 callback 순서] N번째 통화에 (N-1) row 먼저 INSERT 현상 진단** (낮은 우선)
+- 증상: 사장님이 "한 박자 밀린다" 체감. 최종적으로 N, N-1 모두 들어옴 (데이터 손실 0)
+- 추정: native HeadlessJsTask 직렬 처리 + outbox retry timing
+- 영맨 확인 항목: recording_jobs 의 created_at 시간순 callback 순서 자연 보장 여부
+  + audio_sha256/client_request_id 다른 두 row 의 Railway worker 동시성
+
+**[Phase 9 후속] records.php dead code 약 700줄 cleanup**
+- list_unreviewed/trigger_summarize/discard/summary_status/preview/confirm 분기 코드
+- 46e01c6 복원 후 가드 사라진 상태. 사용자 영향은 없지만 코드 가독성 위함.
+
+### 잔여 schema 정리 (후속)
+- recording_jobs.review_required 컬럼 — 사용 안 함
+- recording_jobs.audio_pending status — 사용 안 함
+- members.recording_review_mode 컬럼 — 사용 안 함
+- DB row cleanup migration SQL — migrations/2026-05-21_cleanup_unreviewed_system.sql 작성 완료 (실행 안 함)
+
+### 기존 backlog (낮은 우선순위)
+- admin recording_jobs 통계 대시보드
+- Marketing.html "Whisper + Claude + 영업 framework" 자랑 콘텐츠
+- AI 요약 두 모드 분기 (대화형 / 보고서식) — profile 라디오
+- PortOne Webhook URL 등록 (사장님 직접)
+- 정식 토스 키 발급 후 라이브 결제 검증
+- card-builder UX
+- PII backfill 스크립트
+- forms 수식 inline help
+- profile/admin 디자인 일관성 감사
+- Supabase Email Template 한글화
+- Phase 3 자체 Whisper 호스팅 (Modal)
+- FCM 분기 (call_recorded_pending_review vs call_summary_ready)
+- 사장님 계정 `recording_review_mode` 설정 UI (현재 default 'auto')
+
+---
 
 ## 5. 배포 방식
 
-- **GitHub Actions → FTP** via `SamKirkland/FTP-Deploy-Action`
-- 주 워크플로우: `.github/workflows/deploy.yml`
-- 보조: `audio-cleanup-schedule.yml` (매일 04:00) / `billing-renew.yml` (매일 03:00)
-- **클로드가 직접 push 가능 (2026-05-20 부터)** — 사장님이 fine-grained PAT 발급 → `~/.git-credentials` 저장 완료. credential.helper=store
+- GitHub Actions → FTP (cafe24, SamKirkland/FTP-Deploy-Action)
+- 클로드 직접 push 가능 (PAT `~/.git-credentials`, 90일 만료 Aug 17 2026)
+- Railway: GitHub 연동, `worker/` 폴더 root, main push 자동 재배포
 - 시크릿 (필수):
-  - `CAFE24_FTP_PASSWORD` / `YOUNGMAN_CRYPTO_KEY` / `SUPABASE_SERVICE_KEY`
-  - `NCP_CLOVA_INVOKE_URL` / `NCP_CLOVA_SECRET`
-  - `FIREBASE_SERVICE_ACCOUNT_JSON` / `AUDIO_CLEANUP_TOKEN`
-  - `PORTONE_STORE_ID` / `PORTONE_API_SECRET` / `PORTONE_WEBHOOK_SECRET` / `PORTONE_CHANNEL_KEY_TOSS`
-  - **`STT_PROVIDER=whisper` / `LLM_PROVIDER=anthropic` / `ANTHROPIC_API_KEY`** (2026-05-19~20 등록)
-- "배포/올려" 키워드 → 클로드가 push→trigger→verify 자율 진행 ([[feedback_deploy_autonomy]])
+  `CAFE24_FTP_PASSWORD` / `YOUNGMAN_CRYPTO_KEY` / `SUPABASE_SERVICE_KEY`
+  `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` / `NCP_CLOVA_*`
+  `STT_PROVIDER=whisper` / `LLM_PROVIDER=anthropic`
+  `RAILWAY_WORKER_URL` / `RECORDING_WORKER_TOKEN`
+  `PORTONE_*` / `FIREBASE_SERVICE_ACCOUNT_JSON` / `AUDIO_CLEANUP_TOKEN`
+- "배포/올려" 키워드 → 자율 push→trigger→verify
 - 검증: `curl -sk https://youngman-biz.com/<file>?cb=$(date +%s)`
-- **신규 페이지 추가 시** deploy.yml 의 `Prepare cp` + `Validate test -f / php -l` 둘 다 추가
-- **Secret 변경 시** 빈 commit push 로 재배포
+- 새 페이지 추가 → `deploy.yml` 의 `test -f` + `cp` 둘 다
+
+---
 
 ## 6. Cafe24/PHP 관련 주의사항
 
 - 🚫 **SSH/SCP 절대 금지** — silent drop. FTP only.
-- 🚫 **cafe24 cron 미지원** — GitHub Actions schedule 로 대체
-- 🚫 **cafe24 빈 POST body → 5xx HTML** — multipart/JSON body 1바이트 이상 필수
-- 🚫 **cafe24 ffmpeg 미설치** — 통화 녹음 transcode 불가 → Clova / Whisper 가 네이티브 처리
-- 🚫 **dhlottery 직접 호출 금지** — cafe24 IP 차단 영구. JSON 미러만
-- 📁 **Webroot flat layout** — `api/records.php` → 배포 후 `/records.php`. `__DIR__` 기준
-- 📁 **`api/sms/` → `deploy/sms/providers/` cp**
-- 📁 **`api/billing/` → `deploy/billing/` cp** (mkdir -p)
-- 🔐 **YOUNGMAN_CRYPTO_KEY 분실 = 복호화 영구 불가** — GitHub Secret 백업 필수
-- 🔐 **PORTONE_API_SECRET / WEBHOOK_SECRET / ANTHROPIC_API_KEY** — 채팅 노출 금지
-- 🔐 **NCP_CLOVA_SECRET / FIREBASE_SERVICE_ACCOUNT_JSON / AUDIO_CLEANUP_TOKEN** — 채팅 노출 금지
-- 📡 **deploy/.env 매번 어셈블** — FTP 로 직접 넣은 키는 다음 deploy 에 덮어쓰임
-- 📡 **PHP 가 .env 자동 로드 안 함** — `billing_load_env_value()` 또는 `load_env_value()` 로 파일 직접 파싱
-- 📡 **VITE_SUPABASE_URL** 가 `https://xxx.supabase.co/rest/v1/` 형태 → 정규식으로 root 추출 후 `/auth/v1/user` 호출
-- 📡 **db_config.php** — `return [host=>..., port=>..., database=>..., user=>..., password=>...]` array 반환 패턴
-- 📡 **records.php `/auth/v1/user` 폴백 유지**
-- 📡 **PHP timeout 30초** — send-bulk.php `set_time_limit(120)`, process-recording.php `set_time_limit(240)`
-- 📊 **PII 컬럼 폭** — 암호문 100~200 chars. 새 PII 컬럼은 최소 VARCHAR(255)
-- 📊 **OpenAI Whisper API 25MB 제한** — 사전 체크로 CLOVA fallback
-- 📊 **Whisper 미지원 ext**: aac, opus, 3gp, 3gpp, amr — 화이트리스트로 자동 fallback
-
-## 7. 최근 수정한 파일 (커밋 흐름)
-
-```
-1aea481 feat(billing+auth): Phase 2 분 단위 과금 + 자동 충전 + 앱팀 5가지 인증 점검 반영
-6ad8169 fix(auth): refresh_token rotation race condition + 임계점 강화
-28db191 fix(stt): Whisper 25MB 파일 사이즈 사전 fallback (긴 통화 대응)
-ac7de25 fix(stt): Whisper 4xx 런타임 fallback (m4a 변종 codec 거부 케이스)
-daa8f29 fix(stt): Whisper 지원 포맷 화이트리스트 fallback (aac/opus 등)
-e5b9276 feat(stt): 앱팀 회신 반영 — 자동 fallback + duration_sec + original_filename
-a890d00 chore: STT_PROVIDER=whisper + LLM_PROVIDER=anthropic 활성화 재배포
-de27a7b feat(stt/llm): Whisper+Claude toggle + 분 기반 사용량 누적 (Phase 1)
-8105820 ui(header): 구독 관리 링크 추가 — PC user-menu + 모바일 drawer
-4b4726f ui(index): 모바일 flagship CTA — 좁은 폭에서 nowrap + clamp 스케일
-2cce2d4 docs(PROJECT_CONTEXT): 2026-05-19 갱신
-878c04e fix(subscribe): 모바일 결제창 — REDIRECTION 모드 + 복귀 흐름
-e68a38f fix(index): Plus 사용자 클릭 시 결제 페이지로 (billing.html → subscribe.html)
-```
-
-**미커밋:** `SMS_USER_GUIDE.txt` (untracked, 무시 가능)
-
-## 8. 절대 건드리면 안 되는 부분
-
-- 🔒 **PII owner_email 격리** — 모든 SELECT/UPDATE/DELETE 강제. admin 우회 없음 (단 `is_admin_email_for_recording` quota 우회는 예외)
-- 🔒 **`git add -A` 금지** — PII 새어나갈 위험. 명시 add 만
-- 🔒 **YOUNGMAN 브랜드** — logo_main.png + seal-red(#c8362c)
-- 🔒 **SSH/SCP 배포 시도 금지**
-- 🔒 **서버 설정 파일 repo 커밋 금지** — supabase_config.js/php, db_config.php, .env
-- 🔒 **records.php `/auth/v1/user` 폴백 유지**
-- 🔒 **dhlottery 직접 호출 부활 금지**
-- 🔒 **인증 일원화 구조** — logout.html / login-complete.html 단일
-- 🔒 **`_refreshInflight` 전역 dedup** — 5곳 핸들러 공유, race condition 방지. 임계점 300초 (5분).
-- 🔒 **`window.YoungmanBridge.refreshSession()` + `window.supabase` 글로벌 노출** — RN 자동 복구 경로
-- 🔒 **`storage: window.localStorage` 명시** — WebView default 누락 방지
-- 🔒 **TOKEN_REFRESHED 시 `_bridgeLogin` 자동 호출** — RN 토큰 동기화
-- 🔒 **ledger UX 패턴** — 헤더 클릭 필터 / 행 추가 모달 / accordion 그룹
-- 🔒 **카드 expanded 상태 보존** — _expandedRowIds + MutationObserver
-- 🔒 **`<a href="logout.html">` native navigation**
-- 🔒 **module top-level `return` 금지**
-- 🔒 **ensureMemberRowOnce / PII 컬럼 폭 자동 확장**
-- 🔒 **OAuth click handler 동기 흐름** — `await initSupabase` 추가 금지
-- 🔒 **prompt: 'select_account' / signOut scope: 'global'**
-- 🔒 **SMS 회원별 자격증명 / sms_logs 원문 저장 금지**
-- 🔒 **검색 input 재생성 금지** — filterDOMRowsBySearch hide/show 만
-- 🔒 **apiRequest 토큰 refresh + 401 retry (dedup 거침)**
-- 🔒 **mountAppHeader currentSession 즉시 도출**
-- 🔒 **bridge.js 메시지 타입 / window.YoungmanBridge 전역 이름 / isInApp 2단계 신호 (ReactNativeWebView + UA 'YoungmanApp')**
-- 🔒 **Google 로그인 signInWithIdToken 직접 / nonce raw 웹 / hash 앱 전달 / in-app browser 분기**
-- 🔒 **deploy.yml 의 bridge.js cp**
-- 🔒 **forms 사용 모드 UI = accordion-card**
-- 🔒 **새 entry HTML inline script** — `initSupabase()` 또는 `bootApp()` 동반 필수
-- 🔒 **모바일 카드 별도 DOM 렌더**
-- 🔒 **records.php $selfAuthResources** — `['customer-log', 'app-fcm-token', 'recording-job']`
-- 🔒 **customer_log_send_to_group 8필드 매핑** + lazy 마이그레이션 (call_count key 없으면 갱신)
-- 🔒 **calculate_call_count / backfill_same_phone_links** — 정규화 phone 매칭, 본인 제외
-- 🔒 **phone merge sort_no 정책** — MIN-1 로 최상단 이동
-- 🔒 **process-recording.php async** — fastcgi_finish_request + ignore_user_abort + register_shutdown_function 셋 다 유지
-- 🔒 **fcm_helpers.php RS256 self-signed JWT** — openssl_sign 직접
-- 🔒 **user_fcm_tokens UNIQUE token** — UPSERT 동작
-- 🔒 **audio_cleanup.php hash_equals + audio_kept=1 보존**
-- 🔒 **is_admin_email_for_recording allowlist** — `nxnxax@gmail.com`
-- 🔒 **STT 3단 fallback 순서** — (1) ext 화이트리스트 (2) 25MB 사이즈 (3) 런타임 4xx — 모두 NCP 설정 있을 때만 동작
-- 🔒 **Whisper params** — `model=whisper-1`, `language=ko`, `response_format=verbose_json`, `temperature=0`, `prompt`=한국어 영업 컨텍스트
-- 🔒 **Claude API 호출 시 prompt caching** — system 메시지 `cache_control: ephemeral`
-- 🔒 **`original_filename` 확장자 판별 우선** (Content-Type 헤더는 항상 audio/mp4 하드코딩)
-- 🔒 **`duration_sec` 앱 값 우선** (Whisper/CLOVA response 의 duration 은 폴백)
-- 🔒 **Clova Speech params** (STT_PROVIDER=clova 시) — `language=ko-KR`, `completion=sync`, `fullText=true`, `diarization` 2명
-- 🔒 **ai_model 컬럼 동적** — `{sttModelName}+{llmModel}`
-- 🔒 **billing_pdo()** — db_config.php candidate 4단계 검색 + billing_ensure_tables() 자동 호출
-- 🔒 **portone_extract_status / portone_extract_amount** — schema 변동 안전망 (4 nested 위치 탐색)
-- 🔒 **billing_require_bearer_email()** — Supabase URL 정규화 + auth_status 진단 응답
-- 🔒 **subscribe.html PortOne 호출** — 토스 미지원이라 `requestIssueBillingKey` + 모바일 `windowType.mobile: 'REDIRECTION'` + `redirectUrl`
-- 🔒 **handleBillingReturn()** — `?billing_return=1` 감지 + localStorage 의 pending plan/issueId 복원
-- 🔒 **plan_default_summary_limit_minutes()** — Free=30 / Plus=300 / Pro=1000 / trialing=30
-- 🔒 **overage_top_up_seconds=4286 / overage_top_up_amount_won=5000 / overage_per_minute_won=70** — 자동 충전 단가 (Phase 2 결정)
-- 🔒 **charge_overage_top_up()** — sanity check (overage_enabled=1 + billingKey 존재 + plan_status active/trialing) 우회 금지
-- 🔒 **process-recording.php Phase 2 흐름** — 사전 한도+잔액 체크 → 부족 시 overage_enabled=1 일 때만 자동 충전 / 후 차감 시 GREATEST(0, balance - delta) 음수 방지
-- 🔒 **premium → plus 자동 마이그레이션** — `ensure_members_plan_columns` 끝 UPDATE 한 줄
-- 🔒 **flagship CTA plan 분기** — pro 면 display:none
-
-## 9. 다음에 이어서 해야 할 작업
-
-### 1순위 — Phase 2 검증
-1. **사장님 26분+ 통화 PoC** (재로그인 후) — 인증 race condition fix 가 진짜 효과 있는지 검증. 결과 분기:
-   - ✅ 성공 → Phase 2 정상 작동. FCM payload 협의 시작.
-   - ❌ 인증 에러 재발 → 시나리오 C (네트워크) 또는 Supabase 측 문제. Console 설정 점검 (이미 OK 확인됨 — 10초 reuse interval / never timeout).
-2. **분 단위 차감 정확도 검증** — 통화 후 DB 의 `usage_seconds_period` 가 실제 통화 길이와 일치하는지
-3. **자동 충전 흐름 시뮬레이션** — admin 으로 사장님 계정 `summary_limit_minutes=1` 설정 후 짧은 통화 → 자동 충전 트리거 확인
-
-### 2순위 — UI / 협의
-4. **admin.html UI follow-up** — 회원 편집 모달에 분 단위 입력 + 수동 충전 부여 (백엔드는 records.php 에 이미 ALTER 됨)
-5. **FCM payload 협의** — `usage_warning` / `overage_charged` payload 스펙 앱팀 협의 후 영맨 서버 발송 코드 추가
-
-### 기존 backlog
-6. PortOne 콘솔 Webhook URL 등록 (`https://youngman-biz.com/billing/webhook-portone.php`)
-7. 정식 토스 키 도착 시 라이브 결제 검증
-8. **AI 요약 두 모드 분기** — [[project_ai_summary_modes]]. profile.html 라디오 + members.ai_summary_mode + prompt 분기. PPT prompt 는 `37fca8b` 에 보존
-9. card-builder UX (Recraft overlay + AI/템플릿 토글)
-10. PII 평문 → 암호문 backfill 스크립트
-11. forms 수식 inline help
-12. profile/admin 디자인 일관성 감사
-13. Supabase Email Template 한글화
-14. 로또 자동 갱신 (JSON 미러 cron)
-15. Marketing.html 브리지 포함 검토
+- 🚫 **cafe24 cron 미지원** — GitHub Actions schedule.
+- 🚫 **cafe24 빈 POST body → 5xx HTML** — 1바이트 이상 필수.
+- 🚫 **cafe24 ffmpeg 미설치** — m4a transcode 는 **Railway worker 강제**.
+- 🚫 **dhlottery 직접 호출 금지** (IP 차단).
+- 🚫 **`git add -A` 금지** — PII 누설 위험.
+- 📁 Webroot flat layout. `api/sms/` → `deploy/sms/providers/` / `api/billing/` → `deploy/billing/`
+- 🔐 `YOUNGMAN_CRYPTO_KEY` 분실 = 복호화 영구 불가
+- 📡 PHP 30초 timeout → process-recording set_time_limit(300) + Railway 위임
+- 📡 records.php `/auth/v1/user` 폴백 — sb_publishable_ asymmetric JWT
+- 📡 db_config.php — `return [host, port, database, user, password]`
+- 📊 PII 컬럼 폭 — 암호문 100~200 chars, VARCHAR(255)+
+- 📊 Whisper 25MB 제한 + iPhone/Galaxy m4a codec 변종 거부 → **mp3 통일 변환 (Railway worker)**
 
 ---
 
-## 자가 진단 채널 (디버깅용)
+## 7. 최근 수정한 파일 (commit 흐름)
 
-- `sessionStorage.erp.ensureError` : members 보강 실패 시 JSON
-- `sessionStorage.erp.memberEnsured = '1'` : 보강 성공
-- `sessionStorage.erp.endSessionOnClose = '1'` : 로그인 유지 해제
-- 콘솔 prefix: `[auth submit]` / `[signIn]` / `[google oauth]` / `[ensure member auto]` / `[sms balance]` / `[bridge]` / `[process-recording]` / `[fcm]` / `[records]` / `[subscribe]` / `[billing/verify-payment]` / `[webhook-portone]` / `[cron-renew]` / `[charge_overage_top_up]`
-- 브리지 디버깅: `window.YoungmanBridge.isInApp()` / `.getAppInfo()` / `.getFcmToken()` / `.version` / `.refreshSession()`
-- 결제 진단: `/billing/config.php` GET → 200 + storeId 응답이면 .env 정상. `verify-payment` 응답의 `debug` 객체로 단계별 실패 위치 파악.
+```
+# 2026-05-21 후반 — STT 자동 처리 회귀 + 미확인요약 완전 폐기 + 비상 안정화
+d978738 fix(stt): review_required 분기 제거 — 미확인요약 폐기 결정 정합
+37c3261 fix(stt): native group_id 미명시 fallback — first customer group 자동
+bf65d09 revert(stt): STT 3개 파일 5-20 19:34 UTC (46e01c6) 시점 복원
+bbf7607 chore(stt): 미확인요약 시스템 완전 폐기 — Phase 8 (a-e)
+e352c1c fix(stt): 미확인요약 시스템 폐기 + STT 자동 처리 복원
+f2a3dec fix(stt-architecture): 근본 구조 전환 — INSERT/AI 분리 (ChatGPT 권장)
+57ece74 feat(diag): list_unreviewed status 확장 + error_message/retry_count 노출
+8f4899d fix(stt-process-recording): native group_id 미명시 시 first customer group 자동 + 즉시 STT
+e03ff21 fix(stt-confirm): native group_id 미명시 케이스 대응 — first customer group default
+fa5b4e8 fix(stt-on-demand): "양식으로 전송" 데이터 누락 비상 — callback 단일책임 구조
 
-## 환경 한계 (이 클로드 워크스페이스)
+# 2026-05-20 후반 — STT On-Demand 도입 (5-21 비상 후 폐기)
+4256cbd feat(stt): summary_status polling endpoint + 응답 일관성 (native NaN/null 방지)
+967bcf3 fix(footer): 영맨 로고 하단 가로줄 노이즈 제거 (clip-path inset)
+a14cc2c fix(footer): 영맨 로고 복원 — height 30px 노이즈 회피
+1738992 fix(confirm): customer_log INSERT 후 자동 send_to_group + '전송중' 메시지
+90b42f9 fix(stt-on-demand): Railway worker 직접 호출 — cafe24 자체 STT 우회
+28574d9 fix(stt): 양식전송/요약보기 fail + footer 정렬
+1c76eb5 fix(footer): 모바일 잔재 미디어쿼리 제거 (display:block override 충돌)
+b30593c fix(footer): 모바일 정렬 깨짐 — 라벨/값 가로 flex + 라벨 width 고정
+4552879 feat(footer + nav): 푸터 6줄 + 대표번호 + 미확인요약 빨간 badge
+4098fca feat(nav): 미확인 요약 메뉴 → native deep link
+65580b7 feat(unreviewed): discard action
+779fadf feat(stt-on-demand) Phase 2: UI + audio 7일 + privacy 갱신
+893881c feat(stt-on-demand): STT 자동 실행 제거 — 사용자 액션 시에만
+46e01c6 fix(job-status): 401 인증 불일치 — 7단계 fallback
+89a669b feat(admin): admin_job_diag endpoint
+2198a95 feat(pending-review): group_id 누락 / pending_review=true → ready_to_review
+f9674f9 fix(send_to_group): body parsing + group_id 9개 키 fallback + _send_debug
+59f87e4 fix(autosubmit): group_id 자동 mirror 흐름 완성
+ab7db7e fix(send_to_group): 다른 그룹 선택 시 데이터 안 들어가는 문제
+ebd3a67 fix(unreviewed): list_unreviewed 503 — schema lazy ALTER
+28f5133 fix(unreviewed): 상단 헤더 + 하단 nav 누락
+89a7bf4 feat(nav): 미확인 요약 메뉴 — 신규양식 슬롯 2개 → 1개
+fe314f7 feat(seo): SEO 최적화 — meta/og/twitter + sitemap.xml + robots.txt + JSON-LD
+3ab5b17 feat(play-policy): Play Console 등록 대비 — account-delete e2e + privacy/terms + Data Safety
+915f3bd feat(crm): 회차별 대화내용 전문보기 버튼 — customers 상세 모달
+15d3f24 feat(search): 양식폼/관리대장 검색 — 전체 항목 재귀 매칭 강화
+53f798a feat(recording): 앱팀 2차 긴급 요청 — 무한 재시도/모달 반복 차단
+26e24af feat(app-bridge): 앱팀 1순위 5종 풀스택
+```
 
-- **GitHub push 자율 가능 (2026-05-20 부터)** — fine-grained PAT 가 `~/.git-credentials` 에 저장됨. 90일 만료 (Aug 17 2026). 만료 시 사장님이 재발급 + 다시 입력 필요.
-- 토큰 권한: nxnxax/product-builder-jd repo 의 Contents Read/Write + Workflows Read/Write + Metadata Read
-- push 후 GitHub Actions deploy.yml 이 FTP 업로드까지 자동 — curl 검증도 가능
-- 사용자 호칭: **사장님** (1인 사업자, 비개발자 친화 톤)
+**미커밋**: `SMS_USER_GUIDE.txt` (untracked, 무시)
 
-## 메모리 참조 (~/.claude/projects/-home-user-jdhoon/memory/)
+---
 
-- `feedback_auth_flow_lessons.md` — 인증 root cause + 단일 페이지 일원화
-- `feedback_css_edit_sanity.md` — 큰 Edit 후 brace balance 검증
-- `feedback_deploy_autonomy.md` — "배포/올려" 키워드 → push 까지 자율 (이제 클로드가 직접 push 가능)
-- `feedback_no_proceed_prompts.md` — "Do you want to proceed?" 묻지 말 것
-- `feedback_pii_isolation.md` — PII owner_email 강제, git add -A 금지
+## 8. 절대 건드리면 안 되는 부분
+
+### 인증
+- 🔒 6중 race guard 풀스택 — 하나라도 빠지면 토큰 invalidate 재발
+- 🔒 7단계 auth header fallback (records / upload / process-recording / job-status)
+- 🔒 `window.supabase` 글로벌 + `_runRefreshOnce` cooldown 25s + timeout 12s
+- 🔒 records.php `/auth/v1/user` 폴백
+- 🔒 PII owner_email 격리 — 모든 SELECT/UPDATE/DELETE 강제
+
+### STT On-Demand 흐름 (2026-05-21)
+- 🔒 **process-recording.php default = audio_pending** — STT 자동 X
+- 🔒 **defer_summarize=true** default. `false` 명시 = cron retry / internal worker 만
+- 🔒 **records.php trigger_summarize / confirm** → Railway worker /process 직접 호출 (cafe24 자체 STT 우회). cafe24 ffmpeg 미설치라 m4a Whisper 400 거부.
+- 🔒 **recording-callback.php review_required 분기** — review_required=1 면 ready_to_review + summary_json_encrypted 저장 (customer_log INSERT X). 0 면 자동 INSERT + send_to_group
+- 🔒 **summary_status endpoint** — 빠른 row 조회만. long-running 금지.
+- 🔒 **응답 detail 필드 일관성** — 모든 분기에 customer_name / summary / duration_sec / recorded_at / phone_number 포함 (native NaN 방지)
+- 🔒 **audio_pending status** — cron 안 잡음 (WHERE = queued/failed_retryable)
+- 🔒 **Railway worker transcode_to_mp3** — m4a → mp3 통일. 갤럭시/iPhone codec 변종 대응
+- 🔒 **JSON 파싱 4단 fallback** — 직접 / markdown / brace counting / repair
+- 🔒 **Claude Sonnet 4.x prefill 금지** — system prompt + fallback parsing 으로만
+
+### 결제
+- 🔒 plan_default_summary_limit_minutes — Free=30/Plus=300/Pro=1000
+- 🔒 overage_top_up — 5000원/71분/70원per분
+- 🔒 PortOne V2 + 토스 — subscribe.html 의 `requestIssueBillingKey`
+
+### 일반
+- 🔒 YOUNGMAN 브랜드 — `logo_main.png` + seal-red `#c8362c`
+- 🔒 cron-process-jobs max_retry=2
+- 🔒 audio_cleanup 7일 (사장님 결정)
+- 🔒 ledger UX — 헤더 클릭 필터 / 행 추가 모달 / accordion
+- 🔒 카드 expanded 상태 보존 — `_expandedRowIds` + MutationObserver
+- 🔒 records.php selfAuthResources — `['customer-log', 'app-fcm-token', 'recording-job']`
+- 🔒 forms 사용 모드 = accordion-card
+
+---
+
+## 9. 다음에 이어서 해야 할 작업
+
+### 1순위 (사장님 PoC 막힘 — 자고 일어나서 이어서)
+1. **사장님 admin_job_diag 호출 받기** — 최근 PoC job_id 들의 status / error_message 확인
+   ```js
+   // 사장님 콘솔에서 paste
+   (async () => {
+     const sess = (await window.supabase.auth.getSession()).data.session;
+     const t = sess?.access_token;
+     const r = await fetch('/records.php?resource=customer-log&action=admin_job_diag', {
+       method: 'POST',
+       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + t },
+       body: JSON.stringify({ job_ids: ['<최근 job_id 들>'] })
+     });
+     console.log(JSON.stringify(await r.json(), null, 2));
+   })();
+   ```
+2. **Railway worker dashboard log 확인** — 사장님이 Railway 대시보드에서 mp3 transcode 작동 여부 (transcode_to_mp3 성공 로그 / Whisper 처리 시간 / callback 응답)
+3. **summary_status 라이브 검증** — `curl -sk "https://youngman-biz.com/records.php?resource=customer-log&action=summary_status&job_id=xxx"` (인증 필요하지만 401 OK)
+4. **앱팀 협의** — native crash 원인. 영맨 응답은 항상 200 JSON 이라 native 측 fetch/parsing 문제. 이미 영맨 전달 문서 ship (위 commit 4256cbd 응답 spec).
+5. **confirm 의 자동 send_to_group 검증** — 사장님 양식 전송 후 평택 그룹에 실제 row 들어가는지 확인.
+
+### 2순위 (앱팀 협의 후)
+- native polling 흐름 구현 — summary_status 5초마다 호출
+- PROCESSING 분기 처리 — 처리 중 UI + 재호출
+- detail 필드 안전 접근 — null safety + try/catch fetch
+
+### 3순위 (기능 추가)
+- admin recording_jobs 통계 대시보드
+- AI 요약 두 모드 분기 (대화형 vs 보고서식, profile 라디오)
+- profile.html `recording_review_mode` 토글 UI
+
+---
+
+## 자가 진단 채널
+
+- `sessionStorage.erp.ensureError` — members 보강 실패
+- `sessionStorage.erp.memberEnsured = '1'` — 보강 성공
+- 콘솔 prefix: `[auth submit]` / `[google oauth]` / `[bridge]` / `[process-recording]` / `[recording-callback]` / `[records list_unreviewed]` / `[trigger_summarize]` / `[confirm send_to_group]` / `[send_to_group]` / `[fcm]`
+- 브리지: `window.YoungmanBridge.isInApp()` / `.refreshSession()` / `.setUnreviewedCount(N)` / `.sendHeartbeat()`
+- Railway log: Railway dashboard → Deployments → Logs
+- recording_jobs row 진단: admin_job_diag endpoint (admin only)
+
+## 환경
+
+- GitHub push 자율 (PAT `~/.git-credentials`)
+- Railway 자동 재배포
+- **사장님 호칭: 사장님**. "쉬세요" 절대 금지.
+
+## 메모리 참조 (`~/.claude/projects/-home-user-jdhoon/memory/`)
+
+- `MEMORY.md` — 인덱스
+- `feedback_auth_flow_lessons.md` — 인증 root cause
+- `feedback_claude_prefill.md` — Sonnet 4.x prefill 금지
+- `feedback_css_edit_sanity.md` — 큰 Edit 후 brace balance
+- `feedback_deploy_autonomy.md` — 배포 자율
+- `feedback_no_proceed_prompts.md` — "proceed?" 묻지 말 것
+- `feedback_no_rest_suggestions.md` — 휴식 권유 절대 금지
+- `feedback_pii_isolation.md` — PII owner_email 강제
 - `feedback_readability_first.md` — 60대+ 가독성 우선
-- `feedback_ledger_ux.md` — 헤더 클릭 필터 / 행 추가 모달 / accordion
-- `feedback_paste_formatting.md` — 외부 채팅 붙여넣기 메시지 코드블록 wrap
-- `pending_call_recording_status.md` — call-recording 라운드 4 인계
-- `project_app_bridge.md` — RN Android WebView 앱 연동
+- `feedback_ledger_ux.md` — 헤더 필터 / 행 추가 모달
+- `project_app_bridge.md` — RN WebView 앱
 - `project_pii_crypto.md` — AES-256-GCM 라이브
-- `project_ledger_system.md` — page_type 기반 그룹/레코드
-- `project_youngman_redesign.md` — 브랜드 리디자인
-- `project_nav_slots.md` — slot1/slot2 caret hover dropdown
-- `project_mobile_bottom_nav.md` — 4탭 하단 nav
-- `project_ai_summary_modes.md` — 대화형/PPT 두 모드 분기 예정
-- `project_whisper_claude_quality.md` — **2026-05-20 사장님 "성능 진짜 대박" 명시. Whisper+Sonnet 4.6 production 확정. gpt-4o-mini 회귀 비추, Opus 4.7 도 오버킬**
-- `deploy_cafe24.md` — FTP only, webroot flat layout
+- `project_ledger_system.md` — page_type 기반
+- `project_whisper_claude_quality.md` — Sonnet 4.6 production
+- `project_poc_success_complete.md` — 2026-05-19~20 PoC
+- `deploy_cafe24.md` — FTP only
