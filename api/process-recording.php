@@ -453,16 +453,26 @@ function ensure_recording_jobs_table(PDO $pdo): bool {
 /**
  * async mode 즉시 응답 — fastcgi_finish_request 로 client 연결 종료 후 백그라운드 계속.
  */
-function respond_async_queued(string $jobId): void {
+function respond_async_queued(string $jobId, ?string $customerLogId = null, $mirrorResult = null): void {
     http_response_code(202);
     header('Content-Type: application/json; charset=utf-8');
     header('Cache-Control: no-store');
     header('X-Content-Type-Options: nosniff');
-    echo json_encode([
+    $resp = [
         'status' => 'queued',
         'job_id' => $jobId,
         'mode'   => 'async',
-    ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    ];
+    // 사장님 2026-05-21 근본 구조 fix v4 — placeholder customer_log INSERT 결과 응답에 포함.
+    if ($customerLogId !== null) {
+        $resp['customer_log_id'] = $customerLogId;
+        $resp['placeholder_created'] = true;
+        if (is_array($mirrorResult)) {
+            $resp['ledger_record'] = $mirrorResult['ledger_record'] ?? null;
+            $resp['group'] = $mirrorResult['group'] ?? null;
+        }
+    }
+    echo json_encode($resp, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     if (function_exists('fastcgi_finish_request')) {
         fastcgi_finish_request();
     }
@@ -805,8 +815,91 @@ if ($asyncMode) {
         ':rr'  => $reviewRequiredInt,
     ]);
 
+    // 사장님 2026-05-21 근본 구조 fix v4 (ChatGPT 권장 채택) —
+    // process-recording 이 customer_log placeholder INSERT + 즉시 ledger mirror.
+    // 데이터 누락 0 보장: AI 완료/callback timing 에 무관하게 통화 즉시 row 생성.
+    // callback (recording-callback.php) 은 UPDATE ONLY 로 전환.
+    $customerLogId = null;
+    $mirrorResult = null;
+    if (!$deferSummarize && $groupIdHint !== '') {
+        try {
+            $clId = uuid_v4();
+            $placeholderName = $customerNameHint !== '' ? $customerNameHint : '처리중...';
+            $placeholderSummary = '(AI 요약 준비 중...)';
+            $phoneLookup = customer_phone_lookup_key($phoneNumber !== '' ? $phoneNumber : null);
+            $clConsultAt = $consultAt !== '' ? $consultAt : date('Y-m-d H:i:s');
+
+            $insCl = $pdo->prepare("INSERT INTO customer_log (
+                    id, owner_email, customer_phone_lookup,
+                    customer_name, phone_number,
+                    summary, consult_at,
+                    audio_storage_path, audio_kept,
+                    ai_model, ai_generated_at, source, client_request_id
+                ) VALUES (
+                    :id, :o, :pl,
+                    :nm, :ph,
+                    :sum, :ca,
+                    :asp, 0,
+                    'pending', NOW(), 'app-auto-pending', :cri
+                )");
+            $insCl->execute([
+                ':id'  => $clId,
+                ':o'   => $ownerEmail,
+                ':pl'  => $phoneLookup,
+                ':nm'  => youngman_encrypt($placeholderName),
+                ':ph'  => $phoneNumber !== '' ? youngman_encrypt($phoneNumber) : null,
+                ':sum' => youngman_encrypt($placeholderSummary),
+                ':ca'  => $clConsultAt,
+                ':asp' => $storagePath,
+                ':cri' => $clientReqId,
+            ]);
+            $customerLogId = $clId;
+
+            // recording_jobs.customer_log_id 즉시 UPDATE
+            $pdo->prepare("UPDATE recording_jobs SET customer_log_id = :cl, updated_at = NOW() WHERE id = :id")
+                ->execute([':cl' => $clId, ':id' => $asyncJobId]);
+
+            error_log('[process-recording] placeholder customer_log INSERT: cl=' . $clId . ' job=' . $asyncJobId);
+
+            // 즉시 ledger mirror — internal HTTP call (worker token 인증 우회)
+            $workerTokInner = load_env_value('RECORDING_WORKER_TOKEN');
+            if ($workerTokInner) {
+                $hostInner = $_SERVER['HTTP_HOST'] ?? 'youngman-biz.com';
+                $sendUrl = 'https://' . $hostInner . '/records.php?resource=customer-log';
+                $sendPayload = [
+                    'action'      => 'customer_log_send_to_group',
+                    'id'          => $clId,
+                    'owner_email' => $ownerEmail,
+                    'group_id'    => (int)$groupIdHint,
+                ];
+                $chM = curl_init($sendUrl);
+                curl_setopt_array($chM, [
+                    CURLOPT_RETURNTRANSFER => true,
+                    CURLOPT_POST => true,
+                    CURLOPT_POSTFIELDS => json_encode($sendPayload, JSON_UNESCAPED_UNICODE),
+                    CURLOPT_HTTPHEADER => [
+                        'Content-Type: application/json',
+                        'X-Worker-Token: ' . $workerTokInner,
+                    ],
+                    CURLOPT_TIMEOUT => 10,
+                    CURLOPT_CONNECTTIMEOUT => 3,
+                ]);
+                $mirrResp = curl_exec($chM);
+                $mirrHttp = (int)curl_getinfo($chM, CURLINFO_HTTP_CODE);
+                curl_close($chM);
+                if ($mirrResp !== false && $mirrHttp >= 200 && $mirrHttp < 300) {
+                    $mirrorResult = json_decode((string)$mirrResp, true);
+                }
+                error_log('[process-recording] placeholder mirror cl=' . $clId . ' gid=' . $groupIdHint . ' http=' . $mirrHttp);
+            }
+        } catch (Throwable $e) {
+            error_log('[process-recording] placeholder customer_log INSERT/mirror 실패: ' . $e->getMessage());
+            // 실패해도 recording_jobs 는 있으니 callback 이 backward compat INSERT 시도
+        }
+    }
+
     // 즉시 응답 — client 연결 종료. 이후 코드는 백그라운드.
-    respond_async_queued($asyncJobId);
+    respond_async_queued($asyncJobId, $customerLogId, $mirrorResult);
 
     // 사장님 2026-05-21 — defer_summarize=true (default) 면 audio_pending 으로 두고 즉시 종료.
     // STT/LLM 자동 안 함. 사용자가 trigger_summarize / confirm 호출 시 발동.

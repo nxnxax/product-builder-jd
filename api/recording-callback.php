@@ -122,20 +122,130 @@ if ($statusReq !== 'completed') {
     exit;
 }
 
-/* 사장님 2026-05-21 — 중복 callback idempotency 가드.
- * 이미 customer_log INSERT 된 경우 (Railway retry 등) skip + 기존 결과 반환. */
+/* 사장님 2026-05-21 근본 구조 fix v4 (ChatGPT 권장 채택) —
+ * customer_log_id 가 있다 = process-recording 이 placeholder INSERT 완료.
+ * callback 은 UPDATE ONLY (INSERT 책임 제거). 데이터 누락 0 + AI timing 무관.
+ *
+ * 흐름: customer_log 진짜 정보로 UPDATE → recording_jobs status='completed'
+ *      → ledger_records refresh (records.php?action=customer_log_send_to_group&refresh=true)
+ *      → FCM 발송 */
 if (!empty($jobRow['customer_log_id'])) {
+    /* AI 결과 파싱 */
+    $customerName    = trim((string)($body['customer_name'] ?? ''));
+    $summary         = trim((string)($body['summary'] ?? ''));
+    $interest        = trim((string)($body['interest'] ?? ''));
+    $inquiry         = trim((string)($body['inquiry'] ?? ''));
+    $budgetCondition = trim((string)($body['budget_condition'] ?? ''));
+    $nextAction      = trim((string)($body['next_action'] ?? ''));
+    $transcript      = trim((string)($body['transcript'] ?? ''));
+    $sttModel        = trim((string)($body['stt_model'] ?? 'unknown'));
+    $llmModel        = trim((string)($body['llm_model'] ?? 'unknown'));
+    $phoneNumber     = trim((string)($body['phone_number'] ?? ($jobRow['phone_number'] ?? '')));
+
+    if ($summary === '') $summary = $transcript ?: '(요약 없음)';
+    if ($customerName === '') $customerName = '고객';
+
+    /* customer_log UPDATE — 진짜 AI 결과로 placeholder 덮어쓰기 */
+    try {
+        $pdo->prepare("UPDATE customer_log SET
+                customer_name = :nm,
+                phone_number = COALESCE(:ph, phone_number),
+                summary = :sum,
+                interest = COALESCE(:intr, interest),
+                inquiry = COALESCE(:inq, inquiry),
+                budget_condition = COALESCE(:bg, budget_condition),
+                next_action = COALESCE(:nx, next_action),
+                transcript = :tr,
+                ai_model = :am,
+                ai_generated_at = NOW(),
+                source = 'app-auto-completed'
+            WHERE id = :id AND owner_email = :o")
+            ->execute([
+                ':nm'  => youngman_encrypt($customerName),
+                ':ph'  => $phoneNumber !== '' ? youngman_encrypt($phoneNumber) : null,
+                ':sum' => youngman_encrypt($summary),
+                ':intr'=> $interest !== '' ? youngman_encrypt($interest) : null,
+                ':inq' => $inquiry !== '' ? youngman_encrypt($inquiry) : null,
+                ':bg'  => $budgetCondition !== '' ? youngman_encrypt($budgetCondition) : null,
+                ':nx'  => $nextAction !== '' ? youngman_encrypt($nextAction) : null,
+                ':tr'  => youngman_encrypt($transcript),
+                ':am'  => $sttModel . '+' . $llmModel,
+                ':id'  => $jobRow['customer_log_id'],
+                ':o'   => $ownerEmail,
+            ]);
+    } catch (Throwable $e) {
+        rc_jerror('customer_log UPDATE 실패: ' . $e->getMessage(), 502);
+    }
+
+    /* recording_jobs UPDATE — completed */
+    try {
+        $pdo->prepare("UPDATE recording_jobs SET
+                status = 'completed', progress_pct = 100, completed_at = NOW(), updated_at = NOW()
+            WHERE id = :id")
+            ->execute([':id' => $jobId]);
+    } catch (Throwable $e) {
+        error_log('[recording-callback] recording_jobs UPDATE 실패: ' . $e->getMessage());
+    }
+
+    /* ledger_records refresh — internal HTTP to customer_log_send_to_group with refresh=true */
+    try {
+        $refUrl = rtrim((string)rc_load_env('CAFE24_BASE_URL') ?: 'https://youngman-biz.com', '/')
+                . '/records.php?resource=customer-log';
+        $refPayload = [
+            'action'      => 'customer_log_send_to_group',
+            'id'          => $jobRow['customer_log_id'],
+            'owner_email' => $ownerEmail,
+            'refresh'     => true,
+        ];
+        $rCh = curl_init($refUrl);
+        curl_setopt_array($rCh, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_POST => true,
+            CURLOPT_POSTFIELDS => json_encode($refPayload, JSON_UNESCAPED_UNICODE),
+            CURLOPT_HTTPHEADER => [
+                'Content-Type: application/json',
+                'X-Worker-Token: ' . $expected,
+            ],
+            CURLOPT_TIMEOUT => 15,
+            CURLOPT_CONNECTTIMEOUT => 5,
+        ]);
+        $rResp = curl_exec($rCh);
+        $rStat = (int)curl_getinfo($rCh, CURLINFO_HTTP_CODE);
+        curl_close($rCh);
+        error_log('[recording-callback] ledger refresh cl=' . $jobRow['customer_log_id'] . ' http=' . $rStat);
+    } catch (Throwable $e) {
+        error_log('[recording-callback] ledger refresh 실패: ' . $e->getMessage());
+    }
+
+    /* FCM call_summary_ready 발송 */
+    try {
+        require_once __DIR__ . '/fcm_helpers.php';
+        $sumPreview = $summary;
+        if (mb_strlen($sumPreview) > 60) $sumPreview = mb_substr($sumPreview, 0, 57) . '...';
+        send_fcm_to_user($pdo, $ownerEmail, [
+            'title' => '통화 요약 완료 — ' . $customerName,
+            'body'  => $sumPreview,
+            'data'  => [
+                'type'            => 'call_summary_ready',
+                'job_id'          => $jobId,
+                'customer_log_id' => $jobRow['customer_log_id'],
+            ],
+        ]);
+    } catch (Throwable $e) {
+        error_log('[recording-callback] FCM 발송 실패: ' . $e->getMessage());
+    }
+
     echo json_encode([
         'ok' => true,
         'job_id' => $jobId,
         'status' => 'completed',
-        'duplicate' => true,
         'customer_log_id' => $jobRow['customer_log_id'],
+        'mode' => 'update_only',
     ], JSON_UNESCAPED_UNICODE);
     exit;
 }
 
-/* 성공 케이스 — customer_log INSERT */
+/* 성공 케이스 — customer_log INSERT (backward compat: customer_log_id 없는 경우) */
 $customerName    = trim((string)($body['customer_name'] ?? ''));
 $summary         = trim((string)($body['summary'] ?? ''));
 $interest        = trim((string)($body['interest'] ?? ''));

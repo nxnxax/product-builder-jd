@@ -4472,6 +4472,68 @@ try {
                 respond(['status' => 'error', 'code' => 'upstream_failed', 'message' => 'ledger 마이그레이션 실패.'], 503);
             }
 
+            // 사장님 2026-05-21 근본 구조 fix v4 — refresh 분기.
+            // recording-callback 이 customer_log UPDATE 후 호출. linked_ledger_record 의
+            // latest section 만 새 customer_log 정보로 교체. group 결정 skip.
+            // 데이터 누락 0 + AI 결과 ledger 즉시 반영.
+            if (!empty($body['refresh']) && !empty($clRow['linked_ledger_record_id'])) {
+                $exLrR = $pdo->prepare('SELECT * FROM ledger_records WHERE id = :id AND owner_email = :o LIMIT 1');
+                $exLrR->execute([':id' => (int)$clRow['linked_ledger_record_id'], ':o' => $owner]);
+                $exLrRowR = $exLrR->fetch();
+                if (!$exLrRowR) {
+                    respond(['status' => 'error', 'code' => 'not_found', 'message' => 'linked ledger_record 없음.'], 404);
+                }
+                $clNameR    = trim((string)(youngman_decrypt($clRow['customer_name'] ?? '') ?? ''));
+                $clPhoneR   = trim((string)(youngman_decrypt($clRow['phone_number'] ?? '') ?? ''));
+                $clSummaryR = trim((string)(youngman_decrypt($clRow['summary'] ?? '') ?? ''));
+                $clIntrR    = trim((string)(youngman_decrypt($clRow['interest'] ?? '') ?? ''));
+                $clInqR     = trim((string)(youngman_decrypt($clRow['inquiry'] ?? '') ?? ''));
+
+                $contentPartsR = [];
+                if ($clSummaryR !== '') $contentPartsR[] = $clSummaryR;
+                if ($clIntrR    !== '') $contentPartsR[] = '관심: ' . $clIntrR;
+                if ($clInqR     !== '') $contentPartsR[] = '문의: ' . $clInqR;
+                $newSectionContentR = implode("\n\n", $contentPartsR);
+                $todayDateR = (string)($clRow['consult_at'] ?? '');
+
+                $curDataR = !empty($exLrRowR['data_json']) ? youngman_decrypt_json($exLrRowR['data_json']) : [];
+                if (!is_array($curDataR)) $curDataR = [];
+
+                $callCountR = (int)($curDataR['call_count'] ?? 1);
+                if ($callCountR < 1) $callCountR = 1;
+
+                $existingContentR = (string)($curDataR['content'] ?? '');
+                $newLatestSectionR = "📞 {$todayDateR} 통화 ({$callCountR}회차)\n\n" . $newSectionContentR;
+
+                if (strpos($existingContentR, "\n\n\n") !== false) {
+                    // 여러 회차 — latest 만 교체
+                    $partsR = explode("\n\n\n", $existingContentR, 2);
+                    $mergedContentR = $newLatestSectionR . "\n\n\n" . $partsR[1];
+                } else {
+                    // 단일 회차 (placeholder) — 통째 교체
+                    $mergedContentR = $newLatestSectionR;
+                }
+
+                $curDataR['date']     = $todayDateR;
+                $curDataR['customer'] = $clNameR !== '' ? $clNameR : (string)($curDataR['customer'] ?? '');
+                $curDataR['phone']    = $clPhoneR !== '' ? $clPhoneR : (string)($curDataR['phone'] ?? '');
+                $curDataR['content']  = $mergedContentR;
+                if (!isset($curDataR['managed'])) $curDataR['managed'] = true;
+
+                $newDataEncR = youngman_encrypt(json_encode($curDataR, JSON_UNESCAPED_UNICODE));
+                $pdo->prepare("UPDATE ledger_records SET data_json = :dj, updated_at = NOW() WHERE id = :id")
+                    ->execute([':dj' => $newDataEncR, ':id' => $exLrRowR['id']]);
+                error_log('[send_to_group refresh] cl=' . $cid . ' lr=' . $exLrRowR['id']);
+
+                respond([
+                    'status' => 'ok',
+                    'refreshed' => true,
+                    'customer_log_id' => $cid,
+                    'ledger_record_id' => (int)$exLrRowR['id'],
+                    'group_id' => (int)$exLrRowR['group_id'],
+                ]);
+            }
+
             // 그룹 결정: body / query 양쪽 + camelCase fallback + multipart form ($_POST).
             // 사장님 2026-05-20 보고 — 앱이 보내는 키 형식 불확실 → 다양한 경로 탐색.
             $gRow = null;
