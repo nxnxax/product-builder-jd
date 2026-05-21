@@ -1135,7 +1135,11 @@ update_job_status($pdo, $asyncJobId, 'stt_processing', 30);
 $apiKey = load_env_value('OPENAI_API_KEY');
 if ($apiKey === '') jerror('upstream_failed', 'OPENAI_API_KEY 미설정.', 500);
 
-$sttProviderRequested = strtolower(trim((string)load_env_value('STT_PROVIDER'))) ?: 'clova';
+// 사장님 2026-05-22 — cafe24 자체 STT 흐름은 Railway dispatch 실패 시 fallback 안전망.
+// cafe24 에 ffmpeg 미설치 → Whisper 가 m4a (Apple AAC 변종) 거부 ("502: Whisper 400 Invalid file").
+// 안전망에서는 STT_PROVIDER='whisper' 무시하고 Clova 강제 — Clova 가 m4a 직접 수용.
+// 정상 흐름 (Railway) 은 Whisper + transcode_to_mp3 으로 사장님 결정 "Whisper 유지" 충족.
+$sttProviderRequested = 'clova';
 /* 확장자 판별 — 앱팀 회신: Content-Type 헤더는 항상 'audio/mp4' 하드코딩이라 신뢰 불가.
  *                       original_filename 의 확장자가 가장 신뢰할 수 있음. fallback: 서버 저장 파일명. */
 $origExt = $origFilename !== '' ? strtolower(pathinfo($origFilename, PATHINFO_EXTENSION)) : '';
