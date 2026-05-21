@@ -4080,11 +4080,12 @@ try {
             if ($limit < 1) $limit = 50;
             if ($limit > 200) $limit = 200;
             try {
-                // 사장님 2026-05-21 — audio_pending (껍데기, STT 안 됨) 도 포함.
-                // failed_retryable / failed_permanent 는 별도 status 라 표시 안 함 (사용자 재처리 가능 의미).
-                $sql = "SELECT id, status, summary_json_encrypted, duration_sec, recorded_at, group_id, phone_number, customer_name_hint, created_at
+                // 사장님 2026-05-21 진단 fix — saved/completed/dismissed 제외 모든 status 노출.
+                // Phase 4 fix 후 queued/processing/failed_retryable/failed_permanent 도 사장님 진단 가능.
+                // UI 표시는 status 별 분기 가능 (응답 status 필드 + error_message + stt_done 활용).
+                $sql = "SELECT id, status, summary_json_encrypted, duration_sec, recorded_at, group_id, phone_number, customer_name_hint, created_at, error_message, retry_count
                     FROM recording_jobs
-                    WHERE owner_email = :o AND status IN ('audio_pending', 'ready_to_review')
+                    WHERE owner_email = :o AND status NOT IN ('saved', 'completed', 'dismissed')
                     ORDER BY COALESCE(recorded_at, created_at) DESC
                     LIMIT " . $limit;
                 $stmt = $pdo->prepare($sql);
@@ -4120,6 +4121,8 @@ try {
                     'recorded_at' => $r['recorded_at'] ?: $r['created_at'],
                     'phone_number' => $r['phone_number'] ?? null,
                     'group_id' => $r['group_id'] ?: null,
+                    'error_message' => $r['error_message'] ?? null,  // 진단용
+                    'retry_count' => (int)($r['retry_count'] ?? 0),  // 진단용
                 ];
             }, $rows ?: []);
             respond(['status' => 'ok', 'items' => $items, 'count' => count($items)]);
