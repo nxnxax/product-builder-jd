@@ -47,7 +47,6 @@ jobs:
           test -f auto-billing.html       # 자동결제 안내 (PortOne/Toss 심사 필수)
           test -f subscribe.html          # 구독 플랜 비교 페이지
           test -f billing.html            # 구독 관리 페이지 (현재 plan / 사용량 / 해지)
-          test -f unreviewed.html         # 미확인 요약 페이지 (앱 전용 하단 nav 진입점)
           test -f robots.txt              # SEO — 크롤러 차단 정책
           test -f sitemap.xml             # SEO — 크롤러 페이지 인덱싱 지도
           grep -q 'auth-shared.js?v=' index.html   # 새 랜딩은 main.js 대신 auth-shared 만 import
@@ -114,7 +113,6 @@ jobs:
           cp auto-billing.html deploy/auto-billing.html          # 자동결제 안내 (구독 결제 정책 페이지)
           cp subscribe.html deploy/subscribe.html                # 구독 플랜 비교 (Free/Plus/Pro)
           cp billing.html deploy/billing.html                    # 구독 관리 (현재 plan / 사용량 / 해지)
-          cp unreviewed.html deploy/unreviewed.html              # 미확인 요약 페이지 (앱 하단 nav 진입점)
           cp robots.txt deploy/robots.txt                        # SEO — 크롤러 정책
           cp sitemap.xml deploy/sitemap.xml                      # SEO — 인덱싱 지도
           cp api/analyze.php deploy/analyze.php

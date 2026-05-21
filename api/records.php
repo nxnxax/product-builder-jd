@@ -3709,6 +3709,49 @@ try {
             respond(['status' => 'ok']);
         }
 
+        // ─── 사장님 2026-05-21 — 미확인요약 시스템 완전 폐기 가드 ───
+        // 통화 종료 시 process-recording 이 자동 customer_log INSERT + ledger mirror 완료.
+        // 아래 6개 endpoint 는 폐기. native 가 호출해도 deprecated 응답 (200 OK).
+        // confirm 만 backward compat — customer_log_id 가 이미 있으면 기존 row 응답.
+        if (in_array($action, ['list_unreviewed', 'trigger_summarize', 'discard', 'summary_status', 'preview'], true)) {
+            respond([
+                'status' => 'ok',
+                'deprecated' => true,
+                'items' => [],
+                'count' => 0,
+                'message' => '미확인요약 시스템 폐기됨. 통화 종료 시 자동 처리됩니다.',
+            ]);
+        }
+        if ($action === 'confirm') {
+            $jobIdC = trim((string)($body['job_id'] ?? ''));
+            if ($jobIdC !== '') {
+                try {
+                    $jStmtC = $pdo->prepare('SELECT customer_log_id FROM recording_jobs WHERE id = :id AND owner_email = :o LIMIT 1');
+                    $jStmtC->execute([':id' => $jobIdC, ':o' => $owner]);
+                    $jRowC = $jStmtC->fetch();
+                    if ($jRowC && !empty($jRowC['customer_log_id'])) {
+                        $clC = $pdo->prepare('SELECT * FROM customer_log WHERE id = :id AND owner_email = :o LIMIT 1');
+                        $clC->execute([':id' => $jRowC['customer_log_id'], ':o' => $owner]);
+                        $clRowC = $clC->fetch();
+                        respond([
+                            'status' => 'ok',
+                            'duplicate' => true,
+                            'deprecated' => true,
+                            'customer_log' => $clRowC ? customer_log_row($clRowC) : null,
+                            'customer_log_id' => $jRowC['customer_log_id'],
+                            'job_id' => $jobIdC,
+                            'message' => '자동 처리됨 (미확인요약 시스템 폐기)',
+                        ]);
+                    }
+                } catch (Throwable $e) {}
+            }
+            respond([
+                'status' => 'ok',
+                'deprecated' => true,
+                'message' => '미확인요약 시스템 폐기됨. 통화 종료 시 자동 처리됩니다.',
+            ]);
+        }
+
         // ─── TRIGGER_SUMMARIZE (사장님 2026-05-21 — "요약보기" 사용자 액션) ───
         // POST body: { job_id }
         // 흐름: 1) recording_jobs row 확인 (owner 격리)

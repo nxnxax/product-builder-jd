@@ -870,12 +870,7 @@ if ($asyncMode) {
     // 즉시 응답 — client 연결 종료. 이후 코드는 백그라운드.
     respond_async_queued($asyncJobId, $customerLogId, $mirrorResult);
 
-    // 사장님 2026-05-21 — defer_summarize=true (default) 면 audio_pending 으로 두고 즉시 종료.
-    // STT/LLM 자동 안 함. 사용자가 trigger_summarize / confirm 호출 시 발동.
-    if ($deferSummarize) {
-        error_log('[process-recording] defer_summarize=true — STT/LLM skip, status=audio_pending, job=' . $asyncJobId);
-        exit;
-    }
+    // 사장님 2026-05-21 — 미확인요약 시스템 폐기로 defer 분기 제거. 항상 Railway STT 진행.
 
     /* Railway worker 분기 (선택 — RAILWAY_WORKER_URL 환경변수 있을 때만).
      * Railway 가 있으면: STT/LLM 처리를 Railway 에 위임 + cafe24 는 callback 만 기다림.
