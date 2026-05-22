@@ -41,6 +41,7 @@ jobs:
           test -f board.html
           test -f board.js
           test -f logo_main.png
+          test -f og-thumbnail.png         # OG/Twitter 공유 시 사용되는 카드 이미지
           test -f logout.html             # 단일 로그아웃 transition 페이지 — 누락 시 헤더 로그아웃 깨짐
           test -f login-complete.html     # 단일 로그인 transition 페이지 — 누락 시 로그인 후 redirect 깨짐
           test -f refund.html             # 환불정책 (PortOne/Toss 심사 필수)
@@ -90,6 +91,7 @@ jobs:
           mkdir -p deploy
           cp index.html style.css main.js Marketing.html kapp_premium.php lotto2233.html deploy/
           cp logo_main.png deploy/logo_main.png
+          cp og-thumbnail.png deploy/og-thumbnail.png   # OG/Twitter 카드 이미지 (1200x630 권장)
           cp profile.html admin.html profile.js admin.js auth-shared.js deploy/
           cp bridge.js deploy/bridge.js                          # RN WebView 앱 브리지 — auth-shared 가 import
           cp upload.html deploy/upload.html
