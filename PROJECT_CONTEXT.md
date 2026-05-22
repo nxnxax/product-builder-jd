@@ -1,6 +1,6 @@
 # PROJECT_CONTEXT — youngman-biz.com
 
-*최종 갱신: 2026-05-22 (KST 새벽 세션 종료) — **🚨 비상 진행 중: Whisper 400 Invalid file 무한 재발. Phase 18 fix 후도 동일 에러. cafe24 opcache 또는 코드 경로 의심. ChatGPT 진단 paste 메시지 작성 완료.***
+*최종 갱신: 2026-05-22 (KST 오후) — ✅ **Whisper 400 비상 완전 종료**. Railway worker Dockerfile + railway.json startCommand 제거 + transcode_to_mp3 호출 active. 사장님 실제 통화 요약 정상 표시 확인.*
 
 ---
 
@@ -103,26 +103,30 @@ migrations/2026-05-21_cleanup_unreviewed_system.sql (사장님 실행 안 함)
 
 ---
 
-## 4. 🚨 아직 미완성 + 비상 (다음 세션 최우선)
+## 4. 🚨 아직 미완성 (다음 세션 우선 순위)
 
-### ★★★ 비상 1 — Whisper 400 Invalid file 무한 재발 (진단 중)
+### ✅ 비상 1 — Whisper 400 Invalid file 비상 — **완전 종료 (2026-05-22 PM)**
 
-**증상**: 사장님 통화 시 customer_log placeholder 정상 생성. 그러나 background STT 자체가 항상 실패. recording_jobs 모든 row 가 `failed_retryable` + error_message: "502: Whisper 400: {error:{message:Invalid fil..."
+**진짜 root cause (다단계 복합)**:
+1. **Railway worker 가 May 20 코드 (b468ced8) Active** — May 21 이후 사장님 push 한 transcode_to_mp3 호출 코드가 deploy 안 됨
+2. **새 deployment 가 모두 Failed** — 영맨 Dockerfile 만든 후 railway.json 의 `startCommand` 가 Dockerfile 모드에서 shell expansion 안 됨 → `$PORT` literal → uvicorn fail → healthcheck failure
+3. **cafe24 .env 의 RECORDING_WORKER_TOKEN 일부 mismatch** + 사장님이 FileZilla 로 .env 파일 열어둔 상태에서 업로드 시 PHP 가 새 내용 못 읽음
 
-**적용 시도된 fix**:
-- Phase 17 (commit 3bad4b3): Railway dispatch 결과를 error_message 에 기록 강화 → cafe24 자체 STT fallback catch 가 덮어쓰기로 효과 없음
-- Phase 18 (commit 140d056): cafe24 자체 STT 의 `$sttProviderRequested = 'clova'` 강제 → 라이브 배포 OK 인데도 같은 Whisper 400 에러 (사장님 새 통화 5-22 04:03 검증)
+**최종 fix 흐름**:
+- commit ee2c7bb: worker/Dockerfile 추가 (nixpacks pip 미설치 해결)
+- 진단 endpoint `admin_env_diag.php` 작성/배포 (token hash 비교, opcache reset, Railway outbound test) — **검증 완료 후 제거됨**
+- 사장님: cafe24 .env 키값 매칭 + 파일 닫고 재업로드
+- commit 70961f4: railway.json `startCommand` 제거 → Dockerfile CMD (`sh -c "uvicorn ... --port ${PORT:-8080} ..."`) 사용 → shell expansion 정상
+- 결과: May 22 PM 새 deployment ACTIVE → git main 의 transcode_to_mp3 호출 (main.py:565) 살아남 → m4a→mp3→Whisper 정상
 
-**의심 원인 (확정 안 됨)**:
-- A. cafe24 PHP-FPM opcode cache 가 옛 코드 캐싱 (Phase 18 변경 무효)
-- B. 다른 코드 경로가 Whisper 호출 (grep 으로는 Line 1187 한 곳만)
-- C. Railway worker (worker/main.py) 의 Whisper 호출 결과가 callback 통해 같은 message format
+**검증 완료**: 사장님 새 통화 한 건 → 모달 placeholder → 3~5분 후 실제 요약 "고객이 층간소음 문제가 매우 심하다며..." 정상 표시 + 고객대장 mirror.
 
-**다음 세션 첫 작업**:
-1. ChatGPT 진단 paste 메시지 (사장님이 ChatGPT 에 paste 후 답변 받음) 결과 확인
-2. cafe24 opcache 강제 reset 방법 시도 (파일 timestamp 변경 또는 .htaccess opcache_reset)
-3. Whisper 호출 분기 통째 제거 시도 (`if (false)` 또는 Line 1187 분기 삭제)
-4. 또는 Railway dispatch 자체 fix (Railway 정상 작동하면 Whisper + transcode 정상)
+### ⚠️ 비상 1 후속 — 보안 마무리 (사장님 작업 필요)
+
+1. **`RECORDING_WORKER_TOKEN` rotate 필수** — token 값 screenshot 노출 + hash prefix 노출됨
+   - Railway Variables → `RECORDING_WORKER_TOKEN` 새 값 (랜덤 64+자) 생성
+   - cafe24 `.env` 에도 동일한 새 값 (FTP 업로드 시 파일 닫고)
+2. **`admin_env_diag.php` cafe24 webroot 에서 직접 제거** — git 에서는 commit 으로 제거했지만 cafe24 webroot 의 deploy/admin_env_diag.php 파일 FTP 로 직접 삭제 (deploy 가 mirror 아닌 cumulative 일 수 있음)
 
 ### 비상 2 — GitHub Actions cron 7시간 간격으로 안 돔
 - process-jobs.yml schedule `*/5 * * * *` 인데 실제 run 간격이 7-12시간
@@ -192,7 +196,15 @@ migrations/2026-05-21_cleanup_unreviewed_system.sql (사장님 실행 안 함)
 ## 7. 최근 수정한 파일 (commit 흐름)
 
 ```
-# 2026-05-22 — Whisper 400 비상 진행 중
+# 2026-05-22 PM — Whisper 400 비상 종료
+70961f4 fix(railway): startCommand 제거 — Dockerfile CMD 사용 ★ FINAL FIX
+e7c3a21 diag(env): opcache_reset + Railway outbound HTTP 테스트 분기 추가
+38aaf0c diag(env): Authorization 헤더 7단계 fallback + source 노출
+630ed4e diag(env): 401 응답에 token hash 비교 정보 추가
+19167ca diag: cafe24 .env 읽기 진단 endpoint 추가 (검증 후 제거됨)
+ee2c7bb fix(railway): nixpacks pip 미설치 — Dockerfile 전환
+
+# 2026-05-22 — Whisper 400 비상 진행 중 (해결됨)
 140d056 fix(stt): cafe24 자체 STT fallback Whisper → Clova 강제 ★ (적용됐는데 효과 없음)
 3bad4b3 fix(stt §diag): Railway dispatch 실패 원인 DB 기록 강화
 08cd6bd revert(stt): §7 placeholder-first + cron watchdog 재적용 (사장님 결정)
