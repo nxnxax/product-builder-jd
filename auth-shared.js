@@ -1794,6 +1794,25 @@ function openSharedLoginModal(initialMode = 'login') {
     }
     applyMode();
 
+    // 인증 race 방지 — supabaseClient init 완료 전까지 버튼 비활성화 (사용자가 모달 열자마자
+    // click → "인증 초기화 중. 한 번 더 클릭해주세요" 메시지 보이던 문제 fix).
+    // init 은 bootApp 에서 시작되지만 supabase-js dynamic import + loadConfig 가 네트워크라 race.
+    if (!supabaseClient?.auth?.signInWithOAuth) {
+        googleBtn.disabled = true;
+        submitBtn.disabled = true;
+        const _origGoogleText = googleLabel.textContent;
+        const _origSubmitText = submitLabel.textContent;
+        googleLabel.textContent = '인증 준비 중…';
+        submitLabel.textContent = '인증 준비 중…';
+        const _authReady = () => {
+            googleBtn.disabled = false;
+            submitBtn.disabled = false;
+            googleLabel.textContent = _origGoogleText;
+            submitLabel.textContent = _origSubmitText;
+        };
+        initSupabase().then(_authReady).catch(_authReady);
+    }
+
     // 아이디 / 비밀번호 찾기 링크 — 로그인 모달 닫고 별도 모달 open
     md.querySelector('[data-find-id]')?.addEventListener('click', () => {
         close();
