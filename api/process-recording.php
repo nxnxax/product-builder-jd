@@ -459,12 +459,18 @@ function respond_async_queued(string $jobId, ?array $customerLogRow = null, $mir
     header('Content-Type: application/json; charset=utf-8');
     header('Cache-Control: no-store');
     header('X-Content-Type-Options: nosniff');
+    // 사장님 2026-05-22 — 요약보기 5초 무반응 진단. server_elapsed_ms 로 영맨 측
+    // 처리시간 노출하여 RN 측 race vs 영맨 측 느림 분기.
+    $_serverElapsedMs = isset($_SERVER['REQUEST_TIME_FLOAT'])
+        ? (int)round((microtime(true) - (float)$_SERVER['REQUEST_TIME_FLOAT']) * 1000)
+        : null;
     $resp = [
         'status' => 'processing',
         'ok' => true,
         'job_id' => $jobId,
         'mode'   => 'async',
         'placeholder' => true,
+        'server_elapsed_ms' => $_serverElapsedMs,
     ];
     if ($customerLogRow !== null) {
         $resp['customer_log'] = customer_log_row($customerLogRow);
@@ -476,6 +482,7 @@ function respond_async_queued(string $jobId, ?array $customerLogRow = null, $mir
     if (is_array($planInfo)) {
         $resp['plan'] = $planInfo;
     }
+    error_log('[process-recording §7 timing] job=' . $jobId . ' server_elapsed_ms=' . ($_serverElapsedMs ?? 'null'));
     echo json_encode($resp, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     if (function_exists('fastcgi_finish_request')) {
         fastcgi_finish_request();
