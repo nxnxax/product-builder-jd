@@ -3709,6 +3709,82 @@ try {
             respond(['status' => 'ok']);
         }
 
+        // POST /records.php?resource=customer-log&action=customer_log_cancel
+        // body: { id: customer_log_id }
+        // 사장님 2026-05-22 — 통화 종료 모달 "취소" / 요약보기 "닫기" 폐기 정책.
+        // 잔해 데이터 누적 방지 — recording_jobs / customer_log / ledger_records mirror /
+        // audio 파일 모두 cascade 삭제. callback 이 나중에 도착해도 row 없으면 0 rows
+        // affected 라 안전 (callback 은 UPDATE only).
+        if ($action === 'customer_log_cancel') {
+            $id = trim((string)($body['id'] ?? $body['customer_log_id'] ?? ''));
+            if ($id === '') respond(['status' => 'error', 'code' => 'invalid_request', 'message' => 'customer_log_id 필요.'], 400);
+
+            // recording_jobs 의 audio path 미리 조회 (DELETE 전, 파일 unlink 용)
+            $audioPaths = [];
+            try {
+                $jobs = $pdo->prepare('SELECT storage_path FROM recording_jobs WHERE customer_log_id = :cl AND owner_email = :o');
+                $jobs->execute([':cl' => $id, ':o' => $owner]);
+                foreach ($jobs->fetchAll() as $jr) {
+                    $p = (string)($jr['storage_path'] ?? '');
+                    if ($p !== '') $audioPaths[] = $p;
+                }
+            } catch (Throwable $e) {}
+
+            $deleted = ['customer_log' => 0, 'recording_jobs' => 0, 'ledger_records' => 0, 'audio_files' => 0];
+
+            try {
+                $pdo->beginTransaction();
+
+                // ledger_records mirror 삭제 (send_to_group 으로 INSERT 됐을 row)
+                try {
+                    $delLR = $pdo->prepare('DELETE FROM ledger_records WHERE customer_log_id = :cl AND owner_email = :o');
+                    $delLR->execute([':cl' => $id, ':o' => $owner]);
+                    $deleted['ledger_records'] = $delLR->rowCount();
+                } catch (Throwable $e) {}
+
+                // recording_jobs 삭제 (callback 이 더 이상 UPDATE 할 row 없게)
+                try {
+                    $delRJ = $pdo->prepare('DELETE FROM recording_jobs WHERE customer_log_id = :cl AND owner_email = :o');
+                    $delRJ->execute([':cl' => $id, ':o' => $owner]);
+                    $deleted['recording_jobs'] = $delRJ->rowCount();
+                } catch (Throwable $e) {}
+
+                // customer_log 본체 삭제
+                $delCL = $pdo->prepare('DELETE FROM customer_log WHERE id = :id AND owner_email = :o');
+                $delCL->execute([':id' => $id, ':o' => $owner]);
+                $deleted['customer_log'] = $delCL->rowCount();
+
+                if ($deleted['customer_log'] === 0) {
+                    $pdo->rollBack();
+                    respond(['status' => 'error', 'code' => 'not_found', 'message' => '존재하지 않거나 권한이 없습니다.'], 404);
+                }
+
+                $pdo->commit();
+            } catch (Throwable $e) {
+                try { $pdo->rollBack(); } catch (Throwable $e2) {}
+                respond(['status' => 'error', 'code' => 'upstream_failed', 'message' => 'cancel 실패: ' . $e->getMessage()], 503);
+            }
+
+            // audio 파일 삭제 (트랜잭션 밖 — 실패해도 DB 는 이미 정리됨)
+            foreach ($audioPaths as $ap) {
+                $candidates = [
+                    $ap,
+                    __DIR__ . '/' . ltrim($ap, '/'),
+                    dirname(__DIR__) . '/' . ltrim($ap, '/'),
+                ];
+                foreach ($candidates as $p) {
+                    if (is_file($p)) {
+                        @unlink($p);
+                        $deleted['audio_files']++;
+                        break;
+                    }
+                }
+            }
+
+            error_log('[customer_log_cancel] owner=' . $owner . ' cl=' . $id . ' deleted=' . json_encode($deleted));
+            respond(['status' => 'ok', 'deleted' => $deleted]);
+        }
+
         // ─── ADMIN_JOB_DIAG (사장님 2026-05-20 진단용 — admin only) ───
         // GET/POST: action=admin_job_diag, body/query.job_ids=콤마구분 또는 배열
         // 응답: 각 job_id 의 진단 컬럼 모두 (owner 무관 — admin 권한).
