@@ -1,6 +1,6 @@
 # PROJECT_CONTEXT — youngman-biz.com
 
-*최종 갱신: 2026-05-22 (KST 오후) — ✅ **Whisper 400 비상 완전 종료**. Railway worker Dockerfile + railway.json startCommand 제거 + transcode_to_mp3 호출 active. 사장님 실제 통화 요약 정상 표시 확인.*
+*최종 갱신: 2026-05-22 (KST 오후 세션 종료) — ✅ **Whisper 400 비상 완전 종료** + 인증 race 2종 fix + UX 개선 + cancel endpoint + 진단 인프라.*
 
 ---
 
@@ -28,14 +28,14 @@ terms.html / privacy.html / refund.html / auto-billing.html
 subscribe.html / billing.html / tester.html
 
 [공통 JS]
-auth-shared.js  — Supabase + 헤더/footer/bottom-nav + 인증
+auth-shared.js  — Supabase + 헤더/footer/bottom-nav + 인증 + placeholder masker
 bridge.js       — RN WebView 브리지 (heartbeat 포함)
 ledger-shared.js — 관리대장 공통
 
 [PHP API — cafe24 webroot flat]
-api/records.php           — 모든 CRUD + customer_log_send_to_group + refresh=true
-api/process-recording.php — 통화 audio 업로드. §7 placeholder-first + cafe24 자체 STT fallback (현재 Whisper 400 무한 재발 ★)
-api/recording-callback.php — Railway worker 결과 수신 + customer_log_id 있으면 UPDATE only
+api/records.php           — 모든 CRUD + customer_log_send_to_group + customer_log_cancel + refresh=true
+api/process-recording.php — 통화 audio 업로드. §7 placeholder-first + Railway dispatch
+api/recording-callback.php — Railway worker 결과 수신 + customer_log UPDATE only
 api/cron-process-jobs.php  — 5분 cron + processing stuck 10분 watchdog
 api/job-status.php         — 앱 polling (7단계 auth fallback)
 api/recording-audio.php    — HMAC signed audio URL (10분)
@@ -44,14 +44,17 @@ api/upload.php             — multipart audio 수신
 api/billing_helpers.php / billing/* — 결제
 
 [Railway worker]
-worker/main.py  — Whisper + Claude + transcode_to_mp3
+worker/Dockerfile  — python:3.11-slim + ffmpeg + uvicorn (sh -c CMD)
+worker/main.py     — Whisper + Claude + transcode_to_mp3 호출 (line 565)
+worker/railway.json — DOCKERFILE builder, startCommand 제거됨
+
+[Asset]
+og-thumbnail.png — OG/Twitter 카드 이미지 (1.7MB)
+logo_main.png    — favicon + JSON-LD logo
 
 [베타 APK 호스팅]
 tester.html → /download/youngman-latest.apk (사장님 FTP 직접 업로드)
 .htaccess 에 .apk MIME + Content-Disposition
-
-[운영 문서]
-migrations/2026-05-21_cleanup_unreviewed_system.sql (사장님 실행 안 함)
 ```
 
 ---
@@ -61,8 +64,8 @@ migrations/2026-05-21_cleanup_unreviewed_system.sql (사장님 실행 안 함)
 ### 인증
 - Supabase + Google OAuth + 6중 race guard + bridge.js heartbeat
 - 7단계 auth header fallback
-- error_code 표준 6종: AUTH_EXPIRED / AUTH_INVALID / AUTH_REQUIRED / JOB_DUPLICATE / JOB_EXISTS / RETRYABLE_SERVER_ERROR
-- logout.html top-level `return` SyntaxError fix (commit 7507787)
+- **Google 로그인 race fix** (commit 73b7f20) — 모달 표시 시 supabaseClient 미준비면 버튼 disabled + "인증 준비 중…" 텍스트. init 완료 시 자동 enabled.
+- **OAuth 후 헤더 깜빡임 fix** (commit 02c3270) — mountAppHeader 에 localStorage sb-*-auth-token 직접 파싱 fallback. anon 깜빡임 0초.
 
 ### CRM / HRM
 - 조직도/계약자/고객 관리대장 + AES-256-GCM 암호화
@@ -70,85 +73,91 @@ migrations/2026-05-21_cleanup_unreviewed_system.sql (사장님 실행 안 함)
 - 회차별 content 분할 + "대화내용 전문보기" 버튼
 - 단체 SMS + 잔액 카드
 
-### 통화 녹취 — §7 placeholder-first 흐름 (현재 ★ 깨진 상태)
+### 통화 녹취 — §7 placeholder-first 흐름 (✅ 풀스택 정상)
 ```
 통화 종료 → /process-recording.php
   → recording_jobs INSERT (status='queued')
-  → placeholder customer_log INSERT (ai_model='pending', source='app-placeholder', summary='AI 분석 중')
+  → placeholder customer_log INSERT (ai_model='pending', source='app-placeholder')
   → recording_jobs.customer_log_id 즉시 UPDATE
   → auto send_to_group mirror (placeholder content)
-  → 1~2초 응답 (customer_log placeholder 포함)
+  → 0.2~1초 응답 (customer_log placeholder 포함) ★ 측정 완료 223ms
   → fastcgi_finish_request
-  → background: Railway dispatch 또는 cafe24 자체 STT
-  → callback 또는 직접 customer_log UPDATE
-  → ledger refresh (latest section 만 교체, call_count 보존)
+  → background: Railway dispatch (Dockerfile + Whisper + Claude)
+  → callback → customer_log UPDATE (실제 요약)
+  → ledger refresh
 ```
 
-### Phase 8 미확인요약 시스템 폐기 (어제 결정)
-- unreviewed.html 삭제 + 하단 nav 메뉴 제거
-- records.php 의 list_unreviewed / trigger_summarize / confirm / discard / summary_status / preview deprecated 가드 (Phase 11 으로 dead code 처리)
-- review_required 분기 무력화 (process-recording + recording-callback)
+### UX 개선
+- **Placeholder masker** (commit 5145cb5) — auth-shared.js 의 setupPlaceholderMasker(). MutationObserver 로 ledger cell 의 "AI 분석 중" / "처리중..." text 를 빨간 dot 3개 pulse 애니메이션으로 자동 가림. inline style 주입 self-contained.
 
-### 베타 APK 호스팅 (2026-05-22 ship)
+### 통화 취소/요약 폐기 (commit 671177e)
+- POST `/records.php?resource=customer-log&action=customer_log_cancel`
+- body: `{ id: customer_log_id }`
+- Cascade 삭제: customer_log + recording_jobs + ledger_records mirror + audio file
+- callback 안전 (UPDATE only 라 row 없으면 0 rows affected)
+
+### OG 썸네일 (commit 0830540)
+- worker/Thumbnail.png → og-thumbnail.png (repo root)
+- 8개 HTML (index/Marketing/auto-billing/subscribe/lotto2233/refund/privacy/terms) 의 og:image/twitter:image 일괄 교체
+- favicon + JSON-LD logo 는 logo_main.png 유지
+
+### 베타 APK 호스팅
 - tester.html — Apple/Linear 미니멀 다운로드 안내
 - /download/youngman-latest.apk (사장님 FTP 직접 업로드)
-- .htaccess 에 application/vnd.android.package-archive MIME + Content-Disposition
-- 향후 업데이트: 사장님이 같은 경로에 덮어쓰기 (URL 그대로 유지)
+- 메인 hero CTA 임시 변경: subscribe.html → tester.html (결제사 승인 전)
 
-### 메인 hero CTA 임시 변경 (결제사 승인 전)
-- "AI 통화 요약 + 고객관리 원터치 전송 서비스 신청" → "테스트기간 무료이벤트 다운로드 바로가기"
-- href: subscribe.html → tester.html
-- JS updateFlagshipCta() 의 임시 override 블록 (commit ca94374)
-- 결제사 승인 후 원복 — 임시 블록 제거하면 plan 별 분기 자동 복원
+### Railway Worker (2026-05-22 PM 부활)
+- Active commit: 70961f4 (Dockerfile + railway.json startCommand 제거)
+- worker/main.py:565 의 transcode_to_mp3() 호출 살아남 — m4a → mp3 → Whisper 정상
+- HTTP /health 정상 (token_set/openai_set/anthropic_set 다 true)
+
+### 진단 인프라 (오늘 추가)
+- `_send_debug` 응답 확장 (commit 6bca688) — body_keys, raw_body, content_type, body_group_id_raw 등
+- `response_elapsed_ms` 컬럼 + 응답 필드 (commit 2435dae, 80aa038) — §7 응답 시간 SQL 가시화
 
 ---
 
-## 4. 🚨 아직 미완성 (다음 세션 우선 순위)
+## 4. 아직 미완성 (다음 세션 작업)
 
-### ✅ 비상 1 — Whisper 400 Invalid file 비상 — **완전 종료 (2026-05-22 PM)**
+### ⏳ RN 측 race 3종 (앱팀 작업, 영맨 진단 완료)
 
-**진짜 root cause (다단계 복합)**:
-1. **Railway worker 가 May 20 코드 (b468ced8) Active** — May 21 이후 사장님 push 한 transcode_to_mp3 호출 코드가 deploy 안 됨
-2. **새 deployment 가 모두 Failed** — 영맨 Dockerfile 만든 후 railway.json 의 `startCommand` 가 Dockerfile 모드에서 shell expansion 안 됨 → `$PORT` literal → uvicorn fail → healthcheck failure
-3. **cafe24 .env 의 RECORDING_WORKER_TOKEN 일부 mismatch** + 사장님이 FileZilla 로 .env 파일 열어둔 상태에서 업로드 시 PHP 가 새 내용 못 읽음
+**(A) 요약보기 5초+ 무반응** — 영맨 §7 응답 **223ms 측정 확정**. 100% RN 측 race.
+가설:
+- 모달 표시가 응답 받기 전 발화 (낙관적 UI)
+- "요약보기" 버튼이 customer_log_id 대기 condition
+- "요약보기" 클릭 시 customer_log_get 별도 fetch
+Fix: 모달 표시를 응답 받은 후로 deferred + 영맨 응답의 `customer_log` 필드 즉시 활용 (별도 fetch X).
 
-**최종 fix 흐름**:
-- commit ee2c7bb: worker/Dockerfile 추가 (nixpacks pip 미설치 해결)
-- 진단 endpoint `admin_env_diag.php` 작성/배포 (token hash 비교, opcache reset, Railway outbound test) — **검증 완료 후 제거됨**
-- 사장님: cafe24 .env 키값 매칭 + 파일 닫고 재업로드
-- commit 70961f4: railway.json `startCommand` 제거 → Dockerfile CMD (`sh -c "uvicorn ... --port ${PORT:-8080} ..."`) 사용 → shell expansion 정상
-- 결과: May 22 PM 새 deployment ACTIVE → git main 의 transcode_to_mp3 호출 (main.py:565) 살아남 → m4a→mp3→Whisper 정상
+**(B) group_id 전달 race** — RN 측이 `group_id="33"` 보낸다는데 backend `gid_received=0`. 영맨이 `_send_debug` 강화 push 완료. 다음 통화 시 RN 측 응답 캡처해서 paste 받아야 정확한 원인 분기 (body parsing 실패 vs nested wrapping vs 다른 key).
 
-**검증 완료**: 사장님 새 통화 한 건 → 모달 placeholder → 3~5분 후 실제 요약 "고객이 층간소음 문제가 매우 심하다며..." 정상 표시 + 고객대장 mirror.
+**(C) 첫 통화 모달 안 뜸** — 두 번째 통화는 정상. 앱 측 통화 종료 detection 또는 응답 처리 race. SQL 로 첫 통화 시 recording_jobs INSERT 됐는지 확인하면 분기 가능.
 
-### ⚠️ 비상 1 후속 — 보안 마무리 (사장님 작업 필요)
+### ⏳ 모달 UX — 여자비서 Lottie 애니메이션 (앱팀 작업)
+- 사장님이 [lottiefiles.com](https://lottiefiles.com/free-animations/secretary) 에서 마음에 드는 무료 secretary writing 애니메이션 선택 → JSON 다운로드 → 영맨에게 전달
+- 영맨이 cafe24 호스팅 + 앱팀에 lottie-react-native 통합 가이드 작성
+- 현재 모달의 동그라미 spinner = RN native UI (영맨 repo 에 텍스트 없음 확인)
 
-1. **`RECORDING_WORKER_TOKEN` rotate 필수** — token 값 screenshot 노출 + hash prefix 노출됨
-   - Railway Variables → `RECORDING_WORKER_TOKEN` 새 값 (랜덤 64+자) 생성
-   - cafe24 `.env` 에도 동일한 새 값 (FTP 업로드 시 파일 닫고)
-2. **`admin_env_diag.php` cafe24 webroot 에서 직접 제거** — git 에서는 commit 으로 제거했지만 cafe24 webroot 의 deploy/admin_env_diag.php 파일 FTP 로 직접 삭제 (deploy 가 mirror 아닌 cumulative 일 수 있음)
+### ⚠️ 보안 마무리 (사장님 작업 필수)
+1. **RECORDING_WORKER_TOKEN rotate** — 진단 중 screenshot 노출 + hash prefix 노출됨
+   - Railway Variables → 새 token 생성 (랜덤 64+자)
+   - cafe24 .env 동일 새 값 (FileZilla 파일 닫고 업로드 — lock 시 PHP 못 읽음)
+   - GitHub Secrets 도 동기화 (deploy 시 .env 재생성됨)
+2. **cafe24 webroot 의 admin_env_diag.php FTP 직접 삭제** — git 에서는 제거됐지만 (commit 5d0d0bd) deploy mirror 아닐 수 있음
 
-### 비상 2 — GitHub Actions cron 7시간 간격으로 안 돔
-- process-jobs.yml schedule `*/5 * * * *` 인데 실제 run 간격이 7-12시간
-- 결과: stuck row 자동 retry 안 됨
-- 사장님 수동 트리거 권한 필요 (PAT 403)
-- 다음 세션: GitHub repo Actions 설정 확인 + workflow_dispatch 수동 호출
-
-### 비상 3 — Railway dispatch 실패 원인 미확정
-- cafe24 자체 STT fallback 진입 = Railway dispatch 가 실패한 것은 확실
-- 정확한 원인은 Phase 17 진단 메시지가 덮어쓰임 + opcache 의심으로 미확정
-- GitHub Secrets RAILWAY_WORKER_URL / RECORDING_WORKER_TOKEN 확인 필요 (사장님 GitHub Settings)
+### 진단 컬럼 cleanup (선택)
+- recording_jobs.response_elapsed_ms — 다음 통화 모니터링용 유지 또는 제거
+- recording_jobs.error_message 의 옛 진단 메시지
 
 ### 기존 backlog (낮은 우선순위)
-- 앱팀 §8 polling endpoint 의뢰 (job-status.php 응답 minimal version)
+- 앱팀 §8 polling endpoint 의뢰 답변 처리
 - records.php deprecated endpoint Sunset/Deprecation HTTP header
-- 401/403 _auth_debug 필드 표준화 (redact 적용)
+- 401/403 _auth_debug 필드 표준화
 - records.php dead code 700줄 cleanup (미확인요약 폐기 잔재)
-- schema 정리 (review_required / recording_review_mode 컬럼)
-- callback 순서 보장 검토 (N→N-1 역전 현상)
+- schema 정리 (review_required / recording_review_mode)
 - AI 요약 두 모드 분기 (대화형 vs 보고서식)
 - PortOne Webhook URL 등록 + 정식 토스 키 발급 후 라이브 결제 검증
 - card-builder UX / forms 수식 inline help / profile/admin 디자인 일관성
+- GitHub Actions cron 7시간 간격 (비상 2번 — process-jobs.yml schedule)
 
 ---
 
@@ -161,13 +170,18 @@ migrations/2026-05-21_cleanup_unreviewed_system.sql (사장님 실행 안 함)
   `CAFE24_FTP_PASSWORD` / `YOUNGMAN_CRYPTO_KEY` / `SUPABASE_SERVICE_KEY`
   `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` / `NCP_CLOVA_*`
   `STT_PROVIDER=whisper` / `LLM_PROVIDER=anthropic`
-  `RAILWAY_WORKER_URL` / `RECORDING_WORKER_TOKEN` (★ 사장님 확인 필요)
+  `RAILWAY_WORKER_URL` / `RECORDING_WORKER_TOKEN` ★ rotate 필요
   `PORTONE_*` / `FIREBASE_SERVICE_ACCOUNT_JSON` / `AUDIO_CLEANUP_TOKEN`
 - "배포/올림" 키워드 → 자율 push→trigger→verify
 - 검증: `curl -sk https://youngman-biz.com/<file>?cb=$(date +%s)`
 - 새 페이지 추가 → `deploy.yml` 의 `test -f` + `cp` 둘 다
 
-### APK 호스팅 (2026-05-22)
+### Railway 배포 (2026-05-22 PM 정상화)
+- worker/Dockerfile 사용 (nixpacks 미사용)
+- railway.json `startCommand` 제거 — Dockerfile CMD 의 `sh -c "uvicorn ... --port ${PORT:-8080}"` 사용
+- Active deployment 확인 습관: dashboard → Deployments 탭 → ACTIVE 표시 + commit hash 확인
+
+### APK 호스팅
 - 사장님 FileZilla FTP 로 직접 업로드: `/download/youngman-latest.apk`
 - 앱팀 새 빌드 시 같은 경로 덮어쓰기 (앱 내 URL 변경 X)
 
@@ -176,10 +190,12 @@ migrations/2026-05-21_cleanup_unreviewed_system.sql (사장님 실행 안 함)
 ## 6. Cafe24/PHP 관련 주의사항
 
 - 🚫 **SSH/SCP 절대 금지** — silent drop. FTP only.
-- 🚫 **cafe24 cron 미지원** — GitHub Actions schedule (★ 현재 7시간 간격 깨짐).
+- 🚫 **cafe24 cron 미지원** — GitHub Actions schedule.
 - 🚫 **cafe24 빈 POST body → 5xx HTML** — 1바이트 이상 필수.
-- 🚫 **cafe24 ffmpeg 미설치** — m4a transcode 는 **Railway worker 강제**.
-- 🚫 **cafe24 PHP opcache** — modified time 무시 가능성. 새 코드 반영 안 될 수 있음 (★ 진단 중).
+- 🚫 **cafe24 ffmpeg 미설치** — m4a transcode 는 Railway worker 강제.
+- 🚫 **cafe24 PHP-FPM opcache** — modified time 무시 가능성. `opcache_invalidate()` 또는 reset 필요할 때 있음.
+- 🚫 **cafe24 .env 파일 lock** — FileZilla 등에서 열어둔 상태로 업로드 시 PHP 가 새 내용 못 읽음. 파일 닫고 재업로드 필수.
+- 🚫 **cafe24 .env 는 매 deploy 마다 GitHub Secrets 로부터 재생성됨** — FTP 직접 수정값은 다음 push 시 덮어쓰여짐. GitHub Secrets 와 동기화 필수.
 - 🚫 **dhlottery 직접 호출 금지** (IP 차단).
 - 🚫 **`git add -A` 금지** — PII 누설 위험.
 - 📁 Webroot flat layout. `api/sms/` → `deploy/sms/providers/` / `api/billing/` → `deploy/billing/`
@@ -188,15 +204,31 @@ migrations/2026-05-21_cleanup_unreviewed_system.sql (사장님 실행 안 함)
 - 📡 records.php `/auth/v1/user` 폴백 — sb_publishable_ asymmetric JWT
 - 📡 db_config.php — `return [host, port, database, user, password]`
 - 📊 PII 컬럼 폭 — 암호문 100~200 chars, VARCHAR(255)+
-- 📊 Whisper 25MB 제한 + iPhone/Galaxy m4a codec 변종 거부 → **mp3 통일 변환 (Railway worker)**
-- 📊 cafe24 자체 STT 은 Clova 만 사용 (Phase 18 결정) — Whisper 가 cafe24 환경에서 m4a 거부
+- 📊 Whisper 25MB 제한 + iPhone/Galaxy m4a codec 변종 거부 → **mp3 통일 변환 (Railway worker main.py:565 transcode_to_mp3)**
+- 📊 Authorization 헤더 fallback 7단계 (records.php read_authorization_header) — HTTP_AUTHORIZATION / REDIRECT_HTTP_AUTHORIZATION / getallheaders[Authorization|authorization] / apache_request_headers
+
+### Railway worker quirks (2026-05-22 학습)
+- 🚫 **`railway.json` 의 `startCommand` 가 Dockerfile 모드에서 shell expansion 안 됨** — `$PORT` literal 로 전달되어 uvicorn fail. Dockerfile CMD 의 `sh -c` wrap 사용.
+- 🚫 **Failed deployment 가 누적되어도 옛 Active 가 계속 traffic 받음** — dashboard 확인 습관.
 
 ---
 
 ## 7. 최근 수정한 파일 (commit 흐름)
 
 ```
-# 2026-05-22 PM — Whisper 400 비상 종료
+# 2026-05-22 PM — UX 개선 + 진단 인프라
+2435dae diag(call): recording_jobs.response_elapsed_ms 컬럼 — SQL 가시화
+80aa038 diag(call): process-recording §7 응답에 server_elapsed_ms 노출
+0830540 feat(seo): OG/Twitter 카드 이미지 → og-thumbnail.png 교체
+500617b chore(ui): 고객관리대장 "모바일 앱 연동 준비 완료" 안내 제거
+6bca688 diag(send_to_group): _send_debug 에 body parsing 진단 필드 추가
+671177e feat(call): customer_log_cancel — 통화 취소/요약 폐기 cascade
+5145cb5 feat(ux): 통화 녹취 placeholder text 로딩 dots 로 가림
+02c3270 fix(auth): OAuth 직후 헤더 anon → 로그인 깜빡임 제거
+73b7f20 fix(auth): supabase init race — 모달 표시 시 버튼 비활성화
+
+# 2026-05-22 PM — Whisper 400 비상 최종 fix
+5d0d0bd chore(cleanup): admin_env_diag 제거 + PROJECT_CONTEXT 갱신
 70961f4 fix(railway): startCommand 제거 — Dockerfile CMD 사용 ★ FINAL FIX
 e7c3a21 diag(env): opcache_reset + Railway outbound HTTP 테스트 분기 추가
 38aaf0c diag(env): Authorization 헤더 7단계 fallback + source 노출
@@ -204,25 +236,11 @@ e7c3a21 diag(env): opcache_reset + Railway outbound HTTP 테스트 분기 추가
 19167ca diag: cafe24 .env 읽기 진단 endpoint 추가 (검증 후 제거됨)
 ee2c7bb fix(railway): nixpacks pip 미설치 — Dockerfile 전환
 
-# 2026-05-22 — Whisper 400 비상 진행 중 (해결됨)
-140d056 fix(stt): cafe24 자체 STT fallback Whisper → Clova 강제 ★ (적용됐는데 효과 없음)
+# 2026-05-22 AM — 비상 진행 중 (해결됨)
+140d056 fix(stt): cafe24 자체 STT fallback Whisper → Clova 강제
 3bad4b3 fix(stt §diag): Railway dispatch 실패 원인 DB 기록 강화
-08cd6bd revert(stt): §7 placeholder-first + cron watchdog 재적용 (사장님 결정)
-81602b1 revert(stt): §7 + cron watchdog 롤백 (사장님 분노 후 즉시 롤백)
-4211e92 fix(cron §8): processing stuck watchdog 10분
-57ecc6a fix(stt §7): placeholder-first 전환 — sync 응답 시간 7~60s → 1~2s
-
-# 2026-05-22 — APK 호스팅 + 메인 CTA
-ca94374 feat(beta): 메인 hero CTA 임시 → 베타 다운로드 (결제사 승인 전)
-d17a798 feat(beta-apk): Android 베타 APK 다운로드 호스팅
-7507787 hotfix(auth): logout.html module top-level 'return' SyntaxError → if/else 통합
-
-# 2026-05-21 후반 (어제 세션 종료 commit)
-0faba13 docs(context): 2026-05-21 세션 종료 갱신
-d978738 fix(stt): review_required 분기 제거 — 미확인요약 폐기 결정 정합
-37c3261 fix(stt): native group_id 미명시 fallback — first customer group 자동
-bf65d09 revert(stt): STT 3개 파일 5-20 19:34 UTC (46e01c6) 시점 복원
-bbf7607 chore(stt): 미확인요약 시스템 완전 폐기 — Phase 8 (a-e)
+08cd6bd revert(stt): §7 placeholder-first + cron watchdog 재적용
+57ecc6a fix(stt §7): placeholder-first 전환 — sync 응답 시간 1~2s
 ```
 
 ---
@@ -235,15 +253,18 @@ bbf7607 chore(stt): 미확인요약 시스템 완전 폐기 — Phase 8 (a-e)
 - 🔒 `window.supabase` 글로벌 + `_runRefreshOnce` cooldown 25s + timeout 12s
 - 🔒 records.php `/auth/v1/user` 폴백
 - 🔒 PII owner_email 격리
+- 🔒 mountAppHeader 의 localStorage sb-*-auth-token 직접 파싱 fallback (commit 02c3270)
+- 🔒 로그인 모달 표시 시 supabase init 미준비 버튼 disabled 로직 (commit 73b7f20)
 
-### 통화 녹취 흐름 (2026-05-22 비상 진행 중)
-- 🔒 §7 placeholder-first 응답 구조 (1~2초) — native v15 polling 의존
+### 통화 녹취
+- 🔒 §7 placeholder-first 응답 구조 (0.2~1초) — RN polling 의존
 - 🔒 customer_log placeholder INSERT 시 source='app-placeholder', ai_model='pending'
 - 🔒 customer_log.client_request_id 24h UNIQUE (dedup)
 - 🔒 recording_jobs.audio_sha256 영구 dedup
-- 🔒 review_required 분기 제거 상태 유지 (미확인요약 폐기)
-- 🔒 Phase 18 의 `$sttProviderRequested = 'clova'` 강제 — Whisper 거부 회피 (★ 라이브 효력 미확정)
-- 🔒 fastcgi_finish_request + ignore_user_abort + set_time_limit(300) — background 처리 보장 (cafe24 PHP-FPM 환경 의존)
+- 🔒 fastcgi_finish_request + ignore_user_abort + set_time_limit(300)
+- 🔒 worker/main.py:565 transcode_to_mp3 호출 — Whisper 400 회피
+- 🔒 worker/Dockerfile 의 sh -c CMD — railway startCommand 안 씀
+- 🔒 worker/railway.json — startCommand 없음, builder=DOCKERFILE
 
 ### 결제
 - 🔒 plan_default_summary_limit_minutes — Free=30/Plus=300/Pro=1000
@@ -255,52 +276,35 @@ bbf7607 chore(stt): 미확인요약 시스템 완전 폐기 — Phase 8 (a-e)
 - 🔒 cron-process-jobs max_retry=2
 - 🔒 audio_cleanup 7일
 - 🔒 ledger UX — 헤더 클릭 필터 / 행 추가 모달 / accordion
-- 🔒 메뉴 신규양식 슬롯 (미확인요약 메뉴는 폐기 상태 유지)
+- 🔒 placeholder masker (auth-shared.js setupPlaceholderMasker) — MutationObserver 패턴
 - 🔒 메인 hero CTA 임시 (베타 다운로드) — 결제사 승인 후 원복 예정
-- 🔒 APK 경로 `/download/youngman-latest.apk` (사장님 FTP 직접 업로드)
+- 🔒 OG/Twitter image = og-thumbnail.png, favicon/logo = logo_main.png (역할 분리)
 
 ---
 
-## 9. 다음 세션 우선 작업
+## 9. 다음에 이어서 해야 할 작업
 
-### 1순위 — Whisper 400 무한 재발 비상 해결
-1. **ChatGPT 진단 결과 확인** — 사장님이 paste 받은 답변 공유받기
-2. **cafe24 opcache 무력화 시도**:
-   - process-recording.php 에 임의 변경 (주석 한 줄) → push → timestamp 갱신 → opcache reset 유도
-   - 또는 `.htaccess` 에 `php_flag opcache.enable Off` (cafe24 설정 허용 여부)
-   - 또는 opcache_reset() 호출하는 admin endpoint 추가
-3. **Whisper 호출 분기 통째 제거**:
-   - process-recording.php Line 1187 `if ($sttProvider === 'whisper') {` → `if (false) {`
-   - 또는 Whisper 분기 전체 삭제 (Line 1187-1300)
-4. **Railway dispatch 정상 작동 복구**:
-   - 사장님 GitHub Settings → Secrets 의 RAILWAY_WORKER_URL / RECORDING_WORKER_TOKEN 등록 여부 확인
-   - Railway dashboard 의 worker 살아있는지 확인 (사장님 작업)
-   - 영맨이 라이브 admin endpoint 추가하여 진단 가능하게
+### 1순위 — RN 측 race 진단 + 앱팀 협업
+1. **요약보기 5초+ 무반응** — 영맨 측 223ms 정상. 사장님이 [확정] 메시지 (세션 마지막에 paste 한 내용) 앱팀에 전달 + RN 측이 응답 받기 전 모달 표시 fix 또는 customer_log_get 별도 fetch 제거.
+2. **group_id 전달 race** — RN 측이 다음 통화 시 send_to_group 응답의 `_send_debug` 캡처 + paste. 영맨이 받으면 body parsing 실패 vs nested wrapping vs key 이름 mismatch 분기 즉시.
+3. **첫 통화 모달 안 뜸** — SQL 로 recording_jobs INSERT 됐는지 확인 (사장님 또는 영맨 측에서 시각 매칭).
 
-### 2순위 — GitHub Actions cron 정상화
-1. https://github.com/nxnxax/product-builder-jd/actions/workflows/process-jobs.yml 확인
-2. cron schedule 활성화 + 마지막 실행 시각 확인
-3. inactive 면 manual trigger (사장님 작업 — Run workflow 버튼)
-4. 영맨 PAT 가 workflow trigger 권한 없음 (403). 사장님 직접 트리거 필요
+### 2순위 — 보안 마무리 (사장님 작업)
+1. `RECORDING_WORKER_TOKEN` rotate (Railway Variables + cafe24 .env + GitHub Secrets 3곳)
+2. cafe24 webroot 의 `admin_env_diag.php` FTP 직접 삭제 (git 제거됐지만 cafe24 mirror 안 됐을 수 있음)
 
-### 3순위 — 사장님 직접 확인 사항
-1. cafe24 phpMyAdmin 다음 SQL 정기 확인 (디버깅용):
-   ```
-   SELECT id, status, retry_count, customer_log_id, 
-          LEFT(error_message, 200) AS err_preview,
-          created_at, updated_at 
-   FROM recording_jobs 
-   WHERE owner_email = 'nxnxax@gmail.com' 
-   ORDER BY created_at DESC LIMIT 3;
-   ```
-2. GitHub Settings → Secrets 의 RAILWAY_WORKER_URL 등록 여부 캡처
-3. Railway dashboard 로그 확인 (worker 살아있는지)
+### 3순위 — 모달 UX 여자비서 애니메이션
+1. 사장님이 lottiefiles.com 에서 secretary writing 무료 애니메이션 선택 → JSON 다운로드 → 영맨 전달
+2. 영맨: cafe24 `/secretary-loading.json` 호스팅 + 앱팀에 lottie-react-native 통합 가이드 작성
 
-### 4순위 — 잔존 cleanup
-- 앱팀 §8 polling endpoint 의뢰 답변 처리
-- records.php dead code 700줄 cleanup
-- schema 정리 (review_required / recording_review_mode 컬럼)
-- ChatGPT 권장 §7 callback timing / FCM 흐름 검증
+### 4순위 — 진단 컬럼 cleanup
+- recording_jobs.response_elapsed_ms — 모니터링 필요 없으면 ALTER TABLE DROP
+- send_to_group `_send_debug` 응답 필드 — 진단 끝나면 제거 또는 admin-only
+
+### 사장님 직접 확인 항목
+- 카카오톡에 https://youngman-biz.com 공유 시 새 og-thumbnail.png 미리보기 표시 확인
+- 페이스북 디버거 [developers.facebook.com/tools/debug](https://developers.facebook.com/tools/debug) 로 강제 갱신 가능
+- 새 통화 시 §7 흐름 (placeholder 0.2초 → 12초 후 실제 요약) 정상 작동 확인
 
 ---
 
@@ -308,10 +312,23 @@ bbf7607 chore(stt): 미확인요약 시스템 완전 폐기 — Phase 8 (a-e)
 
 - `sessionStorage.erp.ensureError` — members 보강 실패
 - `sessionStorage.erp.memberEnsured = '1'` — 보강 성공
-- 콘솔 prefix: `[auth submit]` / `[google oauth]` / `[bridge]` / `[process-recording]` / `[process-recording §7]` / `[process-recording §diag]` / `[recording-callback]` / `[records list_unreviewed]` / `[send_to_group]` / `[fcm]`
+- 콘솔 prefix: `[auth submit]` / `[google oauth]` / `[bridge]` / `[process-recording]` / `[process-recording §7]` / `[process-recording §7 timing]` / `[process-recording §diag]` / `[recording-callback]` / `[send_to_group]` / `[customer_log_cancel]` / `[fcm]`
 - 브리지: `window.YoungmanBridge.isInApp()` / `.refreshSession()` / `.sendHeartbeat()`
-- Railway log: Railway dashboard → Deployments → Logs
-- recording_jobs row 진단: admin_job_diag endpoint (admin only)
+- Railway log: Railway dashboard → Deployments → 가장 위 ACTIVE → Logs
+- recording_jobs row 진단: admin_job_diag endpoint (admin only) + response_elapsed_ms 컬럼
+
+### 진단 SQL (사장님 phpMyAdmin)
+```sql
+-- 최근 통화 §7 응답 시간 + 전체 처리 시간
+SELECT id, status, response_elapsed_ms,
+       TIMESTAMPDIFF(MICROSECOND, created_at, updated_at)/1000 AS total_ms,
+       LEFT(error_message, 200) AS err,
+       created_at, updated_at
+FROM recording_jobs WHERE owner_email='nxnxax@gmail.com'
+ORDER BY created_at DESC LIMIT 3;
+```
+
+---
 
 ## 환경
 
@@ -328,13 +345,15 @@ bbf7607 chore(stt): 미확인요약 시스템 완전 폐기 — Phase 8 (a-e)
 - `feedback_deploy_autonomy.md` — 배포 자율
 - `feedback_no_proceed_prompts.md` — "proceed?" 묻지 말 것
 - `feedback_no_rest_suggestions.md` — 휴식 권유 절대 금지
-- `feedback_no_working_flow_break.md` — 작동 검증된 흐름은 사장님 동의 없이 변경 금지
+- `feedback_no_working_flow_break.md` — 작동 검증된 흐름 외부 의뢰 시 단계별 검증
 - `feedback_terminology_test.md` — "PoC" → "테스트", "ship/deploy" → "배포/올림"
-- `feedback_pii_isolation.md` — PII owner_email 강제
+- `feedback_pii_isolation.md` — PII owner_email 강제 + git add -A 금지
 - `feedback_readability_first.md` — 60대+ 가독성 우선
 - `feedback_ledger_ux.md` — 헤더 필터 / 행 추가 모달
+- `feedback_paste_formatting.md` — 외부 채팅 paste 메시지는 코드블록 감싸기
 - `project_app_bridge.md` — RN WebView 앱
 - `project_pii_crypto.md` — AES-256-GCM 라이브
 - `project_ledger_system.md` — page_type 기반
 - `project_whisper_claude_quality.md` — Sonnet 4.6 production
-- `deploy_cafe24.md` — FTP only
+- `project_railway_deploy_quirks.md` — Dockerfile + startCommand $PORT / Failed deploy 누적 / .env GitHub Secrets 동기화
+- `deploy_cafe24.md` — FTP only + .env 매 deploy 재생성
