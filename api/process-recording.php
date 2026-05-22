@@ -428,6 +428,8 @@ function ensure_recording_jobs_table(PDO $pdo): bool {
             'group_id'             => 'VARCHAR(36) NULL DEFAULT NULL',
             // 앱팀 2026-05-20 요청 — review_required = 1 이면 사용자 검토 후 saved 로 전환 (customer_log 자동 INSERT 안 함)
             'review_required'      => 'TINYINT(1) NOT NULL DEFAULT 0',
+            // 사장님 2026-05-22 — §7 placeholder 응답 시간 진단용 (요약보기 race 분석)
+            'response_elapsed_ms'  => 'INT NULL DEFAULT NULL',
         ];
         foreach ($needAlter as $col => $def) {
             if (!empty($cols) && !in_array($col, $cols, true)) {
@@ -900,6 +902,16 @@ if ($asyncMode) {
 
     // 즉시 응답 — client 연결 종료. 이후 코드는 백그라운드.
     // 사장님 §7 — customer_log placeholder + ledger mirror 응답에 포함 (native sync 가정 호환).
+    // 사장님 2026-05-22 — 응답 직전 elapsed_ms 를 recording_jobs 에 기록 (요약보기 race 진단)
+    try {
+        $_elapsedBefore = isset($_SERVER['REQUEST_TIME_FLOAT'])
+            ? (int)round((microtime(true) - (float)$_SERVER['REQUEST_TIME_FLOAT']) * 1000)
+            : null;
+        if ($_elapsedBefore !== null) {
+            $pdo->prepare("UPDATE recording_jobs SET response_elapsed_ms = :e WHERE id = :id")
+                ->execute([':e' => $_elapsedBefore, ':id' => $asyncJobId]);
+        }
+    } catch (Throwable $e) {}
     respond_async_queued($asyncJobId, $placeholderClRow, $placeholderMirrorResult);
 
     /* Railway worker 분기 (선택 — RAILWAY_WORKER_URL 환경변수 있을 때만).
