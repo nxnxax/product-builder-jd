@@ -74,7 +74,18 @@ if ($incoming === '' || !hash_equals($expectedToken, $incoming)) {
     echo json_encode([
         'error' => 'unauthorized',
         'hint' => 'Authorization: Bearer <RECORDING_WORKER_TOKEN> 헤더 필요',
-    ], JSON_UNESCAPED_UNICODE);
+        'token_compare' => [
+            'expected_len' => strlen($expectedToken),
+            'expected_sha1_prefix' => substr(sha1($expectedToken), 0, 12),
+            'expected_first4' => substr($expectedToken, 0, 4),
+            'expected_last4' => substr($expectedToken, -4),
+            'incoming_len' => strlen($incoming),
+            'incoming_sha1_prefix' => $incoming === '' ? '(empty)' : substr(sha1($incoming), 0, 12),
+            'incoming_first4' => substr($incoming, 0, 4),
+            'incoming_last4' => substr($incoming, -4),
+            'match' => false,
+        ],
+    ], JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
     exit;
 }
 
