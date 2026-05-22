@@ -66,14 +66,54 @@ if ($expectedToken === '') {
     exit;
 }
 
-$hdr = $_SERVER['HTTP_AUTHORIZATION'] ?? ($_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? '');
+$authSource = '';
+$hdr = '';
+
+if (!empty($_SERVER['HTTP_AUTHORIZATION'])) {
+    $hdr = $_SERVER['HTTP_AUTHORIZATION'];
+    $authSource = 'HTTP_AUTHORIZATION';
+} elseif (!empty($_SERVER['REDIRECT_HTTP_AUTHORIZATION'])) {
+    $hdr = $_SERVER['REDIRECT_HTTP_AUTHORIZATION'];
+    $authSource = 'REDIRECT_HTTP_AUTHORIZATION';
+} elseif (function_exists('getallheaders')) {
+    $headers = getallheaders();
+    foreach (['Authorization', 'authorization'] as $key) {
+        if (!empty($headers[$key])) {
+            $hdr = $headers[$key];
+            $authSource = 'getallheaders[' . $key . ']';
+            break;
+        }
+    }
+}
+if (!$hdr && function_exists('apache_request_headers')) {
+    $headers = apache_request_headers();
+    foreach (['Authorization', 'authorization'] as $key) {
+        if (!empty($headers[$key])) {
+            $hdr = $headers[$key];
+            $authSource = 'apache_request_headers[' . $key . ']';
+            break;
+        }
+    }
+}
+
 $incoming = (stripos($hdr, 'Bearer ') === 0) ? trim(substr($hdr, 7)) : '';
+
+$serverKeysSeen = [];
+foreach ($_SERVER as $k => $_) {
+    if (stripos($k, 'AUTH') !== false || stripos($k, 'HTTP_') === 0) {
+        $serverKeysSeen[] = $k;
+    }
+}
+sort($serverKeysSeen);
 
 if ($incoming === '' || !hash_equals($expectedToken, $incoming)) {
     http_response_code(401);
     echo json_encode([
         'error' => 'unauthorized',
         'hint' => 'Authorization: Bearer <RECORDING_WORKER_TOKEN> 헤더 필요',
+        'auth_source' => $authSource ?: '(none — header not received by PHP)',
+        'raw_header_len' => strlen((string)$hdr),
+        'server_keys_seen' => $serverKeysSeen,
         'token_compare' => [
             'expected_len' => strlen($expectedToken),
             'expected_sha1_prefix' => substr(sha1($expectedToken), 0, 12),
