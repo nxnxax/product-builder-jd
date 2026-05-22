@@ -4202,12 +4202,26 @@ try {
                 $resolvedGroupReason .= '+default_fallback';
             }
             // 디버그 정보 — 응답에도 포함. 앱이 무시해도 운영자 직접 호출 시 확인 가능.
+            // 사장님 2026-05-22 — RN 측이 group_id="33" 보내는데 backend gid_received=0 보고.
+            // body parsing race 진단을 위해 raw_body / $_POST / Content-Type / body_keys 노출.
+            $_rawBody = @file_get_contents('php://input');
             $_sendDebug = [
                 'gid_received'      => $gid,
                 'gid_source'        => $gidSource,
                 'group_resolved_to' => (int)$gRow['id'],
                 'group_name'        => (string)$gRow['name'],
                 'reason'            => $resolvedGroupReason,
+                // body parsing 진단
+                'body_keys'         => is_array($body) ? array_keys($body) : ['(not_array)'],
+                'body_size'         => is_array($body) ? count($body) : 0,
+                'raw_body_length'   => is_string($_rawBody) ? strlen($_rawBody) : 0,
+                'raw_body_preview'  => is_string($_rawBody) ? substr($_rawBody, 0, 300) : '',
+                'content_type'      => (string)($_SERVER['CONTENT_TYPE'] ?? $_SERVER['HTTP_CONTENT_TYPE'] ?? ''),
+                'post_keys'         => array_keys($_POST ?? []),
+                'get_keys'          => array_keys($_GET ?? []),
+                // body['group_id'] 의 실제 raw 값 (있으면 형식 확인)
+                'body_group_id_raw' => isset($body['group_id']) ? var_export($body['group_id'], true) : '(unset)',
+                'body_groupId_raw'  => isset($body['groupId'])  ? var_export($body['groupId'], true)  : '(unset)',
             ];
 
             // 사장님 2026-05-20 — idempotent 분기는 "같은 customer_log + 같은 group" 일 때만 적용.
