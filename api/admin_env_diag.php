@@ -140,13 +140,71 @@ $keys = [
 
 $exposeAsIs = ['RAILWAY_WORKER_URL', 'CAFE24_BASE_URL', 'STT_PROVIDER', 'LLM_PROVIDER', 'SUPABASE_URL', 'NCP_CLOVA_INVOKE_URL'];
 
+$action = $_GET['action'] ?? '';
+
+if ($action === 'opcache_reset') {
+    $resetResult = ['action' => 'opcache_reset'];
+    if (function_exists('opcache_reset')) {
+        $resetResult['opcache_reset'] = @opcache_reset() ? 'success' : 'failed';
+    } else {
+        $resetResult['opcache_reset'] = 'function disabled';
+    }
+    $targetFiles = [__DIR__ . '/process-recording.php', __DIR__ . '/recording-callback.php'];
+    foreach ($targetFiles as $f) {
+        if (function_exists('opcache_invalidate') && is_file($f)) {
+            $resetResult['invalidate'][$f] = @opcache_invalidate($f, true) ? 'success' : 'failed';
+        }
+    }
+    echo json_encode($resetResult, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
+    exit;
+}
+
+if ($action === 'test_railway') {
+    $url = load_env_value('RAILWAY_WORKER_URL');
+    $token = load_env_value('RECORDING_WORKER_TOKEN');
+    $start = microtime(true);
+    $ch = curl_init(rtrim($url, '/') . '/');
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT => 10,
+        CURLOPT_HTTPHEADER => ['Authorization: Bearer ' . $token],
+    ]);
+    $resp = curl_exec($ch);
+    $info = [
+        'http_status' => curl_getinfo($ch, CURLINFO_HTTP_CODE),
+        'curl_errno' => curl_errno($ch),
+        'curl_error' => curl_error($ch),
+        'elapsed_ms' => round((microtime(true) - $start) * 1000, 2),
+        'response_preview' => substr((string)$resp, 0, 500),
+    ];
+    curl_close($ch);
+    echo json_encode([
+        'action' => 'test_railway',
+        'url' => rtrim($url, '/') . '/',
+        'result' => $info,
+    ], JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
+    exit;
+}
+
+$processRecordingPath = __DIR__ . '/process-recording.php';
+
 $result = [
     'php_version' => PHP_VERSION,
     'opcache_enabled' => function_exists('opcache_get_status')
         ? (@opcache_get_status(false)['opcache_enabled'] ?? false)
         : 'unavailable',
+    'process_recording_php' => [
+        'path' => $processRecordingPath,
+        'exists' => is_file($processRecordingPath),
+        'mtime' => is_file($processRecordingPath) ? date('Y-m-d H:i:s', filemtime($processRecordingPath)) : null,
+        'size' => is_file($processRecordingPath) ? filesize($processRecordingPath) : 0,
+    ],
     'env_files' => $envFiles,
     'keys' => [],
+    'available_actions' => [
+        '?action=opcache_reset' => 'opcache 강제 reset + process-recording / recording-callback invalidate',
+        '?action=test_railway' => 'cafe24 → Railway outbound HTTP 테스트 (Bearer token 으로 /health 호출)',
+    ],
 ];
 
 foreach ($keys as $key) {
