@@ -901,6 +901,25 @@ export function mountAppHeader(opts) {
         cachedName = getDisplayName(null, currentSession.user) || '';
         if (cachedName) cacheDisplayName(cachedName);
     }
+    // OAuth 직후 race fix — initSupabase 완료 전이라 currentSession 가 null 이지만
+    // localStorage 에 sb-*-auth-token 이 이미 저장된 상태. 직접 파싱해서 cachedName 도출
+    // → 첫 frame 부터 로그인 헤더 표시 (anon 헤더 깜빡임 차단).
+    if (!cachedName) {
+        try {
+            const sbKey = Object.keys(localStorage).find(k => k.startsWith('sb-') && k.endsWith('-auth-token'));
+            if (sbKey) {
+                const tokenData = JSON.parse(localStorage.getItem(sbKey) || 'null');
+                const u = tokenData?.user || tokenData?.currentSession?.user;
+                if (u) {
+                    cachedName = getDisplayName(null, u) || '';
+                    if (cachedName) {
+                        cacheDisplayName(cachedName);
+                        cacheUserEmail(u.email);
+                    }
+                }
+            }
+        } catch {}
+    }
     const cachedAdmin = readCachedAdminFlag();
 
     // body 클래스로 가시성 제어 — CSS 가 admin-only / user-menu / login-btn 조정.
