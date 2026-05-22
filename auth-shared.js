@@ -1314,7 +1314,82 @@ export async function bootApp(opts) {
     try { await initSupabase(); } catch {}
     if (opts?.requireAdmin && !requireAdmin()) return false;
     await refreshAppHeader();
+    try { setupPlaceholderMasker(); } catch {}
     return true;
+}
+
+/* 통화 녹취 처리 중 placeholder text ("AI 분석 중", "처리중...") 를 로딩 dots 로 가림.
+ * §7 placeholder-first 흐름 (backend 변경 X, 사장님 안전망 유지) + 사장님 2026-05-22:
+ * "처리중/분석중 텍스트가 보이면 과정이 많아 보이고 불안정해 보임. 로딩으로 표시해줘."
+ * MutationObserver 로 DOM 변경 감지 → 모든 페이지에서 자동 작동. ai_model='pending' 인
+ * customer_log row 가 ledger 든 모달이든 어디에 노출되어도 일관되게 처리됨. */
+let _placeholderMaskerReady = false;
+function setupPlaceholderMasker() {
+    if (_placeholderMaskerReady) return;
+    if (typeof document === 'undefined') return;
+    _placeholderMaskerReady = true;
+
+    // inline style 주입 (style.css 변경 없이 self-contained)
+    if (!document.getElementById('placeholder-masker-style')) {
+        const st = document.createElement('style');
+        st.id = 'placeholder-masker-style';
+        st.textContent = `
+.placeholder-dots {
+    display: inline-flex;
+    gap: 4px;
+    vertical-align: middle;
+    padding: 2px 4px;
+    line-height: 1;
+}
+.placeholder-dots > span {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #c8362c;
+    opacity: 0.35;
+    animation: ym-placeholder-dot-pulse 1.4s infinite ease-in-out;
+}
+.placeholder-dots > span:nth-child(2) { animation-delay: 0.2s; }
+.placeholder-dots > span:nth-child(3) { animation-delay: 0.4s; }
+@keyframes ym-placeholder-dot-pulse {
+    0%, 60%, 100% { opacity: 0.3; transform: scale(0.85); }
+    30%          { opacity: 1;   transform: scale(1.15); }
+}
+        `;
+        document.head.appendChild(st);
+    }
+
+    const PLACEHOLDER_PATTERN = /^(AI\s*(분석|요약)\s*(중|준비\s*중)|처리\s*중\.{0,3}|처리\s*중…?)$/;
+
+    function maskNode(el) {
+        if (!el || el.nodeType !== 1) return;
+        if (el.dataset?.placeholderMasked === '1') return;
+        // 자식 element 없고 textContent 만 있는 leaf cell 만 처리 (input 등 form 요소 제외)
+        if (el.children.length > 0) return;
+        if (el.matches?.('input, textarea, select, button')) return;
+        const text = (el.textContent || '').trim();
+        if (PLACEHOLDER_PATTERN.test(text)) {
+            el.dataset.placeholderMasked = '1';
+            el.dataset.placeholderText = text;  // debugging
+            el.innerHTML = '<span class="placeholder-dots" aria-label="' + text + '"><span></span><span></span><span></span></span>';
+        }
+    }
+
+    function scanAll() {
+        // ledger / modal cell 후보만 (성능 — body 전체 scan 비용 회피)
+        const selectors = 'td, .cell-value, [data-cell-value], [data-field], .row-detail-textarea, .transcript-modal-text';
+        document.querySelectorAll(selectors).forEach(maskNode);
+    }
+
+    // 초기 1회 + DOM 변경 감지
+    scanAll();
+    let scheduled = false;
+    const observer = new MutationObserver(() => {
+        if (scheduled) return;
+        scheduled = true;
+        requestAnimationFrame(() => { scheduled = false; scanAll(); });
+    });
+    observer.observe(document.body, { childList: true, subtree: true, characterData: true });
 }
 
 function escapeHtmlSafe(s) {
