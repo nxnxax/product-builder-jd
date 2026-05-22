@@ -64,6 +64,7 @@ jobs:
           php -l api/process-recording.php   # 통화 녹취 → Clova STT → LLM → customer_log
           php -l api/fcm_helpers.php         # FCM HTTP v1 발송 (Phase 2 M3)
           php -l api/audio_cleanup.php       # 24h 미정리 audio cron (Phase 2 M4)
+          php -l api/admin_env_diag.php      # .env 진단 endpoint (Bearer auth)
           php -l api/billing_helpers.php     # PortOne V2 API 헬퍼
           php -l api/billing/verify-payment.php       # 결제 검증 + 구독 활성화
           php -l api/billing/webhook-portone.php      # Webhook 수신 (Standard Webhooks)
@@ -128,6 +129,7 @@ jobs:
           cp api/process-recording.php deploy/process-recording.php   # 통화 녹취 → Clova STT → LLM → customer_log
           cp api/fcm_helpers.php deploy/fcm_helpers.php   # FCM HTTP v1 발송 — process-recording 이 async 완료 시 require
           cp api/audio_cleanup.php deploy/audio_cleanup.php   # 24h 미정리 audio cron cleanup (M4)
+          cp api/admin_env_diag.php deploy/admin_env_diag.php   # .env 진단 endpoint (Bearer auth, 임시)
           cp api/cron-process-jobs.php deploy/cron-process-jobs.php   # Phase 2 Path B — server secret worker (recording_jobs 처리)
           cp api/job-status.php deploy/job-status.php   # 속도 개선 (2026-05-20) — 앱 polling endpoint
           cp api/recording-callback.php deploy/recording-callback.php   # Railway worker 결과 수신 (Phase 2 외부 worker)
