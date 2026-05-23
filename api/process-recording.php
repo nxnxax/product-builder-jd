@@ -430,6 +430,8 @@ function ensure_recording_jobs_table(PDO $pdo): bool {
             'review_required'      => 'TINYINT(1) NOT NULL DEFAULT 0',
             // 사장님 2026-05-22 — §7 placeholder 응답 시간 진단용 (요약보기 race 분석)
             'response_elapsed_ms'  => 'INT NULL DEFAULT NULL',
+            // 사장님 2026-05-23 — "양식으로 전송" 자동 confirm. trigger_summarize 시 1 설정 → callback 이 ready_to_review 대신 customer_log INSERT + send_to_group 자동 실행.
+            'auto_confirm'         => 'TINYINT(1) NOT NULL DEFAULT 0',
         ];
         foreach ($needAlter as $col => $def) {
             if (!empty($cols) && !in_array($col, $cols, true)) {

@@ -94,7 +94,7 @@ require_once __DIR__ . '/crypto_helpers.php';
 
 /* job 검증 — owner_email 일치 확인 (스푸핑 방지) */
 try {
-    $sel = $pdo->prepare("SELECT id, owner_email, customer_log_id, retry_count, group_id, recorded_at, phone_number, review_required, duration_sec
+    $sel = $pdo->prepare("SELECT id, owner_email, customer_log_id, retry_count, group_id, recorded_at, phone_number, review_required, duration_sec, client_request_id, auto_confirm
         FROM recording_jobs WHERE id = :id LIMIT 1");
     $sel->execute([':id' => $jobId]);
     $jobRow = $sel->fetch();
@@ -256,9 +256,9 @@ $consultAt       = (string)($jobRow['recorded_at'] ?? date('Y-m-d H:i:s'));
 if ($summary === '') $summary = $transcript ?: '(요약 없음)';
 if ($customerName === '') $customerName = '고객';
 
-/* 사장님 2026-05-23 — lazy-STT 모드 부활. callback 도착 시 customer_log INSERT 안 함.
- * recording_jobs.summary_json_encrypted 에 저장 + status='ready_to_review' UPDATE.
- * 사용자가 미확인 요약 페이지에서 preview → confirm 진행 시 customer_log INSERT + mirror. */
+/* 사장님 2026-05-23 — lazy-STT 모드. callback 도착 시 summary_json_encrypted 저장.
+ * auto_confirm=1 이면 (사용자가 "양식으로 전송" 누름) customer_log INSERT + send_to_group 자동 실행.
+ * auto_confirm=0 이면 status='ready_to_review' 만 (사용자가 미확인 요약 페이지에서 confirm 수동). */
 
 $summaryJsonObj = [
     'customer_name'    => $customerName,
@@ -272,31 +272,126 @@ $summaryJsonObj = [
 ];
 $summaryJsonEnc = youngman_encrypt(json_encode($summaryJsonObj, JSON_UNESCAPED_UNICODE));
 
+$autoConfirm = !empty($jobRow['auto_confirm']);
+$customerLogId = null;
+$finalStatus = 'ready_to_review';
+
+if ($autoConfirm) {
+    /* 자동 confirm — customer_log INSERT + recording_jobs UPDATE + send_to_group mirror */
+    require_once __DIR__ . '/crypto_helpers.php';
+    function rc_uuid_v4_auto(): string {
+        $data = random_bytes(16);
+        $data[6] = chr(ord($data[6]) & 0x0f | 0x40);
+        $data[8] = chr(ord($data[8]) & 0x3f | 0x80);
+        return vsprintf('%s%s-%s-%s-%s-%s%s%s', str_split(bin2hex($data), 4));
+    }
+    function rc_phone_lookup_auto(string $phone): ?string {
+        $clean = preg_replace('/[^0-9]/', '', $phone);
+        return $clean ? substr($clean, -8) : null;
+    }
+    $customerLogId = rc_uuid_v4_auto();
+    $phoneLookup = $phoneNumber !== '' ? rc_phone_lookup_auto($phoneNumber) : null;
+    $consultAt = (string)($jobRow['recorded_at'] ?? date('Y-m-d H:i:s'));
+    $clientReqId = (string)($jobRow['client_request_id'] ?? $jobId);
+
+    try {
+        $pdo->prepare("INSERT INTO customer_log (
+                id, owner_email, customer_phone_lookup,
+                customer_name, phone_number,
+                summary, interest, inquiry, budget_condition, next_action,
+                transcript, consult_at, audio_storage_path, audio_kept,
+                ai_model, ai_generated_at, source, client_request_id
+            ) VALUES (
+                :id, :o, :pl,
+                :nm, :ph,
+                :sum, :intr, :inq, :bg, :nx,
+                :tr, :ca, :asp, 0,
+                :am, NOW(), 'app-auto-confirm', :cri
+            )")->execute([
+                ':id'  => $customerLogId,
+                ':o'   => $ownerEmail,
+                ':pl'  => $phoneLookup,
+                ':nm'  => $customerName !== '' ? youngman_encrypt($customerName) : null,
+                ':ph'  => $phoneNumber !== '' ? youngman_encrypt($phoneNumber) : null,
+                ':sum' => youngman_encrypt($summary),
+                ':intr'=> $interest !== '' ? youngman_encrypt($interest) : null,
+                ':inq' => $inquiry !== '' ? youngman_encrypt($inquiry) : null,
+                ':bg'  => $budgetCondition !== '' ? youngman_encrypt($budgetCondition) : null,
+                ':nx'  => $nextAction !== '' ? youngman_encrypt($nextAction) : null,
+                ':tr'  => youngman_encrypt($transcript),
+                ':ca'  => $consultAt,
+                ':asp' => null,
+                ':am'  => $sttModel . '+' . $llmModel,
+                ':cri' => $clientReqId,
+            ]);
+        $finalStatus = 'saved';
+    } catch (Throwable $e) {
+        // INSERT 실패 시 ready_to_review 로 fallback — 사용자가 미확인 요약에서 수동 confirm 가능.
+        error_log('[recording-callback auto_confirm] customer_log INSERT 실패: ' . $e->getMessage());
+        $customerLogId = null;
+        $finalStatus = 'ready_to_review';
+    }
+}
+
 try {
     $pdo->prepare("UPDATE recording_jobs SET
-            status = 'ready_to_review', progress_pct = 100, completed_at = NOW(),
+            status = :st, progress_pct = 100, completed_at = NOW(),
             summary_json_encrypted = :sj,
+            customer_log_id = COALESCE(:cl, customer_log_id),
             phone_number = COALESCE(NULLIF(:ph, ''), phone_number),
             updated_at = NOW()
         WHERE id = :id")
-        ->execute([':sj' => $summaryJsonEnc, ':ph' => $phoneNumber, ':id' => $jobId]);
+        ->execute([
+            ':st' => $finalStatus, ':sj' => $summaryJsonEnc,
+            ':cl' => $customerLogId, ':ph' => $phoneNumber, ':id' => $jobId,
+        ]);
 } catch (Throwable $e) {
     rc_jerror('recording_jobs UPDATE 실패: ' . $e->getMessage(), 502);
 }
 
-/* FCM call_summary_ready — 사용자가 미확인 요약 페이지에서 확인하도록 알림 */
+/* auto_confirm=1 + customer_log INSERT 성공 → send_to_group mirror */
+if ($autoConfirm && $customerLogId) {
+    try {
+        $sendUrl = rtrim((string)rc_load_env('CAFE24_BASE_URL') ?: 'https://youngman-biz.com', '/')
+                 . '/records.php?resource=customer-log';
+        $sendPayload = ['action' => 'customer_log_send_to_group', 'id' => $customerLogId, 'owner_email' => $ownerEmail];
+        if ($groupId !== '') $sendPayload['group_id'] = (int)$groupId;
+        $sCh = curl_init($sendUrl);
+        curl_setopt_array($sCh, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_POST => true,
+            CURLOPT_POSTFIELDS => json_encode($sendPayload, JSON_UNESCAPED_UNICODE),
+            CURLOPT_HTTPHEADER => ['Content-Type: application/json', 'X-Worker-Token: ' . $expected],
+            CURLOPT_TIMEOUT => 15,
+            CURLOPT_CONNECTTIMEOUT => 5,
+        ]);
+        $sResp = curl_exec($sCh);
+        $sStat = (int)curl_getinfo($sCh, CURLINFO_HTTP_CODE);
+        curl_close($sCh);
+        error_log('[recording-callback auto_confirm] send_to_group http=' . $sStat . ' cl=' . $customerLogId);
+    } catch (Throwable $e) {
+        error_log('[recording-callback auto_confirm] send_to_group 실패: ' . $e->getMessage());
+    }
+}
+
+/* FCM — auto_confirm=1 이면 "고객관리대장 자동 저장 완료", 아니면 "요약 완료, 검토 대기" */
 try {
     require_once __DIR__ . '/fcm_helpers.php';
     $sumPreview = $summary;
     if (mb_strlen($sumPreview) > 60) $sumPreview = mb_substr($sumPreview, 0, 57) . '...';
+    $fcmTitle = $autoConfirm
+        ? '고객관리대장 저장 완료 — ' . $customerName
+        : '통화 요약 완료 — ' . $customerName;
     send_fcm_to_user($pdo, $ownerEmail, [
-        'title' => '통화 요약 완료 — ' . $customerName,
+        'title' => $fcmTitle,
         'body'  => $sumPreview,
         'data'  => [
-            'type'       => 'call_summary_ready',
-            'job_id'     => $jobId,
-            'job_status' => 'ready_to_review',
-            'group_id'   => $groupId,
+            'type'            => 'call_summary_ready',
+            'job_id'          => $jobId,
+            'job_status'      => $finalStatus,
+            'customer_log_id' => $customerLogId,
+            'group_id'        => $groupId,
+            'auto_confirmed'  => $autoConfirm ? '1' : '0',
         ],
     ]);
 } catch (Throwable $e) {
@@ -306,6 +401,8 @@ try {
 echo json_encode([
     'ok' => true,
     'job_id' => $jobId,
-    'status' => 'ready_to_review',
+    'status' => $finalStatus,
+    'customer_log_id' => $customerLogId,
+    'auto_confirmed' => $autoConfirm,
     'mode' => 'lazy_stt',
 ], JSON_UNESCAPED_UNICODE);

@@ -1370,6 +1370,9 @@ function ensure_recording_jobs_table(PDO $pdo): bool {
             'progress_pct'           => 'TINYINT NOT NULL DEFAULT 0',
             'group_id'               => 'VARCHAR(36) NULL DEFAULT NULL',
             'review_required'        => 'TINYINT(1) NOT NULL DEFAULT 0',
+            'response_elapsed_ms'    => 'INT NULL DEFAULT NULL',
+            // 사장님 2026-05-23 — "양식으로 전송" 자동 confirm. trigger_summarize 시 1 설정 → callback 이 ready_to_review 대신 자동 confirm.
+            'auto_confirm'           => 'TINYINT(1) NOT NULL DEFAULT 0',
         ];
         foreach ($needAlter as $col => $def) {
             if (!empty($cols) && !in_array($col, $cols, true)) {
@@ -3956,10 +3959,13 @@ try {
                     'message' => 'audio_pending/failed_retryable 만 trigger_summarize 가능 (현재: ' . $curStatus . ').'], 409);
             }
 
-            // 1) status='queued' UPDATE
+            // 사장님 2026-05-23 — "양식으로 전송" 누른 케이스. auto_confirm=1 → callback 자동 confirm.
+            $autoConfirm = !empty($body['auto_confirm']) ? 1 : 0;
+
+            // 1) status='queued' UPDATE + auto_confirm 설정
             try {
-                $pdo->prepare("UPDATE recording_jobs SET status = 'queued', updated_at = NOW(), retry_count = 0, error_message = NULL WHERE id = :id")
-                    ->execute([':id' => $jobId]);
+                $pdo->prepare("UPDATE recording_jobs SET status = 'queued', updated_at = NOW(), retry_count = 0, error_message = NULL, auto_confirm = :ac WHERE id = :id")
+                    ->execute([':ac' => $autoConfirm, ':id' => $jobId]);
             } catch (Throwable $e) {
                 respond(['status' => 'error', 'code' => 'upstream_failed', 'message' => 'UPDATE 실패: ' . $e->getMessage()], 503);
             }
