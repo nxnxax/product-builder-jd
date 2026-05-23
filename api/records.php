@@ -3937,7 +3937,7 @@ try {
             $jobId = trim((string)($body['job_id'] ?? ''));
             if ($jobId === '') respond(['ok'=>false,'status'=>'error','processing'=>false,'code'=>'invalid_request','message'=>'job_id 필요.'], 400);
             try {
-                $jStmt = $pdo->prepare('SELECT id, owner_email, status, storage_path, duration_sec, customer_name_hint, phone_number, recorded_at, group_id
+                $jStmt = $pdo->prepare('SELECT id, owner_email, status, storage_path, duration_sec, customer_name_hint, phone_number, recorded_at, group_id, customer_log_id, client_request_id
                     FROM recording_jobs WHERE id = :id AND owner_email = :o LIMIT 1');
                 $jStmt->execute([':id' => $jobId, ':o' => $owner]);
                 $jRow = $jStmt->fetch();
@@ -4066,6 +4066,81 @@ try {
                               : (!$envDiag['has_token'] ? 'RECORDING_WORKER_TOKEN_missing' : 'unknown'));
                 error_log('[trigger_summarize] dispatch skipped: ' . $dispatchError);
             }
+            // 사장님 2026-05-24 — "양식으로 전송" placeholder 부활.
+            // auto_confirm=1 이면 즉시 placeholder customer_log INSERT + ledger mirror →
+            // native 가 모달 닫고 사용자가 고객관리대장 가면 "AI 요약중..." 카드 표시.
+            // callback §7 분기 (이미 있음) 가 결과 도착 시 customer_log UPDATE + ledger refresh.
+            // STT 실패 시 callback 의 fallback (customer_log DELETE + status='ready_to_review') 으로 미확인 요약 복원.
+            $placeholderCustomerLogId = null;
+            $placeholderPhone = trim((string)($jRow['phone_number'] ?? ''));
+            if ($autoConfirm && empty($jRow['customer_log_id']) && $placeholderPhone !== '') {
+                try {
+                    $placeholderCustomerLogId = (function() {
+                        $data = random_bytes(16);
+                        $data[6] = chr(ord($data[6]) & 0x0f | 0x40);
+                        $data[8] = chr(ord($data[8]) & 0x3f | 0x80);
+                        return vsprintf('%s%s-%s-%s-%s-%s%s%s', str_split(bin2hex($data), 4));
+                    })();
+                    $phName = trim((string)($jRow['customer_name_hint'] ?? ''));
+                    if ($phName === '') $phName = '(처리 중)';
+                    $phConsultAt = (string)($jRow['recorded_at'] ?? date('Y-m-d H:i:s'));
+                    $phCriRaw = (string)($jRow['client_request_id'] ?? $jobId);
+                    $pdo->prepare("INSERT INTO customer_log (
+                            id, owner_email, customer_phone_lookup,
+                            customer_name, phone_number,
+                            summary, interest, inquiry, budget_condition, next_action,
+                            transcript, consult_at, audio_storage_path, audio_kept,
+                            ai_model, ai_generated_at, source, client_request_id
+                        ) VALUES (
+                            :id, :o, :pl,
+                            :nm, :ph,
+                            :sum, NULL, NULL, NULL, NULL,
+                            NULL, :ca, NULL, 0,
+                            'pending', NOW(), 'app-processing', :cri
+                        )")->execute([
+                            ':id'  => $placeholderCustomerLogId,
+                            ':o'   => $owner,
+                            ':pl'  => customer_phone_lookup_key($placeholderPhone),
+                            ':nm'  => youngman_encrypt($phName),
+                            ':ph'  => youngman_encrypt($placeholderPhone),
+                            ':sum' => youngman_encrypt('(AI 요약 처리 중...)'),
+                            ':ca'  => $phConsultAt,
+                            ':cri' => $phCriRaw,
+                        ]);
+                    $pdo->prepare("UPDATE recording_jobs SET customer_log_id = :cl, updated_at = NOW() WHERE id = :id")
+                        ->execute([':cl' => $placeholderCustomerLogId, ':id' => $jobId]);
+
+                    // ledger mirror — internal HTTP (worker token 우회 분기 사용).
+                    // 실패해도 응답은 진행 (placeholder customer_log 는 살아있음; refresh callback 이 따로 갱신).
+                    if ($rwTok !== '') {
+                        try {
+                            $mirrorUrl = 'https://' . ($_SERVER['HTTP_HOST'] ?? 'youngman-biz.com') . '/records.php?resource=customer-log';
+                            $mirrorPayload = ['action' => 'customer_log_send_to_group', 'id' => $placeholderCustomerLogId, 'owner_email' => $owner];
+                            $gidStr = trim((string)($jRow['group_id'] ?? ''));
+                            if ($gidStr !== '') $mirrorPayload['group_id'] = (int)$gidStr;
+                            $mCh = curl_init($mirrorUrl);
+                            curl_setopt_array($mCh, [
+                                CURLOPT_RETURNTRANSFER => true,
+                                CURLOPT_POST => true,
+                                CURLOPT_POSTFIELDS => json_encode($mirrorPayload, JSON_UNESCAPED_UNICODE),
+                                CURLOPT_HTTPHEADER => ['Content-Type: application/json', 'X-Worker-Token: ' . $rwTok],
+                                CURLOPT_TIMEOUT => 8,
+                                CURLOPT_CONNECTTIMEOUT => 4,
+                            ]);
+                            $mResp = curl_exec($mCh);
+                            $mStat = (int)curl_getinfo($mCh, CURLINFO_HTTP_CODE);
+                            curl_close($mCh);
+                            error_log('[trigger_summarize placeholder] mirror http=' . $mStat . ' cl=' . $placeholderCustomerLogId);
+                        } catch (Throwable $e) {
+                            error_log('[trigger_summarize placeholder] mirror 예외: ' . $e->getMessage());
+                        }
+                    }
+                } catch (Throwable $e) {
+                    error_log('[trigger_summarize placeholder] INSERT 실패: ' . $e->getMessage());
+                    $placeholderCustomerLogId = null;
+                }
+            }
+
             // 사장님 2026-05-23 — 앱팀 v46 요청: ok + processing 필드 명시.
             // dispatched=false (cron 대기) 여도 결국 STT 처리되므로 processing=true.
             respond([
@@ -4076,6 +4151,8 @@ try {
                 'job_status' => $dispatched ? 'processing' : 'queued',
                 'dispatched' => $dispatched,
                 'dispatch_error' => $dispatchError,
+                'customer_log_id' => $placeholderCustomerLogId,
+                'auto_confirm' => $autoConfirm === 1,
                 'message' => $dispatched ? 'STT 시작됨.' : 'STT 대기열 등록됨 — cron 5분 내 자동 재시도.',
                 '_diag' => $envDiag,
             ]);

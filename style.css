@@ -2642,6 +2642,24 @@ select:focus {
 .content-transcript-btn:active { transform: translateY(0.5px); }
 .content-transcript-btn:disabled { opacity: .55; cursor: wait; border-color: rgba(20,14,8,.08); background: #fbfaf5; }
 
+/* 사장님 2026-05-24 — "양식으로 전송" placeholder 회차 시각화.
+   trigger_summarize(auto_confirm=1) 직후 callback 완료 전 상태.
+   회색 배경 + 좌측 깜박이 막대 + 본문 색 약하게. 5초 polling 으로 완료 시 자동 갱신. */
+.content-round-block.content-round-processing {
+    background: rgba(20, 14, 8, 0.04);
+    border-left: 3px solid #c8362c;
+    position: relative;
+    animation: cl-pulse 1.6s ease-in-out infinite;
+}
+.content-round-block.content-round-processing .content-round-body {
+    color: #8a8278;
+    font-style: italic;
+}
+@keyframes cl-pulse {
+    0%, 100% { opacity: 0.85; }
+    50% { opacity: 1; }
+}
+
 /* 전문보기 별도 큰 모달 */
 .transcript-modal-panel {
     max-width: 800px;

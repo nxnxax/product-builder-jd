@@ -257,6 +257,35 @@ async function loadRecords() {
     }
     selectedIds.clear();
     renderRecords();
+    // 사장님 2026-05-24 — 처리중 placeholder 있으면 polling 시작 (양식으로 전송 흐름).
+    startProcessingPollIfNeeded();
+}
+
+/* 사장님 2026-05-24 — 양식으로 전송 흐름의 placeholder ledger 회차 자동 갱신.
+ * content 안에 "(AI 요약 처리 중...)" 가 있는 record 가 1개라도 있으면 5초마다 silent refetch.
+ * callback 완료 → ledger refresh 호출되면 다음 polling 에 새 content 도착.
+ * page hidden 일 땐 polling skip. placeholder 사라지면 자동 중단. */
+let _processingPollTimer = null;
+function _hasProcessingPlaceholder() {
+    return records.some(r => String(r.data?.content || '').includes('(AI 요약 처리 중...)'));
+}
+function startProcessingPollIfNeeded() {
+    if (_processingPollTimer) return;
+    if (!_hasProcessingPlaceholder()) return;
+    _processingPollTimer = setInterval(async () => {
+        if (document.hidden) return;
+        try {
+            if (groups.length === 0) return;
+            const allIds = groups.map(g => g.id).join(',');
+            const data = await api('ledger-records', { query: 'group_ids=' + allIds });
+            records = data.items || [];
+            renderRecords();
+        } catch (e) { /* silent — 다음 tick 재시도 */ }
+        if (!_hasProcessingPlaceholder()) {
+            clearInterval(_processingPollTimer);
+            _processingPollTimer = null;
+        }
+    }, 5000);
 }
 
 /* 검색 입력 → 기존 DOM 행을 hide/show. renderRecords() 호출 안 함 → input 요소 보존
@@ -871,15 +900,26 @@ function renderContentWithTranscriptButtons(text, rowData) {
         const h = headers[i];
         const blockEnd = i + 1 < headers.length ? headers[i + 1].index : src.length;
         const block = src.slice(h.index, blockEnd).replace(/\s+$/, '');
-        html += `
-            <div class="content-round-block" data-round="${escapeAttr(h.round)}">
-                <div class="content-round-body">${escapeHtml(block)}</div>
-                <div class="content-round-foot">
-                    <button type="button" class="content-transcript-btn" data-transcript-ts="${escapeAttr(h.ts)}" data-transcript-round="${escapeAttr(h.round)}" title="대화내용 전문보기">
-                        <span class="ico">📄</span><span>전문보기</span>
-                    </button>
-                </div>
-            </div>`;
+        // 사장님 2026-05-24 — placeholder 회차 (AI 요약 처리 중) 시각화.
+        // trigger_summarize(auto_confirm=1) 직후 → callback 완료 전 상태.
+        // "전문보기" 버튼 숨김 (transcript 아직 NULL), 회차 본문은 회색 + spinner.
+        const isProcessing = block.includes('(AI 요약 처리 중...)');
+        if (isProcessing) {
+            html += `
+                <div class="content-round-block content-round-processing" data-round="${escapeAttr(h.round)}">
+                    <div class="content-round-body">${escapeHtml(block)}</div>
+                </div>`;
+        } else {
+            html += `
+                <div class="content-round-block" data-round="${escapeAttr(h.round)}">
+                    <div class="content-round-body">${escapeHtml(block)}</div>
+                    <div class="content-round-foot">
+                        <button type="button" class="content-transcript-btn" data-transcript-ts="${escapeAttr(h.ts)}" data-transcript-round="${escapeAttr(h.round)}" title="대화내용 전문보기">
+                            <span class="ico">📄</span><span>전문보기</span>
+                        </button>
+                    </div>
+                </div>`;
+        }
     }
     return `<div class="row-detail-textarea content-rounds">${html}</div>`;
 }
