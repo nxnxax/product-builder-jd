@@ -141,6 +141,7 @@ if (!empty($jobRow['customer_log_id'])) {
     $inquiryCb         = trim((string)($body['inquiry'] ?? ''));
     $budgetConditionCb = trim((string)($body['budget_condition'] ?? ''));
     $nextActionCb      = trim((string)($body['next_action'] ?? ''));
+    $regionCb          = trim((string)($body['region'] ?? ''));
     $transcriptCb      = trim((string)($body['transcript'] ?? ''));
     $sttModelCb        = trim((string)($body['stt_model'] ?? 'unknown'));
     $llmModelCb        = trim((string)($body['llm_model'] ?? 'unknown'));
@@ -161,6 +162,7 @@ if (!empty($jobRow['customer_log_id'])) {
                 inquiry = COALESCE(NULLIF(:inq, ''), inquiry),
                 budget_condition = COALESCE(NULLIF(:bg, ''), budget_condition),
                 next_action = COALESCE(NULLIF(:nx, ''), next_action),
+                region = COALESCE(NULLIF(:rg, ''), region),
                 transcript = COALESCE(NULLIF(:tr, ''), transcript),
                 ai_model = :am,
                 ai_generated_at = NOW(),
@@ -174,6 +176,7 @@ if (!empty($jobRow['customer_log_id'])) {
                 ':inq' => $inquiryCb !== '' ? youngman_encrypt($inquiryCb) : '',
                 ':bg'  => $budgetConditionCb !== '' ? youngman_encrypt($budgetConditionCb) : '',
                 ':nx'  => $nextActionCb !== '' ? youngman_encrypt($nextActionCb) : '',
+                ':rg'  => $regionCb !== '' ? youngman_encrypt($regionCb) : '',
                 ':tr'  => $transcriptCb !== '' ? youngman_encrypt($transcriptCb) : '',
                 ':am'  => $sttModelCb . '+' . $llmModelCb,
                 ':id'  => $jobRow['customer_log_id'],
@@ -258,6 +261,7 @@ $interest        = trim((string)($body['interest'] ?? ''));
 $inquiry         = trim((string)($body['inquiry'] ?? ''));
 $budgetCondition = trim((string)($body['budget_condition'] ?? ''));
 $nextAction      = trim((string)($body['next_action'] ?? ''));
+$region          = trim((string)($body['region'] ?? ''));
 $transcript      = trim((string)($body['transcript'] ?? ''));
 $sttModel        = trim((string)($body['stt_model'] ?? 'unknown'));
 $llmModel        = trim((string)($body['llm_model'] ?? 'unknown'));
@@ -279,6 +283,7 @@ $summaryJsonObj = [
     'inquiry'          => $inquiry,
     'budget_condition' => $budgetCondition,
     'next_action'      => $nextAction,
+    'region'           => $region,
     'transcript'       => $transcript,
     'ai_model'         => $sttModel . '+' . $llmModel,
 ];
@@ -343,13 +348,13 @@ if ($autoConfirm) {
                 id, owner_email, customer_phone_lookup,
                 customer_name, phone_number,
                 summary, interest, inquiry, budget_condition, next_action,
-                transcript, consult_at, audio_storage_path, audio_kept,
+                region, transcript, consult_at, audio_storage_path, audio_kept,
                 ai_model, ai_generated_at, source, client_request_id
             ) VALUES (
                 :id, :o, :pl,
                 :nm, :ph,
                 :sum, :intr, :inq, :bg, :nx,
-                :tr, :ca, :asp, 0,
+                :rg, :tr, :ca, :asp, 0,
                 :am, NOW(), 'app-auto-confirm', :cri
             )")->execute([
                 ':id'  => $customerLogId,
@@ -362,6 +367,7 @@ if ($autoConfirm) {
                 ':inq' => $inquiry !== '' ? youngman_encrypt($inquiry) : null,
                 ':bg'  => $budgetCondition !== '' ? youngman_encrypt($budgetCondition) : null,
                 ':nx'  => $nextAction !== '' ? youngman_encrypt($nextAction) : null,
+                ':rg'  => $region !== '' ? youngman_encrypt($region) : null,
                 ':tr'  => youngman_encrypt($transcript),
                 ':ca'  => $consultAt,
                 ':asp' => null,

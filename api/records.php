@@ -1064,14 +1064,23 @@ function ensure_customer_log_table(PDO $pdo): bool {
         try {
             $cols = $pdo->query("SHOW COLUMNS FROM customer_log")->fetchAll(PDO::FETCH_ASSOC);
             $hasLink = false;
-            foreach ($cols as $c) { if (($c['Field'] ?? '') === 'linked_ledger_record_id') { $hasLink = true; break; } }
+            $hasRegion = false;
+            foreach ($cols as $c) {
+                $f = $c['Field'] ?? '';
+                if ($f === 'linked_ledger_record_id') $hasLink = true;
+                if ($f === 'region') $hasRegion = true;
+            }
             if (!$hasLink) {
                 $pdo->exec("ALTER TABLE customer_log
                     ADD COLUMN linked_ledger_record_id INT NULL DEFAULT NULL,
                     ADD INDEX idx_cl_linked (linked_ledger_record_id)");
             }
+            // 사장님 2026-05-24 — 고객 거주지 자동 인식. AES-256-GCM 암호문 저장.
+            if (!$hasRegion) {
+                $pdo->exec("ALTER TABLE customer_log ADD COLUMN region VARCHAR(255) NULL DEFAULT NULL");
+            }
         } catch (Throwable $e) {
-            error_log('[records] customer_log ALTER linked_ledger_record_id failed: ' . $e->getMessage());
+            error_log('[records] customer_log ALTER linked_ledger_record_id/region failed: ' . $e->getMessage());
         }
         return $done = true;
     } catch (Throwable $e) {
@@ -1130,6 +1139,7 @@ function customer_log_row(array $row): array {
         'inquiry'             => youngman_decrypt($row['inquiry'] ?? null),
         'budget_condition'    => youngman_decrypt($row['budget_condition'] ?? null),
         'next_action'         => youngman_decrypt($row['next_action'] ?? null),
+        'region'              => youngman_decrypt($row['region'] ?? null),
         'agent_memo'          => youngman_decrypt($row['agent_memo'] ?? null),
         'audio_storage_path'  => $row['audio_storage_path'] ?? null,
         'audio_kept'          => !empty($row['audio_kept']),
@@ -1158,6 +1168,24 @@ function customer_log_row(array $row): array {
  *   memo        ← '' (비고 — 사용자가 웹 ledger 에서 직접 입력하는 자유 메모)
  * (budget_condition / next_action / transcript 는 매핑 미적용 — 추후 합의 따라 content 에 추가 가능)
  */
+/**
+ * 사장님 2026-05-24 — ledger group 의 field_schema 에서 "지역" 필드 key 찾기.
+ * 사장님이 그룹 편집으로 직접 추가하므로 key 명이 가변적. label="지역" 또는
+ * key="region" 으로 자동 매칭. 못 찾으면 null → region 매핑 skip.
+ */
+function find_region_field_key(?array $fieldSchema): ?string {
+    if (!is_array($fieldSchema)) return null;
+    foreach ($fieldSchema as $f) {
+        if (!is_array($f)) continue;
+        $label = trim((string)($f['label'] ?? ''));
+        $key = trim((string)($f['key'] ?? ''));
+        if ($key !== '' && ($label === '지역' || $key === 'region' || $key === '지역')) {
+            return $key;
+        }
+    }
+    return null;
+}
+
 function customer_log_default_group_field_schema(): array {
     return [
         ['key' => 'managed',    'label' => '관리',         'type' => 'manage_switch'],
@@ -4331,6 +4359,7 @@ try {
             $inquiry         = $pick('inquiry', '');
             $budgetCondition = $pick('budget_condition', '');
             $nextAction      = $pick('next_action', '');
+            $region          = $pick('region', '');
             $transcript      = $pick('transcript', '');
             $consultAtIn     = $pick('consult_at', (string)($jRow['recorded_at'] ?? ''));
             $groupId         = $pick('group_id', (string)($jRow['group_id'] ?? ''));
@@ -4352,13 +4381,13 @@ try {
                         id, owner_email, customer_phone_lookup,
                         customer_name, phone_number,
                         summary, interest, inquiry, budget_condition, next_action,
-                        transcript, consult_at, audio_storage_path, audio_kept,
+                        region, transcript, consult_at, audio_storage_path, audio_kept,
                         ai_model, ai_generated_at, source, client_request_id
                     ) VALUES (
                         :id, :o, :pl,
                         :nm, :ph,
                         :sum, :intr, :inq, :bg, :nx,
-                        :tr, :ca, :asp, 0,
+                        :rg, :tr, :ca, :asp, 0,
                         :am, NOW(), 'app-review', :cri
                     )");
                 $ins->execute([
@@ -4372,6 +4401,7 @@ try {
                     ':inq' => $inquiry  !== '' ? youngman_encrypt($inquiry)  : null,
                     ':bg'  => $budgetCondition !== '' ? youngman_encrypt($budgetCondition) : null,
                     ':nx'  => $nextAction !== '' ? youngman_encrypt($nextAction) : null,
+                    ':rg'  => $region !== '' ? youngman_encrypt($region) : null,
                     ':tr'  => $transcript !== '' ? youngman_encrypt($transcript) : null,
                     ':ca'  => $consultAt,
                     ':asp' => null,
@@ -4493,6 +4523,7 @@ try {
                 $clSummaryR = trim((string)(youngman_decrypt($clRow['summary'] ?? '') ?? ''));
                 $clIntrR    = trim((string)(youngman_decrypt($clRow['interest'] ?? '') ?? ''));
                 $clInqR     = trim((string)(youngman_decrypt($clRow['inquiry'] ?? '') ?? ''));
+                $clRegionR  = trim((string)(youngman_decrypt($clRow['region'] ?? '') ?? ''));
 
                 $contentPartsR = [];
                 if ($clSummaryR !== '') $contentPartsR[] = $clSummaryR;
@@ -4524,6 +4555,20 @@ try {
                 $curDataR['phone']    = $clPhoneR !== '' ? $clPhoneR : (string)($curDataR['phone'] ?? '');
                 $curDataR['content']  = $mergedContentR;
                 if (!isset($curDataR['managed'])) $curDataR['managed'] = true;
+                // 사장님 2026-05-24 — refresh 시점에도 region 갱신 (placeholder → 실제 값).
+                try {
+                    $groupSchemaArrR = null;
+                    $gStmtR = $pdo->prepare("SELECT field_schema_json FROM ledger_groups WHERE id = :id LIMIT 1");
+                    $gStmtR->execute([':id' => (int)$exLrRowR['group_id']]);
+                    $gRowSchemaR = $gStmtR->fetch();
+                    if ($gRowSchemaR && !empty($gRowSchemaR['field_schema_json'])) {
+                        $groupSchemaArrR = youngman_decrypt_json($gRowSchemaR['field_schema_json']);
+                    }
+                    $regionFieldKeyR = find_region_field_key($groupSchemaArrR);
+                    if ($regionFieldKeyR !== null && $clRegionR !== '') {
+                        $curDataR[$regionFieldKeyR] = $clRegionR;
+                    }
+                } catch (Throwable $e) { /* schema 파싱 실패 시 region 갱신 skip */ }
 
                 $newDataEncR = youngman_encrypt(json_encode($curDataR, JSON_UNESCAPED_UNICODE));
                 $pdo->prepare("UPDATE ledger_records SET data_json = :dj, updated_at = NOW() WHERE id = :id")
@@ -4639,7 +4684,15 @@ try {
             $clSummary = trim((string)(youngman_decrypt($clRow['summary'] ?? '') ?? ''));
             $clIntr    = trim((string)(youngman_decrypt($clRow['interest'] ?? '') ?? ''));
             $clInq     = trim((string)(youngman_decrypt($clRow['inquiry'] ?? '') ?? ''));
+            $clRegion  = trim((string)(youngman_decrypt($clRow['region'] ?? '') ?? ''));
             $clAgentMemo = trim((string)(youngman_decrypt($clRow['agent_memo'] ?? '') ?? ''));
+
+            // 사장님 2026-05-24 — 그룹 schema 에서 "지역" 필드 key 찾기 (auto-mapping).
+            $regionFieldKey = null;
+            try {
+                $groupSchemaArr = !empty($gRow['field_schema_json']) ? youngman_decrypt_json($gRow['field_schema_json']) : null;
+                $regionFieldKey = find_region_field_key($groupSchemaArr);
+            } catch (Throwable $e) { /* schema 파싱 실패 시 매핑 skip */ }
 
             $contentParts = [];
             if ($clSummary !== '') $contentParts[] = $clSummary;
@@ -4703,6 +4756,11 @@ try {
                 $mergedData['call_count'] = $newCallCount;
                 $mergedData['content']    = $mergedContent;
                 $mergedData['agent_memo'] = $mergedMemo;
+                // 사장님 2026-05-24 — 지역 자동 매핑. LLM 이 추출했으면 갱신, 못 했으면 기존 값 유지.
+                // 사용자가 수동 편집한 값도 새 통화에서 LLM 이 같은 지역 추출하면 동일 값으로 덮어씌어짐 (무해).
+                if ($regionFieldKey !== null && $clRegion !== '') {
+                    $mergedData[$regionFieldKey] = $clRegion;
+                }
                 // managed: 기존 그대로 유지 (사용자가 의도적으로 비관리 토글한 경우 보존).
                 // 옛 schema (managed 키 자체 없음) 면 true 로 보정.
                 if (!array_key_exists('managed', $mergedData)) $mergedData['managed'] = true;
@@ -4772,6 +4830,10 @@ try {
                 'agent_memo' => $firstMemo,
                 'memo'       => '',
             ];
+            // 사장님 2026-05-24 — 지역 자동 매핑 (INSERT 분기). LLM 이 추출했으면 포함.
+            if ($regionFieldKey !== null && $clRegion !== '') {
+                $data[$regionFieldKey] = $clRegion;
+            }
 
             // override — 앱 측이 모달에서 편집한 값. key 는 8필드 사용.
             // call_count 는 자동 계산값이라 override 받아도 무시 (백엔드 truth 유지).

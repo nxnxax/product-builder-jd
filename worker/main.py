@@ -130,6 +130,7 @@ class CallbackResult(BaseModel):
     inquiry: Optional[str] = None
     budget_condition: Optional[str] = None
     next_action: Optional[str] = None
+    region: Optional[str] = None  # 사장님 2026-05-24 — 고객 거주지 자동 인식.
     transcript: str = ""
     stt_model: str = ""
     llm_model: str = ""
@@ -185,7 +186,8 @@ CLAUDE_SYSTEM_PROMPT = """당신은 한국어 부동산/세일즈 통화 내용�
   "interest": string | null,
   "inquiry": string | null,
   "budget_condition": string | null,
-  "next_action": string | null
+  "next_action": string | null,
+  "region": string | null
 }
 
 ==== customer_name 결정 규칙 (7단계) ====
@@ -279,6 +281,38 @@ AI 의견 포함 요소:
 - inquiry: 고객 질문 (쉼표 나열)
 - budget_condition: 예산/조건
 - next_action: 영업 follow-up
+
+==== region 결정 규칙 (사장님 2026-05-24) ====
+
+"고객 본인의 현재 거주지" (시 또는 구/동 단위) 만 추출. 문맥 파악 필수.
+
+[추출 대상]
+- 고객이 "저는 ~에 살아요" / "저희 집이 ~예요" / "거주지가 ~예요" → 그 지역
+- "어디 사세요?" 질문에 고객이 답한 지역 → 그 지역
+- "~에 거주중이라" / "~에 살고 있어요" → 그 지역
+
+[제외 대상 — null 반환]
+- 영업측(사장님 본인) 거주지
+- 매물/모델하우스/매장/사무실 위치
+- 행선지 ("내일 ~ 갈게요", "~에서 만나요")
+- 본가/회사/이사 예정지 (현재 거주지가 아님)
+- 직장 위치 ("직장이 ~라서")
+- 명확히 고객 거주지인지 판단 어려운 경우
+
+[형식]
+- 시/구 단위 한국어 짧게. 예: "평택", "수원", "서울 강남구", "분당", "광교"
+- 광역시/도 생략 가능. "경기도 평택시" → "평택"
+- 행정 약어 우선. "분당구" 보다 "분당"
+
+[예시]
+1. "제가 집이 평택이거든요" → "평택"
+2. "저는 수원에 사는데요 모델하우스가 분당이라고 하셨죠? 내일 분당으로 갈게요" → "수원"
+   (수원 = 고객 거주, 분당 = 모델하우스 + 행선지 → 제외)
+3. "내일 서울 강남 가요" → null (행선지)
+4. "본가가 부산이라 명절에 가요" → null (본가 ≠ 현재 거주지)
+5. "직장이 여의도라서" → null (직장 ≠ 거주지)
+6. 영업측이 "광교 어떠세요?" 고객 "광교 좋네요" → null (광교 = 영업 추천 매물)
+7. 통화 내내 지역 언급 없음 → null
 
 ==== 중요 ====
 - 이번 transcript 에 명시된 사실만 출력. 과거 통화/일반론 사용 금지.
@@ -477,7 +511,8 @@ async def summarize_claude(transcript: str) -> dict:
         repair_sys = (
             "다음 텍스트를 지정된 JSON schema 에 맞게 유효한 JSON 으로만 변환하세요. 설명 없이 JSON 만 반환하세요.\n"
             "schema: {\"customer_name\":string, \"summary\":string, \"interest\":string, "
-            "\"inquiry\":string, \"budget_condition\":string, \"next_action\":string}"
+            "\"inquiry\":string, \"budget_condition\":string, \"next_action\":string, "
+            "\"region\":string}"
         )
         try:
             r_resp = await client.post(
@@ -602,6 +637,7 @@ async def process_job(req: ProcessRequest) -> None:
             inquiry=summary_data.get("inquiry"),
             budget_condition=summary_data.get("budget_condition"),
             next_action=summary_data.get("next_action"),
+            region=summary_data.get("region"),
             transcript=transcript,
             stt_model="openai-whisper-1",
             llm_model="claude-sonnet-4-6",
