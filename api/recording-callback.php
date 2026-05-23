@@ -256,113 +256,35 @@ $consultAt       = (string)($jobRow['recorded_at'] ?? date('Y-m-d H:i:s'));
 if ($summary === '') $summary = $transcript ?: '(요약 없음)';
 if ($customerName === '') $customerName = '고객';
 
-/* 사장님 2026-05-21 — 미확인요약 시스템 폐기로 review_required 분기 제거.
- * review_required 값 무관하게 항상 customer_log INSERT + ledger mirror 진행 (아래 흐름).
- * 데이터 누락 0. */
+/* 사장님 2026-05-23 — lazy-STT 모드 부활. callback 도착 시 customer_log INSERT 안 함.
+ * recording_jobs.summary_json_encrypted 에 저장 + status='ready_to_review' UPDATE.
+ * 사용자가 미확인 요약 페이지에서 preview → confirm 진행 시 customer_log INSERT + mirror. */
 
-/* customer_log row ID 생성 */
-function rc_uuid_v4(): string {
-    $data = random_bytes(16);
-    $data[6] = chr(ord($data[6]) & 0x0f | 0x40);
-    $data[8] = chr(ord($data[8]) & 0x3f | 0x80);
-    return vsprintf('%s%s-%s-%s-%s-%s%s%s', str_split(bin2hex($data), 4));
-}
-$customerLogId = rc_uuid_v4();
+$summaryJsonObj = [
+    'customer_name'    => $customerName,
+    'summary'          => $summary,
+    'interest'         => $interest,
+    'inquiry'          => $inquiry,
+    'budget_condition' => $budgetCondition,
+    'next_action'      => $nextAction,
+    'transcript'       => $transcript,
+    'ai_model'         => $sttModel . '+' . $llmModel,
+];
+$summaryJsonEnc = youngman_encrypt(json_encode($summaryJsonObj, JSON_UNESCAPED_UNICODE));
 
-/* customer_phone_lookup 계산 (records.php 와 동일 규칙) */
-function rc_phone_lookup(string $phone): ?string {
-    $clean = preg_replace('/[^0-9]/', '', $phone);
-    if (!$clean) return null;
-    return substr($clean, -8);  // 뒤 8자리 (지역번호 제외)
-}
-$phoneLookup = $phoneNumber !== '' ? rc_phone_lookup($phoneNumber) : null;
-
-try {
-    $ins = $pdo->prepare("INSERT INTO customer_log (
-            id, owner_email, customer_phone_lookup,
-            customer_name, phone_number,
-            summary, interest, inquiry, budget_condition, next_action,
-            transcript, consult_at, audio_storage_path, audio_kept,
-            ai_model, ai_generated_at, source, client_request_id
-        ) VALUES (
-            :id, :o, :pl,
-            :nm, :ph,
-            :sum, :intr, :inq, :bg, :nx,
-            :tr, :ca, :asp, 0,
-            :am, NOW(), 'railway-worker', :cri
-        )");
-    $ins->execute([
-        ':id'  => $customerLogId,
-        ':o'   => $ownerEmail,
-        ':pl'  => $phoneLookup,
-        ':nm'  => $customerName !== '' ? youngman_encrypt($customerName) : null,
-        ':ph'  => $phoneNumber !== '' ? youngman_encrypt($phoneNumber) : null,
-        ':sum' => youngman_encrypt($summary),
-        ':intr'=> $interest !== '' ? youngman_encrypt($interest) : null,
-        ':inq' => $inquiry  !== '' ? youngman_encrypt($inquiry)  : null,
-        ':bg'  => $budgetCondition !== '' ? youngman_encrypt($budgetCondition) : null,
-        ':nx'  => $nextAction !== '' ? youngman_encrypt($nextAction) : null,
-        ':tr'  => youngman_encrypt($transcript),
-        ':ca'  => $consultAt,
-        ':asp' => null,  // Railway 가 audio 다운로드 후 처리. 영맨 storage_path 는 cron worker 가 cleanup.
-        ':am'  => $sttModel . '+' . $llmModel,
-        ':cri' => $jobId,
-    ]);
-} catch (Throwable $e) {
-    rc_jerror('customer_log INSERT 실패: ' . $e->getMessage(), 502);
-}
-
-/* recording_jobs 업데이트 — completed */
 try {
     $pdo->prepare("UPDATE recording_jobs SET
-            status = 'completed', progress_pct = 100, completed_at = NOW(),
-            customer_log_id = :cl, updated_at = NOW()
+            status = 'ready_to_review', progress_pct = 100, completed_at = NOW(),
+            summary_json_encrypted = :sj,
+            phone_number = COALESCE(NULLIF(:ph, ''), phone_number),
+            updated_at = NOW()
         WHERE id = :id")
-        ->execute([':cl' => $customerLogId, ':id' => $jobId]);
+        ->execute([':sj' => $summaryJsonEnc, ':ph' => $phoneNumber, ':id' => $jobId]);
 } catch (Throwable $e) {
-    error_log('[recording-callback] recording_jobs UPDATE 실패: ' . $e->getMessage());
+    rc_jerror('recording_jobs UPDATE 실패: ' . $e->getMessage(), 502);
 }
 
-/* 자동 send_to_group mirror (사장님 2026-05-20) — 통화 후 모달의 "양식에 전송" AutoSubmit 경로.
- * 앱이 process-recording.php request body 에 group_id 보내면 → recording_jobs 저장 → Railway 처리 →
- * 여기서 customer_log INSERT 후 자동으로 records.php?action=send_to_group 호출하여 ledger_records 에 mirror.
- * group_id 명시 안 됐어도 default 그룹으로 자동 mirror (사장님 기존 default 그룹 흐름 보존). */
-try {
-    $sendUrl = rtrim((string)rc_load_env('CAFE24_BASE_URL') ?: 'https://youngman-biz.com', '/')
-             . '/records.php?resource=customer-log';
-    $sendPayload = [
-        'action'      => 'customer_log_send_to_group',
-        'id'          => $customerLogId,
-        'owner_email' => $ownerEmail,
-    ];
-    if ($groupId !== '') $sendPayload['group_id'] = (int)$groupId;
-    $sCh = curl_init($sendUrl);
-    curl_setopt_array($sCh, [
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_POST => true,
-        CURLOPT_POSTFIELDS => json_encode($sendPayload, JSON_UNESCAPED_UNICODE),
-        CURLOPT_HTTPHEADER => [
-            'Content-Type: application/json',
-            'X-Worker-Token: ' . $expected,
-        ],
-        CURLOPT_TIMEOUT => 30,
-        CURLOPT_CONNECTTIMEOUT => 5,
-    ]);
-    $sResp = curl_exec($sCh);
-    $sStat = (int)curl_getinfo($sCh, CURLINFO_HTTP_CODE);
-    curl_close($sCh);
-    error_log('[recording-callback] auto send_to_group job=' . $jobId . ' gid=' . $groupId . ' http=' . $sStat);
-    if ($sResp !== false && $sStat >= 200 && $sStat < 300) {
-        $sData = json_decode((string)$sResp, true);
-        if (is_array($sData) && isset($sData['_send_debug'])) {
-            error_log('[recording-callback] _send_debug: ' . json_encode($sData['_send_debug'], JSON_UNESCAPED_UNICODE));
-        }
-    }
-} catch (Throwable $e) {
-    error_log('[recording-callback] auto send_to_group 실패: ' . $e->getMessage());
-}
-
-/* FCM call_summary_ready 발송 */
+/* FCM call_summary_ready — 사용자가 미확인 요약 페이지에서 확인하도록 알림 */
 try {
     require_once __DIR__ . '/fcm_helpers.php';
     $sumPreview = $summary;
@@ -371,11 +293,10 @@ try {
         'title' => '통화 요약 완료 — ' . $customerName,
         'body'  => $sumPreview,
         'data'  => [
-            'type'            => 'call_summary_ready',
-            'job_id'          => $jobId,
-            'customer_log_id' => $customerLogId,
-            'consult_at'      => $consultAt,
-            'group_id'        => $groupId,
+            'type'       => 'call_summary_ready',
+            'job_id'     => $jobId,
+            'job_status' => 'ready_to_review',
+            'group_id'   => $groupId,
         ],
     ]);
 } catch (Throwable $e) {
@@ -385,6 +306,6 @@ try {
 echo json_encode([
     'ok' => true,
     'job_id' => $jobId,
-    'customer_log_id' => $customerLogId,
-    'status' => 'completed',
+    'status' => 'ready_to_review',
+    'mode' => 'lazy_stt',
 ], JSON_UNESCAPED_UNICODE);

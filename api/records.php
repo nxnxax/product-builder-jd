@@ -3862,19 +3862,22 @@ try {
             respond(['status' => 'ok', 'items' => $items, 'count' => count($items)]);
         }
 
-        // ─── LIST_UNREVIEWED (사장님 2026-05-20 — "미확인 요약" 페이지) ───
+        // ─── LIST_UNREVIEWED (사장님 2026-05-23 — "미확인 요약" 페이지 부활) ───
         // GET /records.php?resource=customer-log&action=list_unreviewed
-        // ready_to_review 상태의 recording_jobs 리스트 + summary_json 복호화 (preview 용).
+        // customer_log 로 confirm 안 됐고 폐기도 안 된 모든 recording_jobs.
+        // status: audio_pending(STT 미실행) / queued|processing(STT 진행 중) /
+        //         ready_to_review(STT 완료, 검토 대기) / failed_retryable|failed_permanent(실패)
         if ($action === 'list_unreviewed') {
-            // schema 동기화 — 새 컬럼 (summary_json_encrypted/recorded_at/phone_number/duration_sec/group_id) 보장.
             ensure_recording_jobs_table($pdo);
             $limit = (int)($body['limit'] ?? $_GET['limit'] ?? 50);
             if ($limit < 1) $limit = 50;
             if ($limit > 200) $limit = 200;
             try {
-                $sql = "SELECT id, status, summary_json_encrypted, duration_sec, recorded_at, group_id, phone_number, created_at
+                $sql = "SELECT id, status, summary_json_encrypted, duration_sec, recorded_at, group_id, phone_number, customer_name_hint, created_at
                     FROM recording_jobs
-                    WHERE owner_email = :o AND status = 'ready_to_review'
+                    WHERE owner_email = :o
+                      AND customer_log_id IS NULL
+                      AND status IN ('audio_pending','queued','processing','ready_to_review','failed_retryable','failed_permanent')
                     ORDER BY COALESCE(recorded_at, created_at) DESC
                     LIMIT " . $limit;
                 $stmt = $pdo->prepare($sql);
@@ -3882,10 +3885,10 @@ try {
                 $rows = $stmt->fetchAll();
             } catch (Throwable $e) {
                 error_log('[records list_unreviewed] SELECT failed: ' . $e->getMessage());
-                // 503 대신 빈 결과 + 진단 — 앱이 무한 실패 모달 안 띄움.
                 respond(['status' => 'ok', 'items' => [], 'count' => 0, '_warn' => 'schema_mismatch']);
             }
             $items = array_map(function($r) {
+                // 이름: summary_json (STT 후) → customer_name_hint (lazy 단계) → '고객'
                 $name = '고객';
                 $sumPreview = '';
                 if (!empty($r['summary_json_encrypted'])) {
@@ -3897,17 +3900,177 @@ try {
                         if (mb_strlen($sumPreview) > 180) $sumPreview = mb_substr($sumPreview, 0, 177) . '...';
                     }
                 }
+                if ($name === '고객' && !empty($r['customer_name_hint'])) {
+                    $name = trim((string)$r['customer_name_hint']);
+                }
                 return [
                     'id' => (string)$r['id'],
-                    'status' => (string)$r['status'],
+                    'job_status' => (string)$r['status'],
+                    'status' => (string)$r['status'],   // backward compat
                     'customer_name' => $name,
                     'summary_preview' => $sumPreview,
                     'duration_sec' => (int)($r['duration_sec'] ?? 0),
                     'recorded_at' => $r['recorded_at'] ?: $r['created_at'],
+                    'phone_number' => $r['phone_number'] ?: null,
                     'group_id' => $r['group_id'] ?: null,
                 ];
             }, $rows ?: []);
             respond(['status' => 'ok', 'items' => $items, 'count' => count($items)]);
+        }
+
+        // ─── TRIGGER_SUMMARIZE (사장님 2026-05-23 — lazy-STT 모드 STT 시작) ───
+        // POST /records.php?resource=customer-log&action=trigger_summarize
+        // body: { job_id }
+        // 동작: status='audio_pending' → 'queued' UPDATE → Railway dispatch.
+        //       이미 진행 중/완료면 idempotent 응답.
+        if ($action === 'trigger_summarize') {
+            $jobId = trim((string)($body['job_id'] ?? ''));
+            if ($jobId === '') respond(['status' => 'error', 'code' => 'invalid_request', 'message' => 'job_id 필요.'], 400);
+            try {
+                $jStmt = $pdo->prepare('SELECT id, owner_email, status, storage_path, duration_sec, customer_name_hint, phone_number, recorded_at, group_id
+                    FROM recording_jobs WHERE id = :id AND owner_email = :o LIMIT 1');
+                $jStmt->execute([':id' => $jobId, ':o' => $owner]);
+                $jRow = $jStmt->fetch();
+            } catch (Throwable $e) {
+                respond(['status' => 'error', 'code' => 'upstream_failed', 'message' => '조회 실패.'], 503);
+            }
+            if (!$jRow) respond(['status' => 'error', 'code' => 'not_found', 'message' => '해당 job 없음 또는 권한 없음.'], 404);
+
+            $curStatus = (string)$jRow['status'];
+            // 이미 진행 중/완료/실패 — idempotent 응답
+            if (in_array($curStatus, ['queued', 'processing', 'ready_to_review'], true)) {
+                respond([
+                    'status' => 'ok',
+                    'job_id' => $jobId,
+                    'job_status' => $curStatus,
+                    'already' => true,
+                    'message' => ($curStatus === 'ready_to_review' ? 'STT 완료. 미확인 요약에서 확인 가능.' : 'STT 진행 중.'),
+                ]);
+            }
+            // failed_retryable 은 재시도 허용. failed_permanent 는 차단.
+            if ($curStatus === 'failed_permanent') {
+                respond(['status' => 'error', 'code' => 'failed_permanent', 'message' => '영구 실패한 작업입니다. 폐기 후 새로 통화하세요.'], 409);
+            }
+            if (!in_array($curStatus, ['audio_pending', 'failed_retryable'], true)) {
+                respond(['status' => 'error', 'code' => 'invalid_state',
+                    'message' => 'audio_pending/failed_retryable 만 trigger_summarize 가능 (현재: ' . $curStatus . ').'], 409);
+            }
+
+            // 1) status='queued' UPDATE
+            try {
+                $pdo->prepare("UPDATE recording_jobs SET status = 'queued', updated_at = NOW(), retry_count = 0, error_message = NULL WHERE id = :id")
+                    ->execute([':id' => $jobId]);
+            } catch (Throwable $e) {
+                respond(['status' => 'error', 'code' => 'upstream_failed', 'message' => 'UPDATE 실패: ' . $e->getMessage()], 503);
+            }
+
+            // 2) Railway dispatch (RAILWAY_WORKER_URL 있을 때만; 없으면 cron worker 가 5분 후 처리)
+            $railwayUrl = '';
+            $envFile = __DIR__ . '/.env';
+            if (is_file($envFile)) {
+                foreach (file($envFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as $ln) {
+                    if (strpos($ln, '=') === false || $ln[0] === '#') continue;
+                    [$k, $v] = explode('=', $ln, 2);
+                    if (trim($k) === 'RAILWAY_WORKER_URL') { $railwayUrl = trim($v); }
+                    if (trim($k) === 'RECORDING_WORKER_TOKEN') { $rwTok = trim($v); }
+                }
+            }
+            $dispatched = false;
+            if ($railwayUrl !== '' && !empty($rwTok)) {
+                try {
+                    $expires = time() + 600;
+                    $audioToken = hash_hmac('sha256', $jobId . '.' . $expires, $rwTok);
+                    $audioUrl = 'https://youngman-biz.com/recording-audio.php?job_id=' . urlencode($jobId)
+                              . '&token=' . urlencode($audioToken) . '&expires=' . $expires;
+                    $payload = json_encode([
+                        'job_id'             => $jobId,
+                        'owner_email'        => $owner,
+                        'audio_url'          => $audioUrl,
+                        'duration_sec'       => (int)($jRow['duration_sec'] ?? 0),
+                        'customer_name_hint' => (string)($jRow['customer_name_hint'] ?? ''),
+                        'phone_number'       => (string)($jRow['phone_number'] ?? ''),
+                        'recorded_at'        => (string)($jRow['recorded_at'] ?? ''),
+                        'group_id'           => (string)($jRow['group_id'] ?? ''),
+                        'storage_path'       => (string)($jRow['storage_path'] ?? ''),
+                    ], JSON_UNESCAPED_UNICODE);
+                    $ch = curl_init(rtrim($railwayUrl, '/') . '/process');
+                    curl_setopt_array($ch, [
+                        CURLOPT_RETURNTRANSFER => true,
+                        CURLOPT_POST => true,
+                        CURLOPT_POSTFIELDS => $payload,
+                        CURLOPT_HTTPHEADER => [
+                            'Content-Type: application/json',
+                            'X-Worker-Token: ' . $rwTok,
+                        ],
+                        CURLOPT_TIMEOUT => 8,
+                        CURLOPT_CONNECTTIMEOUT => 4,
+                    ]);
+                    $rwResp = curl_exec($ch);
+                    $rwStatus = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+                    curl_close($ch);
+                    if ($rwStatus >= 200 && $rwStatus < 300) {
+                        $dispatched = true;
+                        $pdo->prepare("UPDATE recording_jobs SET status = 'processing', started_at = NOW(), updated_at = NOW() WHERE id = :id")
+                            ->execute([':id' => $jobId]);
+                    } else {
+                        error_log('[trigger_summarize] Railway dispatch 실패 http=' . $rwStatus . ' resp=' . substr((string)$rwResp, 0, 200));
+                    }
+                } catch (Throwable $e) {
+                    error_log('[trigger_summarize] Railway dispatch 예외: ' . $e->getMessage());
+                }
+            }
+            respond([
+                'status' => 'ok',
+                'job_id' => $jobId,
+                'job_status' => $dispatched ? 'processing' : 'queued',
+                'dispatched' => $dispatched,
+                'message' => $dispatched ? 'STT 시작됨.' : 'STT 대기열 등록됨 (cron 5분 내 처리).',
+            ]);
+        }
+
+        // ─── DISCARD (사장님 2026-05-23 — 미확인 요약 폐기 / 모달 "취소") ───
+        // POST /records.php?resource=customer-log&action=discard
+        // body: { job_id }
+        // 동작: customer_log 없이 audio_pending/ready_to_review job 폐기.
+        //       (customer_log 가 이미 있는 경우는 customer_log_cancel 사용.)
+        if ($action === 'discard') {
+            $jobId = trim((string)($body['job_id'] ?? ''));
+            if ($jobId === '') respond(['status' => 'error', 'code' => 'invalid_request', 'message' => 'job_id 필요.'], 400);
+            try {
+                $jStmt = $pdo->prepare('SELECT id, storage_path, customer_log_id FROM recording_jobs WHERE id = :id AND owner_email = :o LIMIT 1');
+                $jStmt->execute([':id' => $jobId, ':o' => $owner]);
+                $jRow = $jStmt->fetch();
+            } catch (Throwable $e) {
+                respond(['status' => 'error', 'code' => 'upstream_failed', 'message' => '조회 실패.'], 503);
+            }
+            if (!$jRow) respond(['status' => 'error', 'code' => 'not_found', 'message' => '해당 job 없음 또는 권한 없음.'], 404);
+
+            // customer_log_id 있으면 customer_log_cancel 로 안내 (cascade 처리 다름)
+            if (!empty($jRow['customer_log_id'])) {
+                respond(['status' => 'error', 'code' => 'has_customer_log',
+                    'message' => '이미 고객관리대장에 저장됨. customer_log_cancel 사용.',
+                    'customer_log_id' => $jRow['customer_log_id']], 409);
+            }
+
+            $deleted = ['recording_jobs' => 0, 'audio_files' => 0];
+            try {
+                $del = $pdo->prepare('DELETE FROM recording_jobs WHERE id = :id AND owner_email = :o');
+                $del->execute([':id' => $jobId, ':o' => $owner]);
+                $deleted['recording_jobs'] = $del->rowCount();
+            } catch (Throwable $e) {
+                respond(['status' => 'error', 'code' => 'upstream_failed', 'message' => 'DELETE 실패: ' . $e->getMessage()], 503);
+            }
+
+            // audio 파일 삭제
+            $ap = (string)($jRow['storage_path'] ?? '');
+            if ($ap !== '') {
+                foreach ([$ap, __DIR__ . '/' . ltrim($ap, '/'), dirname(__DIR__) . '/' . ltrim($ap, '/')] as $p) {
+                    if (is_file($p)) { @unlink($p); $deleted['audio_files']++; break; }
+                }
+            }
+
+            error_log('[discard] owner=' . $owner . ' job=' . $jobId . ' deleted=' . json_encode($deleted));
+            respond(['status' => 'ok', 'job_id' => $jobId, 'deleted' => $deleted]);
         }
 
         // ─── PREVIEW (앱팀 2026-05-20 — ready_to_review job 의 summary_json 복호화 반환) ───
@@ -4066,17 +4229,60 @@ try {
                 error_log('[records] recording_jobs saved UPDATE 실패: ' . $e->getMessage());
             }
 
+            // 사장님 2026-05-23 — confirm 시 자동 send_to_group mirror (고객관리대장 자동 전송).
+            // group_id 없어도 send_to_group 가 default 그룹 자동 생성.
+            $mirrorResult = null;
+            try {
+                $envWorkerTok = '';
+                $envFile = __DIR__ . '/.env';
+                if (is_file($envFile)) {
+                    foreach (file($envFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as $ln) {
+                        if (strpos($ln, '=') === false || $ln[0] === '#') continue;
+                        [$k, $v] = explode('=', $ln, 2);
+                        if (trim($k) === 'RECORDING_WORKER_TOKEN') { $envWorkerTok = trim($v); break; }
+                    }
+                }
+                if ($envWorkerTok !== '') {
+                    $sendUrl = 'https://' . ($_SERVER['HTTP_HOST'] ?? 'youngman-biz.com') . '/records.php?resource=customer-log';
+                    $sendPayload = ['action' => 'customer_log_send_to_group', 'id' => $rowId, 'owner_email' => $owner];
+                    if ($groupId !== '') $sendPayload['group_id'] = (int)$groupId;
+                    $sCh = curl_init($sendUrl);
+                    curl_setopt_array($sCh, [
+                        CURLOPT_RETURNTRANSFER => true,
+                        CURLOPT_POST => true,
+                        CURLOPT_POSTFIELDS => json_encode($sendPayload, JSON_UNESCAPED_UNICODE),
+                        CURLOPT_HTTPHEADER => ['Content-Type: application/json', 'X-Worker-Token: ' . $envWorkerTok],
+                        CURLOPT_TIMEOUT => 15,
+                        CURLOPT_CONNECTTIMEOUT => 5,
+                    ]);
+                    $sResp = curl_exec($sCh);
+                    $sStat = (int)curl_getinfo($sCh, CURLINFO_HTTP_CODE);
+                    curl_close($sCh);
+                    if ($sResp !== false && $sStat >= 200 && $sStat < 300) {
+                        $mirrorResult = json_decode((string)$sResp, true);
+                    }
+                    error_log('[confirm] send_to_group http=' . $sStat . ' cl=' . $rowId);
+                }
+            } catch (Throwable $e) {
+                error_log('[confirm] send_to_group 자동 호출 실패: ' . $e->getMessage());
+            }
+
             // 응답
             $cl = $pdo->prepare('SELECT * FROM customer_log WHERE id = :id AND owner_email = :o LIMIT 1');
             $cl->execute([':id' => $rowId, ':o' => $owner]);
             $clRow = $cl->fetch();
-            respond([
+            $respOut = [
                 'status' => 'ok',
                 'job_id' => $jobId,
                 'job_status' => 'saved',
                 'customer_log' => $clRow ? customer_log_row($clRow) : null,
                 'customer_log_id' => $rowId,
-            ]);
+            ];
+            if (is_array($mirrorResult)) {
+                $respOut['ledger_record'] = $mirrorResult['ledger_record'] ?? null;
+                $respOut['group'] = $mirrorResult['group'] ?? null;
+            }
+            respond($respOut);
         }
 
         // ─── SEND TO GROUP (옵션 D — 양식 전송) ───

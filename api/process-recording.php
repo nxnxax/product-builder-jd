@@ -466,12 +466,15 @@ function respond_async_queued(string $jobId, ?array $customerLogRow = null, $mir
     $_serverElapsedMs = isset($_SERVER['REQUEST_TIME_FLOAT'])
         ? (int)round((microtime(true) - (float)$_SERVER['REQUEST_TIME_FLOAT']) * 1000)
         : null;
+    // 사장님 2026-05-23 — lazy-STT 모드. job_status='audio_pending', customer_log 미생성.
+    // 사용자 액션 (trigger_summarize) 시점에 Railway dispatch.
     $resp = [
-        'status' => 'processing',
+        'status' => 'ok',
         'ok' => true,
         'job_id' => $jobId,
-        'mode'   => 'async',
-        'placeholder' => true,
+        'job_status' => 'audio_pending',
+        'mode'   => 'audio_pending',
+        'placeholder' => false,
         'server_elapsed_ms' => $_serverElapsedMs,
     ];
     if ($customerLogRow !== null) {
@@ -706,7 +709,9 @@ if ($asyncMode) {
         // 처리 완료 (saved/ready_to_review/completed) 면 JOB_EXISTS, 아직 처리 중이면 JOB_DUPLICATE.
         $existsErr = in_array($jStat, ['completed', 'saved', 'ready_to_review'], true) ? 'JOB_EXISTS' : 'JOB_DUPLICATE';
         $msg = in_array($jStat, ['completed', 'saved'], true) ? '이미 처리 완료된 작업입니다.'
-             : ($jStat === 'ready_to_review' ? '검토 대기 중인 작업입니다.' : '이미 처리 중인 작업입니다.');
+             : ($jStat === 'ready_to_review' ? '검토 대기 중인 작업입니다.'
+             : ($jStat === 'audio_pending' ? '음성파일 저장됨 — 미확인 요약에서 검토 가능합니다.'
+             : '이미 처리 중인 작업입니다.'));
         jout([
             'ok' => true,
             'duplicate' => true,
@@ -737,7 +742,9 @@ if ($asyncMode) {
             $jStat = (string)$shaJob['status'];
             $existsErr = in_array($jStat, ['completed', 'saved', 'ready_to_review'], true) ? 'JOB_EXISTS' : 'JOB_DUPLICATE';
             $msg = in_array($jStat, ['completed', 'saved'], true) ? '이미 처리 완료된 작업입니다.'
-                 : ($jStat === 'ready_to_review' ? '검토 대기 중인 작업입니다.' : '이미 처리 중인 작업입니다.');
+                 : ($jStat === 'ready_to_review' ? '검토 대기 중인 작업입니다.'
+             : ($jStat === 'audio_pending' ? '음성파일 저장됨 — 미확인 요약에서 검토 가능합니다.'
+             : '이미 처리 중인 작업입니다.'));
             jout([
                 'ok' => true,
                 'duplicate' => true,
@@ -751,57 +758,17 @@ if ($asyncMode) {
             ], 200);
         }
     }
-    // 앱팀 2026-05-20 요청 — members.recording_review_mode 가 'review' 면 customer_log 자동 INSERT 우회.
-    $reviewMode = 'auto';
-    try {
-        $rmStmt = $pdo->prepare('SELECT recording_review_mode FROM members WHERE email = :e LIMIT 1');
-        $rmStmt->execute([':e' => $ownerEmail]);
-        $rmRow = $rmStmt->fetch();
-        $reviewMode = strtolower(trim((string)($rmRow['recording_review_mode'] ?? 'auto')));
-    } catch (Throwable $e) { /* 컬럼 미존재 — 'auto' 기본 */ }
-    $reviewRequiredInt = ($reviewMode === 'review') ? 1 : 0;
-
-    // 사장님 2026-05-20 — 통화 후 모달 타임아웃 / 사용자 결정 없음 케이스.
-    // 앱이 group_id 안 보내거나 body.pending_review=true 면 review 강제.
-    // → customer_log 자동 INSERT skip + recording_jobs.status='ready_to_review'
-    // → 미확인요약 페이지(unreviewed.html)에 자동 노출 → 사장님 검토 후 confirm.
-    //
-    // 명시 group_id 보낸 경우 (앱의 "양식에 전송" 클릭) 는 기존 동작 그대로:
-    //   - review_mode='auto': 즉시 customer_log INSERT + send_to_group mirror
-    //   - review_mode='review': 사용자 명시 의도이므로 그래도 mirror (review_required=0 강제)
-    $pendingReviewFlag = !empty($body['pending_review']);
-
-    // 사장님 2026-05-21 fallback — native 가 모달 "양식으로 전송" 클릭 시 group_id 누락 케이스 확정.
-    // first customer group (is_default=1 우선) 자동 채움 → review_required=0 → callback 자동 INSERT.
-    // 앱팀 fix (native 가 group_id 명시 보내도록) 전까지 안전망. 잘못된 그룹은 사장님이 ledger 에서 이동 가능.
-    if ($groupIdHint === '' && !$pendingReviewFlag) {
-        try {
-            $gFirstStmt = $pdo->prepare("SELECT id FROM ledger_groups WHERE owner_email = :o AND page_type = 'customer' ORDER BY is_default DESC, id ASC LIMIT 1");
-            $gFirstStmt->execute([':o' => $ownerEmail]);
-            $gFirstRow = $gFirstStmt->fetch();
-            if ($gFirstRow && !empty($gFirstRow['id'])) {
-                $groupIdHint = (string)$gFirstRow['id'];
-                error_log('[process-recording] auto-default group_id=' . $groupIdHint . ' (native group_id 미명시 fallback)');
-            }
-        } catch (Throwable $e) {
-            error_log('[process-recording] first customer group 조회 실패: ' . $e->getMessage());
-        }
-    }
-
-    if ($groupIdHint === '' || $pendingReviewFlag) {
-        $reviewRequiredInt = 1;
-        error_log('[process-recording] review_required forced — gid_empty=' . ($groupIdHint === '' ? '1' : '0') . ' pending_flag=' . ($pendingReviewFlag ? '1' : '0'));
-    } elseif ($groupIdHint !== '' && $reviewMode === 'review') {
-        // review 모드 사용자가 명시 group_id 보내면 즉시 mirror 의도 → review 강제 해제.
-        $reviewRequiredInt = 0;
-    }
+    // 사장님 2026-05-23 — lazy-STT 모드 부활. 통화 종료 시 audio 만 보존 (status='audio_pending').
+    // STT/LLM 은 사용자가 모달 "요약보기" 또는 미확인요약 페이지에서 trigger_summarize 호출 시점에만 진행.
+    // → customer_log placeholder INSERT 안 함 / send_to_group mirror 안 함 / Railway dispatch 안 함.
+    $reviewRequiredInt = 1;
 
     // 새 job 생성. 사용자 token 검증은 이미 끝났으므로 cron worker 가 server secret 으로 처리할 수 있음.
     $asyncJobId = uuid_v4();
     $insJob = $pdo->prepare("INSERT INTO recording_jobs
         (id, owner_email, status, storage_path, client_request_id,
          audio_sha256, duration_sec, customer_name_hint, phone_number, recorded_at, group_id, review_required)
-        VALUES (:id, :o, 'queued', :sp, :k,
+        VALUES (:id, :o, 'audio_pending', :sp, :k,
                 :sha, :dur, :hint, :ph, :ra, :gid, :rr)");
     $insJob->execute([
         ':id'  => $asyncJobId,
@@ -817,88 +784,10 @@ if ($asyncMode) {
         ':rr'  => $reviewRequiredInt,
     ]);
 
-    // 사장님 2026-05-21 §7 — placeholder customer_log INSERT + ledger mirror + 즉시 응답.
-    // cafe24 gateway 30s timeout 504 해소 + 사용자 체감 응답 시간 7~60s → 1~2s.
-    // background STT/LLM 완료 후 customer_log UPDATE (Line 1856+ catch 분기에서 처리).
-    $placeholderClId = null;
+    // 사장님 2026-05-23 — lazy-STT 모드. placeholder customer_log INSERT / ledger mirror 안 함.
+    // 응답에 null 로 내려 native 앱은 audio_pending 상태로 모달 표시 후 사용자 액션 대기.
     $placeholderClRow = null;
     $placeholderMirrorResult = null;
-    try {
-        $placeholderClId = uuid_v4();
-        $phoneLookupP = customer_phone_lookup_key($phoneNumber !== '' ? $phoneNumber : null);
-        $placeholderName = $customerNameHint !== '' ? $customerNameHint : '처리중...';
-        $placeholderSummary = 'AI 분석 중';
-
-        $insClP = $pdo->prepare("INSERT INTO customer_log (
-                id, owner_email, customer_phone_lookup,
-                customer_name, phone_number,
-                summary, consult_at,
-                audio_storage_path, audio_kept,
-                ai_model, ai_generated_at, source, client_request_id
-            ) VALUES (
-                :id, :o, :pl,
-                :nm, :ph,
-                :sum, :ca,
-                :asp, 0,
-                'pending', NOW(), 'app-placeholder', :cri
-            )");
-        $insClP->execute([
-            ':id'  => $placeholderClId,
-            ':o'   => $ownerEmail,
-            ':pl'  => $phoneLookupP,
-            ':nm'  => youngman_encrypt($placeholderName),
-            ':ph'  => $phoneNumber !== '' ? youngman_encrypt($phoneNumber) : null,
-            ':sum' => youngman_encrypt($placeholderSummary),
-            ':ca'  => $consultAt,
-            ':asp' => $storagePath,
-            ':cri' => $clientReqId,
-        ]);
-
-        // recording_jobs.customer_log_id UPDATE
-        $pdo->prepare("UPDATE recording_jobs SET customer_log_id = :cl, status = 'processing', updated_at = NOW() WHERE id = :id")
-            ->execute([':cl' => $placeholderClId, ':id' => $asyncJobId]);
-
-        // 응답용 placeholder row 조회
-        $selClP = $pdo->prepare('SELECT * FROM customer_log WHERE id = :id LIMIT 1');
-        $selClP->execute([':id' => $placeholderClId]);
-        $placeholderClRow = $selClP->fetch();
-
-        error_log('[process-recording §7] placeholder customer_log INSERT: cl=' . $placeholderClId . ' job=' . $asyncJobId . ' mode_req=' . ($_originalModeRequested ?: '(none)'));
-
-        // 즉시 ledger mirror (placeholder content)
-        $workerTokInnerP = load_env_value('RECORDING_WORKER_TOKEN');
-        if ($workerTokInnerP !== '') {
-            $sendUrlP = 'https://' . ($_SERVER['HTTP_HOST'] ?? 'youngman-biz.com') . '/records.php?resource=customer-log';
-            $sendPayloadP = [
-                'action'      => 'customer_log_send_to_group',
-                'id'          => $placeholderClId,
-                'owner_email' => $ownerEmail,
-            ];
-            if ($groupIdHint !== '') $sendPayloadP['group_id'] = (int)$groupIdHint;
-            $chMP = curl_init($sendUrlP);
-            curl_setopt_array($chMP, [
-                CURLOPT_RETURNTRANSFER => true,
-                CURLOPT_POST => true,
-                CURLOPT_POSTFIELDS => json_encode($sendPayloadP, JSON_UNESCAPED_UNICODE),
-                CURLOPT_HTTPHEADER => [
-                    'Content-Type: application/json',
-                    'X-Worker-Token: ' . $workerTokInnerP,
-                ],
-                CURLOPT_TIMEOUT => 10,
-                CURLOPT_CONNECTTIMEOUT => 3,
-            ]);
-            $mirrRespP = curl_exec($chMP);
-            $mirrHttpP = (int)curl_getinfo($chMP, CURLINFO_HTTP_CODE);
-            curl_close($chMP);
-            if ($mirrRespP !== false && $mirrHttpP >= 200 && $mirrHttpP < 300) {
-                $placeholderMirrorResult = json_decode((string)$mirrRespP, true);
-            }
-            error_log('[process-recording §7] placeholder mirror cl=' . $placeholderClId . ' http=' . $mirrHttpP);
-        }
-    } catch (Throwable $e) {
-        error_log('[process-recording §7] placeholder INSERT/mirror 실패: ' . $e->getMessage());
-        // 실패해도 background STT 진행 → Line 1856 INSERT 가 처리
-    }
 
     // 즉시 응답 — client 연결 종료. 이후 코드는 백그라운드.
     // 사장님 §7 — customer_log placeholder + ledger mirror 응답에 포함 (native sync 가정 호환).
@@ -914,105 +803,9 @@ if ($asyncMode) {
     } catch (Throwable $e) {}
     respond_async_queued($asyncJobId, $placeholderClRow, $placeholderMirrorResult);
 
-    /* Railway worker 분기 (선택 — RAILWAY_WORKER_URL 환경변수 있을 때만).
-     * Railway 가 있으면: STT/LLM 처리를 Railway 에 위임 + cafe24 는 callback 만 기다림.
-     * Railway 가 없으면: 기존 cafe24 자체 처리 흐름 (Phase 1 / Path B 그대로).
-     * Railway 호출 실패해도 cron worker (Path B) 가 5분 후 재시도. */
-    $railwayUrl = load_env_value('RAILWAY_WORKER_URL');
-    // 사장님 2026-05-22 진단 — Railway dispatch 결과를 recording_jobs.error_message 에 기록.
-    if ($railwayUrl === '') {
-        try {
-            $pdo->prepare("UPDATE recording_jobs SET error_message = 'RAILWAY_WORKER_URL .env 미설정 — cafe24 자체 STT fallback' WHERE id = :id")
-                ->execute([':id' => $asyncJobId]);
-        } catch (Throwable $e) {}
-        error_log('[process-recording §diag] RAILWAY_WORKER_URL empty for job=' . $asyncJobId);
-    }
-    if ($railwayUrl !== '' && !$isInternalWorker) {
-        try {
-            // signed audio URL 생성 (10분 유효, HMAC-SHA256)
-            $expires = time() + 600;
-            $workerToken = load_env_value('RECORDING_WORKER_TOKEN');
-            $audioToken = hash_hmac('sha256', $asyncJobId . '.' . $expires, $workerToken);
-            $audioUrl = rtrim($railwayUrl !== '' ? 'https://youngman-biz.com' : '', '/')
-                       . '/recording-audio.php?job_id=' . urlencode($asyncJobId)
-                       . '&token=' . urlencode($audioToken)
-                       . '&expires=' . $expires;
-            // 영맨은 https://youngman-biz.com hard-coded — Railway 가 외부에서 호출
-
-            // Railway worker 호출 (background, 응답 안 기다림)
-            $payload = json_encode([
-                'job_id'              => $asyncJobId,
-                'owner_email'         => $ownerEmail,
-                'audio_url'           => $audioUrl,
-                'duration_sec'        => (int)$durationSec,
-                'customer_name_hint'  => $customerNameHint,
-                'phone_number'        => $phoneNumber,
-                'recorded_at'         => $consultAt,
-                'group_id'            => $groupIdHint,
-                'storage_path'        => $storagePath,
-            ], JSON_UNESCAPED_UNICODE);
-
-            $ch = curl_init(rtrim($railwayUrl, '/') . '/process');
-            curl_setopt_array($ch, [
-                CURLOPT_RETURNTRANSFER => true,
-                CURLOPT_POST => true,
-                CURLOPT_POSTFIELDS => $payload,
-                CURLOPT_HTTPHEADER => [
-                    'Content-Type: application/json',
-                    'X-Worker-Token: ' . $workerToken,
-                ],
-                CURLOPT_TIMEOUT => 8,  // Railway 즉시 202 응답 — 8초면 충분
-                CURLOPT_CONNECTTIMEOUT => 4,
-            ]);
-            $rwResp = curl_exec($ch);
-            $rwStatus = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
-            curl_close($ch);
-
-            if ($rwStatus >= 200 && $rwStatus < 300) {
-                error_log('[process-recording] Railway dispatched: job=' . $asyncJobId . ', http=' . $rwStatus);
-                // Railway 처리 위임 완료 — cafe24 측 STT/LLM 흐름 스킵.
-                // 처리 결과는 Railway → /recording-callback.php 로 받음.
-                exit;
-            } else {
-                // 사장님 2026-05-22 진단 — Railway dispatch 실패 원인 DB 기록.
-                $diagMsg = sprintf('Railway dispatch 실패 http=%d url=%s resp=%s', $rwStatus, $railwayUrl, substr((string)$rwResp, 0, 200));
-                try {
-                    $pdo->prepare("UPDATE recording_jobs SET error_message = :em WHERE id = :id")
-                        ->execute([':em' => $diagMsg, ':id' => $asyncJobId]);
-                } catch (Throwable $e) {}
-                error_log('[process-recording §diag] ' . $diagMsg);
-            }
-        } catch (Throwable $e) {
-            $diagMsg = 'Railway dispatch exception: ' . $e->getMessage();
-            try {
-                $pdo->prepare("UPDATE recording_jobs SET error_message = :em WHERE id = :id")
-                    ->execute([':em' => $diagMsg, ':id' => $asyncJobId]);
-            } catch (Throwable $e2) {}
-            error_log('[process-recording §diag] ' . $diagMsg);
-        }
-    }
-
-    // 정상 완료 안 되면 (PHP fatal, jerror exit 등) shutdown 시 'failed' 마크.
-    register_shutdown_function(function() use ($pdo, $asyncJobId) {
-        try {
-            $check = $pdo->prepare("SELECT status FROM recording_jobs WHERE id = :id LIMIT 1");
-            $check->execute([':id' => $asyncJobId]);
-            $current = (string)$check->fetchColumn();
-            if ($current === 'queued' || $current === 'processing') {
-                $pdo->prepare("UPDATE recording_jobs
-                    SET status = 'failed', completed_at = NOW(),
-                        error_message = COALESCE(error_message, 'unexpected shutdown')
-                    WHERE id = :id")
-                    ->execute([':id' => $asyncJobId]);
-            }
-        } catch (Throwable $e) { /* shutdown 중 — log 만 */ error_log('[process-recording] shutdown failsafe: ' . $e->getMessage()); }
-    });
-
-    // status: processing 으로 업데이트 (백그라운드 시작).
-    try {
-        $pdo->prepare("UPDATE recording_jobs SET status = 'processing', started_at = NOW() WHERE id = :id")
-            ->execute([':id' => $asyncJobId]);
-    } catch (Throwable $e) { /* 무시 */ }
+    // 사장님 2026-05-23 — lazy-STT 모드. Railway dispatch 안 함.
+    // 사용자가 trigger_summarize 호출 시점에 records.php 에서 Railway 위임.
+    exit;
 }
 
 /* ========== Plan check ==========
