@@ -122,6 +122,23 @@ try {
     // customer_log 테이블 없음 — 모든 파일 cleanup 대상.
 }
 
+/* 사장님 2026-05-23 — lazy-STT 정책. 미확인 요약 중 사용자 trigger 가능한 상태의
+ * audio 는 보존. audio_pending(STT 미실행) / failed_retryable(재시도 가능) 두 경우.
+ * ready_to_review 는 이미 summary 저장돼 있어 audio 없어도 OK — 기존대로 정리.
+ * 사용자가 명시 폐기(discard) 하지 않은 한 영구 보존. */
+try {
+    $unrevStmt = $pdo->query("SELECT storage_path FROM recording_jobs
+        WHERE status IN ('audio_pending','failed_retryable')
+          AND customer_log_id IS NULL
+          AND storage_path IS NOT NULL AND storage_path != ''");
+    foreach ($unrevStmt as $r) {
+        $p = (string)($r['storage_path'] ?? '');
+        if ($p !== '') $keptSet[$p] = true;
+    }
+} catch (Throwable $e) {
+    // recording_jobs 테이블 없음 — 보존 무시.
+}
+
 /* ========== uploads/recordings/ 스캔 ========== */
 $root = __DIR__ . '/uploads/recordings';
 if (!is_dir($root)) {

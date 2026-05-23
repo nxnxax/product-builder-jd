@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>미확인 요약 · YOUNGMAN</title>
+<meta name="robots" content="noindex, nofollow">
+<link rel="icon" type="image/png" href="logo_main.png">
+<link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
+<link rel="stylesheet" href="style.css?v=20260523-unreviewed">
+<style>
+:root{
+    --ledger-line:rgba(20,14,8,.09); --ledger-line-strong:rgba(20,14,8,.16);
+    --ledger-bg:#fbf7ef; --ledger-accent:#c8362c; --ledger-accent-deep:#8a2620;
+}
+.un-shell{max-width:920px;margin:0 auto;padding:28px 22px 140px}
+.un-head{margin-bottom:18px}
+.un-title{margin:0;font-size:24px;letter-spacing:-.02em;font-weight:700}
+.un-sub{margin:6px 0 0;color:#8a847e;font-size:14.5px;line-height:1.6}
+.un-list{display:flex;flex-direction:column;gap:10px}
+.un-card{background:#fff;border:1px solid var(--ledger-line);border-radius:14px;padding:16px 18px;cursor:pointer;transition:all 160ms;text-align:left;font-family:inherit;width:100%;display:block}
+.un-card:hover{border-color:var(--ledger-line-strong);background:#fbfaf5}
+.un-card:active{background:#f4efe7}
+.un-card.audio_pending{background:#fffaf0;border-color:#f3e3c4}
+.un-card.audio_pending:hover{border-color:#e8a847;background:#fff5e6}
+.un-card.processing,.un-card.queued{background:#f0f7ff;border-color:#c4dbf3}
+.un-card.ready_to_review{background:#f0fff4;border-color:#c4f3d0}
+.un-card.failed_retryable{background:#fff5f0;border-color:#f3d4c4}
+.un-card.failed_permanent{background:#fdf0f0;border-color:#f3c4c4}
+.un-card-meta{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:8px}
+.un-card-name{font-size:16.5px;font-weight:600;color:#0e0d0c;letter-spacing:-.005em}
+.un-card-time{font-size:13px;color:#8a847e;white-space:nowrap}
+.un-card-status{display:inline-block;font-size:12px;font-weight:600;padding:3px 8px;border-radius:6px;margin-bottom:6px}
+.un-card-status.audio_pending{background:#fbeacc;color:#8a6420}
+.un-card-status.queued,.un-card-status.processing{background:#d4e6f8;color:#2a5588}
+.un-card-status.ready_to_review{background:#d4f0d8;color:#1f6b2a}
+.un-card-status.failed_retryable{background:#f8e0d4;color:#883a1a}
+.un-card-status.failed_permanent{background:#f8d4d4;color:#882020}
+.un-card-summary{font-size:14.5px;line-height:1.6;color:#3a3530;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;word-break:keep-all}
+.un-card-prompt{font-size:13.5px;color:#8a6420;margin-top:4px;font-weight:500}
+.un-card-meta-line{font-size:12.5px;color:#8a847e;margin-top:6px}
+.un-empty{text-align:center;padding:80px 24px;color:#8a847e;font-size:15px;line-height:1.7}
+.un-empty .icon{font-size:42px;display:block;margin-bottom:14px}
+.un-loading{text-align:center;padding:48px 24px;color:#8a847e;font-size:13.5px}
+
+/* Detail modal */
+.un-modal-backdrop{position:fixed;inset:0;background:rgba(14,13,12,.55);display:none;align-items:center;justify-content:center;z-index:1000;padding:20px}
+.un-modal-backdrop.show{display:flex}
+.un-modal{background:#fff;border-radius:18px;max-width:520px;width:100%;max-height:90vh;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 24px 60px rgba(20,14,8,.32)}
+.un-modal-head{padding:18px 20px 12px;border-bottom:1px solid var(--ledger-line)}
+.un-modal-title{margin:0;font-size:19px;font-weight:700;letter-spacing:-.01em}
+.un-modal-subtitle{margin:4px 0 0;color:#8a847e;font-size:13.5px}
+.un-modal-body{padding:18px 20px;overflow-y:auto;flex:1}
+.un-modal-row{margin-bottom:14px}
+.un-modal-row:last-child{margin-bottom:0}
+.un-modal-label{font-size:12px;font-weight:600;color:#8a847e;letter-spacing:.04em;text-transform:uppercase;margin-bottom:4px}
+.un-modal-val{font-size:15px;line-height:1.6;color:#0e0d0c;white-space:pre-wrap;word-break:keep-all}
+.un-modal-foot{padding:14px 20px;border-top:1px solid var(--ledger-line);display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap}
+.un-btn{padding:10px 18px;border:1px solid var(--ledger-line-strong);background:#fff;color:#4f4943;font-size:14.5px;border-radius:10px;cursor:pointer;font-family:inherit;font-weight:500;transition:all 160ms}
+.un-btn:hover{background:#fbf7ef;color:#0e0d0c}
+.un-btn.primary{background:#0e0d0c;color:#fff;border-color:#0e0d0c}
+.un-btn.primary:hover{background:#2a2520}
+.un-btn.danger{background:#fff;color:#c8362c;border-color:#e8b8b3}
+.un-btn.danger:hover{background:#fef2f1;border-color:#c8362c}
+.un-btn:disabled{opacity:.5;cursor:not-allowed}
+
+@media (max-width:860px){
+    .un-shell{padding:22px 14px 140px}
+    .un-title{font-size:22px}
+    .un-card{padding:14px 16px}
+    .un-card-name{font-size:16px}
+    .un-modal{max-height:85vh;border-radius:14px}
+}
+</style>
+</head>
+<body>
+<header id="app-header" class="app-header"></header>
+
+<div class="un-shell">
+<header class="un-head">
+    <h1 class="un-title">미확인 요약</h1>
+    <p class="un-sub">검토 대기 중인 통화입니다. 카드를 탭하여 요약 보기 / 폐기 / 고객관리대장 전송을 선택하세요.</p>
+</header>
+<div id="unreviewedList" class="un-list"><div class="un-loading">불러오는 중...</div></div>
+</div>
+
+<!-- Detail modal -->
+<div class="un-modal-backdrop" id="unModal">
+    <div class="un-modal">
+        <header class="un-modal-head">
+            <h2 class="un-modal-title" id="unModalTitle">상세</h2>
+            <p class="un-modal-subtitle" id="unModalSubtitle"></p>
+        </header>
+        <div class="un-modal-body" id="unModalBody"></div>
+        <footer class="un-modal-foot" id="unModalFoot"></footer>
+    </div>
+</div>
+
+<script type="module">
+    import { bootApp, apiRequest } from './auth-shared.js?v=20260523-unreviewed';
+    await bootApp();
+
+    const STATUS_LABEL = {
+        audio_pending:    '음성 저장됨 — STT 미실행',
+        queued:           'STT 대기 중',
+        processing:       'STT 진행 중...',
+        ready_to_review:  '요약 완료 — 검토 대기',
+        failed_retryable: '일시 실패 — 재시도 가능',
+        failed_permanent: '영구 실패 — 폐기 가능',
+    };
+
+    const list = document.getElementById('unreviewedList');
+    const modal = document.getElementById('unModal');
+    const modalTitle = document.getElementById('unModalTitle');
+    const modalSubtitle = document.getElementById('unModalSubtitle');
+    const modalBody = document.getElementById('unModalBody');
+    const modalFoot = document.getElementById('unModalFoot');
+
+    let currentJobId = null;
+    let currentStatus = null;
+
+    function escapeHtml(s) {
+        return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    }
+    function fmtTime(s) {
+        if (!s) return '';
+        try {
+            const d = new Date(String(s).replace(' ', 'T'));
+            if (isNaN(d)) return s;
+            return d.toLocaleString('ko-KR', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+        } catch { return s; }
+    }
+    function fmtDuration(sec) {
+        sec = parseInt(sec, 10) || 0;
+        if (sec < 60) return sec + '초';
+        const m = Math.floor(sec / 60);
+        const s = sec % 60;
+        return s ? `${m}분 ${s}초` : `${m}분`;
+    }
+
+    async function load() {
+        try {
+            const r = await apiRequest('customer-log', { query: 'action=list_unreviewed' });
+            const items = r?.items || [];
+            // 미확인 요약 개수 → 앱 bottom-nav badge 동기화
+            try { window.YoungmanBridge?.setUnreviewedCount?.(items.length); } catch {}
+            try { localStorage.setItem('yman_unreviewed_count', String(items.length)); } catch {}
+
+            if (items.length === 0) {
+                list.innerHTML = '<div class="un-empty"><span class="icon">📭</span>미확인 요약이 없습니다.<br>새 통화가 도착하면 여기에 표시됩니다.</div>';
+                return;
+            }
+            list.innerHTML = items.map(j => {
+                const status = j.job_status || j.status || 'audio_pending';
+                const statusLabel = STATUS_LABEL[status] || status;
+                let sub = '';
+                if (status === 'ready_to_review' && j.summary_preview) {
+                    sub = `<div class="un-card-summary">${escapeHtml(j.summary_preview)}</div>`;
+                } else if (status === 'audio_pending') {
+                    sub = '<div class="un-card-prompt">🎙️ 탭하여 AI 요약 시작</div>';
+                } else if (status === 'processing' || status === 'queued') {
+                    sub = '<div class="un-card-prompt">⏳ AI 분석 진행 중</div>';
+                } else if (status === 'failed_retryable') {
+                    sub = '<div class="un-card-prompt" style="color:#883a1a">⚠ 탭하여 재시도</div>';
+                } else if (status === 'failed_permanent') {
+                    sub = '<div class="un-card-prompt" style="color:#882020">✕ 영구 실패 — 폐기 권장</div>';
+                }
+                const metaParts = [];
+                if (j.duration_sec) metaParts.push('통화 ' + fmtDuration(j.duration_sec));
+                if (j.phone_number) metaParts.push(j.phone_number);
+                return `
+                    <button class="un-card ${status}" data-job-id="${escapeHtml(j.id)}" data-status="${escapeHtml(status)}" type="button">
+                        <div class="un-card-meta">
+                            <span class="un-card-name">${escapeHtml(j.customer_name || '고객')}</span>
+                            <span class="un-card-time">${escapeHtml(fmtTime(j.recorded_at))}</span>
+                        </div>
+                        <span class="un-card-status ${status}">${escapeHtml(statusLabel)}</span>
+                        ${sub}
+                        ${metaParts.length ? `<div class="un-card-meta-line">${escapeHtml(metaParts.join(' · '))}</div>` : ''}
+                    </button>
+                `;
+            }).join('');
+            list.querySelectorAll('.un-card').forEach(el => {
+                el.addEventListener('click', () => openDetail(el.dataset.jobId, el.dataset.status));
+            });
+        } catch (e) {
+            list.innerHTML = `<div class="un-empty">불러오기 실패<br><small>${escapeHtml(e?.message || e)}</small></div>`;
+        }
+    }
+
+    async function openDetail(jobId, statusHint) {
+        currentJobId = jobId;
+        currentStatus = statusHint || null;
+        modalTitle.textContent = '불러오는 중...';
+        modalSubtitle.textContent = '';
+        modalBody.innerHTML = '<div class="un-loading">불러오는 중...</div>';
+        modalFoot.innerHTML = '<button class="un-btn" type="button" data-act="close">닫기</button>';
+        modal.classList.add('show');
+
+        try {
+            const r = await apiRequest('customer-log', { query: 'action=preview&job_id=' + encodeURIComponent(jobId) });
+            const status = r?.job_status || statusHint || 'audio_pending';
+            currentStatus = status;
+            const s = r?.summary || {};
+
+            const subParts = [];
+            if (r.recorded_at) subParts.push(fmtTime(r.recorded_at));
+            if (r.duration_sec) subParts.push(fmtDuration(r.duration_sec));
+            modalSubtitle.textContent = subParts.join(' · ');
+
+            if (status === 'ready_to_review') {
+                modalTitle.textContent = s.customer_name || '고객';
+                const rows = [
+                    { label: '요약', value: s.summary },
+                    { label: '관심사', value: s.interest },
+                    { label: '문의', value: s.inquiry },
+                    { label: '예산/조건', value: s.budget_condition },
+                    { label: 'AI 추천', value: s.next_action },
+                    { label: '연락처', value: s.phone_number || r.phone_number },
+                ].filter(row => row.value);
+                modalBody.innerHTML = rows.length
+                    ? rows.map(row => `
+                        <div class="un-modal-row">
+                            <div class="un-modal-label">${escapeHtml(row.label)}</div>
+                            <div class="un-modal-val">${escapeHtml(row.value)}</div>
+                        </div>`).join('')
+                    : '<div class="un-loading">요약 정보 없음</div>';
+                modalFoot.innerHTML = `
+                    <button class="un-btn danger" type="button" data-act="discard">요약 폐기</button>
+                    <button class="un-btn primary" type="button" data-act="confirm">고객관리대장 전송</button>
+                `;
+            } else if (status === 'audio_pending') {
+                modalTitle.textContent = '음성파일 저장됨';
+                modalBody.innerHTML = `
+                    <div class="un-modal-row">
+                        <div class="un-modal-val">아직 AI 분석이 시작되지 않았습니다.<br>"AI 요약 시작" 누르면 STT/AI 분석이 진행되고 완료 후 결과를 검토할 수 있습니다.</div>
+                    </div>
+                `;
+                modalFoot.innerHTML = `
+                    <button class="un-btn danger" type="button" data-act="discard">폐기</button>
+                    <button class="un-btn primary" type="button" data-act="trigger">AI 요약 시작</button>
+                `;
+            } else if (status === 'queued' || status === 'processing') {
+                modalTitle.textContent = 'AI 분석 진행 중';
+                modalBody.innerHTML = `
+                    <div class="un-modal-row">
+                        <div class="un-modal-val">AI 분석이 진행 중입니다. 잠시 후 다시 확인해주세요. (보통 10~30초 소요)</div>
+                    </div>
+                `;
+                modalFoot.innerHTML = '<button class="un-btn" type="button" data-act="close">닫기</button>';
+            } else if (status === 'failed_retryable') {
+                modalTitle.textContent = '일시 실패 — 재시도 가능';
+                modalBody.innerHTML = `
+                    <div class="un-modal-row">
+                        <div class="un-modal-val">AI 분석이 일시 실패했습니다. 재시도 또는 폐기를 선택해주세요.</div>
+                    </div>
+                `;
+                modalFoot.innerHTML = `
+                    <button class="un-btn danger" type="button" data-act="discard">폐기</button>
+                    <button class="un-btn primary" type="button" data-act="trigger">재시도</button>
+                `;
+            } else if (status === 'failed_permanent') {
+                modalTitle.textContent = '영구 실패';
+                modalBody.innerHTML = `
+                    <div class="un-modal-row">
+                        <div class="un-modal-val">AI 분석이 영구 실패했습니다. 폐기 외 다른 옵션이 없습니다.</div>
+                    </div>
+                `;
+                modalFoot.innerHTML = '<button class="un-btn danger" type="button" data-act="discard">폐기</button>';
+            } else {
+                modalTitle.textContent = status;
+                modalBody.innerHTML = `<div class="un-loading">알 수 없는 상태: ${escapeHtml(status)}</div>`;
+                modalFoot.innerHTML = '<button class="un-btn" type="button" data-act="close">닫기</button>';
+            }
+
+            bindFootActions();
+        } catch (e) {
+            modalTitle.textContent = '불러오기 실패';
+            modalBody.innerHTML = `<div class="un-empty"><small>${escapeHtml(e?.message || e)}</small></div>`;
+            modalFoot.innerHTML = '<button class="un-btn" type="button" data-act="close">닫기</button>';
+            bindFootActions();
+        }
+    }
+
+    function bindFootActions() {
+        modalFoot.querySelectorAll('[data-act]').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                const act = btn.dataset.act;
+                if (act === 'close') return closeDetail();
+                if (act === 'trigger') return doTrigger(btn);
+                if (act === 'discard') return doDiscard(btn);
+                if (act === 'confirm') return doConfirm(btn);
+            });
+        });
+    }
+
+    function closeDetail() {
+        modal.classList.remove('show');
+        currentJobId = null;
+        currentStatus = null;
+    }
+
+    async function doTrigger(btn) {
+        if (!currentJobId) return;
+        const jobId = currentJobId;
+        disableFoot();
+        btn.textContent = '시작 중...';
+        try {
+            await apiRequest('customer-log', { method: 'POST', body: JSON.stringify({ action: 'trigger_summarize', job_id: jobId }) });
+            closeDetail();
+            await load();
+        } catch (e) {
+            alert('AI 요약 시작 실패: ' + (e?.message || e));
+            enableFoot();
+        }
+    }
+
+    async function doDiscard(btn) {
+        if (!currentJobId) return;
+        if (!confirm('이 통화를 폐기하시겠습니까? 음성과 분석 결과가 모두 삭제됩니다.')) return;
+        const jobId = currentJobId;
+        disableFoot();
+        btn.textContent = '폐기 중...';
+        try {
+            await apiRequest('customer-log', { method: 'POST', body: JSON.stringify({ action: 'discard', job_id: jobId }) });
+            closeDetail();
+            await load();
+        } catch (e) {
+            alert('폐기 실패: ' + (e?.message || e));
+            enableFoot();
+        }
+    }
+
+    async function doConfirm(btn) {
+        if (!currentJobId) return;
+        const jobId = currentJobId;
+        disableFoot();
+        btn.textContent = '전송 중...';
+        try {
+            await apiRequest('customer-log', { method: 'POST', body: JSON.stringify({ action: 'confirm', job_id: jobId }) });
+            closeDetail();
+            await load();
+        } catch (e) {
+            alert('고객관리대장 전송 실패: ' + (e?.message || e));
+            enableFoot();
+        }
+    }
+
+    function disableFoot() { modalFoot.querySelectorAll('button').forEach(b => b.disabled = true); }
+    function enableFoot()  { modalFoot.querySelectorAll('button').forEach(b => b.disabled = false); }
+
+    modal.addEventListener('click', (e) => { if (e.target === modal) closeDetail(); });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && modal.classList.contains('show')) closeDetail(); });
+
+    load();
+</script>
+</body>
+</html>

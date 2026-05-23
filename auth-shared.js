@@ -584,12 +584,12 @@ function renderBottomNav(activeKey) {
         { key: 'customers.html', label: '고객관리대장',   href: 'customers.html', icon: ICON.users, main: true },
     ];
     if (inApp) {
-        // 앱팀 spec — deep link 로 native UnreviewedSummariesScreen.
-        // badge: window.YoungmanBridge.setUnreviewedCount(n) 호출 시 갱신.
+        // 사장님 2026-05-23 — web URL 우선 (v38 fallback). v39 native screen 은 앱이 unreviewed.html
+        // 로딩 intercept 해서 deep link 로 전환 가능. badge: window.YoungmanBridge.setUnreviewedCount(n).
         items.push({
-            key: 'unreviewed',
+            key: 'unreviewed.html',
             label: '미확인 요약',
-            href: 'youngman://nav?pathname=unreviewed',
+            href: 'unreviewed.html',
             icon: ICON.inbox,
             badgeKey: 'unreviewed',
         });

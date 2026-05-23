@@ -157,6 +157,7 @@ function js_owner_email_from_auth(): string {
 /* status → 사용자 친화 label + progress 보정 + retryable 분기 */
 function js_status_label(string $status, int $progressPct): array {
     $map = [
+        'audio_pending'      => ['음성 저장됨 — 미확인 요약 대기', 0],   // 사장님 2026-05-23 lazy-STT
         'queued'             => ['대기 중...', max(5, $progressPct)],
         'uploaded'           => ['업로드 완료, 처리 대기 중...', max(10, $progressPct)],
         'uploading'          => ['파일 업로드 중...', max(15, $progressPct)],
@@ -166,6 +167,7 @@ function js_status_label(string $status, int $progressPct): array {
         'ready_to_review'    => ['검토 대기 — 결과 준비됨', 100],
         'saved'              => ['저장 완료', 100],
         'completed'          => ['완료', 100],  // saved 와 동의어 (legacy auto-mode)
+        'dismissed'          => ['폐기됨', 100],
         'failed'             => ['처리 실패', 100],  // 레거시
         'failed_retryable'   => ['일시 실패 — 자동 재시도 중', 50],
         'failed_permanent'   => ['처리 실패 — 영맨 고객센터 문의', 100],
@@ -238,11 +240,12 @@ elseif ($status === 'failed_permanent') $failureErrorCode = 'JOB_FAILED_PERMANEN
 elseif ($status === 'failed') $failureErrorCode = 'JOB_FAILED_PERMANENT';   // 레거시 매핑
 
 // 결과 URL — saved/completed/ready_to_review 일 때 records.php 의 row 또는 job 자체.
+// 사장님 2026-05-23 — lazy-STT audio_pending 도 preview 가능 (요약 데이터는 없지만 메타 + 액션 분기용).
 $resultUrl = null;
 if ($job['customer_log_id']) {
     $resultUrl = '/records.php?resource=customer-log&id=' . urlencode((string)$job['customer_log_id']);
-} elseif ($status === 'ready_to_review') {
-    // customer_log 아직 없음 — 검토 대기. 앱이 confirm 액션 호출 시 INSERT 됨.
+} elseif (in_array($status, ['audio_pending', 'queued', 'processing', 'ready_to_review', 'failed_retryable', 'failed_permanent'], true)) {
+    // customer_log 아직 없음 — 미확인 요약 분기. 앱이 preview/trigger_summarize/confirm/discard 사용.
     $resultUrl = '/records.php?resource=customer-log&action=preview&job_id=' . urlencode((string)$job['id']);
 }
 
