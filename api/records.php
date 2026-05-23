@@ -1170,8 +1170,12 @@ function customer_log_row(array $row): array {
  */
 /**
  * 사장님 2026-05-24 — ledger group 의 field_schema 에서 "지역" 필드 key 찾기.
- * 사장님이 그룹 편집으로 직접 추가하므로 key 명이 가변적. label="지역" 또는
- * key="region" 으로 자동 매칭. 못 찾으면 null → region 매핑 skip.
+ * 1) strict match (label="지역" / key="region"/"지역")
+ * 2) loose match (label 에 "지역" 포함, key 에 "region"/"area" 포함)
+ * 3) 못 찾으면 null — caller 가 client-side DEFAULT_FIELDS 의 'region' fallback 사용.
+ *
+ * 사장님 그룹은 server-side default schema (region 미포함) 로 생성됐고 client-side
+ * DEFAULT_FIELDS (region 포함) 가 UI 를 그리는 구조 → server schema 에는 region 정의 없음.
  */
 function find_region_field_key(?array $fieldSchema): ?string {
     if (!is_array($fieldSchema)) return null;
@@ -1179,11 +1183,24 @@ function find_region_field_key(?array $fieldSchema): ?string {
         if (!is_array($f)) continue;
         $label = trim((string)($f['label'] ?? ''));
         $key = trim((string)($f['key'] ?? ''));
-        if ($key !== '' && ($label === '지역' || $key === 'region' || $key === '지역')) {
-            return $key;
-        }
+        if ($key === '') continue;
+        // strict match
+        if ($label === '지역' || $key === 'region' || $key === '지역') return $key;
+        // loose match (옛 그룹 schema 변형 호환)
+        if (mb_strpos($label, '지역') !== false) return $key;
+        if (stripos($key, 'region') !== false || stripos($key, 'area') !== false) return $key;
     }
     return null;
+}
+
+/**
+ * region 매핑용 데이터 key 결정.
+ * - schema 에서 찾으면 그 key, 못 찾으면 'region' fallback.
+ * - 'region' fallback 이 안전한 이유: customers.js DEFAULT_FIELDS 가 항상 region 컬럼을
+ *   data['region'] 에서 읽음. 즉 schema 정의 없어도 UI 가 자동 표시.
+ */
+function resolve_region_data_key(?array $fieldSchema): string {
+    return find_region_field_key($fieldSchema) ?? 'region';
 }
 
 function customer_log_default_group_field_schema(): array {
@@ -1193,6 +1210,7 @@ function customer_log_default_group_field_schema(): array {
         ['key' => 'call_count', 'label' => '통화수',       'type' => 'call_count'],
         ['key' => 'customer',   'label' => '고객명',       'type' => 'text'],
         ['key' => 'phone',      'label' => '연락처',       'type' => 'text'],
+        ['key' => 'region',     'label' => '지역',         'type' => 'text'],
         ['key' => 'content',    'label' => '상담 내용',    'type' => 'textarea'],
         ['key' => 'agent_memo', 'label' => '담당자 메모',  'type' => 'textarea'],
         ['key' => 'memo',       'label' => '비고',         'type' => 'text'],
@@ -4556,6 +4574,7 @@ try {
                 $curDataR['content']  = $mergedContentR;
                 if (!isset($curDataR['managed'])) $curDataR['managed'] = true;
                 // 사장님 2026-05-24 — refresh 시점에도 region 갱신 (placeholder → 실제 값).
+                // schema 매칭 못 해도 'region' fallback 사용 (client DEFAULT_FIELDS 호환).
                 try {
                     $groupSchemaArrR = null;
                     $gStmtR = $pdo->prepare("SELECT field_schema_json FROM ledger_groups WHERE id = :id LIMIT 1");
@@ -4564,11 +4583,14 @@ try {
                     if ($gRowSchemaR && !empty($gRowSchemaR['field_schema_json'])) {
                         $groupSchemaArrR = youngman_decrypt_json($gRowSchemaR['field_schema_json']);
                     }
-                    $regionFieldKeyR = find_region_field_key($groupSchemaArrR);
-                    if ($regionFieldKeyR !== null && $clRegionR !== '') {
+                    $regionFieldKeyR = resolve_region_data_key($groupSchemaArrR);
+                    if ($clRegionR !== '') {
                         $curDataR[$regionFieldKeyR] = $clRegionR;
                     }
-                } catch (Throwable $e) { /* schema 파싱 실패 시 region 갱신 skip */ }
+                } catch (Throwable $e) {
+                    // schema fetch 실패해도 'region' key fallback 으로 적용.
+                    if ($clRegionR !== '') $curDataR['region'] = $clRegionR;
+                }
 
                 $newDataEncR = youngman_encrypt(json_encode($curDataR, JSON_UNESCAPED_UNICODE));
                 $pdo->prepare("UPDATE ledger_records SET data_json = :dj, updated_at = NOW() WHERE id = :id")
@@ -4687,12 +4709,13 @@ try {
             $clRegion  = trim((string)(youngman_decrypt($clRow['region'] ?? '') ?? ''));
             $clAgentMemo = trim((string)(youngman_decrypt($clRow['agent_memo'] ?? '') ?? ''));
 
-            // 사장님 2026-05-24 — 그룹 schema 에서 "지역" 필드 key 찾기 (auto-mapping).
-            $regionFieldKey = null;
+            // 사장님 2026-05-24 — 그룹 schema 에서 "지역" 필드 key 찾기.
+            // 못 찾으면 'region' fallback (client DEFAULT_FIELDS 가 항상 data.region 읽음).
+            $regionFieldKey = 'region';
             try {
                 $groupSchemaArr = !empty($gRow['field_schema_json']) ? youngman_decrypt_json($gRow['field_schema_json']) : null;
-                $regionFieldKey = find_region_field_key($groupSchemaArr);
-            } catch (Throwable $e) { /* schema 파싱 실패 시 매핑 skip */ }
+                $regionFieldKey = resolve_region_data_key($groupSchemaArr);
+            } catch (Throwable $e) { /* schema 파싱 실패 시 'region' fallback 그대로 사용 */ }
 
             $contentParts = [];
             if ($clSummary !== '') $contentParts[] = $clSummary;
@@ -4757,8 +4780,8 @@ try {
                 $mergedData['content']    = $mergedContent;
                 $mergedData['agent_memo'] = $mergedMemo;
                 // 사장님 2026-05-24 — 지역 자동 매핑. LLM 이 추출했으면 갱신, 못 했으면 기존 값 유지.
-                // 사용자가 수동 편집한 값도 새 통화에서 LLM 이 같은 지역 추출하면 동일 값으로 덮어씌어짐 (무해).
-                if ($regionFieldKey !== null && $clRegion !== '') {
+                // regionFieldKey 는 schema 매칭 시 그 key, 못 찾으면 'region' fallback.
+                if ($clRegion !== '') {
                     $mergedData[$regionFieldKey] = $clRegion;
                 }
                 // managed: 기존 그대로 유지 (사용자가 의도적으로 비관리 토글한 경우 보존).
@@ -4830,8 +4853,8 @@ try {
                 'agent_memo' => $firstMemo,
                 'memo'       => '',
             ];
-            // 사장님 2026-05-24 — 지역 자동 매핑 (INSERT 분기). LLM 이 추출했으면 포함.
-            if ($regionFieldKey !== null && $clRegion !== '') {
+            // 사장님 2026-05-24 — 지역 자동 매핑 (INSERT 분기). regionFieldKey 는 'region' fallback 포함.
+            if ($clRegion !== '') {
                 $data[$regionFieldKey] = $clRegion;
             }
 
