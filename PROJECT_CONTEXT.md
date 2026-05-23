@@ -1,6 +1,6 @@
 # PROJECT_CONTEXT — youngman-biz.com
 
-*최종 갱신: 2026-05-23 PM 세션 종료 — ✅ **미확인 요약 시스템 부활** (lazy-STT 모드) + 전송 실패율 fix (.env 따옴표 strip).*
+*최종 갱신: 2026-05-24 AM 세션 — ✅ **양식으로 전송 STT 누락 fix** (phone_lookup HMAC 통일) + **고객관리대장 처리중 placeholder 부활** + **고객 거주지 자동 인식** (Claude region 추출).*
 
 ---
 
@@ -79,35 +79,45 @@ tester.html → /download/youngman-latest.apk (사장님 FTP 직접 업로드)
 - 회차별 content 분할 + "대화내용 전문보기" 버튼
 - 단체 SMS + 잔액 카드
 
-### 통화 녹취 — lazy-STT 모드 (2026-05-23 부활)
+### 통화 녹취 — lazy-STT 모드 (2026-05-24 양식으로 전송 placeholder 부활)
 ```
 통화 종료 → /process-recording.php
   → recording_jobs INSERT (status='audio_pending', review_required=1)
-  → audio 저장 + 즉시 응답 ({ ok:true, processing:false 형태 X, job_status:'audio_pending' })
-  → placeholder customer_log / mirror / Railway dispatch 모두 안 함 (lazy)
+  → audio 저장 + 즉시 응답
+  → placeholder customer_log / mirror / Railway dispatch 모두 안 함 (process-recording 시점 lazy 유지)
 
-사용자가 미확인 요약 페이지에서:
-  ① "요약보기" 누름
+사용자가 미확인 요약 페이지 또는 통화 종료 모달에서:
+  ① "요약보기" 누름 (auto_confirm=0)
      → trigger_summarize(auto_confirm=false) → status='queued' → Railway dispatch
      → STT 완료 callback → status='ready_to_review' + summary_json_encrypted 저장
-     → 카드 버튼 "✓ 요약완료" (녹색) 으로 변경
      → 사용자 클릭 → preview → 모달에서 결과 표시
      → "고객관리대장 전송" → confirm → customer_log INSERT + send_to_group mirror
 
-  ② "양식으로 전송" 누름 (백그라운드 자동)
-     → trigger_summarize(auto_confirm=true) → status='queued' + auto_confirm=1
-     → STT 완료 callback → auto_confirm 분기
-     → customer_log INSERT + recording_jobs UPDATE (status='saved')
-     → send_to_group internal HTTP mirror
+  ② "양식으로 전송" 누름 (auto_confirm=1) ★ 2026-05-24 placeholder 부활
+     → trigger_summarize 즉시 placeholder customer_log INSERT (source='app-processing',
+        summary='(AI 요약 처리 중...)', transcript=NULL) + ledger mirror
+     → 응답에 customer_log_id 포함 (native v40+ 가 모달 즉시 닫기 결정에 활용)
+     → 사용자 고객관리대장 보면 "(AI 요약 처리 중...)" 회차 카드 (회색 + 깜박임)
+     → Railway STT 완료 → callback §7 분기 (customer_log_id 있음) → customer_log UPDATE
+     → ledger refresh (refresh=true) → 회차 content 갱신 + region 자동 매핑
+     → 5초 polling 으로 customers.js 자동 갱신 → 실제 요약으로 표시
      → 실패 시 → customer_log DELETE + status='ready_to_review' fallback (미확인 요약 복원)
-     → FCM 발송 (성공: "고객관리대장 저장 완료" / 실패: "저장 실패 — 미확인 요약에 보관")
 
   ③ "폐기" 또는 모달 "취소" → discard → recording_jobs DELETE + audio unlink
 
 추가 안전망:
   · STT partial fail 감지 — duration≥20s + transcript<10chars 면 ready_to_review fallback
-  · callback UPDATE 분기 COALESCE 보호 (두 번째 callback 빈 값 덮어쓰기 방지)
+  · callback UPDATE 분기 COALESCE NULLIF 보호 (두 번째 callback 빈 값 덮어쓰기 방지)
+  · phone_lookup HMAC-SHA256 통일 (callback INSERT 와 records.php 동일 함수)
 ```
+
+### Claude 추출 필드 (2026-05-24 region 추가)
+- customer_name / summary / interest / inquiry / budget_condition / next_action / **region** / transcript
+- region: 고객 본인 현재 거주지만 추출. 모델하우스/매장/행선지/본가/직장은 제외.
+  · "수원에 사는데요 모델하우스가 분당" → "수원" 만
+  · 명확하지 않으면 null
+- customer_log.region 컬럼 (AES-256-GCM 암호문) lazy migration
+- ledger send_to_group 에서 group field_schema 의 label="지역" 또는 key="region" 자동 매칭 → 사용자 그룹 schema 가변적이어도 작동
 
 ### 미확인 요약 UI (unreviewed.html, 2026-05-23 부활)
 - 카드 layout: 좌측 (고객명/전화번호·통화시간/날짜) + 우측 (요약보기/양식으로 전송 버튼)
@@ -148,11 +158,17 @@ tester.html → /download/youngman-latest.apk (사장님 FTP 직접 업로드)
 
 ## 4. 아직 미완성 (다음 세션 작업)
 
-### ⏳ 1순위 — 전송 실패율 fix 검증
-- commit `f32d8fc` (.env 따옴표 strip) 적용 후 사장님 다음 통화 테스트 대기
-- 결과 확인:
-  · 정상 전송 → fix 성공 (80~90% 실패율 → 10% 미만 회복)
-  · 여전히 실패 → recording_jobs.error_message 의 mirror_diag (response body 150 chars) 확인 후 다음 분기
+### ⏳ 1순위 — 2026-05-24 3개 fix 검증
+사장님 다음 통화 테스트 대기:
+1. **양식으로 전송 STT 누락 fix** (commit `6d21674`) — phone_lookup HMAC 통일.
+   "전문보기" 모달이 실제 STT transcript 표시되어야 함 (기존: "저장되어 있지 않습니다").
+2. **고객관리대장 처리중 placeholder** (commit `d4a6d70`) — 양식으로 전송 후 고객관리대장에
+   "(AI 요약 처리 중...)" 회차 카드 (회색 + 깜박임) 표시 → 5초 polling 으로 자동 갱신.
+   ⚠️ native 모달 즉시 닫기는 앱팀 v40+ 작업 필요 (영맨 단독 X).
+3. **지역 자동 인식** (commit `9c2a080`) — 통화 중 "평택에 거주중" 같은 문장 →
+   고객관리대장 "지역" 컬럼에 "평택" 자동 입력.
+   · 모델하우스/행선지/본가/직장 등은 추출 안 함 (Claude 문맥 파악).
+   · 옛 통화 데이터는 재처리 안 함. 새 통화부터 적용.
 
 ### ⏳ 앱팀 v40+ 작업 (영맨 진단 완료)
 
@@ -243,6 +259,11 @@ tester.html → /download/youngman-latest.apk (사장님 FTP 직접 업로드)
 ## 7. 최근 수정한 파일 (commit 흐름)
 
 ```
+# 2026-05-24 AM 세션 — 양식으로 전송 흐름 완성 (3개 fix)
+9c2a080 feat(call): 통화 내용 고객 거주지 자동 인식 → 고객관리대장 "지역" ★ 신규 기능
+d4a6d70 feat(call): 양식으로 전송 placeholder 부활 — 고객관리대장 처리중 카드 ★ UX 개선
+6d21674 fix(call): 양식으로 전송 STT 전문 누락 root cause — phone_lookup HMAC 통일 ★ 핵심 FIX
+
 # 2026-05-23 PM 세션 — 미확인 요약 부활 + 전송 실패율 fix
 f32d8fc fix(callback): 전송 실패율 80~90% 근본 원인 — .env 따옴표 strip 누락 ★ 핵심 FIX
 9d1d3ce fix(callback): STT 부분 실패 자동 감지 + UPDATE 분기 COALESCE 보호
@@ -270,15 +291,20 @@ aad194b fix(unreviewed): 미확인요약 시스템 전체 정합성 — lazy-STT
 - 🔒 records.php worker token 우회 분기 (X-Worker-Token + body.owner_email)
 - 🔒 PII owner_email 격리
 
-### lazy-STT 모드 (2026-05-23 부활)
-- 🔒 process-recording.php — status='audio_pending' INSERT, placeholder/mirror/dispatch 안 함
+### lazy-STT 모드 (2026-05-23 부활 / 2026-05-24 placeholder 부분 부활)
+- 🔒 process-recording.php — status='audio_pending' INSERT, placeholder/mirror/dispatch 안 함 (process-recording 시점은 lazy 유지)
 - 🔒 trigger_summarize endpoint — auto_confirm 파라미터 + Railway dispatch
-- 🔒 recording-callback.php auto_confirm 분기 — customer_log INSERT + send_to_group + 실패 fallback
+- 🔒 **trigger_summarize(auto_confirm=1) 시점에 placeholder customer_log INSERT + ledger mirror** (2026-05-24)
+  · source='app-processing' / summary='(AI 요약 처리 중...)' / transcript=NULL / region=NULL
+  · 응답에 customer_log_id 포함 — native v40+ 모달 즉시 닫기 결정에 활용
+- 🔒 recording-callback.php — §7 분기 (customer_log_id 있음) UPDATE + ledger refresh
+- 🔒 callback UPDATE 분기 COALESCE NULLIF 보호 (region 포함, 두 번째 callback 빈 값 덮어쓰기 방지)
+- 🔒 callback INSERT 분기 (auto_confirm=1) — customer_log INSERT + send_to_group + 실패 fallback
 - 🔒 recording_jobs.auto_confirm 컬럼 (TINYINT NOT NULL DEFAULT 0)
-- 🔒 callback UPDATE 분기 COALESCE 보호 (transcript / summary 빈 값 덮어쓰기 방지)
 - 🔒 cron-process-jobs.php — audio_pending 자동 처리 제외 (lazy)
 - 🔒 audio_cleanup.php — audio_pending / failed_retryable storage_path 영구 보존
 - 🔒 list_unreviewed query — customer_log_id IS NULL + status IN ('audio_pending','queued','processing','ready_to_review','failed_retryable','failed_permanent')
+- 🔒 phone_lookup 함수 통일 — callback INSERT 도 records.php 의 customer_phone_lookup_key (HMAC-SHA256) 사용 (2026-05-24 root cause fix)
 
 ### 미확인 요약 UI (unreviewed.html)
 - 🔒 카드 layout (좌측 info / 우측 버튼 2개 stack)
@@ -286,6 +312,20 @@ aad194b fix(unreviewed): 미확인요약 시스템 전체 정합성 — lazy-STT
 - 🔒 낙관적 UI — confirm/discard 시 카드 즉시 DOM 제거 (removeCardFromDom)
 - 🔒 체크박스 + 전체선택 + 1개+ 선택 시 인라인 버튼 활성화
 - 🔒 날짜 구분선 (오늘 / 어제 / N월 N일 (요일))
+
+### 고객관리대장 처리중 placeholder (customers.js / style.css, 2026-05-24)
+- 🔒 customers.js renderContentWithTranscriptButtons — placeholder 회차 ("(AI 요약 처리 중...)" 포함) 시각화
+  · "전문보기" 버튼 숨김 (transcript 아직 NULL)
+  · class="content-round-processing" → 회색 배경 + 좌측 깜박이는 빨간 막대
+- 🔒 customers.js startProcessingPollIfNeeded — placeholder 있으면 5초 polling, page hidden 시 skip
+- 🔒 style.css .content-round-processing — 깜박임 애니메이션 (opacity 0.85↔1.0, 1.6s)
+
+### 지역 자동 인식 (2026-05-24)
+- 🔒 worker/main.py CLAUDE_SYSTEM_PROMPT — JSON schema region 필드 + region 결정 규칙 섹션 (추출/제외/예시)
+- 🔒 worker/main.py CallbackResult.region (Optional[str])
+- 🔒 customer_log.region 컬럼 (VARCHAR 255, AES-256-GCM 암호문)
+- 🔒 records.php find_region_field_key — label="지역" 또는 key="region"/"지역" 자동 매칭
+- 🔒 send_to_group MERGE/INSERT/refresh 분기 모두 region 적용 (LLM 추출 시만 갱신, 못 추출하면 기존 유지)
 
 ### API 응답 일관성 (앱팀 v46/v49 spec)
 - 🔒 trigger_summarize / preview / summary_status 응답에 ok + processing 필드 필수
@@ -309,27 +349,29 @@ aad194b fix(unreviewed): 미확인요약 시스템 전체 정합성 — lazy-STT
 
 ## 9. 다음에 이어서 해야 할 작업
 
-### 1순위 — 전송 실패율 fix 검증
-- commit `f32d8fc` 적용 후 사장님 다음 "양식으로 전송" 테스트 결과 확인.
-- 정상 회복 시 → 작업 종료. 미확인 요약은 사용자 실수 확인 못 한 케이스에만 들어감 (사장님 정책).
-- 여전히 실패 시 → SQL 진단:
-  ```sql
-  SELECT id, status, customer_log_id, LEFT(error_message, 500) AS err
-  FROM recording_jobs WHERE owner_email='nxnxax@gmail.com'
-  ORDER BY created_at DESC LIMIT 3;
-  ```
-  error_message 의 mirror_diag (response body 150 chars 포함) 보고 분기.
+### 1순위 — 2026-05-24 3개 fix 검증
+사장님 다음 통화 테스트 후 확인:
+1. **양식으로 전송 STT 전문** — "전문보기" 모달이 실제 transcript 표시 (commit 6d21674).
+2. **고객관리대장 처리중 카드** — 양식으로 전송 후 "(AI 요약 처리 중...)" 회차 표시 + 자동 갱신 (commit d4a6d70).
+3. **지역 자동 입력** — 통화 중 거주지 언급 시 "지역" 컬럼 자동 채워짐 (commit 9c2a080).
 
-### 2순위 — 앱팀 v40+ 작업 협업
-1. 모달 자동 종료 시 audio 업로드 (process-recording 호출 추가)
-2. UnreviewedPreview native screen 하단 버튼 SafeArea 추가
-3. "양식으로 전송" 버튼 활성화를 audio fully written 후로 늦춤 (audio 일부만 업로드 방지)
+### 2순위 — 앱팀 v40+ 명세 (이미 정리됨, 사장님이 앱팀에 전달)
+1. **"양식으로 전송" 모달 즉시 닫기** — trigger_summarize 응답 `auto_confirm=true` + `customer_log_id!=null` 이면 모달 닫고 토스트.
+2. **"요약보기" 흐름은 그대로 유지** — 응답 `customer_log_id=null` 이므로 기존 분기 보존.
+3. 통화 종료 모달 자동 종료 시 audio 업로드 누락 fix.
+4. UnreviewedPreview native screen 하단 버튼 SafeArea 추가.
+5. "양식으로 전송" 버튼 활성화를 audio fully written 후로 늦춤 (audio 일부만 업로드 방지).
 
 ### 3순위 — 보안 마무리 (사장님 작업)
 1. RECORDING_WORKER_TOKEN rotate (3곳 동기화 — Railway Variables + cafe24 .env + GitHub Secrets, **따옴표 없이**)
 2. cafe24 webroot 의 admin_env_diag.php FTP 직접 삭제
 
-### 4순위 — Lottie 비서 애니메이션 (보류)
+### 4순위 — 옛 통화 region backfill (사장님 결정 필요)
+- 옛 customer_log 의 transcript 에서 Claude 로 region 만 재추출 + UPDATE
+- LLM API 비용 발생 (사장님 옛 통화 개수 × Claude tokens)
+- 사장님이 명시적으로 요청하면 진행
+
+### 5순위 — Lottie 비서 애니메이션 (보류)
 - 사장님이 lottiefiles.com 에서 secretary writing 무료 애니메이션 선택 → 영맨이 cafe24 호스팅 + 앱팀 lottie-react-native 통합
 
 ---
