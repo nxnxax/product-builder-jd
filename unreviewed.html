@@ -61,6 +61,10 @@
 .un-btn-card.primary:hover:not(:disabled){background:#2a2520}
 .un-btn-card.done{background:var(--done-bg);color:#fff;border-color:var(--done-bg)}
 .un-btn-card.done:hover:not(:disabled){background:var(--done-bg-hover)}
+/* 사장님 2026-05-24 — 요약완료 버튼 2줄 표시. 다른 한 줄 버튼과 동일 height 유지 (min-height 36px). */
+.un-btn-card.done-multi{flex-direction:column;gap:1px;padding:4px 12px;line-height:1.15}
+.un-btn-card.done-multi .bl1{font-size:12.5px;font-weight:700;letter-spacing:-.01em}
+.un-btn-card.done-multi .bl2{font-size:11px;font-weight:500;opacity:.92;letter-spacing:-.02em}
 .un-btn-card.danger{background:#fff;color:#c8362c;border-color:#e8b8b3}
 .un-btn-card.danger:hover:not(:disabled){background:#fef2f1;border-color:#c8362c}
 .un-btn-card:disabled{opacity:.7;cursor:not-allowed}
@@ -227,7 +231,7 @@
         }
         if (status === 'ready_to_review') {
             return `
-                <button class="un-btn-card done" type="button" data-act="open-result" data-job-id="${id}">✓ 요약완료</button>
+                <button class="un-btn-card done done-multi" type="button" data-act="open-result" data-job-id="${id}"><span class="bl1">✓ 요약완료</span><span class="bl2">내용확인하기</span></button>
                 <button class="un-btn-card primary" type="button" data-act="confirm-direct" data-job-id="${id}">고객관리대장 전송</button>
             `;
         }
