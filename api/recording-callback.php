@@ -323,9 +323,15 @@ if ($autoConfirm) {
         $data[8] = chr(ord($data[8]) & 0x3f | 0x80);
         return vsprintf('%s%s-%s-%s-%s-%s%s%s', str_split(bin2hex($data), 4));
     }
+    // 사장님 2026-05-24 — records.php 의 customer_phone_lookup_key 와 동일 로직.
+    // 이전엔 마지막 8자리 숫자만 저장 → records.php 의 transcripts_by_phone 가
+    // HMAC-SHA256 hex 로 WHERE 매칭하니까 0 row → "전문보기" 가 항상 "저장되어 있지 않습니다".
+    // ("양식으로 전송" 흐름에서만 발생 — confirm 흐름은 records.php 가 INSERT 라 정상.)
     function rc_phone_lookup_auto(string $phone): ?string {
-        $clean = preg_replace('/[^0-9]/', '', $phone);
-        return $clean ? substr($clean, -8) : null;
+        $digits = preg_replace('/\D/', '', $phone);
+        if ($digits === '') return null;
+        $key = function_exists('youngman_master_key') ? youngman_master_key() : null;
+        return $key ? hash_hmac('sha256', $digits, $key) : hash('sha256', $digits);
     }
     $customerLogId = rc_uuid_v4_auto();
     $phoneLookup = $phoneNumber !== '' ? rc_phone_lookup_auto($phoneNumber) : null;

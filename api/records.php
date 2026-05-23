@@ -3839,12 +3839,18 @@ try {
             if ($phoneIn === '') respond(['status' => 'error', 'code' => 'invalid_request', 'message' => 'phone 필요.'], 400);
             $phoneLookup = customer_phone_lookup_key($phoneIn);
             if (!$phoneLookup) respond(['status' => 'error', 'code' => 'invalid_request', 'message' => 'phone 형식 오류.'], 400);
+            // 사장님 2026-05-24 — 옛 recording-callback (rc_phone_lookup_auto) 호환.
+            // 2026-05-23 이전 "양식으로 전송" 흐름의 customer_log 는 customer_phone_lookup 이
+            // 마지막 8자리 숫자로 저장됨. HMAC 매칭 + 8자리 매칭 둘 다 가져와 합침.
+            $digitsOnly = preg_replace('/\D/', '', $phoneIn);
+            $legacyLookup = $digitsOnly !== '' ? substr($digitsOnly, -8) : '';
             try {
                 $stmt = $pdo->prepare('SELECT id, consult_at, transcript, ai_model
                     FROM customer_log
-                    WHERE owner_email = :o AND customer_phone_lookup = :pl
+                    WHERE owner_email = :o
+                      AND (customer_phone_lookup = :pl OR customer_phone_lookup = :legacy)
                     ORDER BY consult_at ASC, id ASC LIMIT 200');
-                $stmt->execute([':o' => $owner, ':pl' => $phoneLookup]);
+                $stmt->execute([':o' => $owner, ':pl' => $phoneLookup, ':legacy' => $legacyLookup]);
                 $rows = $stmt->fetchAll();
             } catch (Throwable $e) {
                 respond(['status' => 'error', 'code' => 'upstream_failed', 'message' => '조회 실패.'], 503);
