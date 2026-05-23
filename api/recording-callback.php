@@ -349,7 +349,12 @@ try {
     rc_jerror('recording_jobs UPDATE 실패: ' . $e->getMessage(), 502);
 }
 
-/* auto_confirm=1 + customer_log INSERT 성공 → send_to_group mirror */
+/* auto_confirm=1 + customer_log INSERT 성공 → send_to_group mirror
+ * 사장님 2026-05-23 — send_to_group 실패 시 사용자가 인지 못 하는 silent failure 방지.
+ * customer_log INSERT 됐는데 mirror 안 됐으면 → 자동으로 미확인 요약 복원
+ * (customer_log DELETE + recording_jobs status='ready_to_review' fallback). */
+$mirrorFailed = false;
+$mirrorDiag = null;
 if ($autoConfirm && $customerLogId) {
     try {
         $sendUrl = rtrim((string)rc_load_env('CAFE24_BASE_URL') ?: 'https://youngman-biz.com', '/')
@@ -368,20 +373,60 @@ if ($autoConfirm && $customerLogId) {
         $sResp = curl_exec($sCh);
         $sStat = (int)curl_getinfo($sCh, CURLINFO_HTTP_CODE);
         curl_close($sCh);
-        error_log('[recording-callback auto_confirm] send_to_group http=' . $sStat . ' cl=' . $customerLogId);
+        // 응답 검증: HTTP 200 + JSON status='ok' 필수.
+        $mirrorOk = ($sStat >= 200 && $sStat < 300);
+        if ($mirrorOk && $sResp !== false) {
+            $sData = json_decode((string)$sResp, true);
+            if (!is_array($sData) || (($sData['status'] ?? '') !== 'ok' && empty($sData['merged']))) {
+                $mirrorOk = false;
+            }
+        }
+        $mirrorDiag = 'http=' . $sStat . ' resp_len=' . (is_string($sResp) ? strlen($sResp) : 0);
+        if (!$mirrorOk) {
+            $mirrorFailed = true;
+            error_log('[recording-callback auto_confirm] send_to_group 실패: ' . $mirrorDiag . ' body=' . substr((string)$sResp, 0, 300));
+        } else {
+            error_log('[recording-callback auto_confirm] send_to_group OK: ' . $mirrorDiag);
+        }
     } catch (Throwable $e) {
-        error_log('[recording-callback auto_confirm] send_to_group 실패: ' . $e->getMessage());
+        $mirrorFailed = true;
+        $mirrorDiag = 'exception: ' . $e->getMessage();
+        error_log('[recording-callback auto_confirm] send_to_group 예외: ' . $e->getMessage());
+    }
+
+    // 사장님 2026-05-23 fallback — mirror 실패 시 미확인 요약 복원.
+    if ($mirrorFailed) {
+        try {
+            $pdo->prepare("DELETE FROM customer_log WHERE id = :id AND owner_email = :o")
+                ->execute([':id' => $customerLogId, ':o' => $ownerEmail]);
+        } catch (Throwable $e) {
+            error_log('[recording-callback auto_confirm fallback] customer_log DELETE 실패: ' . $e->getMessage());
+        }
+        try {
+            $pdo->prepare("UPDATE recording_jobs SET status = 'ready_to_review', customer_log_id = NULL,
+                    error_message = CONCAT(IFNULL(error_message, ''), ' [auto_confirm mirror 실패: ', :diag, ']'),
+                    updated_at = NOW() WHERE id = :id")
+                ->execute([':diag' => substr((string)$mirrorDiag, 0, 200), ':id' => $jobId]);
+        } catch (Throwable $e) {
+            error_log('[recording-callback auto_confirm fallback] recording_jobs UPDATE 실패: ' . $e->getMessage());
+        }
+        $customerLogId = null;
+        $finalStatus = 'ready_to_review';
     }
 }
 
-/* FCM — auto_confirm=1 이면 "고객관리대장 자동 저장 완료", 아니면 "요약 완료, 검토 대기" */
+/* FCM — auto_confirm 분기 + mirror 실패 시 안내 변경 */
 try {
     require_once __DIR__ . '/fcm_helpers.php';
     $sumPreview = $summary;
     if (mb_strlen($sumPreview) > 60) $sumPreview = mb_substr($sumPreview, 0, 57) . '...';
-    $fcmTitle = $autoConfirm
-        ? '고객관리대장 저장 완료 — ' . $customerName
-        : '통화 요약 완료 — ' . $customerName;
+    if ($autoConfirm && !$mirrorFailed) {
+        $fcmTitle = '고객관리대장 저장 완료 — ' . $customerName;
+    } elseif ($autoConfirm && $mirrorFailed) {
+        $fcmTitle = '저장 실패 — 미확인 요약에 보관 (' . $customerName . ')';
+    } else {
+        $fcmTitle = '통화 요약 완료 — ' . $customerName;
+    }
     send_fcm_to_user($pdo, $ownerEmail, [
         'title' => $fcmTitle,
         'body'  => $sumPreview,
@@ -391,7 +436,8 @@ try {
             'job_status'      => $finalStatus,
             'customer_log_id' => $customerLogId,
             'group_id'        => $groupId,
-            'auto_confirmed'  => $autoConfirm ? '1' : '0',
+            'auto_confirmed'  => ($autoConfirm && !$mirrorFailed) ? '1' : '0',
+            'mirror_failed'   => $mirrorFailed ? '1' : '0',
         ],
     ]);
 } catch (Throwable $e) {
@@ -403,6 +449,8 @@ echo json_encode([
     'job_id' => $jobId,
     'status' => $finalStatus,
     'customer_log_id' => $customerLogId,
-    'auto_confirmed' => $autoConfirm,
+    'auto_confirmed' => $autoConfirm && !$mirrorFailed,
+    'mirror_failed' => $mirrorFailed,
+    'mirror_diag' => $mirrorDiag,
     'mode' => 'lazy_stt',
 ], JSON_UNESCAPED_UNICODE);
