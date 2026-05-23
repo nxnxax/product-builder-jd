@@ -4317,13 +4317,20 @@ try {
             // group_id 없어도 send_to_group 가 default 그룹 자동 생성.
             $mirrorResult = null;
             try {
+                // 사장님 2026-05-23 — .env 따옴표 strip robust parsing (rc_load_env 와 동일).
+                // 옛 코드는 trim($v) 만 해서 ".." 따옴표 그대로 → records.php worker token
+                // 검증 hash_equals mismatch → 401 → send_to_group 100% 실패.
                 $envWorkerTok = '';
-                $envFile = __DIR__ . '/.env';
-                if (is_file($envFile)) {
+                foreach ([__DIR__, dirname(__DIR__)] as $envDir) {
+                    $envFile = $envDir . '/.env';
+                    if (!is_file($envFile)) continue;
                     foreach (file($envFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as $ln) {
-                        if (strpos($ln, '=') === false || $ln[0] === '#') continue;
-                        [$k, $v] = explode('=', $ln, 2);
-                        if (trim($k) === 'RECORDING_WORKER_TOKEN') { $envWorkerTok = trim($v); break; }
+                        if (preg_match('/^\s*(?:export\s+)?([A-Z0-9_]+)\s*=\s*(.*)$/i', $ln, $m)) {
+                            if (strcasecmp($m[1], 'RECORDING_WORKER_TOKEN') === 0) {
+                                $envWorkerTok = trim($m[2], "\"' \t\r\n");
+                                break 2;
+                            }
+                        }
                     }
                 }
                 if ($envWorkerTok !== '') {

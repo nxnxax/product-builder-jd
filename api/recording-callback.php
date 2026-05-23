@@ -33,17 +33,26 @@ function rc_jerror(string $msg, int $http = 500): void {
     exit;
 }
 
-/* .env 직접 파싱 */
+/* .env 직접 파싱
+ * 사장님 2026-05-23 — 따옴표 strip 추가. records.php 의 worker token 검증과
+ * 동일 trim 패턴 사용해야 hash_equals 통과. 이전 버그: .env 에 ".." 따옴표
+ * 있으면 callback 측은 quote 포함, records.php 측은 quote 제거 → mismatch
+ * → send_to_group internal HTTP 401 → auto_confirm 흐름 항상 실패.
+ *
+ * 정규식 + quote/space trim 으로 robust parsing. webroot/.env + parent/.env 둘 다 탐색. */
 function rc_load_env(string $key): string {
     static $cache = null;
     if ($cache === null) {
         $cache = [];
-        $f = __DIR__ . '/.env';
-        if (is_file($f)) {
+        foreach ([__DIR__, dirname(__DIR__)] as $dir) {
+            $f = $dir . '/.env';
+            if (!is_file($f)) continue;
             foreach (file($f, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as $line) {
-                if (strpos($line, '=') === false || $line[0] === '#') continue;
-                [$k, $v] = explode('=', $line, 2);
-                $cache[trim($k)] = trim($v);
+                if (preg_match('/^\s*(?:export\s+)?([A-Z0-9_]+)\s*=\s*(.*)$/i', $line, $m)) {
+                    $k = $m[1];
+                    $v = trim($m[2], "\"' \t\r\n");
+                    if (!isset($cache[$k])) $cache[$k] = $v;
+                }
             }
         }
     }
@@ -410,10 +419,12 @@ if ($autoConfirm && $customerLogId) {
                 $mirrorOk = false;
             }
         }
-        $mirrorDiag = 'http=' . $sStat . ' resp_len=' . (is_string($sResp) ? strlen($sResp) : 0);
+        $mirrorDiag = sprintf('http=%d resp_len=%d body=%s', $sStat,
+            (is_string($sResp) ? strlen($sResp) : 0),
+            substr((string)$sResp, 0, 150));
         if (!$mirrorOk) {
             $mirrorFailed = true;
-            error_log('[recording-callback auto_confirm] send_to_group 실패: ' . $mirrorDiag . ' body=' . substr((string)$sResp, 0, 300));
+            error_log('[recording-callback auto_confirm] send_to_group 실패: ' . $mirrorDiag);
         } else {
             error_log('[recording-callback auto_confirm] send_to_group OK: ' . $mirrorDiag);
         }
