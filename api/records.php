@@ -4125,16 +4125,16 @@ try {
         // 사용자 검토 화면에서 호출. recording_jobs.review_required=1 인 job 만.
         if ($action === 'preview') {
             $jobId = trim((string)($body['job_id'] ?? $_GET['job_id'] ?? ''));
-            if ($jobId === '') respond(['status' => 'error', 'code' => 'invalid_request', 'message' => 'job_id 필요.'], 400);
+            if ($jobId === '') respond(['ok'=>false,'status'=>'error','processing'=>false,'code'=>'invalid_request','message'=>'job_id 필요.'], 400);
             try {
                 $jStmt = $pdo->prepare('SELECT id, status, summary_json_encrypted, customer_log_id, duration_sec, recorded_at, group_id, phone_number, review_required
                     FROM recording_jobs WHERE id = :id AND owner_email = :o LIMIT 1');
                 $jStmt->execute([':id' => $jobId, ':o' => $owner]);
                 $jRow = $jStmt->fetch();
             } catch (Throwable $e) {
-                respond(['status' => 'error', 'code' => 'upstream_failed', 'message' => '조회 실패.'], 503);
+                respond(['ok'=>false,'status'=>'error','processing'=>false,'code'=>'upstream_failed','message'=>'조회 실패.'], 503);
             }
-            if (!$jRow) respond(['status' => 'error', 'code' => 'not_found', 'message' => '해당 job 없음 또는 권한 없음.'], 404);
+            if (!$jRow) respond(['ok'=>false,'status'=>'error','processing'=>false,'code'=>'not_found','message'=>'해당 job 없음 또는 권한 없음.'], 404);
 
             $summaryJson = null;
             if (!empty($jRow['summary_json_encrypted'])) {
@@ -4142,10 +4142,17 @@ try {
                 $arr = is_string($dec) ? json_decode($dec, true) : null;
                 if (is_array($arr)) $summaryJson = $arr;
             }
+            // 사장님 2026-05-23 — 앱팀 v49 요청: ok + processing 필드 명시.
+            // processing=true → 앱이 polling 계속. processing=false → 결과 표시 (또는 폐기/완료).
+            $curStatus = (string)$jRow['status'];
+            $isProcessing = in_array($curStatus, ['audio_pending', 'queued', 'processing'], true);
+            $isFailed = in_array($curStatus, ['failed_permanent'], true);
             respond([
-                'status' => 'ok',
+                'ok' => !$isFailed,
+                'status' => $isFailed ? 'error' : 'ok',
+                'processing' => $isProcessing,
                 'job_id' => (string)$jRow['id'],
-                'job_status' => (string)$jRow['status'],
+                'job_status' => $curStatus,
                 'review_required' => !empty($jRow['review_required']),
                 'customer_log_id' => $jRow['customer_log_id'] ?: null,
                 'duration_sec' => (int)($jRow['duration_sec'] ?? 0),
@@ -4153,6 +4160,36 @@ try {
                 'group_id' => $jRow['group_id'] ?: null,
                 'phone_number' => $jRow['phone_number'] ?: null,
                 'summary' => $summaryJson,   // {customer_name, summary, interest, inquiry, budget_condition, next_action, transcript, ...}
+            ]);
+        }
+
+        // ─── SUMMARY_STATUS (사장님 2026-05-23 — preview alias, ok/processing 만 필요한 경량 polling) ───
+        // GET /records.php?resource=customer-log&action=summary_status&job_id=xxx
+        // preview 의 summary 필드 없는 경량 버전. polling 부하 절감.
+        if ($action === 'summary_status') {
+            $jobId = trim((string)($body['job_id'] ?? $_GET['job_id'] ?? ''));
+            if ($jobId === '') respond(['ok'=>false,'status'=>'error','processing'=>false,'code'=>'invalid_request','message'=>'job_id 필요.'], 400);
+            try {
+                $jStmt = $pdo->prepare('SELECT id, status, customer_log_id, progress_pct, error_message
+                    FROM recording_jobs WHERE id = :id AND owner_email = :o LIMIT 1');
+                $jStmt->execute([':id' => $jobId, ':o' => $owner]);
+                $jRow = $jStmt->fetch();
+            } catch (Throwable $e) {
+                respond(['ok'=>false,'status'=>'error','processing'=>false,'code'=>'upstream_failed','message'=>'조회 실패.'], 503);
+            }
+            if (!$jRow) respond(['ok'=>false,'status'=>'error','processing'=>false,'code'=>'not_found','message'=>'해당 job 없음 또는 권한 없음.'], 404);
+            $curStatus = (string)$jRow['status'];
+            $isProcessing = in_array($curStatus, ['audio_pending', 'queued', 'processing'], true);
+            $isFailed = in_array($curStatus, ['failed_permanent'], true);
+            respond([
+                'ok' => !$isFailed,
+                'status' => $isFailed ? 'error' : 'ok',
+                'processing' => $isProcessing,
+                'job_id' => (string)$jRow['id'],
+                'job_status' => $curStatus,
+                'progress_pct' => (int)($jRow['progress_pct'] ?? 0),
+                'customer_log_id' => $jRow['customer_log_id'] ?: null,
+                'error_message' => $isFailed ? (string)($jRow['error_message'] ?? '') : null,
             ]);
         }
 
