@@ -140,29 +140,32 @@ if (!empty($jobRow['customer_log_id'])) {
     if ($summaryCb === '') $summaryCb = $transcriptCb ?: '(요약 없음)';
     if ($customerNameCb === '') $customerNameCb = '고객';
 
+    // 사장님 2026-05-23 — UPDATE 분기 모든 컬럼 COALESCE 보호.
+    // 두 번째 callback (cron retry 등) 가 빈 transcript / summary 로 덮어쓰는 buggy 케이스 방지.
+    // 첫 번째 callback 의 정상 데이터가 보존됨.
     try {
         $pdo->prepare("UPDATE customer_log SET
-                customer_name = :nm,
-                phone_number = COALESCE(:ph, phone_number),
-                summary = :sum,
-                interest = COALESCE(:intr, interest),
-                inquiry = COALESCE(:inq, inquiry),
-                budget_condition = COALESCE(:bg, budget_condition),
-                next_action = COALESCE(:nx, next_action),
-                transcript = :tr,
+                customer_name = COALESCE(NULLIF(:nm, ''), customer_name),
+                phone_number = COALESCE(NULLIF(:ph, ''), phone_number),
+                summary = COALESCE(NULLIF(:sum, ''), summary),
+                interest = COALESCE(NULLIF(:intr, ''), interest),
+                inquiry = COALESCE(NULLIF(:inq, ''), inquiry),
+                budget_condition = COALESCE(NULLIF(:bg, ''), budget_condition),
+                next_action = COALESCE(NULLIF(:nx, ''), next_action),
+                transcript = COALESCE(NULLIF(:tr, ''), transcript),
                 ai_model = :am,
                 ai_generated_at = NOW(),
                 source = 'app-auto-completed'
             WHERE id = :id AND owner_email = :o")
             ->execute([
-                ':nm'  => youngman_encrypt($customerNameCb),
-                ':ph'  => $phoneNumberCb !== '' ? youngman_encrypt($phoneNumberCb) : null,
-                ':sum' => youngman_encrypt($summaryCb),
-                ':intr'=> $interestCb !== '' ? youngman_encrypt($interestCb) : null,
-                ':inq' => $inquiryCb !== '' ? youngman_encrypt($inquiryCb) : null,
-                ':bg'  => $budgetConditionCb !== '' ? youngman_encrypt($budgetConditionCb) : null,
-                ':nx'  => $nextActionCb !== '' ? youngman_encrypt($nextActionCb) : null,
-                ':tr'  => youngman_encrypt($transcriptCb),
+                ':nm'  => $customerNameCb !== '' ? youngman_encrypt($customerNameCb) : '',
+                ':ph'  => $phoneNumberCb !== '' ? youngman_encrypt($phoneNumberCb) : '',
+                ':sum' => $summaryCb !== '' ? youngman_encrypt($summaryCb) : '',
+                ':intr'=> $interestCb !== '' ? youngman_encrypt($interestCb) : '',
+                ':inq' => $inquiryCb !== '' ? youngman_encrypt($inquiryCb) : '',
+                ':bg'  => $budgetConditionCb !== '' ? youngman_encrypt($budgetConditionCb) : '',
+                ':nx'  => $nextActionCb !== '' ? youngman_encrypt($nextActionCb) : '',
+                ':tr'  => $transcriptCb !== '' ? youngman_encrypt($transcriptCb) : '',
                 ':am'  => $sttModelCb . '+' . $llmModelCb,
                 ':id'  => $jobRow['customer_log_id'],
                 ':o'   => $ownerEmail,
@@ -275,6 +278,32 @@ $summaryJsonEnc = youngman_encrypt(json_encode($summaryJsonObj, JSON_UNESCAPED_U
 $autoConfirm = !empty($jobRow['auto_confirm']);
 $customerLogId = null;
 $finalStatus = 'ready_to_review';
+
+// 사장님 2026-05-23 — STT 결과가 비어있거나 너무 짧으면 auto_confirm 진행 안 함.
+// audio_duration 대비 transcript 가 비정상적으로 짧으면 STT 부분 실패로 간주.
+// 미확인 요약에 ready_to_review 로 남김 → 사장님이 검토 후 결정.
+$durationSec = (int)($jobRow['duration_sec'] ?? 0);
+$transcriptLen = mb_strlen($transcript);
+$sttPartialFail = false;
+if ($autoConfirm) {
+    if ($transcriptLen === 0) {
+        $sttPartialFail = true;
+        $sttFailReason = 'STT 결과 비어있음 (transcript empty)';
+    } elseif ($durationSec >= 20 && $transcriptLen < 10) {
+        // 20초 이상 통화인데 transcript 10자 미만 → STT 거의 실패
+        $sttPartialFail = true;
+        $sttFailReason = sprintf('STT 결과 너무 짧음 (duration=%ds, transcript=%d chars)', $durationSec, $transcriptLen);
+    }
+    if ($sttPartialFail) {
+        $autoConfirm = false;  // auto_confirm 비활성화 → ready_to_review 분기로
+        error_log('[recording-callback auto_confirm] STT partial fail 감지 → fallback ready_to_review: ' . $sttFailReason);
+        // recording_jobs.error_message 에 진단 기록 (사장님 미확인 요약 카드에 안내 가능)
+        try {
+            $pdo->prepare("UPDATE recording_jobs SET error_message = CONCAT(IFNULL(error_message, ''), ' [auto_confirm STT partial fail: ', :reason, ']') WHERE id = :id")
+                ->execute([':reason' => $sttFailReason, ':id' => $jobId]);
+        } catch (Throwable $e) {}
+    }
+}
 
 if ($autoConfirm) {
     /* 자동 confirm — customer_log INSERT + recording_jobs UPDATE + send_to_group mirror */
