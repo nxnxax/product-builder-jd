@@ -7,16 +7,23 @@
 <meta name="robots" content="noindex, nofollow">
 <link rel="icon" type="image/png" href="logo_main.png">
 <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
-<link rel="stylesheet" href="style.css?v=20260523-unreviewed-v2">
+<link rel="stylesheet" href="style.css?v=20260523-unreviewed-v4">
 <style>
 :root{
     --ledger-line:rgba(20,14,8,.09); --ledger-line-strong:rgba(20,14,8,.16);
     --ledger-bg:#fbf7ef; --ledger-accent:#c8362c; --ledger-accent-deep:#8a2620;
+    --done-bg:#0e6b2a; --done-bg-hover:#0a5621;
 }
-.un-shell{max-width:920px;margin:0 auto;padding:24px 18px 140px}
-.un-head{margin-bottom:18px}
+.un-shell{max-width:920px;margin:0 auto;padding:24px 18px 160px}
+.un-head{margin-bottom:14px}
 .un-title{margin:0;font-size:24px;letter-spacing:-.02em;font-weight:700}
 .un-sub{margin:6px 0 0;color:#8a847e;font-size:14px;line-height:1.55}
+
+/* 전체선택 헤더 */
+.un-select-all{display:flex;align-items:center;gap:10px;padding:10px 12px;background:#fbf7ef;border-radius:10px;margin-bottom:10px;font-size:14px;color:#3a3530;font-weight:600}
+.un-select-all label{display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none}
+.un-select-all-count{margin-left:auto;color:#8a847e;font-weight:500;font-size:13px}
+
 .un-list{display:flex;flex-direction:column;gap:10px}
 
 /* 날짜 구분선 */
@@ -24,26 +31,50 @@
 .un-date-sep::before,.un-date-sep::after{content:'';flex:1;height:1px;background:var(--ledger-line)}
 .un-date-sep:first-child{padding-top:0}
 
-/* 카드 — 좌측 정보 / 우측 버튼 2개 stack */
-.un-card{background:#fff;border:1px solid var(--ledger-line);border-radius:14px;padding:14px 14px;display:flex;gap:12px;align-items:stretch;transition:border-color 160ms}
+/* 카드 — 좌측 체크박스 + 정보 / 우측 버튼 stack */
+.un-card{background:#fff;border:1px solid var(--ledger-line);border-radius:14px;padding:14px 14px;display:flex;gap:10px;align-items:stretch;transition:border-color 160ms,background 160ms}
 .un-card:hover{border-color:var(--ledger-line-strong)}
+.un-card.selected{border-color:var(--ledger-accent);background:#fef7f6}
+
+.un-check{flex-shrink:0;display:flex;align-items:center;padding:0 2px}
+.un-check input{width:20px;height:20px;cursor:pointer;accent-color:var(--ledger-accent)}
+
 .un-card-info{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:center;gap:4px}
 .un-card-name{font-size:17px;font-weight:700;color:#0e0d0c;letter-spacing:-.01em;line-height:1.25}
 .un-card-contact{font-size:15px;color:#3a3530;font-weight:600;line-height:1.4}
 .un-card-date{font-size:13px;color:#8a847e;line-height:1.3}
 
-/* 카드 우측 버튼 영역 */
-.un-card-actions{display:flex;flex-direction:column;gap:6px;flex-shrink:0;justify-content:center}
-.un-btn-card{padding:9px 14px;border:1px solid var(--ledger-line-strong);background:#fff;color:#0e0d0c;font-size:13.5px;font-weight:600;border-radius:10px;cursor:pointer;font-family:inherit;transition:all 160ms;white-space:nowrap;min-width:112px;text-align:center}
-.un-btn-card:hover{background:#fbf7ef}
-.un-btn-card:active{background:#f4efe7}
+.un-card-actions{display:flex;flex-direction:column;gap:6px;flex-shrink:0;justify-content:center;min-width:124px}
+.un-btn-card{padding:9px 14px;border:1px solid var(--ledger-line-strong);background:#fff;color:#0e0d0c;font-size:13.5px;font-weight:600;border-radius:10px;cursor:pointer;font-family:inherit;transition:all 160ms;white-space:nowrap;text-align:center;display:flex;align-items:center;justify-content:center;gap:6px;min-height:36px}
+.un-btn-card:hover:not(:disabled){background:#fbf7ef}
+.un-btn-card:active:not(:disabled){background:#f4efe7}
 .un-btn-card.primary{background:#0e0d0c;color:#fff;border-color:#0e0d0c}
-.un-btn-card.primary:hover{background:#2a2520}
-.un-btn-card:disabled{opacity:.5;cursor:not-allowed}
+.un-btn-card.primary:hover:not(:disabled){background:#2a2520}
+.un-btn-card.done{background:var(--done-bg);color:#fff;border-color:var(--done-bg)}
+.un-btn-card.done:hover:not(:disabled){background:var(--done-bg-hover)}
+.un-btn-card.danger{background:#fff;color:#c8362c;border-color:#e8b8b3}
+.un-btn-card.danger:hover:not(:disabled){background:#fef2f1;border-color:#c8362c}
+.un-btn-card:disabled{opacity:.7;cursor:not-allowed}
+.un-btn-card.loading{background:#f5f3ee;color:#8a847e;border-color:var(--ledger-line)}
+
+.un-mini-spinner{display:inline-block;width:12px;height:12px;border:2px solid #c8c4bd;border-top-color:#3a3530;border-radius:50%;animation:un-spin 1s linear infinite;flex-shrink:0}
+@keyframes un-spin{to{transform:rotate(360deg)}}
 
 .un-empty{text-align:center;padding:80px 24px;color:#8a847e;font-size:15px;line-height:1.7}
 .un-empty .icon{font-size:42px;display:block;margin-bottom:14px}
 .un-loading{text-align:center;padding:48px 24px;color:#8a847e;font-size:13.5px}
+
+/* 일괄 동작 sticky bar (2개 이상 선택 시 표시) */
+.un-bulk-bar{position:fixed;left:50%;bottom:90px;transform:translateX(-50%);background:#fff;border:1px solid var(--ledger-line-strong);border-radius:14px;padding:10px 14px;display:none;align-items:center;gap:10px;box-shadow:0 8px 28px rgba(14,13,12,.18);z-index:900;max-width:calc(100% - 32px)}
+.un-bulk-bar.show{display:flex}
+.un-bulk-count{font-size:14px;color:#0e0d0c;font-weight:700;white-space:nowrap}
+.un-bulk-btn{padding:9px 14px;border:1px solid var(--ledger-line-strong);background:#fff;color:#0e0d0c;font-size:13.5px;font-weight:600;border-radius:10px;cursor:pointer;font-family:inherit;white-space:nowrap}
+.un-bulk-btn:hover:not(:disabled){background:#fbf7ef}
+.un-bulk-btn.primary{background:#0e0d0c;color:#fff;border-color:#0e0d0c}
+.un-bulk-btn.primary:hover:not(:disabled){background:#2a2520}
+.un-bulk-btn.danger{background:#fff;color:#c8362c;border-color:#e8b8b3}
+.un-bulk-btn.danger:hover:not(:disabled){background:#fef2f1;border-color:#c8362c}
+.un-bulk-btn:disabled{opacity:.5;cursor:not-allowed}
 
 /* 결과 모달 */
 .un-modal-backdrop{position:fixed;inset:0;background:rgba(14,13,12,.55);display:none;align-items:center;justify-content:center;z-index:1000;padding:20px}
@@ -66,20 +97,16 @@
 .un-btn.danger:hover{background:#fef2f1;border-color:#c8362c}
 .un-btn:disabled{opacity:.5;cursor:not-allowed}
 
-/* 요약 중 로딩 spinner */
-.un-summary-loading{text-align:center;padding:30px 20px}
-.un-spinner{display:inline-block;width:32px;height:32px;border:3px solid #e8e4dd;border-top-color:#c8362c;border-radius:50%;animation:spin 1s linear infinite;margin-bottom:14px}
-@keyframes spin{to{transform:rotate(360deg)}}
-.un-summary-loading p{color:#3a3530;font-size:14.5px;margin:0;line-height:1.6}
-.un-summary-loading small{color:#8a847e;font-size:12.5px;display:block;margin-top:6px}
-
 @media (max-width:520px){
-    .un-shell{padding:20px 12px 140px}
-    .un-card{padding:12px 12px;gap:10px}
+    .un-shell{padding:20px 12px 160px}
+    .un-card{padding:12px 10px;gap:8px}
     .un-card-name{font-size:16.5px}
     .un-card-contact{font-size:14.5px}
-    .un-btn-card{padding:8px 12px;font-size:13px;min-width:96px}
+    .un-card-actions{min-width:106px}
+    .un-btn-card{padding:8px 10px;font-size:12.5px}
     .un-modal{max-height:85vh;border-radius:14px}
+    .un-bulk-bar{bottom:84px;padding:8px 12px;gap:8px}
+    .un-bulk-btn{padding:8px 12px;font-size:13px}
 }
 </style>
 </head>
@@ -89,12 +116,25 @@
 <div class="un-shell">
 <header class="un-head">
     <h1 class="un-title">미확인 요약</h1>
-    <p class="un-sub">통화 후 검토 대기 중인 항목입니다. 요약보기로 내용 확인 또는 양식으로 전송으로 바로 저장하세요.</p>
+    <p class="un-sub">검토 대기 중인 통화입니다. 카드를 선택해서 한 번에 폐기/전송할 수 있습니다.</p>
 </header>
+
+<div class="un-select-all" id="unSelectAllBar" style="display:none">
+    <label><input type="checkbox" id="unSelectAll"> 전체 선택</label>
+    <span class="un-select-all-count" id="unSelectAllCount"></span>
+</div>
+
 <div id="unreviewedList" class="un-list"><div class="un-loading">불러오는 중...</div></div>
 </div>
 
-<!-- 결과 모달 (요약보기) -->
+<!-- 일괄 동작 바 (2개 이상 선택 시) -->
+<div class="un-bulk-bar" id="unBulkBar">
+    <span class="un-bulk-count" id="unBulkCount">0개 선택됨</span>
+    <button class="un-bulk-btn danger" type="button" id="unBulkDiscard">선택 폐기</button>
+    <button class="un-bulk-btn primary" type="button" id="unBulkSend">선택 양식으로 전송</button>
+</div>
+
+<!-- 결과 모달 -->
 <div class="un-modal-backdrop" id="unModal">
     <div class="un-modal">
         <header class="un-modal-head">
@@ -107,10 +147,18 @@
 </div>
 
 <script type="module">
-    import { bootApp, apiRequest } from './auth-shared.js?v=20260523-unreviewed-v2';
+    import { bootApp, apiRequest } from './auth-shared.js?v=20260523-unreviewed-v4';
     await bootApp();
 
     const list = document.getElementById('unreviewedList');
+    const selectAllBar = document.getElementById('unSelectAllBar');
+    const selectAllCb = document.getElementById('unSelectAll');
+    const selectAllCount = document.getElementById('unSelectAllCount');
+    const bulkBar = document.getElementById('unBulkBar');
+    const bulkCount = document.getElementById('unBulkCount');
+    const bulkDiscardBtn = document.getElementById('unBulkDiscard');
+    const bulkSendBtn = document.getElementById('unBulkSend');
+
     const modal = document.getElementById('unModal');
     const modalTitle = document.getElementById('unModalTitle');
     const modalSubtitle = document.getElementById('unModalSubtitle');
@@ -119,6 +167,9 @@
 
     let currentJobId = null;
     let pollTimer = null;
+    let needsPolling = false;
+    const selectedSet = new Set();   // 선택한 job_id (페이지 reload 시에도 유지)
+    let allJobIds = [];
 
     function escapeHtml(s) {
         return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -170,6 +221,65 @@
         return s ? `${m}분 ${s}초` : `${m}분`;
     }
 
+    function renderButtons(j) {
+        const status = j.job_status || j.status || 'audio_pending';
+        const autoCf = !!j.auto_confirm;
+        const id = escapeHtml(j.id);
+        if (status === 'audio_pending') {
+            return `
+                <button class="un-btn-card" type="button" data-act="trigger-preview" data-job-id="${id}">요약보기</button>
+                <button class="un-btn-card primary" type="button" data-act="trigger-auto" data-job-id="${id}">양식으로 전송</button>
+            `;
+        }
+        if (status === 'ready_to_review') {
+            return `
+                <button class="un-btn-card done" type="button" data-act="open-result" data-job-id="${id}">✓ 요약완료</button>
+                <button class="un-btn-card primary" type="button" data-act="confirm-direct" data-job-id="${id}">고객관리대장 전송</button>
+            `;
+        }
+        if (status === 'queued' || status === 'processing') {
+            if (autoCf) {
+                return `
+                    <button class="un-btn-card" type="button" disabled>요약보기</button>
+                    <button class="un-btn-card loading" type="button" disabled><span class="un-mini-spinner"></span>전송 중...</button>
+                `;
+            }
+            return `
+                <button class="un-btn-card loading" type="button" disabled><span class="un-mini-spinner"></span>요약중...</button>
+                <button class="un-btn-card primary" type="button" data-act="trigger-auto" data-job-id="${id}">양식으로 전송</button>
+            `;
+        }
+        if (status === 'failed_retryable') {
+            return `
+                <button class="un-btn-card" type="button" data-act="trigger-preview" data-job-id="${id}">재시도</button>
+                <button class="un-btn-card danger" type="button" data-act="discard" data-job-id="${id}">폐기</button>
+            `;
+        }
+        if (status === 'failed_permanent') {
+            return `
+                <button class="un-btn-card danger" type="button" data-act="discard" data-job-id="${id}">폐기</button>
+            `;
+        }
+        return `<button class="un-btn-card" type="button" disabled>${escapeHtml(status)}</button>`;
+    }
+
+    function updateBulkBar() {
+        const n = selectedSet.size;
+        bulkCount.textContent = `${n}개 선택됨`;
+        // 사장님 spec: 2개 이상 선택 시 bulk bar 표시
+        bulkBar.classList.toggle('show', n >= 2);
+        // 전체선택 체크박스 상태
+        if (allJobIds.length > 0) {
+            const allSelected = allJobIds.every(id => selectedSet.has(id));
+            selectAllCb.checked = allSelected;
+            selectAllCb.indeterminate = !allSelected && n > 0;
+        } else {
+            selectAllCb.checked = false;
+            selectAllCb.indeterminate = false;
+        }
+        selectAllCount.textContent = n > 0 ? `(${n}/${allJobIds.length})` : '';
+    }
+
     async function load() {
         try {
             const r = await apiRequest('customer-log', { query: 'action=list_unreviewed' });
@@ -177,12 +287,26 @@
             try { window.YoungmanBridge?.setUnreviewedCount?.(items.length); } catch {}
             try { localStorage.setItem('yman_unreviewed_count', String(items.length)); } catch {}
 
-            if (items.length === 0) {
-                list.innerHTML = '<div class="un-empty"><span class="icon">📭</span>미확인 요약이 없습니다.<br>새 통화가 도착하면 여기에 표시됩니다.</div>';
-                return;
+            allJobIds = items.map(j => String(j.id));
+            // 사라진 항목은 selectedSet 에서 제거
+            for (const id of [...selectedSet]) {
+                if (!allJobIds.includes(id)) selectedSet.delete(id);
             }
 
-            // 날짜 구분선 삽입 — 같은 날짜끼리 그룹화 (응답이 이미 recorded_at DESC 정렬)
+            needsPolling = items.some(j => {
+                const s = j.job_status || j.status || '';
+                return s === 'queued' || s === 'processing';
+            });
+
+            if (items.length === 0) {
+                selectAllBar.style.display = 'none';
+                list.innerHTML = '<div class="un-empty"><span class="icon">📭</span>미확인 요약이 없습니다.<br>새 통화가 도착하면 여기에 표시됩니다.</div>';
+                updateBulkBar();
+                schedulePolling();
+                return;
+            }
+            selectAllBar.style.display = 'flex';
+
             let lastDateKey = '';
             const parts = [];
             for (const j of items) {
@@ -192,151 +316,177 @@
                     parts.push(`<div class="un-date-sep">${escapeHtml(dateLabel(ts))}</div>`);
                     lastDateKey = dk;
                 }
+                const id = String(j.id);
+                const isSel = selectedSet.has(id);
                 const contactParts = [];
                 if (j.phone_number) contactParts.push(escapeHtml(j.phone_number));
                 if (j.duration_sec) contactParts.push('통화 ' + fmtDuration(j.duration_sec));
                 parts.push(`
-                    <div class="un-card">
+                    <div class="un-card${isSel ? ' selected' : ''}" data-job-id="${escapeHtml(id)}">
+                        <div class="un-check">
+                            <input type="checkbox" data-cb-job-id="${escapeHtml(id)}"${isSel ? ' checked' : ''}>
+                        </div>
                         <div class="un-card-info">
                             <div class="un-card-name">${escapeHtml(j.customer_name || '고객')}</div>
                             <div class="un-card-contact">${contactParts.join(' · ')}</div>
                             <div class="un-card-date">${escapeHtml(fmtTime(j.recorded_at))}</div>
                         </div>
                         <div class="un-card-actions">
-                            <button class="un-btn-card" type="button" data-act="preview" data-job-id="${escapeHtml(j.id)}">요약보기</button>
-                            <button class="un-btn-card primary" type="button" data-act="auto-confirm" data-job-id="${escapeHtml(j.id)}">양식으로 전송</button>
+                            ${renderButtons(j)}
                         </div>
                     </div>
                 `);
             }
             list.innerHTML = parts.join('');
 
-            list.querySelectorAll('[data-act="preview"]').forEach(btn => {
-                btn.addEventListener('click', () => openSummary(btn.dataset.jobId));
-            });
-            list.querySelectorAll('[data-act="auto-confirm"]').forEach(btn => {
-                btn.addEventListener('click', () => autoConfirm(btn));
-            });
+            bindCardActions();
+            bindCheckboxes();
+            updateBulkBar();
+            schedulePolling();
         } catch (e) {
             list.innerHTML = `<div class="un-empty">불러오기 실패<br><small>${escapeHtml(e?.message || e)}</small></div>`;
         }
     }
 
-    /* "요약보기" — 모달 띄움. STT 미실행이면 백그라운드 trigger → polling.
-     * STT 완료된 ready_to_review 면 즉시 요약 표시. */
-    async function openSummary(jobId) {
-        currentJobId = jobId;
-        modalTitle.textContent = '요약 중...';
-        modalSubtitle.textContent = '';
-        modalBody.innerHTML = `
-            <div class="un-summary-loading">
-                <div class="un-spinner"></div>
-                <p>AI 가 통화 내용을 요약하고 있습니다.</p>
-                <small>보통 10~30초 소요됩니다</small>
-            </div>
-        `;
-        modalFoot.innerHTML = '<button class="un-btn" type="button" data-act="close">닫기</button>';
-        bindFootActions();
-        modal.classList.add('show');
+    function bindCardActions() {
+        list.querySelectorAll('[data-act]').forEach(btn => {
+            btn.addEventListener('click', async (ev) => {
+                ev.stopPropagation();
+                const act = btn.dataset.act;
+                const jobId = btn.dataset.jobId;
+                if (act === 'trigger-preview')  return doTriggerPreview(jobId, btn);
+                if (act === 'trigger-auto')     return doTriggerAuto(jobId, btn);
+                if (act === 'open-result')      return openResult(jobId);
+                if (act === 'confirm-direct')   return doConfirmDirect(jobId, btn);
+                if (act === 'discard')          return doDiscardCard(jobId, btn);
+            });
+        });
+    }
 
+    function bindCheckboxes() {
+        list.querySelectorAll('[data-cb-job-id]').forEach(cb => {
+            cb.addEventListener('change', (ev) => {
+                ev.stopPropagation();
+                const id = cb.dataset.cbJobId;
+                const card = cb.closest('.un-card');
+                if (cb.checked) { selectedSet.add(id); card?.classList.add('selected'); }
+                else { selectedSet.delete(id); card?.classList.remove('selected'); }
+                updateBulkBar();
+            });
+        });
+    }
+
+    selectAllCb.addEventListener('change', () => {
+        if (selectAllCb.checked) {
+            allJobIds.forEach(id => selectedSet.add(id));
+        } else {
+            selectedSet.clear();
+        }
+        // 모든 체크박스 동기화 + 카드 highlight
+        list.querySelectorAll('[data-cb-job-id]').forEach(cb => {
+            const id = cb.dataset.cbJobId;
+            cb.checked = selectedSet.has(id);
+            cb.closest('.un-card')?.classList.toggle('selected', cb.checked);
+        });
+        updateBulkBar();
+    });
+
+    function schedulePolling() {
+        if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+        if (!needsPolling) return;
+        pollTimer = setInterval(() => { load(); }, 5000);
+    }
+
+    async function doTriggerPreview(jobId, btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<span class="un-mini-spinner"></span>요약중...';
         try {
-            // preview 로 현재 상태 확인
-            const pr = await apiRequest('customer-log', { query: 'action=preview&job_id=' + encodeURIComponent(jobId) });
-            const status = pr?.job_status || '';
-
-            if (status === 'ready_to_review') {
-                // 이미 STT 완료 → 바로 표시
-                renderSummary(pr);
-                return;
-            }
-            if (status === 'failed_permanent') {
-                renderError('AI 분석이 영구 실패했습니다.', true);
-                return;
-            }
-            // audio_pending / queued / processing / failed_retryable → STT 시작 (이미 진행 중이면 idempotent)
-            await apiRequest('customer-log', {
+            const r = await apiRequest('customer-log', {
                 method: 'POST',
                 body: JSON.stringify({ action: 'trigger_summarize', job_id: jobId, auto_confirm: false })
             });
-            // polling 시작
-            startPolling(jobId);
+            if (r?.dispatched === false && r?.dispatch_error) {
+                showToast('AI 분석 시작 대기 — cron 5분 내 자동 진행 (' + r.dispatch_error + ')');
+            }
+            await load();
         } catch (e) {
-            renderError('요약 불러오기 실패: ' + (e?.message || e), true);
+            alert('요약 시작 실패: ' + (e?.message || e));
+            btn.disabled = false;
+            btn.textContent = '요약보기';
         }
     }
 
-    function startPolling(jobId) {
-        let attempts = 0;
-        if (pollTimer) clearInterval(pollTimer);
-        pollTimer = setInterval(async () => {
-            if (currentJobId !== jobId) { clearInterval(pollTimer); return; }
-            attempts++;
-            if (attempts > 60) {  // 2분 후 포기
-                clearInterval(pollTimer);
-                renderError('요약이 오래 걸립니다. 잠시 후 다시 확인해주세요.', false);
-                return;
+    async function doTriggerAuto(jobId, btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<span class="un-mini-spinner"></span>전송 중...';
+        try {
+            const r = await apiRequest('customer-log', {
+                method: 'POST',
+                body: JSON.stringify({ action: 'trigger_summarize', job_id: jobId, auto_confirm: true })
+            });
+            if (r?.dispatched === false && r?.dispatch_error) {
+                showToast('전송 대기 — cron 5분 내 자동 진행 (' + r.dispatch_error + ')');
+            } else {
+                showToast('AI 분석 후 고객관리대장에 자동 저장됩니다.');
             }
-            try {
-                const r = await apiRequest('customer-log', { query: 'action=preview&job_id=' + encodeURIComponent(jobId) });
-                const status = r?.job_status || '';
-                if (status === 'ready_to_review') {
-                    clearInterval(pollTimer);
-                    renderSummary(r);
-                } else if (status === 'failed_permanent') {
-                    clearInterval(pollTimer);
-                    renderError('AI 분석이 영구 실패했습니다.', true);
-                }
-            } catch (e) {
-                // 일시 오류 — 계속 polling
-            }
-        }, 2000);
+            await load();
+        } catch (e) {
+            alert('전송 시작 실패: ' + (e?.message || e));
+            btn.disabled = false;
+            btn.textContent = '양식으로 전송';
+        }
     }
 
-    function renderSummary(r) {
-        const s = r?.summary || {};
-        modalTitle.textContent = s.customer_name || '고객';
-        const subParts = [];
-        if (r.recorded_at) subParts.push(fmtTime(r.recorded_at));
-        if (r.duration_sec) subParts.push(fmtDuration(r.duration_sec));
-        modalSubtitle.textContent = subParts.join(' · ');
-        const rows = [
-            { label: '요약', value: s.summary },
-            { label: '관심사', value: s.interest },
-            { label: '문의', value: s.inquiry },
-            { label: '예산/조건', value: s.budget_condition },
-            { label: 'AI 추천', value: s.next_action },
-            { label: '연락처', value: s.phone_number || r.phone_number },
-        ].filter(row => row.value);
-        modalBody.innerHTML = rows.length
-            ? rows.map(row => `
-                <div class="un-modal-row">
-                    <div class="un-modal-label">${escapeHtml(row.label)}</div>
-                    <div class="un-modal-val">${escapeHtml(row.value)}</div>
-                </div>`).join('')
-            : '<div class="un-loading">요약 정보가 없습니다.</div>';
-        modalFoot.innerHTML = `
-            <button class="un-btn danger" type="button" data-act="discard">요약 폐기</button>
-            <button class="un-btn primary" type="button" data-act="confirm">고객관리대장 전송</button>
-        `;
-        bindFootActions();
+    async function openResult(jobId) {
+        currentJobId = jobId;
+        modalTitle.textContent = '불러오는 중...';
+        modalSubtitle.textContent = '';
+        modalBody.innerHTML = '<div class="un-loading">불러오는 중...</div>';
+        modalFoot.innerHTML = '';
+        modal.classList.add('show');
+        try {
+            const r = await apiRequest('customer-log', { query: 'action=preview&job_id=' + encodeURIComponent(jobId) });
+            const s = r?.summary || {};
+            modalTitle.textContent = s.customer_name || '고객';
+            const subParts = [];
+            if (r.recorded_at) subParts.push(fmtTime(r.recorded_at));
+            if (r.duration_sec) subParts.push(fmtDuration(r.duration_sec));
+            modalSubtitle.textContent = subParts.join(' · ');
+            const rows = [
+                { label: '요약', value: s.summary },
+                { label: '관심사', value: s.interest },
+                { label: '문의', value: s.inquiry },
+                { label: '예산/조건', value: s.budget_condition },
+                { label: 'AI 추천', value: s.next_action },
+                { label: '연락처', value: s.phone_number || r.phone_number },
+            ].filter(row => row.value);
+            modalBody.innerHTML = rows.length
+                ? rows.map(row => `
+                    <div class="un-modal-row">
+                        <div class="un-modal-label">${escapeHtml(row.label)}</div>
+                        <div class="un-modal-val">${escapeHtml(row.value)}</div>
+                    </div>`).join('')
+                : '<div class="un-loading">요약 정보가 없습니다.</div>';
+            modalFoot.innerHTML = `
+                <button class="un-btn danger" type="button" data-act="discard">요약 폐기</button>
+                <button class="un-btn primary" type="button" data-act="confirm">고객관리대장 전송</button>
+            `;
+            bindModalFoot();
+        } catch (e) {
+            modalTitle.textContent = '불러오기 실패';
+            modalBody.innerHTML = `<div class="un-empty"><small>${escapeHtml(e?.message || e)}</small></div>`;
+            modalFoot.innerHTML = '<button class="un-btn" type="button" data-act="close">닫기</button>';
+            bindModalFoot();
+        }
     }
 
-    function renderError(msg, allowDiscard) {
-        modalTitle.textContent = '안내';
-        modalBody.innerHTML = `<div class="un-modal-row"><div class="un-modal-val">${escapeHtml(msg)}</div></div>`;
-        modalFoot.innerHTML = allowDiscard
-            ? '<button class="un-btn danger" type="button" data-act="discard">폐기</button><button class="un-btn" type="button" data-act="close">닫기</button>'
-            : '<button class="un-btn" type="button" data-act="close">닫기</button>';
-        bindFootActions();
-    }
-
-    function bindFootActions() {
+    function bindModalFoot() {
         modalFoot.querySelectorAll('[data-act]').forEach(btn => {
             btn.addEventListener('click', async () => {
                 const act = btn.dataset.act;
-                if (act === 'close') return closeModal();
-                if (act === 'discard') return doDiscard(btn);
-                if (act === 'confirm') return doConfirm(btn);
+                if (act === 'close')    return closeModal();
+                if (act === 'discard')  return doDiscardModal(btn);
+                if (act === 'confirm')  return doConfirmModal(btn);
             });
         });
     }
@@ -344,17 +494,15 @@
     function closeModal() {
         modal.classList.remove('show');
         currentJobId = null;
-        if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
     }
 
-    async function doDiscard(btn) {
+    async function doDiscardModal(btn) {
         if (!currentJobId) return;
-        if (!confirm('이 통화를 폐기하시겠습니까? 음성과 분석 결과가 모두 삭제됩니다.')) return;
+        if (!confirm('이 통화 요약을 폐기하시겠습니까?')) return;
         const jobId = currentJobId;
         modalFoot.querySelectorAll('button').forEach(b => b.disabled = true);
         btn.textContent = '폐기 중...';
         try {
-            // customer_log 가 있을 수 있음 (ready_to_review 후 customer_log_cancel 필요 케이스는 없지만 안전)
             await apiRequest('customer-log', { method: 'POST', body: JSON.stringify({ action: 'discard', job_id: jobId }) });
             closeModal();
             await load();
@@ -364,7 +512,7 @@
         }
     }
 
-    async function doConfirm(btn) {
+    async function doConfirmModal(btn) {
         if (!currentJobId) return;
         const jobId = currentJobId;
         modalFoot.querySelectorAll('button').forEach(b => b.disabled = true);
@@ -372,6 +520,7 @@
         try {
             await apiRequest('customer-log', { method: 'POST', body: JSON.stringify({ action: 'confirm', job_id: jobId }) });
             closeModal();
+            showToast('고객관리대장에 저장 완료.');
             await load();
         } catch (e) {
             alert('고객관리대장 전송 실패: ' + (e?.message || e));
@@ -379,33 +528,96 @@
         }
     }
 
-    /* "양식으로 전송" — 백그라운드 STT + 자동 confirm. 사용자에게 토스트 안내 + list reload. */
-    async function autoConfirm(btn) {
-        const jobId = btn.dataset.jobId;
+    async function doConfirmDirect(jobId, btn) {
         btn.disabled = true;
-        const origText = btn.textContent;
-        btn.textContent = '전송 시작됨';
+        btn.innerHTML = '<span class="un-mini-spinner"></span>전송 중...';
         try {
-            await apiRequest('customer-log', {
-                method: 'POST',
-                body: JSON.stringify({ action: 'trigger_summarize', job_id: jobId, auto_confirm: true })
-            });
-            // 사용자에게 토스트성 안내 (alert 대신 짧은 텍스트)
-            showToast('AI 분석 후 고객관리대장에 자동 저장됩니다. 완료 시 알림으로 알려드립니다.');
+            await apiRequest('customer-log', { method: 'POST', body: JSON.stringify({ action: 'confirm', job_id: jobId }) });
+            showToast('고객관리대장에 저장 완료.');
             await load();
         } catch (e) {
+            alert('고객관리대장 전송 실패: ' + (e?.message || e));
             btn.disabled = false;
-            btn.textContent = origText;
-            alert('전송 실패: ' + (e?.message || e));
+            btn.textContent = '고객관리대장 전송';
         }
     }
+
+    async function doDiscardCard(jobId, btn) {
+        if (!confirm('이 통화를 폐기하시겠습니까?')) return;
+        btn.disabled = true;
+        btn.textContent = '폐기 중...';
+        try {
+            await apiRequest('customer-log', { method: 'POST', body: JSON.stringify({ action: 'discard', job_id: jobId }) });
+            await load();
+        } catch (e) {
+            alert('폐기 실패: ' + (e?.message || e));
+            btn.disabled = false;
+            btn.textContent = '폐기';
+        }
+    }
+
+    /* ========== Bulk actions ========== */
+    bulkDiscardBtn.addEventListener('click', async () => {
+        const ids = [...selectedSet];
+        if (ids.length === 0) return;
+        if (!confirm(`선택한 ${ids.length}개 통화를 모두 폐기하시겠습니까?`)) return;
+        bulkDiscardBtn.disabled = true; bulkSendBtn.disabled = true;
+        bulkDiscardBtn.textContent = '폐기 중...';
+        const errs = [];
+        for (const id of ids) {
+            try {
+                await apiRequest('customer-log', { method: 'POST', body: JSON.stringify({ action: 'discard', job_id: id }) });
+                selectedSet.delete(id);
+            } catch (e) {
+                errs.push({ id, msg: e?.message || String(e) });
+            }
+        }
+        bulkDiscardBtn.disabled = false; bulkSendBtn.disabled = false;
+        bulkDiscardBtn.textContent = '선택 폐기';
+        if (errs.length) {
+            alert(`${ids.length - errs.length}개 폐기 완료. 실패 ${errs.length}건:\n` + errs.slice(0, 3).map(e => e.msg).join('\n'));
+        } else {
+            showToast(`${ids.length}개 폐기 완료.`);
+        }
+        await load();
+    });
+
+    bulkSendBtn.addEventListener('click', async () => {
+        const ids = [...selectedSet];
+        if (ids.length === 0) return;
+        if (!confirm(`선택한 ${ids.length}개를 순차로 양식으로 전송하시겠습니까? AI 분석 후 자동으로 고객관리대장에 저장됩니다.`)) return;
+        bulkDiscardBtn.disabled = true; bulkSendBtn.disabled = true;
+        bulkSendBtn.textContent = '전송 중...';
+        const errs = [];
+        let sent = 0;
+        for (const id of ids) {
+            try {
+                await apiRequest('customer-log', {
+                    method: 'POST',
+                    body: JSON.stringify({ action: 'trigger_summarize', job_id: id, auto_confirm: true })
+                });
+                sent++;
+                selectedSet.delete(id);
+            } catch (e) {
+                errs.push({ id, msg: e?.message || String(e) });
+            }
+        }
+        bulkDiscardBtn.disabled = false; bulkSendBtn.disabled = false;
+        bulkSendBtn.textContent = '선택 양식으로 전송';
+        if (errs.length) {
+            alert(`${sent}개 전송 시작. 실패 ${errs.length}건:\n` + errs.slice(0, 3).map(e => e.msg).join('\n'));
+        } else {
+            showToast(`${sent}개 양식으로 전송 시작. AI 분석 후 자동 저장.`);
+        }
+        await load();
+    });
 
     function showToast(msg) {
         let t = document.getElementById('un-toast');
         if (!t) {
             t = document.createElement('div');
             t.id = 'un-toast';
-            t.style.cssText = 'position:fixed;left:50%;bottom:90px;transform:translateX(-50%);background:rgba(14,13,12,.92);color:#fff;padding:12px 18px;border-radius:12px;font-size:14px;max-width:360px;text-align:center;z-index:2000;line-height:1.5;box-shadow:0 8px 24px rgba(14,13,12,.32);opacity:0;transition:opacity 200ms';
+            t.style.cssText = 'position:fixed;left:50%;bottom:150px;transform:translateX(-50%);background:rgba(14,13,12,.92);color:#fff;padding:12px 18px;border-radius:12px;font-size:14px;max-width:360px;text-align:center;z-index:2000;line-height:1.5;box-shadow:0 8px 24px rgba(14,13,12,.32);opacity:0;transition:opacity 200ms';
             document.body.appendChild(t);
         }
         t.textContent = msg;

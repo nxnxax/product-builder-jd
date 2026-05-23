@@ -3876,7 +3876,7 @@ try {
             if ($limit < 1) $limit = 50;
             if ($limit > 200) $limit = 200;
             try {
-                $sql = "SELECT id, status, summary_json_encrypted, duration_sec, recorded_at, group_id, phone_number, customer_name_hint, created_at
+                $sql = "SELECT id, status, summary_json_encrypted, duration_sec, recorded_at, group_id, phone_number, customer_name_hint, auto_confirm, created_at
                     FROM recording_jobs
                     WHERE owner_email = :o
                       AND customer_log_id IS NULL
@@ -3916,6 +3916,7 @@ try {
                     'recorded_at' => $r['recorded_at'] ?: $r['created_at'],
                     'phone_number' => $r['phone_number'] ?: null,
                     'group_id' => $r['group_id'] ?: null,
+                    'auto_confirm' => (int)($r['auto_confirm'] ?? 0) === 1,
                 ];
             }, $rows ?: []);
             respond(['status' => 'ok', 'items' => $items, 'count' => count($items)]);
@@ -3971,18 +3972,27 @@ try {
             }
 
             // 2) Railway dispatch (RAILWAY_WORKER_URL 있을 때만; 없으면 cron worker 가 5분 후 처리)
+            // 사장님 2026-05-23 — .env parsing 정규식 + quote strip + 변수 init (이전 코드 $rwTok 미정의 버그 fix).
             $railwayUrl = '';
-            $envFile = __DIR__ . '/.env';
-            if (is_file($envFile)) {
-                foreach (file($envFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as $ln) {
-                    if (strpos($ln, '=') === false || $ln[0] === '#') continue;
-                    [$k, $v] = explode('=', $ln, 2);
-                    if (trim($k) === 'RAILWAY_WORKER_URL') { $railwayUrl = trim($v); }
-                    if (trim($k) === 'RECORDING_WORKER_TOKEN') { $rwTok = trim($v); }
+            $rwTok = '';
+            $envDiag = ['env_file_found' => false, 'has_url' => false, 'has_token' => false];
+            foreach ([__DIR__ . '/.env', dirname(__DIR__) . '/.env'] as $envPath) {
+                if (!is_file($envPath)) continue;
+                $envDiag['env_file_found'] = true;
+                $lines = @file($envPath, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) ?: [];
+                foreach ($lines as $ln) {
+                    if (preg_match('/^\s*(?:export\s+)?([A-Z0-9_]+)\s*=\s*(.*)$/i', $ln, $m)) {
+                        $k = $m[1];
+                        $v = trim($m[2], "\"' \t\r\n");
+                        if (strcasecmp($k, 'RAILWAY_WORKER_URL') === 0)        { $railwayUrl = $v; $envDiag['has_url'] = true; }
+                        if (strcasecmp($k, 'RECORDING_WORKER_TOKEN') === 0)    { $rwTok = $v;       $envDiag['has_token'] = true; }
+                    }
                 }
+                if ($railwayUrl !== '' && $rwTok !== '') break;
             }
             $dispatched = false;
-            if ($railwayUrl !== '' && !empty($rwTok)) {
+            $dispatchError = null;
+            if ($railwayUrl !== '' && $rwTok !== '') {
                 try {
                     $expires = time() + 600;
                     $audioToken = hash_hmac('sha256', $jobId . '.' . $expires, $rwTok);
@@ -4019,18 +4029,33 @@ try {
                         $pdo->prepare("UPDATE recording_jobs SET status = 'processing', started_at = NOW(), updated_at = NOW() WHERE id = :id")
                             ->execute([':id' => $jobId]);
                     } else {
-                        error_log('[trigger_summarize] Railway dispatch 실패 http=' . $rwStatus . ' resp=' . substr((string)$rwResp, 0, 200));
+                        $dispatchError = 'http_' . $rwStatus;
+                        $msg = 'Railway dispatch http=' . $rwStatus . ' resp=' . substr((string)$rwResp, 0, 200);
+                        error_log('[trigger_summarize] ' . $msg);
+                        try { $pdo->prepare("UPDATE recording_jobs SET error_message = :em WHERE id = :id")
+                            ->execute([':em' => $msg, ':id' => $jobId]); } catch (Throwable $e) {}
                     }
                 } catch (Throwable $e) {
-                    error_log('[trigger_summarize] Railway dispatch 예외: ' . $e->getMessage());
+                    $dispatchError = 'exception';
+                    $msg = 'Railway dispatch 예외: ' . $e->getMessage();
+                    error_log('[trigger_summarize] ' . $msg);
+                    try { $pdo->prepare("UPDATE recording_jobs SET error_message = :em WHERE id = :id")
+                        ->execute([':em' => $msg, ':id' => $jobId]); } catch (Throwable $e2) {}
                 }
+            } else {
+                $dispatchError = !$envDiag['env_file_found'] ? 'env_file_missing'
+                              : (!$envDiag['has_url'] ? 'RAILWAY_WORKER_URL_missing'
+                              : (!$envDiag['has_token'] ? 'RECORDING_WORKER_TOKEN_missing' : 'unknown'));
+                error_log('[trigger_summarize] dispatch skipped: ' . $dispatchError);
             }
             respond([
                 'status' => 'ok',
                 'job_id' => $jobId,
                 'job_status' => $dispatched ? 'processing' : 'queued',
                 'dispatched' => $dispatched,
-                'message' => $dispatched ? 'STT 시작됨.' : 'STT 대기열 등록됨 (cron 5분 내 처리).',
+                'dispatch_error' => $dispatchError,
+                'message' => $dispatched ? 'STT 시작됨.' : 'STT 대기열 등록됨 — cron 5분 내 자동 재시도.',
+                '_diag' => $envDiag,
             ]);
         }
 
