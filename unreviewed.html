@@ -19,10 +19,18 @@
 .un-title{margin:0;font-size:24px;letter-spacing:-.02em;font-weight:700}
 .un-sub{margin:6px 0 0;color:#8a847e;font-size:14px;line-height:1.55}
 
-/* 전체선택 헤더 */
-.un-select-all{display:flex;align-items:center;gap:10px;padding:10px 12px;background:#fbf7ef;border-radius:10px;margin-bottom:10px;font-size:14px;color:#3a3530;font-weight:600}
+/* 전체선택 헤더 + 일괄 동작 버튼 (인라인) */
+.un-select-all{display:flex;align-items:center;gap:8px;padding:10px 12px;background:#fbf7ef;border-radius:10px;margin-bottom:10px;font-size:14px;color:#3a3530;font-weight:600;flex-wrap:wrap}
 .un-select-all label{display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none}
-.un-select-all-count{margin-left:auto;color:#8a847e;font-weight:500;font-size:13px}
+.un-select-all-count{color:#8a847e;font-weight:500;font-size:13px}
+.un-select-all-actions{margin-left:auto;display:flex;gap:6px}
+.un-bulk-btn{padding:7px 12px;border:1px solid var(--ledger-line-strong);background:#fff;color:#0e0d0c;font-size:13px;font-weight:600;border-radius:8px;cursor:pointer;font-family:inherit;white-space:nowrap;transition:all 160ms}
+.un-bulk-btn:hover:not(:disabled){background:#fff5e6}
+.un-bulk-btn.primary{background:#0e0d0c;color:#fff;border-color:#0e0d0c}
+.un-bulk-btn.primary:hover:not(:disabled){background:#2a2520}
+.un-bulk-btn.danger{background:#fff;color:#c8362c;border-color:#e8b8b3}
+.un-bulk-btn.danger:hover:not(:disabled){background:#fef2f1;border-color:#c8362c}
+.un-bulk-btn:disabled{opacity:.4;cursor:not-allowed}
 
 .un-list{display:flex;flex-direction:column;gap:10px}
 
@@ -64,18 +72,6 @@
 .un-empty .icon{font-size:42px;display:block;margin-bottom:14px}
 .un-loading{text-align:center;padding:48px 24px;color:#8a847e;font-size:13.5px}
 
-/* 일괄 동작 sticky bar (2개 이상 선택 시 표시) */
-.un-bulk-bar{position:fixed;left:50%;bottom:90px;transform:translateX(-50%);background:#fff;border:1px solid var(--ledger-line-strong);border-radius:14px;padding:10px 14px;display:none;align-items:center;gap:10px;box-shadow:0 8px 28px rgba(14,13,12,.18);z-index:900;max-width:calc(100% - 32px)}
-.un-bulk-bar.show{display:flex}
-.un-bulk-count{font-size:14px;color:#0e0d0c;font-weight:700;white-space:nowrap}
-.un-bulk-btn{padding:9px 14px;border:1px solid var(--ledger-line-strong);background:#fff;color:#0e0d0c;font-size:13.5px;font-weight:600;border-radius:10px;cursor:pointer;font-family:inherit;white-space:nowrap}
-.un-bulk-btn:hover:not(:disabled){background:#fbf7ef}
-.un-bulk-btn.primary{background:#0e0d0c;color:#fff;border-color:#0e0d0c}
-.un-bulk-btn.primary:hover:not(:disabled){background:#2a2520}
-.un-bulk-btn.danger{background:#fff;color:#c8362c;border-color:#e8b8b3}
-.un-bulk-btn.danger:hover:not(:disabled){background:#fef2f1;border-color:#c8362c}
-.un-bulk-btn:disabled{opacity:.5;cursor:not-allowed}
-
 /* 결과 모달 */
 .un-modal-backdrop{position:fixed;inset:0;background:rgba(14,13,12,.55);display:none;align-items:center;justify-content:center;z-index:1000;padding:20px}
 .un-modal-backdrop.show{display:flex}
@@ -105,8 +101,9 @@
     .un-card-actions{min-width:106px}
     .un-btn-card{padding:8px 10px;font-size:12.5px}
     .un-modal{max-height:85vh;border-radius:14px}
-    .un-bulk-bar{bottom:84px;padding:8px 12px;gap:8px}
-    .un-bulk-btn{padding:8px 12px;font-size:13px}
+    .un-bulk-btn{padding:6px 10px;font-size:12.5px}
+    .un-select-all{padding:9px 10px;font-size:13.5px}
+    .un-select-all-count{font-size:12.5px}
 }
 </style>
 </head>
@@ -122,16 +119,13 @@
 <div class="un-select-all" id="unSelectAllBar" style="display:none">
     <label><input type="checkbox" id="unSelectAll"> 전체 선택</label>
     <span class="un-select-all-count" id="unSelectAllCount"></span>
+    <div class="un-select-all-actions">
+        <button class="un-bulk-btn danger" type="button" id="unBulkDiscard" disabled>선택 삭제</button>
+        <button class="un-bulk-btn primary" type="button" id="unBulkSend" disabled>양식으로 전송</button>
+    </div>
 </div>
 
 <div id="unreviewedList" class="un-list"><div class="un-loading">불러오는 중...</div></div>
-</div>
-
-<!-- 일괄 동작 바 (2개 이상 선택 시) -->
-<div class="un-bulk-bar" id="unBulkBar">
-    <span class="un-bulk-count" id="unBulkCount">0개 선택됨</span>
-    <button class="un-bulk-btn danger" type="button" id="unBulkDiscard">선택 폐기</button>
-    <button class="un-bulk-btn primary" type="button" id="unBulkSend">선택 양식으로 전송</button>
 </div>
 
 <!-- 결과 모달 -->
@@ -154,8 +148,6 @@
     const selectAllBar = document.getElementById('unSelectAllBar');
     const selectAllCb = document.getElementById('unSelectAll');
     const selectAllCount = document.getElementById('unSelectAllCount');
-    const bulkBar = document.getElementById('unBulkBar');
-    const bulkCount = document.getElementById('unBulkCount');
     const bulkDiscardBtn = document.getElementById('unBulkDiscard');
     const bulkSendBtn = document.getElementById('unBulkSend');
 
@@ -265,9 +257,10 @@
 
     function updateBulkBar() {
         const n = selectedSet.size;
-        bulkCount.textContent = `${n}개 선택됨`;
-        // 사장님 spec: 2개 이상 선택 시 bulk bar 표시
-        bulkBar.classList.toggle('show', n >= 2);
+        // 사장님 spec: 1개 이상 선택 시 인라인 버튼 활성화
+        const hasSel = n >= 1;
+        bulkDiscardBtn.disabled = !hasSel;
+        bulkSendBtn.disabled = !hasSel;
         // 전체선택 체크박스 상태
         if (allJobIds.length > 0) {
             const allSelected = allJobIds.every(id => selectedSet.has(id));
@@ -277,7 +270,7 @@
             selectAllCb.checked = false;
             selectAllCb.indeterminate = false;
         }
-        selectAllCount.textContent = n > 0 ? `(${n}/${allJobIds.length})` : '';
+        selectAllCount.textContent = n > 0 ? `(${n}/${allJobIds.length} 선택)` : '';
     }
 
     async function load() {
