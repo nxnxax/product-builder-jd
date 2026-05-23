@@ -3929,22 +3929,25 @@ try {
         //       이미 진행 중/완료면 idempotent 응답.
         if ($action === 'trigger_summarize') {
             $jobId = trim((string)($body['job_id'] ?? ''));
-            if ($jobId === '') respond(['status' => 'error', 'code' => 'invalid_request', 'message' => 'job_id 필요.'], 400);
+            if ($jobId === '') respond(['ok'=>false,'status'=>'error','processing'=>false,'code'=>'invalid_request','message'=>'job_id 필요.'], 400);
             try {
                 $jStmt = $pdo->prepare('SELECT id, owner_email, status, storage_path, duration_sec, customer_name_hint, phone_number, recorded_at, group_id
                     FROM recording_jobs WHERE id = :id AND owner_email = :o LIMIT 1');
                 $jStmt->execute([':id' => $jobId, ':o' => $owner]);
                 $jRow = $jStmt->fetch();
             } catch (Throwable $e) {
-                respond(['status' => 'error', 'code' => 'upstream_failed', 'message' => '조회 실패.'], 503);
+                respond(['ok'=>false,'status'=>'error','processing'=>false,'code'=>'upstream_failed','message'=>'조회 실패.'], 503);
             }
-            if (!$jRow) respond(['status' => 'error', 'code' => 'not_found', 'message' => '해당 job 없음 또는 권한 없음.'], 404);
+            if (!$jRow) respond(['ok'=>false,'status'=>'error','processing'=>false,'code'=>'not_found','message'=>'해당 job 없음 또는 권한 없음.'], 404);
 
             $curStatus = (string)$jRow['status'];
-            // 이미 진행 중/완료/실패 — idempotent 응답
+            // 사장님 2026-05-23 — 앱팀 v46 요청: 모든 응답에 ok + processing 필드 명시.
+            // 이미 진행 중/완료 — idempotent 응답
             if (in_array($curStatus, ['queued', 'processing', 'ready_to_review'], true)) {
                 respond([
+                    'ok' => true,
                     'status' => 'ok',
+                    'processing' => $curStatus !== 'ready_to_review',
                     'job_id' => $jobId,
                     'job_status' => $curStatus,
                     'already' => true,
@@ -3953,11 +3956,20 @@ try {
             }
             // failed_retryable 은 재시도 허용. failed_permanent 는 차단.
             if ($curStatus === 'failed_permanent') {
-                respond(['status' => 'error', 'code' => 'failed_permanent', 'message' => '영구 실패한 작업입니다. 폐기 후 새로 통화하세요.'], 409);
+                respond([
+                    'ok' => false, 'status' => 'error', 'processing' => false,
+                    'code' => 'failed_permanent', 'error_code' => 'STT_FAILED_PERMANENT',
+                    'job_id' => $jobId, 'job_status' => $curStatus,
+                    'message' => '영구 실패한 작업입니다. 폐기 후 새로 통화하세요.',
+                ], 409);
             }
             if (!in_array($curStatus, ['audio_pending', 'failed_retryable'], true)) {
-                respond(['status' => 'error', 'code' => 'invalid_state',
-                    'message' => 'audio_pending/failed_retryable 만 trigger_summarize 가능 (현재: ' . $curStatus . ').'], 409);
+                respond([
+                    'ok' => false, 'status' => 'error', 'processing' => false,
+                    'code' => 'invalid_state', 'error_code' => 'STT_INVALID_STATE',
+                    'job_id' => $jobId, 'job_status' => $curStatus,
+                    'message' => 'audio_pending/failed_retryable 만 trigger_summarize 가능 (현재: ' . $curStatus . ').',
+                ], 409);
             }
 
             // 사장님 2026-05-23 — "양식으로 전송" 누른 케이스. auto_confirm=1 → callback 자동 confirm.
@@ -3968,7 +3980,7 @@ try {
                 $pdo->prepare("UPDATE recording_jobs SET status = 'queued', updated_at = NOW(), retry_count = 0, error_message = NULL, auto_confirm = :ac WHERE id = :id")
                     ->execute([':ac' => $autoConfirm, ':id' => $jobId]);
             } catch (Throwable $e) {
-                respond(['status' => 'error', 'code' => 'upstream_failed', 'message' => 'UPDATE 실패: ' . $e->getMessage()], 503);
+                respond(['ok'=>false,'status'=>'error','processing'=>false,'code'=>'upstream_failed','message'=>'UPDATE 실패: ' . $e->getMessage()], 503);
             }
 
             // 2) Railway dispatch (RAILWAY_WORKER_URL 있을 때만; 없으면 cron worker 가 5분 후 처리)
@@ -4048,8 +4060,12 @@ try {
                               : (!$envDiag['has_token'] ? 'RECORDING_WORKER_TOKEN_missing' : 'unknown'));
                 error_log('[trigger_summarize] dispatch skipped: ' . $dispatchError);
             }
+            // 사장님 2026-05-23 — 앱팀 v46 요청: ok + processing 필드 명시.
+            // dispatched=false (cron 대기) 여도 결국 STT 처리되므로 processing=true.
             respond([
+                'ok' => true,
                 'status' => 'ok',
+                'processing' => true,
                 'job_id' => $jobId,
                 'job_status' => $dispatched ? 'processing' : 'queued',
                 'dispatched' => $dispatched,
