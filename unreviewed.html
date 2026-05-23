@@ -489,6 +489,26 @@
         currentJobId = null;
     }
 
+    /* 사장님 2026-05-23 — confirm/discard 성공 시 카드 즉시 DOM 제거 (낙관적 UI).
+     * polling 5초 대기 없이 즉각 사라짐. load() 는 정합성 재확인. */
+    function removeCardFromDom(jobId) {
+        const card = list.querySelector(`.un-card[data-job-id="${jobId.replace(/"/g,'\\"')}"]`);
+        if (card) card.remove();
+        selectedSet.delete(String(jobId));
+        // job id 목록에서도 제거
+        allJobIds = allJobIds.filter(id => id !== String(jobId));
+        // 빈 상태 처리
+        if (list.querySelectorAll('.un-card').length === 0) {
+            selectAllBar.style.display = 'none';
+            list.innerHTML = '<div class="un-empty"><span class="icon">📭</span>미확인 요약이 없습니다.<br>새 통화가 도착하면 여기에 표시됩니다.</div>';
+        }
+        // bridge badge / localStorage 동기화
+        const remaining = list.querySelectorAll('.un-card').length;
+        try { window.YoungmanBridge?.setUnreviewedCount?.(remaining); } catch {}
+        try { localStorage.setItem('yman_unreviewed_count', String(remaining)); } catch {}
+        updateBulkBar();
+    }
+
     async function doDiscardModal(btn) {
         if (!currentJobId) return;
         if (!confirm('이 통화 요약을 폐기하시겠습니까?')) return;
@@ -498,7 +518,9 @@
         try {
             await apiRequest('customer-log', { method: 'POST', body: JSON.stringify({ action: 'discard', job_id: jobId }) });
             closeModal();
-            await load();
+            removeCardFromDom(jobId);
+            showToast('폐기 완료.');
+            load();   // 정합성 재확인 (백그라운드)
         } catch (e) {
             alert('폐기 실패: ' + (e?.message || e));
             modalFoot.querySelectorAll('button').forEach(b => b.disabled = false);
@@ -513,8 +535,9 @@
         try {
             await apiRequest('customer-log', { method: 'POST', body: JSON.stringify({ action: 'confirm', job_id: jobId }) });
             closeModal();
+            removeCardFromDom(jobId);
             showToast('고객관리대장에 저장 완료.');
-            await load();
+            load();
         } catch (e) {
             alert('고객관리대장 전송 실패: ' + (e?.message || e));
             modalFoot.querySelectorAll('button').forEach(b => b.disabled = false);
@@ -526,8 +549,9 @@
         btn.innerHTML = '<span class="un-mini-spinner"></span>전송 중...';
         try {
             await apiRequest('customer-log', { method: 'POST', body: JSON.stringify({ action: 'confirm', job_id: jobId }) });
+            removeCardFromDom(jobId);
             showToast('고객관리대장에 저장 완료.');
-            await load();
+            load();
         } catch (e) {
             alert('고객관리대장 전송 실패: ' + (e?.message || e));
             btn.disabled = false;
@@ -541,7 +565,9 @@
         btn.textContent = '폐기 중...';
         try {
             await apiRequest('customer-log', { method: 'POST', body: JSON.stringify({ action: 'discard', job_id: jobId }) });
-            await load();
+            removeCardFromDom(jobId);
+            showToast('폐기 완료.');
+            load();
         } catch (e) {
             alert('폐기 실패: ' + (e?.message || e));
             btn.disabled = false;
@@ -560,19 +586,19 @@
         for (const id of ids) {
             try {
                 await apiRequest('customer-log', { method: 'POST', body: JSON.stringify({ action: 'discard', job_id: id }) });
-                selectedSet.delete(id);
+                removeCardFromDom(id);   // 사장님 2026-05-23 — 즉시 카드 제거
             } catch (e) {
                 errs.push({ id, msg: e?.message || String(e) });
             }
         }
         bulkDiscardBtn.disabled = false; bulkSendBtn.disabled = false;
-        bulkDiscardBtn.textContent = '선택 폐기';
+        bulkDiscardBtn.textContent = '선택 삭제';
         if (errs.length) {
             alert(`${ids.length - errs.length}개 폐기 완료. 실패 ${errs.length}건:\n` + errs.slice(0, 3).map(e => e.msg).join('\n'));
         } else {
             showToast(`${ids.length}개 폐기 완료.`);
         }
-        await load();
+        load();
     });
 
     bulkSendBtn.addEventListener('click', async () => {
