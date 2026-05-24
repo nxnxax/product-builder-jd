@@ -363,12 +363,18 @@ const statsApplyBtn  = document.getElementById('stats-apply');
 const statsRangeLabel = document.getElementById('stats-range-label');
 const statsKpiVisitors  = document.getElementById('stats-kpi-visitors');
 const statsKpiPageviews = document.getElementById('stats-kpi-pageviews');
+const statsKpiSignups   = document.getElementById('stats-kpi-signups');
 const statsKpiPayments  = document.getElementById('stats-kpi-payments');
 const statsKpiCancels   = document.getElementById('stats-kpi-cancels');
 const statsKpiUsage     = document.getElementById('stats-kpi-usage');
 const statsReferrersTbody = document.getElementById('stats-referrers');
 const statsDailyTbody     = document.getElementById('stats-daily');
+const statsMembersTbody   = document.getElementById('stats-members');
+const statsEventsTbody    = document.getElementById('stats-events');
 const statsChartCanvas    = document.getElementById('stats-chart-visitors');
+
+let _lastStatsEvents = [];
+let _eventsFilter = 'all';
 
 let statsChartInstance = null;
 let statsLoaded = false;
@@ -417,26 +423,62 @@ async function loadStatsRange() {
     }
 }
 
+const EVENT_LABEL = {
+    signup: '가입',
+    payment: '결제',
+    cancel: '취소',
+    summary_view: '요약보기',
+    auto_confirm: '양식전송',
+};
+const EVENT_COLOR = {
+    signup:       'background:#e8f5e9;color:#2e7d32;',
+    payment:      'background:#e3f2fd;color:#1565c0;',
+    cancel:       'background:#fbe9e7;color:#c62828;',
+    summary_view: 'background:#fff3e0;color:#ef6c00;',
+    auto_confirm: 'background:#f3e5f5;color:#6a1b9a;',
+};
+
+function badge(type) {
+    const style = EVENT_COLOR[type] || 'background:#eee;color:#444;';
+    return `<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11.5px;font-weight:600;${style}">${escape(EVENT_LABEL[type] || type)}</span>`;
+}
+
+function renderEventsTable() {
+    const list = _eventsFilter === 'all' ? _lastStatsEvents : _lastStatsEvents.filter(e => e.type === _eventsFilter);
+    statsEventsTbody.innerHTML = list.length === 0
+        ? `<tr><td colspan="4" style="text-align:center;color:var(--fg-tertiary);padding:24px;">데이터 없음</td></tr>`
+        : list.map(e => `<tr>
+            <td style="white-space:nowrap;">${escape((e.occurred_at || '').replace('T',' ').slice(0,19))}</td>
+            <td>${badge(e.type)}</td>
+            <td>${escape(e.email || '(unknown)')}</td>
+            <td style="color:var(--fg-secondary);">${escape(e.detail || '')}</td>
+        </tr>`).join('');
+}
+
 function renderStatsRange(payload) {
     const totals = payload?.totals || {};
     const daily = Array.isArray(payload?.daily) ? payload.daily : [];
     const referrers = Array.isArray(payload?.referrers) ? payload.referrers : [];
+    const events = Array.isArray(payload?.events) ? payload.events : [];
+    const members = Array.isArray(payload?.members) ? payload.members : [];
     const range = payload?.range || {};
     statsRangeLabel.textContent = `${range.from} ~ ${range.to} · 총 ${daily.length}일`;
 
     statsKpiVisitors.textContent  = (totals.visitors  ?? 0).toLocaleString();
     statsKpiPageviews.textContent = `페이지뷰 ${(totals.pageviews ?? 0).toLocaleString()}`;
+    statsKpiSignups.textContent   = (totals.newSignups    ?? 0).toLocaleString();
     statsKpiPayments.textContent  = (totals.newPayments   ?? 0).toLocaleString();
     statsKpiCancels.textContent   = (totals.cancelledSubs ?? 0).toLocaleString();
     statsKpiUsage.textContent     = `${(totals.summaryViews ?? 0).toLocaleString()} / ${(totals.autoConfirms ?? 0).toLocaleString()}`;
 
-    // 일별 표
+    // 일별 표 (8 컬럼)
     statsDailyTbody.innerHTML = daily.length === 0
-        ? `<tr><td colspan="7" style="text-align:center;color:var(--fg-tertiary);padding:24px;">데이터 없음</td></tr>`
+        ? `<tr><td colspan="8" style="text-align:center;color:var(--fg-tertiary);padding:24px;">데이터 없음</td></tr>`
         : daily.map(r => `<tr>
             <td>${escape(r.date)}</td>
             <td>${(r.visitors || 0).toLocaleString()}</td>
             <td>${(r.pageviews || 0).toLocaleString()}</td>
+            <td>${(r.newSignups || 0).toLocaleString()}</td>
             <td>${(r.newPayments || 0).toLocaleString()}</td>
             <td>${(r.cancelledSubs || 0).toLocaleString()}</td>
             <td>${(r.summaryViews || 0).toLocaleString()}</td>
@@ -450,6 +492,23 @@ function renderStatsRange(payload) {
             <td>${escape(r.source)}</td>
             <td>${(r.count || 0).toLocaleString()}</td>
         </tr>`).join('');
+
+    // 회원별 활동 표
+    statsMembersTbody.innerHTML = members.length === 0
+        ? `<tr><td colspan="7" style="text-align:center;color:var(--fg-tertiary);padding:24px;">활동한 회원이 없습니다.</td></tr>`
+        : members.map(m => `<tr>
+            <td>${escape(m.email || '(unknown)')}</td>
+            <td>${escape((m.signupAt || '').slice(0,10) || '—')}</td>
+            <td>${(m.payments || 0).toLocaleString()}</td>
+            <td>${(m.cancels || 0).toLocaleString()}</td>
+            <td>${(m.summaryViews || 0).toLocaleString()}</td>
+            <td>${(m.autoConfirms || 0).toLocaleString()}</td>
+            <td style="white-space:nowrap;color:var(--fg-secondary);">${escape((m.lastActivity || '').replace('T',' ').slice(0,19) || '—')}</td>
+        </tr>`).join('');
+
+    // 활동 로그 (시간순 + 필터)
+    _lastStatsEvents = events;
+    renderEventsTable();
 
     // 방문자 추이 chart (Chart.js)
     if (typeof window.Chart === 'function' && statsChartCanvas) {
@@ -487,6 +546,15 @@ if (statsApplyBtn) {
         btn.addEventListener('click', () => {
             setStatsPreset(btn.dataset.statsPreset);
             loadStatsRange();
+        });
+    });
+    // 활동 로그 필터 버튼
+    document.querySelectorAll('[data-events-filter]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('[data-events-filter]').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            _eventsFilter = btn.dataset.eventsFilter;
+            renderEventsTable();
         });
     });
     // 통계 탭 처음 진입 시 자동 로드 (최근 30일 default)

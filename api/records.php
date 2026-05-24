@@ -3097,12 +3097,33 @@ try {
                 'date' => $d,
                 'visitors' => 0,
                 'pageviews' => 0,
+                'newSignups' => 0,
                 'newPayments' => 0,
                 'cancelledSubs' => 0,
                 'summaryViews' => 0,
                 'autoConfirms' => 0,
             ];
         }
+        // 사장님 2026-05-24 — 회원별 행동 패턴 분석용 이벤트 + 집계.
+        $events = [];     // 시간순 통합 활동 로그 (5종 + signup)
+        $memberAgg = [];  // email => { signupAt, payments, cancels, summaryViews, autoConfirms, lastActivity }
+        $bumpAgg = function (string $email, string $key, string $occurredAt) use (&$memberAgg) {
+            $email = strtolower(trim($email));
+            if ($email === '') return;
+            if (!isset($memberAgg[$email])) {
+                $memberAgg[$email] = [
+                    'email' => $email,
+                    'signupAt' => null,
+                    'payments' => 0, 'cancels' => 0,
+                    'summaryViews' => 0, 'autoConfirms' => 0,
+                    'lastActivity' => '',
+                ];
+            }
+            if (isset($memberAgg[$email][$key])) $memberAgg[$email][$key]++;
+            if ($occurredAt > ($memberAgg[$email]['lastActivity'] ?? '')) {
+                $memberAgg[$email]['lastActivity'] = $occurredAt;
+            }
+        };
 
         // ── 방문자 / pageview (page_views, is_bot=0) ──
         try {
@@ -3140,21 +3161,63 @@ try {
             foreach ($stmt as $r) $referrers[] = ['source' => (string)$r['source'], 'count' => (int)$r['c']];
         } catch (Throwable $e) {}
 
-        // ── 신규결제 — payments status='paid' (or completed) per day ──
+        // ── 신규가입 (사장님 2026-05-24) — members 의 created_at per day + events ──
+        $storeForStats = find_member_store($pdo);
+        if ($storeForStats) {
+            $createdColS = first_existing_column($storeForStats['columns'], ['created_at', 'created', 'registered_at', 'reg_date']);
+            if ($createdColS) {
+                $cq = quote_identifier($createdColS);
+                $eq = quote_identifier($storeForStats['email_column']);
+                $tbl = quote_identifier($storeForStats['table']);
+                try {
+                    $stmt = $pdo->prepare("SELECT {$cq} AS at, {$eq} AS email
+                        FROM {$tbl}
+                        WHERE {$cq} BETWEEN :a AND :b
+                        ORDER BY {$cq} DESC");
+                    $stmt->execute([':a' => $from . ' 00:00:00', ':b' => $to . ' 23:59:59']);
+                    foreach ($stmt as $r) {
+                        $at = (string)$r['at'];
+                        $email = strtolower(trim((string)$r['email']));
+                        $d = substr($at, 0, 10);
+                        if (isset($daily[$d])) $daily[$d]['newSignups']++;
+                        $events[] = ['occurred_at' => $at, 'email' => $email, 'type' => 'signup', 'detail' => ''];
+                        if ($email !== '' && !isset($memberAgg[$email])) {
+                            $memberAgg[$email] = [
+                                'email' => $email,
+                                'signupAt' => $at,
+                                'payments' => 0, 'cancels' => 0,
+                                'summaryViews' => 0, 'autoConfirms' => 0,
+                                'lastActivity' => $at,
+                            ];
+                        } elseif ($email !== '') {
+                            $memberAgg[$email]['signupAt'] = $at;
+                            if ($at > $memberAgg[$email]['lastActivity']) $memberAgg[$email]['lastActivity'] = $at;
+                        }
+                    }
+                } catch (Throwable $e) {}
+            }
+        }
+
+        // ── 신규결제 — payments status='paid' (or completed) per day + events ──
         try {
-            $stmt = $pdo->prepare("SELECT DATE(created_at) AS d, COUNT(*) AS c
+            $stmt = $pdo->prepare("SELECT created_at AS at, owner_email AS email, amount
                 FROM payments
                 WHERE status IN ('paid','PAID','completed','success')
                   AND created_at BETWEEN :a AND :b
-                GROUP BY DATE(created_at)");
+                ORDER BY created_at DESC");
             $stmt->execute([':a' => $from . ' 00:00:00', ':b' => $to . ' 23:59:59']);
             foreach ($stmt as $r) {
-                $d = $r['d'];
-                if (isset($daily[$d])) $daily[$d]['newPayments'] = (int)$r['c'];
+                $at = (string)$r['at'];
+                $email = strtolower(trim((string)$r['email']));
+                $d = substr($at, 0, 10);
+                if (isset($daily[$d])) $daily[$d]['newPayments']++;
+                $detail = isset($r['amount']) && $r['amount'] !== null ? ('₩' . number_format((int)$r['amount'])) : '';
+                $events[] = ['occurred_at' => $at, 'email' => $email, 'type' => 'payment', 'detail' => $detail];
+                $bumpAgg($email, 'payments', $at);
             }
         } catch (Throwable $e) {}
 
-        // ── 구독취소 — subscriptions cancelled_at OR status='cancelled' ──
+        // ── 구독취소 — subscriptions cancelled_at OR status='cancelled' + events ──
         // (스키마 변형 대비 — cancelled_at 컬럼 우선, 없으면 status 패턴)
         try {
             $hasCancelledAt = false;
@@ -3163,47 +3226,72 @@ try {
                 $hasCancelledAt = (bool)$check->fetch();
             } catch (Throwable $e) {}
             if ($hasCancelledAt) {
-                $stmt = $pdo->prepare("SELECT DATE(cancelled_at) AS d, COUNT(*) AS c
+                $stmt = $pdo->prepare("SELECT cancelled_at AS at, owner_email AS email
                     FROM subscriptions
                     WHERE cancelled_at IS NOT NULL
                       AND cancelled_at BETWEEN :a AND :b
-                    GROUP BY DATE(cancelled_at)");
+                    ORDER BY cancelled_at DESC");
             } else {
-                $stmt = $pdo->prepare("SELECT DATE(updated_at) AS d, COUNT(*) AS c
+                $stmt = $pdo->prepare("SELECT updated_at AS at, owner_email AS email
                     FROM subscriptions
                     WHERE status IN ('cancelled','canceled','CANCELLED')
                       AND updated_at BETWEEN :a AND :b
-                    GROUP BY DATE(updated_at)");
+                    ORDER BY updated_at DESC");
             }
             $stmt->execute([':a' => $from . ' 00:00:00', ':b' => $to . ' 23:59:59']);
             foreach ($stmt as $r) {
-                $d = $r['d'];
-                if (isset($daily[$d])) $daily[$d]['cancelledSubs'] = (int)$r['c'];
+                $at = (string)$r['at'];
+                $email = strtolower(trim((string)$r['email']));
+                $d = substr($at, 0, 10);
+                if (isset($daily[$d])) $daily[$d]['cancelledSubs']++;
+                $events[] = ['occurred_at' => $at, 'email' => $email, 'type' => 'cancel', 'detail' => ''];
+                $bumpAgg($email, 'cancels', $at);
             }
         } catch (Throwable $e) {}
 
-        // ── 요약보기 (auto_confirm=0) + 양식으로 전송 (auto_confirm=1) ──
-        // trigger_summarize 호출 시점 = status 가 audio_pending → queued/processing 으로 전환되는 시점.
-        // 안전한 기준: recording_jobs.created_at (job 생성 시각). started_at 으로 측정도 가능하나 NULL 있음.
+        // ── 요약보기 (auto_confirm=0) + 양식으로 전송 (auto_confirm=1) + events ──
+        // trigger_summarize 호출 시점 = recording_jobs.created_at 기준.
         try {
-            $stmt = $pdo->prepare("SELECT DATE(created_at) AS d,
-                       SUM(CASE WHEN auto_confirm=0 THEN 1 ELSE 0 END) AS s0,
-                       SUM(CASE WHEN auto_confirm=1 THEN 1 ELSE 0 END) AS s1
+            $stmt = $pdo->prepare("SELECT created_at AS at, owner_email AS email, auto_confirm
                 FROM recording_jobs
                 WHERE created_at BETWEEN :a AND :b
-                GROUP BY DATE(created_at)");
+                ORDER BY created_at DESC");
             $stmt->execute([':a' => $from . ' 00:00:00', ':b' => $to . ' 23:59:59']);
             foreach ($stmt as $r) {
-                $d = $r['d'];
+                $at = (string)$r['at'];
+                $email = strtolower(trim((string)$r['email']));
+                $d = substr($at, 0, 10);
+                $isAuto = !empty($r['auto_confirm']);
                 if (isset($daily[$d])) {
-                    $daily[$d]['summaryViews'] = (int)$r['s0'];
-                    $daily[$d]['autoConfirms'] = (int)$r['s1'];
+                    if ($isAuto) $daily[$d]['autoConfirms']++;
+                    else         $daily[$d]['summaryViews']++;
                 }
+                $events[] = [
+                    'occurred_at' => $at,
+                    'email' => $email,
+                    'type' => $isAuto ? 'auto_confirm' : 'summary_view',
+                    'detail' => '',
+                ];
+                $bumpAgg($email, $isAuto ? 'autoConfirms' : 'summaryViews', $at);
             }
         } catch (Throwable $e) {}
 
+        // 이벤트 시간순 정렬 + 최대 500건 (UI 부담 방지)
+        usort($events, function ($a, $b) { return strcmp($b['occurred_at'], $a['occurred_at']); });
+        if (count($events) > 500) $events = array_slice($events, 0, 500);
+
+        // 회원별 집계 — 활동 합계 기준 정렬 + 상위 50
+        $members = array_values($memberAgg);
+        usort($members, function ($a, $b) {
+            $ta = ($a['payments'] + $a['cancels'] + $a['summaryViews'] + $a['autoConfirms']);
+            $tb = ($b['payments'] + $b['cancels'] + $b['summaryViews'] + $b['autoConfirms']);
+            if ($ta !== $tb) return $tb <=> $ta;
+            return strcmp($b['lastActivity'] ?? '', $a['lastActivity'] ?? '');
+        });
+        if (count($members) > 50) $members = array_slice($members, 0, 50);
+
         // 합계 (요약 카드용)
-        $totals = ['visitors'=>0,'pageviews'=>0,'newPayments'=>0,'cancelledSubs'=>0,'summaryViews'=>0,'autoConfirms'=>0];
+        $totals = ['visitors'=>0,'pageviews'=>0,'newSignups'=>0,'newPayments'=>0,'cancelledSubs'=>0,'summaryViews'=>0,'autoConfirms'=>0];
         foreach ($daily as $row) {
             foreach ($totals as $k => $_) $totals[$k] += $row[$k];
         }
@@ -3214,6 +3302,8 @@ try {
             'totals' => $totals,
             'daily' => array_values($daily),
             'referrers' => $referrers,
+            'events' => $events,
+            'members' => $members,
         ]);
     }
 

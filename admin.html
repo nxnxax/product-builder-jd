@@ -210,11 +210,16 @@
                     <p id="stats-range-label" class="form-help" style="margin:0 0 4px;font-size:12px;">— 기간을 선택하고 조회 버튼을 누르세요.</p>
                 </div>
 
-                <div class="kpi-grid" style="margin-top:18px;">
+<div class="kpi-grid" style="margin-top:18px;">
                     <div class="kpi-card">
                         <div class="kpi-label">방문자 (고유)</div>
                         <div class="kpi-value" id="stats-kpi-visitors">—</div>
                         <div class="kpi-delta" id="stats-kpi-pageviews">페이지뷰 0</div>
+                    </div>
+                    <div class="kpi-card">
+                        <div class="kpi-label">신규 가입</div>
+                        <div class="kpi-value" id="stats-kpi-signups">—</div>
+                        <div class="kpi-delta">기간 합계</div>
                     </div>
                     <div class="kpi-card">
                         <div class="kpi-label">신규 결제</div>
@@ -257,7 +262,7 @@
                     </div>
                 </div>
 
-                <div class="card" style="margin-top:18px;">
+<div class="card" style="margin-top:18px;">
                     <h3>일별 상세</h3>
                     <p class="card-subtitle">날짜별 모든 지표.</p>
                     <div class="table-wrapper" style="border:0;">
@@ -267,6 +272,7 @@
                                     <th>날짜</th>
                                     <th>방문자</th>
                                     <th>페이지뷰</th>
+                                    <th>가입</th>
                                     <th>결제</th>
                                     <th>취소</th>
                                     <th>요약보기</th>
@@ -274,6 +280,53 @@
                                 </tr>
                             </thead>
                             <tbody id="stats-daily"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="card" style="margin-top:18px;">
+                    <h3>회원별 활동 패턴</h3>
+                    <p class="card-subtitle">기간 내 활동량 기준 상위 50명. 가입/결제/취소/AI사용 + 마지막 활동 시각.</p>
+                    <div class="table-wrapper" style="border:0;">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th style="min-width:200px;">회원 (이메일)</th>
+                                    <th>가입일</th>
+                                    <th>결제</th>
+                                    <th>취소</th>
+                                    <th>요약보기</th>
+                                    <th>양식전송</th>
+                                    <th>마지막 활동</th>
+                                </tr>
+                            </thead>
+                            <tbody id="stats-members"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="card" style="margin-top:18px;">
+                    <h3>활동 로그 (시간순)</h3>
+                    <p class="card-subtitle">기간 내 모든 회원 행동을 시간순으로 표시 (최대 500건). 어떤 회원이 무엇을 했는지 한눈에.</p>
+                    <div style="display:flex;gap:6px;flex-wrap:wrap;margin:8px 0 12px;">
+                        <button type="button" class="tiny-btn active" data-events-filter="all">전체</button>
+                        <button type="button" class="tiny-btn" data-events-filter="signup">가입</button>
+                        <button type="button" class="tiny-btn" data-events-filter="payment">결제</button>
+                        <button type="button" class="tiny-btn" data-events-filter="cancel">취소</button>
+                        <button type="button" class="tiny-btn" data-events-filter="summary_view">요약보기</button>
+                        <button type="button" class="tiny-btn" data-events-filter="auto_confirm">양식전송</button>
+                    </div>
+                    <div class="table-wrapper" style="border:0;">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th style="width:170px;">시각</th>
+                                    <th style="width:120px;">종류</th>
+                                    <th>회원 (이메일)</th>
+                                    <th>비고</th>
+                                </tr>
+                            </thead>
+                            <tbody id="stats-events"></tbody>
                         </table>
                     </div>
                 </div>
@@ -414,6 +467,6 @@
     </div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-    <script src="admin.js?v=20260524-stats" type="module"></script>
+<script src="admin.js?v=20260524-stats-events" type="module"></script>
 </body>
 </html>
