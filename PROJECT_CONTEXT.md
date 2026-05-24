@@ -1,6 +1,6 @@
 # PROJECT_CONTEXT — youngman-biz.com
 
-*최종 갱신: 2026-05-24 AM 세션 종료 — ✅ **양식으로 전송 STT 전문 누락 fix** (phone_lookup HMAC 통일) + **고객관리대장 처리중 placeholder 부활** + **고객 거주지 자동 인식** (Claude region 추출) + **미확인 요약 카드 UI 다듬기**.*
+*최종 갱신: 2026-05-24 PM 세션 종료 — ✅ **회차 ↔ transcript 자물쇠 결합 라이브** (round_log_ids + get_transcript_by_id) + **5건 회차 카드 동일 transcript root cause = customers.js 캐시** (DB 정상, cache-bust 누락 진짜 원인) + **사장님 정상화 확인 완료**.*
 
 ---
 
@@ -111,6 +111,15 @@ tester.html → /download/youngman-latest.apk (사장님 FTP 직접 업로드)
   · callback UPDATE COALESCE NULLIF 보호 (region 포함, 빈 값 덮어쓰기 방지)
   · phone_lookup HMAC-SHA256 통일 (callback + records.php 동일)
 ```
+
+### 회차 ↔ transcript 자물쇠 결합 (2026-05-24 PM 신규)
+- `ledger_records.data_json.round_log_ids` = `{ "회차": "customer_log_id" }`
+- send_to_group 3분기 (refresh §7 / MERGE / INSERT) 모두 mapping 누적
+- 새 endpoint `get_transcript_by_id` — customer_log.id 단건 직접 조회
+- customers.js 전문보기 버튼 `data-customer-log-id` 자동 주입
+- bindTranscriptButtons cid 우선 → 다른 회차 transcript 혼선 0%
+- 옛 데이터 (round_log_ids 없음) 호환 — phone+ts fallback (1분 cap 제거 + best row)
+- customers.html cache-bust querystring `?v=20260524-transcript-lock` 갱신 필수
 
 ### Claude 추출 필드 (2026-05-24 region 추가)
 - customer_name / summary / interest / inquiry / budget_condition / next_action / **region** / transcript
@@ -228,6 +237,7 @@ tester.html → /download/youngman-latest.apk (사장님 FTP 직접 업로드)
 - 📊 Whisper 25MB 제한 + iPhone/Galaxy m4a codec 변종 거부 → **mp3 통일 변환** (worker main.py:565 transcode_to_mp3)
 - 📊 Authorization 헤더 fallback 7단계 (records.php read_authorization_header)
 - 🔑 **client DEFAULT_FIELDS vs server schema 비대칭 학습** (2026-05-24) — customers.js 의 DEFAULT_FIELDS 에 region 있는데 PHP default 에 없으면 UI 표시되지만 매핑 실패. send_to_group 는 'region' fallback key 사용.
+- 🔑 **cache-bust 누락 학습** (2026-05-24 PM) — JS module 큰 변경 시 HTML import querystring (?v=YYYYMMDD-slug) 도 같은 commit 에서 반드시 갱신. 안 하면 사장님 브라우저 옛 캐시 → 새 코드 효과 0. 자물쇠 commit 후 사장님이 동일 transcript 증상 보고 → DB/서버 전부 정상이었고 진짜 root cause 가 cache-bust 누락. customers.js / auth-shared.js / ledger-shared.js / bridge.js / style.css 손댈 때 항상 querystring 확인.
 
 ### Railway worker quirks
 - 🚫 `railway.json` 의 `startCommand` 가 Dockerfile 모드에서 shell expansion 안 됨 — Dockerfile CMD `sh -c` wrap.
@@ -238,6 +248,10 @@ tester.html → /download/youngman-latest.apk (사장님 FTP 직접 업로드)
 ## 7. 최근 수정한 파일
 
 ```
+# 2026-05-24 PM 세션 — 회차 ↔ transcript 자물쇠 결합 + cache-bust 누락 root cause
+b908c8d fix(customers): customers.js cache-bust v=20260524-transcript-lock ★ root cause
+674bb58 feat(call): 회차 ↔ transcript 자물쇠 결합 — round_log_ids 매핑 + id 직접 조회 ★ 신규 구조
+
 # 2026-05-24 AM 세션 — 양식으로 전송 흐름 완성 + 지역 자동 인식 + UI 다듬기
 79e2f1a fix(unreviewed): "요약완료" 버튼 2줄 ("✓ 요약완료" + "내용확인하기")
 6959a79 fix(unreviewed): 카드 전화번호/통화시간 줄바꿈 분리
@@ -272,6 +286,14 @@ aad194b fix(unreviewed): 미확인 요약 시스템 전체 정합성 — lazy-ST
 - 🔒 records.php `/auth/v1/user` 폴백
 - 🔒 records.php worker token 우회 분기 (X-Worker-Token + body.owner_email)
 - 🔒 PII owner_email 격리
+
+### 회차 ↔ transcript 자물쇠 (2026-05-24 PM)
+- 🔒 records.php send_to_group 3분기 모두 `data_json.round_log_ids[회차]=cid` 저장
+- 🔒 records.php endpoint `get_transcript_by_id` — id 단건 조회
+- 🔒 customers.js 회차 카드 `data-customer-log-id` attribute 주입
+- 🔒 customers.js `fetchTranscriptById` — cid 직접 조회 (혼선 0%)
+- 🔒 customers.js `_findTranscriptByTimestamp` — 1분 cap 제거, 항상 best row 반환 (옛 데이터 호환)
+- 🔒 customers.html `?v=20260524-transcript-lock` querystring (cache-bust)
 
 ### lazy-STT 모드 (2026-05-23 부활 / 2026-05-24 placeholder 부분 부활)
 - 🔒 process-recording.php — status='audio_pending' INSERT, placeholder/mirror/dispatch 안 함 (process-recording 시점은 lazy 유지)
@@ -334,10 +356,11 @@ aad194b fix(unreviewed): 미확인 요약 시스템 전체 정합성 — lazy-ST
 
 ## 9. 다음에 이어서 해야 할 작업
 
-### 1순위 — 2026-05-24 fix 누적 검증 (다음 통화 테스트 결과 받기)
-- 양식으로 전송 → 고객관리대장 placeholder 카드 → 자동 갱신
-- 지역 자동 입력 (✅ 사장님 보고로 검증됨)
-- 미확인 요약 카드 UI (줄바꿈 + 2줄 버튼)
+### 1순위 — 2026-05-24 fix 누적 검증 ✅ 완료
+- 양식으로 전송 → 고객관리대장 placeholder 카드 → 자동 갱신 ✅
+- 지역 자동 입력 ✅ (사장님 보고로 검증됨)
+- 미확인 요약 카드 UI (줄바꿈 + 2줄 버튼) ✅
+- 회차 ↔ transcript 자물쇠 결합 ✅ (사장님 "완전 해결" 확인 — 2026-05-24 PM)
 
 ### 2순위 — 앱팀 v40+ 명세 (사장님이 전달)
 명세서 텍스트는 이전 세션 채팅 또는 본 PROJECT_CONTEXT.md 4번 항목 참조.
