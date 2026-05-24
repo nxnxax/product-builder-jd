@@ -3276,6 +3276,240 @@ try {
             }
         } catch (Throwable $e) {}
 
+        // ── 사장님 2026-05-24 (확장) — recording_jobs 상태별 + STT 성공률 + latency + 통화길이 ──
+        $jobsStats = [
+            'byStatus' => [],
+            'sttSuccessRate' => null,    // (completed + saved) / total
+            'avgLatencySec' => null,     // 평균 처리 시간 (started_at ~ completed_at)
+            'avgDurationSec' => null,    // 평균 통화 길이
+            'totalJobs' => 0,
+            'successJobs' => 0,
+            'failedJobs' => 0,
+        ];
+        try {
+            $stmt = $pdo->prepare("SELECT status, COUNT(*) AS c,
+                       AVG(duration_sec) AS avg_dur,
+                       AVG(CASE WHEN started_at IS NOT NULL AND completed_at IS NOT NULL
+                                THEN TIMESTAMPDIFF(SECOND, started_at, completed_at) END) AS avg_lat
+                FROM recording_jobs
+                WHERE created_at BETWEEN :a AND :b
+                GROUP BY status");
+            $stmt->execute([':a' => $from . ' 00:00:00', ':b' => $to . ' 23:59:59']);
+            $sumDur = 0; $sumDurN = 0; $sumLat = 0; $sumLatN = 0;
+            foreach ($stmt as $r) {
+                $s = (string)$r['status'];
+                $c = (int)$r['c'];
+                $jobsStats['byStatus'][$s] = $c;
+                $jobsStats['totalJobs'] += $c;
+                if (in_array($s, ['completed','saved'], true)) $jobsStats['successJobs'] += $c;
+                if (in_array($s, ['failed_retryable','failed_permanent'], true)) $jobsStats['failedJobs'] += $c;
+                if ($r['avg_dur'] !== null) { $sumDur += ((float)$r['avg_dur']) * $c; $sumDurN += $c; }
+                if ($r['avg_lat'] !== null) { $sumLat += ((float)$r['avg_lat']) * $c; $sumLatN += $c; }
+            }
+            if ($sumDurN > 0) $jobsStats['avgDurationSec'] = round($sumDur / $sumDurN, 1);
+            if ($sumLatN > 0) $jobsStats['avgLatencySec'] = round($sumLat / $sumLatN, 1);
+            if ($jobsStats['totalJobs'] > 0) {
+                $jobsStats['sttSuccessRate'] = round($jobsStats['successJobs'] / $jobsStats['totalJobs'] * 100, 1);
+            }
+        } catch (Throwable $e) {}
+
+        // ── 회원별 요약 사용시간/사용률 ★사장님 중요 표시 (members 현재 상태) ──
+        // usage_seconds_period (초) / summary_limit_minutes (분) 기준.
+        $memberUsage = [];
+        if ($storeForStats) {
+            $eq = quote_identifier($storeForStats['email_column']);
+            $tbl = quote_identifier($storeForStats['table']);
+            $cols = $storeForStats['columns'];
+            // 필요한 컬럼 존재 여부 확인
+            $hasPlan      = in_array('plan', $cols, true);
+            $hasPlanStat  = in_array('plan_status', $cols, true);
+            $hasUsageSec  = in_array('usage_seconds_period', $cols, true);
+            $hasLimitMin  = in_array('summary_limit_minutes', $cols, true);
+            $hasOverEn    = in_array('overage_enabled', $cols, true);
+            $hasOverBal   = in_array('overage_balance_seconds', $cols, true);
+            $hasPeriodEnd = in_array('current_period_end', $cols, true);
+            $hasCreated   = in_array('created_at', $cols, true);
+            try {
+                $select = [$eq . ' AS email'];
+                if ($hasPlan)      $select[] = 'plan';
+                if ($hasPlanStat)  $select[] = 'plan_status';
+                if ($hasUsageSec)  $select[] = 'usage_seconds_period';
+                if ($hasLimitMin)  $select[] = 'summary_limit_minutes';
+                if ($hasOverEn)    $select[] = 'overage_enabled';
+                if ($hasOverBal)   $select[] = 'overage_balance_seconds';
+                if ($hasPeriodEnd) $select[] = 'current_period_end';
+                if ($hasCreated)   $select[] = 'created_at';
+                // 사용량 우선 + 가입 최근 순 정렬
+                $orderBy = $hasUsageSec ? "usage_seconds_period DESC" : ($hasCreated ? "created_at DESC" : $eq);
+                $sql = "SELECT " . implode(', ', $select) . " FROM {$tbl} ORDER BY {$orderBy} LIMIT 200";
+                foreach ($pdo->query($sql) as $r) {
+                    $usedSec = (int)($r['usage_seconds_period'] ?? 0);
+                    $limitMin = (int)($r['summary_limit_minutes'] ?? 0);
+                    $usedMin = $usedSec / 60;
+                    $pct = ($limitMin > 0) ? round(($usedMin / $limitMin) * 100, 1) : 0;
+                    $overBalSec = (int)($r['overage_balance_seconds'] ?? 0);
+                    $memberUsage[] = [
+                        'email'        => (string)$r['email'],
+                        'plan'         => (string)($r['plan'] ?? ''),
+                        'planStatus'   => (string)($r['plan_status'] ?? ''),
+                        'usedMin'      => round($usedMin, 1),
+                        'limitMin'     => $limitMin,
+                        'usagePct'     => $pct,
+                        'overageEnabled'=> !empty($r['overage_enabled']) ? 1 : 0,
+                        'overageBalMin' => round($overBalSec / 60, 1),
+                        'periodEnd'    => (string)($r['current_period_end'] ?? ''),
+                        'createdAt'    => (string)($r['created_at'] ?? ''),
+                    ];
+                }
+            } catch (Throwable $e) {}
+        }
+
+        // ── 플랜별 분포 ──
+        $planDistribution = ['trialing'=>0,'free'=>0,'plus'=>0,'pro'=>0,'other'=>0];
+        if ($storeForStats && in_array('plan', $storeForStats['columns'], true)) {
+            $tbl = quote_identifier($storeForStats['table']);
+            try {
+                $stmt = $pdo->query("SELECT plan, COUNT(*) AS c FROM {$tbl} GROUP BY plan");
+                foreach ($stmt as $r) {
+                    $p = (string)$r['plan'];
+                    $c = (int)$r['c'];
+                    if (isset($planDistribution[$p])) $planDistribution[$p] = $c;
+                    else $planDistribution['other'] += $c;
+                }
+            } catch (Throwable $e) {}
+        }
+
+        // ── 일별 매출 추이 ──
+        $dailyRevenue = [];
+        foreach ($daily as $d => $_) $dailyRevenue[$d] = ['date' => $d, 'revenue' => 0];
+        try {
+            $stmt = $pdo->prepare("SELECT DATE(created_at) AS d, SUM(amount) AS rev
+                FROM payments
+                WHERE status IN ('paid','PAID','completed','success')
+                  AND created_at BETWEEN :a AND :b
+                GROUP BY DATE(created_at)");
+            $stmt->execute([':a' => $from . ' 00:00:00', ':b' => $to . ' 23:59:59']);
+            foreach ($stmt as $r) {
+                $d = (string)$r['d'];
+                if (isset($dailyRevenue[$d])) $dailyRevenue[$d]['revenue'] = (int)$r['rev'];
+            }
+        } catch (Throwable $e) {}
+        $totalRevenue = array_sum(array_column($dailyRevenue, 'revenue'));
+
+        // ── MRR / ARPU ──
+        // MRR = active subscriptions × plan 가격
+        $planPrices = ['plus' => 19000, 'pro' => 39000];
+        $mrr = 0;
+        $activeSubsCount = 0;
+        try {
+            $stmt = $pdo->query("SELECT plan, COUNT(*) AS c FROM subscriptions WHERE status='active' GROUP BY plan");
+            foreach ($stmt as $r) {
+                $p = (string)$r['plan'];
+                $c = (int)$r['c'];
+                $activeSubsCount += $c;
+                $mrr += ($planPrices[$p] ?? 0) * $c;
+            }
+        } catch (Throwable $e) {}
+        $arpu = $activeSubsCount > 0 ? (int)round($mrr / $activeSubsCount) : 0;
+
+        // ── MAU / DAU (page_views, 로그인된 owner_email 기준) ──
+        $mau = 0; $dau = 0;
+        try {
+            $now = date('Y-m-d H:i:s');
+            $stmt = $pdo->prepare("SELECT COUNT(DISTINCT owner_email) FROM page_views
+                WHERE is_bot=0 AND owner_email IS NOT NULL AND owner_email <> ''
+                  AND created_at >= DATE_SUB(:n, INTERVAL 30 DAY)");
+            $stmt->execute([':n' => $now]);
+            $mau = (int)$stmt->fetchColumn();
+            $stmt = $pdo->prepare("SELECT COUNT(DISTINCT owner_email) FROM page_views
+                WHERE is_bot=0 AND owner_email IS NOT NULL AND owner_email <> ''
+                  AND created_at >= DATE_SUB(:n, INTERVAL 1 DAY)");
+            $stmt->execute([':n' => $now]);
+            $dau = (int)$stmt->fetchColumn();
+        } catch (Throwable $e) {}
+
+        // ── Funnel — 가입 → 첫통화 → 첫고객 → 첫결제 (기간 내 가입자 기준) ──
+        $funnel = ['signups' => 0, 'firstCallers' => 0, 'firstSavers' => 0, 'firstPayers' => 0];
+        if ($storeForStats) {
+            $createdColF = first_existing_column($storeForStats['columns'], ['created_at', 'created', 'registered_at']);
+            if ($createdColF) {
+                $cq = quote_identifier($createdColF);
+                $eq = quote_identifier($storeForStats['email_column']);
+                $tbl = quote_identifier($storeForStats['table']);
+                try {
+                    // 기간 내 가입자 email 수집
+                    $stmt = $pdo->prepare("SELECT LOWER({$eq}) AS email FROM {$tbl}
+                        WHERE {$cq} BETWEEN :a AND :b");
+                    $stmt->execute([':a' => $from . ' 00:00:00', ':b' => $to . ' 23:59:59']);
+                    $signupEmails = [];
+                    foreach ($stmt as $r) { $e = trim((string)$r['email']); if ($e !== '') $signupEmails[$e] = true; }
+                    $funnel['signups'] = count($signupEmails);
+                    if (!empty($signupEmails)) {
+                        $placeholders = implode(',', array_fill(0, count($signupEmails), '?'));
+                        $emails = array_keys($signupEmails);
+                        // 첫 통화 — recording_jobs distinct owner_email
+                        try {
+                            $stmt2 = $pdo->prepare("SELECT COUNT(DISTINCT owner_email) FROM recording_jobs
+                                WHERE LOWER(owner_email) IN ($placeholders)");
+                            $stmt2->execute($emails);
+                            $funnel['firstCallers'] = (int)$stmt2->fetchColumn();
+                        } catch (Throwable $e) {}
+                        // 첫 고객 저장 — customer_log distinct owner_email
+                        try {
+                            $stmt2 = $pdo->prepare("SELECT COUNT(DISTINCT owner_email) FROM customer_log
+                                WHERE LOWER(owner_email) IN ($placeholders)");
+                            $stmt2->execute($emails);
+                            $funnel['firstSavers'] = (int)$stmt2->fetchColumn();
+                        } catch (Throwable $e) {}
+                        // 첫 결제 — payments paid distinct owner_email
+                        try {
+                            $stmt2 = $pdo->prepare("SELECT COUNT(DISTINCT owner_email) FROM payments
+                                WHERE status IN ('paid','PAID','completed','success')
+                                  AND LOWER(owner_email) IN ($placeholders)");
+                            $stmt2->execute($emails);
+                            $funnel['firstPayers'] = (int)$stmt2->fetchColumn();
+                        } catch (Throwable $e) {}
+                    }
+                } catch (Throwable $e) {}
+            }
+        }
+
+        // ── AI provider 사용량 (customer_log.ai_model 패턴 분류) ──
+        $providerUsage = ['whisper'=>0,'clova'=>0,'claude'=>0,'gpt'=>0];
+        try {
+            $stmt = $pdo->prepare("SELECT ai_model FROM customer_log
+                WHERE ai_generated_at BETWEEN :a AND :b
+                  AND ai_model IS NOT NULL AND ai_model <> ''");
+            $stmt->execute([':a' => $from . ' 00:00:00', ':b' => $to . ' 23:59:59']);
+            foreach ($stmt as $r) {
+                $m = strtolower((string)$r['ai_model']);
+                if (strpos($m, 'whisper') !== false) $providerUsage['whisper']++;
+                if (strpos($m, 'clova') !== false)   $providerUsage['clova']++;
+                if (strpos($m, 'claude') !== false)  $providerUsage['claude']++;
+                if (strpos($m, 'gpt') !== false)     $providerUsage['gpt']++;
+            }
+        } catch (Throwable $e) {}
+
+        // ── 자동충전 통계 ──
+        $autoChargeStats = ['enabledCount'=>0,'totalMembers'=>0,'avgBalanceMin'=>0,'enabledPct'=>0];
+        if ($storeForStats) {
+            $tbl = quote_identifier($storeForStats['table']);
+            try {
+                $row = $pdo->query("SELECT COUNT(*) AS total,
+                           SUM(CASE WHEN overage_enabled=1 THEN 1 ELSE 0 END) AS enabled,
+                           AVG(overage_balance_seconds) AS avg_bal
+                    FROM {$tbl}")->fetch();
+                if ($row) {
+                    $autoChargeStats['totalMembers'] = (int)$row['total'];
+                    $autoChargeStats['enabledCount'] = (int)$row['enabled'];
+                    $autoChargeStats['avgBalanceMin'] = round(((float)$row['avg_bal']) / 60, 1);
+                    if ($autoChargeStats['totalMembers'] > 0) {
+                        $autoChargeStats['enabledPct'] = round($autoChargeStats['enabledCount'] / $autoChargeStats['totalMembers'] * 100, 1);
+                    }
+                }
+            } catch (Throwable $e) {}
+        }
+
         // 이벤트 시간순 정렬 + 최대 500건 (UI 부담 방지)
         usort($events, function ($a, $b) { return strcmp($b['occurred_at'], $a['occurred_at']); });
         if (count($events) > 500) $events = array_slice($events, 0, 500);
@@ -3304,6 +3538,19 @@ try {
             'referrers' => $referrers,
             'events' => $events,
             'members' => $members,
+            // 사장님 2026-05-24 — ChatGPT 추천 항목 9가지 확장
+            'jobsStats' => $jobsStats,
+            'memberUsage' => $memberUsage,
+            'planDistribution' => $planDistribution,
+            'dailyRevenue' => array_values($dailyRevenue),
+            'totalRevenue' => $totalRevenue,
+            'mrr' => $mrr,
+            'arpu' => $arpu,
+            'activeSubsCount' => $activeSubsCount,
+            'mauDau' => ['mau' => $mau, 'dau' => $dau],
+            'funnel' => $funnel,
+            'providerUsage' => $providerUsage,
+            'autoChargeStats' => $autoChargeStats,
         ]);
     }
 

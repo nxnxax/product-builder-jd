@@ -238,11 +238,149 @@
                     </div>
                 </div>
 
-                <div class="card" style="margin-top:18px;">
-                    <h3>방문자 추이</h3>
-                    <p class="card-subtitle">일별 고유 방문자 수.</p>
+                <!-- 운영 KPI (사장님 2026-05-24 — ChatGPT 추천 확장) -->
+                <div class="kpi-grid" style="margin-top:14px;">
+                    <div class="kpi-card">
+                        <div class="kpi-label">DAU / MAU</div>
+                        <div class="kpi-value" id="stats-kpi-mau">— / —</div>
+                        <div class="kpi-delta">최근 1일 / 30일 활성 회원</div>
+                    </div>
+                    <div class="kpi-card">
+                        <div class="kpi-label">MRR (월매출)</div>
+                        <div class="kpi-value" id="stats-kpi-mrr">—</div>
+                        <div class="kpi-delta" id="stats-kpi-arpu">ARPU ₩0</div>
+                    </div>
+                    <div class="kpi-card">
+                        <div class="kpi-label">기간 매출</div>
+                        <div class="kpi-value" id="stats-kpi-revenue">—</div>
+                        <div class="kpi-delta">결제 합계 (원)</div>
+                    </div>
+                    <div class="kpi-card">
+                        <div class="kpi-label">STT 성공률</div>
+                        <div class="kpi-value" id="stats-kpi-stt">—</div>
+                        <div class="kpi-delta" id="stats-kpi-jobs">전체 0 / 성공 0 / 실패 0</div>
+                    </div>
+                    <div class="kpi-card">
+                        <div class="kpi-label">평균 통화 / 처리</div>
+                        <div class="kpi-value" id="stats-kpi-avg">—</div>
+                        <div class="kpi-delta">통화길이 / AI 처리 시간</div>
+                    </div>
+                </div>
+
+<div class="card" style="margin-top:18px;">
+                    <h3>방문자 / 매출 추이</h3>
+                    <p class="card-subtitle">일별 고유 방문자 수 (좌) · 일별 매출 (우).</p>
                     <div style="position:relative;height:240px;margin-top:12px;">
                         <canvas id="stats-chart-visitors"></canvas>
+                    </div>
+                    <div style="position:relative;height:200px;margin-top:14px;">
+                        <canvas id="stats-chart-revenue"></canvas>
+                    </div>
+                </div>
+
+                <div class="card" style="margin-top:18px;">
+                    <h3>Funnel 분석 — 가입 → 첫통화 → 첫고객 → 첫결제</h3>
+                    <p class="card-subtitle">기간 내 가입자 기준. 각 단계까지 도달한 회원 수와 전환율.</p>
+                    <div class="table-wrapper" style="border:0;">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>단계</th>
+                                    <th>회원 수</th>
+                                    <th>전환율</th>
+                                </tr>
+                            </thead>
+                            <tbody id="stats-funnel"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="card" style="margin-top:18px;">
+                    <h3>플랜별 회원 분포</h3>
+                    <p class="card-subtitle">전체 회원의 현재 plan (가입 시점이 아닌 현재 상태).</p>
+                    <div class="table-wrapper" style="border:0;">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>플랜</th>
+                                    <th>회원 수</th>
+                                    <th>비율</th>
+                                </tr>
+                            </thead>
+                            <tbody id="stats-plans"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="card" style="margin-top:18px;">
+                    <h3>★ 회원별 요약 사용시간 / 사용률</h3>
+                    <p class="card-subtitle">이번 달 사용 분 / 한도. 사용률이 높은 순으로 정렬. 자동충전 잔액도 표시.</p>
+                    <div class="table-wrapper" style="border:0;">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th style="min-width:200px;">회원</th>
+                                    <th>플랜</th>
+                                    <th>상태</th>
+                                    <th>사용 (분)</th>
+                                    <th>한도 (분)</th>
+                                    <th>사용률</th>
+                                    <th>자동충전</th>
+                                    <th>잔액(분)</th>
+                                    <th>만료일</th>
+                                </tr>
+                            </thead>
+                            <tbody id="stats-member-usage"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="card" style="margin-top:18px;">
+                    <h3>통화 처리 상태 분포</h3>
+                    <p class="card-subtitle">recording_jobs 의 status별 건수. failed_retryable / failed_permanent 가 많으면 STT 워커 점검 필요.</p>
+                    <div class="table-wrapper" style="border:0;">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>상태</th>
+                                    <th>건수</th>
+                                </tr>
+                            </thead>
+                            <tbody id="stats-jobs-status"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="card" style="margin-top:18px;">
+                    <h3>AI Provider 사용량</h3>
+                    <p class="card-subtitle">customer_log.ai_model 패턴 분류 (기간 내 생성된 통화 요약).</p>
+                    <div class="table-wrapper" style="border:0;">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Provider</th>
+                                    <th>사용 횟수</th>
+                                </tr>
+                            </thead>
+                            <tbody id="stats-providers"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="card" style="margin-top:18px;">
+                    <h3>자동충전 통계</h3>
+                    <p class="card-subtitle">전체 회원 기준. 자동충전 동의율 + 평균 잔액.</p>
+                    <div class="kpi-grid">
+                        <div class="kpi-card">
+                            <div class="kpi-label">동의 회원</div>
+                            <div class="kpi-value" id="stats-autocharge-enabled">—</div>
+                            <div class="kpi-delta" id="stats-autocharge-pct">— / 전체 0명</div>
+                        </div>
+                        <div class="kpi-card">
+                            <div class="kpi-label">평균 잔액</div>
+                            <div class="kpi-value" id="stats-autocharge-balance">—</div>
+                            <div class="kpi-delta">분 단위 평균</div>
+                        </div>
                     </div>
                 </div>
 
@@ -467,6 +605,6 @@
     </div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-<script src="admin.js?v=20260524-stats-events" type="module"></script>
+<script src="admin.js?v=20260524-stats-mega" type="module"></script>
 </body>
 </html>

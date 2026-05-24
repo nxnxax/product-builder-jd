@@ -372,9 +372,53 @@ const statsDailyTbody     = document.getElementById('stats-daily');
 const statsMembersTbody   = document.getElementById('stats-members');
 const statsEventsTbody    = document.getElementById('stats-events');
 const statsChartCanvas    = document.getElementById('stats-chart-visitors');
+const statsChartRevenueCanvas = document.getElementById('stats-chart-revenue');
+// 확장 KPI (사장님 2026-05-24)
+const statsKpiMau     = document.getElementById('stats-kpi-mau');
+const statsKpiMrr     = document.getElementById('stats-kpi-mrr');
+const statsKpiArpu    = document.getElementById('stats-kpi-arpu');
+const statsKpiRevenue = document.getElementById('stats-kpi-revenue');
+const statsKpiStt     = document.getElementById('stats-kpi-stt');
+const statsKpiJobs    = document.getElementById('stats-kpi-jobs');
+const statsKpiAvg     = document.getElementById('stats-kpi-avg');
+// 확장 표
+const statsFunnelTbody     = document.getElementById('stats-funnel');
+const statsPlansTbody      = document.getElementById('stats-plans');
+const statsMemberUsageTbody = document.getElementById('stats-member-usage');
+const statsJobsStatusTbody = document.getElementById('stats-jobs-status');
+const statsProvidersTbody  = document.getElementById('stats-providers');
+const statsAutochargeEnabled = document.getElementById('stats-autocharge-enabled');
+const statsAutochargePct = document.getElementById('stats-autocharge-pct');
+const statsAutochargeBalance = document.getElementById('stats-autocharge-balance');
 
 let _lastStatsEvents = [];
 let _eventsFilter = 'all';
+let statsChartRevenueInstance = null;
+
+const FUNNEL_STEPS = [
+    { key: 'signups',      label: '회원 가입' },
+    { key: 'firstCallers', label: '첫 통화 (AI 사용)' },
+    { key: 'firstSavers',  label: '첫 고객 저장' },
+    { key: 'firstPayers',  label: '첫 결제' },
+];
+const PLAN_LABEL = { trialing: '체험', free: 'Free', plus: 'Plus', pro: 'Pro', other: '기타' };
+const STATUS_LABEL_JOBS = {
+    audio_pending: '음성 대기',
+    queued: '큐 대기',
+    processing: 'AI 처리중',
+    ready_to_review: '검토 대기',
+    completed: '완료',
+    saved: '저장됨',
+    failed_retryable: '재시도 실패',
+    failed_permanent: '영구 실패',
+    dismissed: '폐기',
+    llm_processing: 'LLM 처리중',
+    stt_processing: 'STT 처리중',
+};
+
+function fmtKrw(n) {
+    return '₩' + (Math.round(Number(n) || 0)).toLocaleString();
+}
 
 let statsChartInstance = null;
 let statsLoaded = false;
@@ -509,6 +553,140 @@ function renderStatsRange(payload) {
     // 활동 로그 (시간순 + 필터)
     _lastStatsEvents = events;
     renderEventsTable();
+
+    // ── 사장님 2026-05-24 확장 — 9개 신규 섹션 렌더 ──
+    const jobsStats = payload?.jobsStats || {};
+    const memberUsage = Array.isArray(payload?.memberUsage) ? payload.memberUsage : [];
+    const planDistribution = payload?.planDistribution || {};
+    const dailyRevenue = Array.isArray(payload?.dailyRevenue) ? payload.dailyRevenue : [];
+    const totalRevenue = payload?.totalRevenue || 0;
+    const mrr = payload?.mrr || 0;
+    const arpu = payload?.arpu || 0;
+    const mauDau = payload?.mauDau || { mau: 0, dau: 0 };
+    const funnel = payload?.funnel || {};
+    const providerUsage = payload?.providerUsage || {};
+    const autoCharge = payload?.autoChargeStats || {};
+
+    // 확장 KPI 카드
+    statsKpiMau.textContent  = `${(mauDau.dau || 0).toLocaleString()} / ${(mauDau.mau || 0).toLocaleString()}`;
+    statsKpiMrr.textContent  = fmtKrw(mrr);
+    statsKpiArpu.textContent = `ARPU ${fmtKrw(arpu)}`;
+    statsKpiRevenue.textContent = fmtKrw(totalRevenue);
+    if (jobsStats.sttSuccessRate !== null && jobsStats.sttSuccessRate !== undefined) {
+        statsKpiStt.textContent = (jobsStats.sttSuccessRate || 0).toFixed(1) + '%';
+    } else {
+        statsKpiStt.textContent = '—';
+    }
+    statsKpiJobs.textContent = `전체 ${(jobsStats.totalJobs || 0).toLocaleString()} / 성공 ${(jobsStats.successJobs || 0).toLocaleString()} / 실패 ${(jobsStats.failedJobs || 0).toLocaleString()}`;
+    const avgDur = jobsStats.avgDurationSec, avgLat = jobsStats.avgLatencySec;
+    statsKpiAvg.textContent = `${avgDur !== null && avgDur !== undefined ? avgDur + 's' : '—'} / ${avgLat !== null && avgLat !== undefined ? avgLat + 's' : '—'}`;
+
+    // Funnel 표
+    const signups = funnel.signups || 0;
+    statsFunnelTbody.innerHTML = FUNNEL_STEPS.map(step => {
+        const v = funnel[step.key] || 0;
+        const pct = signups > 0 ? ((v / signups) * 100).toFixed(1) : '0.0';
+        return `<tr>
+            <td>${escape(step.label)}</td>
+            <td>${v.toLocaleString()}</td>
+            <td>${pct}%</td>
+        </tr>`;
+    }).join('');
+
+    // 플랜 분포 표
+    const planTotal = Object.values(planDistribution).reduce((a, b) => a + (Number(b) || 0), 0);
+    statsPlansTbody.innerHTML = Object.entries(planDistribution).map(([k, v]) => {
+        const c = Number(v) || 0;
+        const pct = planTotal > 0 ? ((c / planTotal) * 100).toFixed(1) : '0.0';
+        return `<tr>
+            <td>${escape(PLAN_LABEL[k] || k)}</td>
+            <td>${c.toLocaleString()}</td>
+            <td>${pct}%</td>
+        </tr>`;
+    }).join('');
+
+    // ★ 회원별 요약 사용시간/사용률
+    statsMemberUsageTbody.innerHTML = memberUsage.length === 0
+        ? `<tr><td colspan="9" style="text-align:center;color:var(--fg-tertiary);padding:24px;">데이터 없음</td></tr>`
+        : memberUsage.map(m => {
+            const pct = Number(m.usagePct || 0);
+            const barColor = pct >= 100 ? '#c62828' : (pct >= 80 ? '#ef6c00' : '#1565c0');
+            const barWidth = Math.min(100, pct);
+            const pctBar = `
+                <div style="display:flex;align-items:center;gap:8px;">
+                    <div style="flex:1;height:8px;background:#eee;border-radius:4px;overflow:hidden;min-width:80px;">
+                        <div style="height:100%;width:${barWidth}%;background:${barColor};"></div>
+                    </div>
+                    <span style="font-size:12px;color:${barColor};font-weight:600;">${pct.toFixed(1)}%</span>
+                </div>`;
+            return `<tr>
+                <td>${escape(m.email || '(unknown)')}</td>
+                <td>${escape(PLAN_LABEL[m.plan] || m.plan || '—')}</td>
+                <td>${escape(m.planStatus || '—')}</td>
+                <td>${(m.usedMin || 0).toLocaleString()}</td>
+                <td>${(m.limitMin || 0).toLocaleString()}</td>
+                <td style="min-width:140px;">${pctBar}</td>
+                <td>${m.overageEnabled ? 'ON' : 'OFF'}</td>
+                <td>${(m.overageBalMin || 0).toLocaleString()}</td>
+                <td style="white-space:nowrap;color:var(--fg-secondary);font-size:12px;">${escape((m.periodEnd || '').slice(0,10) || '—')}</td>
+            </tr>`;
+        }).join('');
+
+    // recording_jobs status 분포
+    const byStatus = jobsStats.byStatus || {};
+    const statusEntries = Object.entries(byStatus);
+    statsJobsStatusTbody.innerHTML = statusEntries.length === 0
+        ? `<tr><td colspan="2" style="text-align:center;color:var(--fg-tertiary);padding:24px;">데이터 없음</td></tr>`
+        : statusEntries.map(([k, v]) => `<tr>
+            <td>${escape(STATUS_LABEL_JOBS[k] || k)} <span style="color:var(--fg-tertiary);font-size:11px;">(${escape(k)})</span></td>
+            <td>${(Number(v) || 0).toLocaleString()}</td>
+        </tr>`).join('');
+
+    // AI provider 사용량
+    const providerEntries = Object.entries(providerUsage);
+    statsProvidersTbody.innerHTML = providerEntries.length === 0
+        ? `<tr><td colspan="2" style="text-align:center;color:var(--fg-tertiary);padding:24px;">데이터 없음</td></tr>`
+        : providerEntries.map(([k, v]) => `<tr>
+            <td>${escape(k)}</td>
+            <td>${(Number(v) || 0).toLocaleString()}</td>
+        </tr>`).join('');
+
+    // 자동충전 통계
+    statsAutochargeEnabled.textContent = (autoCharge.enabledCount || 0).toLocaleString() + ' 명';
+    statsAutochargePct.textContent = `${(autoCharge.enabledPct || 0).toFixed(1)}% / 전체 ${(autoCharge.totalMembers || 0).toLocaleString()}명`;
+    statsAutochargeBalance.textContent = (autoCharge.avgBalanceMin || 0).toFixed(1) + ' 분';
+
+    // 매출 추이 chart (line)
+    if (typeof window.Chart === 'function' && statsChartRevenueCanvas) {
+        if (statsChartRevenueInstance) {
+            statsChartRevenueInstance.destroy();
+            statsChartRevenueInstance = null;
+        }
+        statsChartRevenueInstance = new window.Chart(statsChartRevenueCanvas.getContext('2d'), {
+            type: 'line',
+            data: {
+                labels: dailyRevenue.map(r => r.date),
+                datasets: [{
+                    label: '일별 매출 (원)',
+                    data: dailyRevenue.map(r => r.revenue || 0),
+                    borderColor: '#1565c0',
+                    backgroundColor: 'rgba(21,101,192,0.12)',
+                    fill: true,
+                    tension: 0.25,
+                    pointRadius: 2,
+                }],
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: {
+                    x: { ticks: { maxRotation: 0, autoSkip: true, autoSkipPadding: 8 } },
+                    y: { beginAtZero: true, ticks: { callback: (v) => fmtKrw(v) } },
+                },
+            },
+        });
+    }
 
     // 방문자 추이 chart (Chart.js)
     if (typeof window.Chart === 'function' && statsChartCanvas) {
