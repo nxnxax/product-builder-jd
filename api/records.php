@@ -145,7 +145,7 @@ function normalize_resource($value) {
         'customers', 'employees',
         'auth-membership', 'auth-member', 'auth-availability',
         'auth-profile', 'account-delete', 'sms-credentials',
-        'admin-members', 'admin-stats', 'admin-logs', 'admin-settings',
+        'admin-members', 'admin-stats', 'admin-stats-range', 'admin-logs', 'admin-settings',
         'admin-bootstrap', 'admin-cleanup-orphans',
         'ledger-groups', 'ledger-records', 'ledger-records-bulk',
         'mobile-tokens',
@@ -3065,6 +3065,156 @@ try {
         }
 
         respond(['ok' => true, 'stats' => $stats]);
+    }
+
+    /* 사장님 2026-05-24 — 관리자 통계 페이지 (admin.html) 데이터 endpoint.
+     * date range 받아서 일별 breakdown 으로 5개 지표 반환:
+     *   visitors / pageviews / newPayments / cancelledSubs / summaryViews / autoConfirms
+     * + referrer host top 10 합계.
+     * GET /api/records.php?resource=admin-stats-range&from=YYYY-MM-DD&to=YYYY-MM-DD
+     */
+    if ($resource === 'admin-stats-range') {
+        enforce_admin($pdo, $authUser);
+        if ($method !== 'GET') respond(['ok' => false, 'error' => '지원하지 않는 요청 방식입니다.'], 405);
+
+        $from = trim((string)($_GET['from'] ?? ''));
+        $to   = trim((string)($_GET['to']   ?? ''));
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $from)) $from = date('Y-m-d', strtotime('-13 day'));
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $to))   $to   = date('Y-m-d');
+        if ($from > $to) { $tmp = $from; $from = $to; $to = $tmp; }
+        // 최대 365일 제한 (DoS 방지)
+        $fromTs = strtotime($from . ' 00:00:00');
+        $toTs   = strtotime($to   . ' 23:59:59');
+        if (($toTs - $fromTs) > 366 * 86400) {
+            respond(['ok' => false, 'error' => '최대 365일 범위까지만 조회 가능합니다.'], 400);
+        }
+
+        // 일별 빈 buckets 미리 생성
+        $daily = [];
+        for ($t = $fromTs; $t <= $toTs; $t += 86400) {
+            $d = date('Y-m-d', $t);
+            $daily[$d] = [
+                'date' => $d,
+                'visitors' => 0,
+                'pageviews' => 0,
+                'newPayments' => 0,
+                'cancelledSubs' => 0,
+                'summaryViews' => 0,
+                'autoConfirms' => 0,
+            ];
+        }
+
+        // ── 방문자 / pageview (page_views, is_bot=0) ──
+        try {
+            $stmt = $pdo->prepare("SELECT DATE(created_at) AS d,
+                       COUNT(DISTINCT session_id) AS visitors,
+                       COUNT(*) AS pageviews
+                FROM page_views
+                WHERE is_bot=0 AND created_at BETWEEN :a AND :b
+                GROUP BY DATE(created_at)");
+            $stmt->execute([':a' => $from . ' 00:00:00', ':b' => $to . ' 23:59:59']);
+            foreach ($stmt as $r) {
+                $d = $r['d'];
+                if (isset($daily[$d])) {
+                    $daily[$d]['visitors']  = (int)$r['visitors'];
+                    $daily[$d]['pageviews'] = (int)$r['pageviews'];
+                }
+            }
+        } catch (Throwable $e) { /* table 없을 수 있음 (첫 deploy) */ }
+
+        // ── 유입경로 — referrer_host 상위 10 ──
+        $referrers = [];
+        try {
+            $stmt = $pdo->prepare("SELECT
+                    CASE
+                        WHEN utm_source <> '' THEN utm_source
+                        WHEN referrer_host <> '' THEN referrer_host
+                        ELSE '(direct)'
+                    END AS source,
+                    COUNT(*) AS c
+                FROM page_views
+                WHERE is_bot=0 AND created_at BETWEEN :a AND :b
+                GROUP BY source
+                ORDER BY c DESC LIMIT 10");
+            $stmt->execute([':a' => $from . ' 00:00:00', ':b' => $to . ' 23:59:59']);
+            foreach ($stmt as $r) $referrers[] = ['source' => (string)$r['source'], 'count' => (int)$r['c']];
+        } catch (Throwable $e) {}
+
+        // ── 신규결제 — payments status='paid' (or completed) per day ──
+        try {
+            $stmt = $pdo->prepare("SELECT DATE(created_at) AS d, COUNT(*) AS c
+                FROM payments
+                WHERE status IN ('paid','PAID','completed','success')
+                  AND created_at BETWEEN :a AND :b
+                GROUP BY DATE(created_at)");
+            $stmt->execute([':a' => $from . ' 00:00:00', ':b' => $to . ' 23:59:59']);
+            foreach ($stmt as $r) {
+                $d = $r['d'];
+                if (isset($daily[$d])) $daily[$d]['newPayments'] = (int)$r['c'];
+            }
+        } catch (Throwable $e) {}
+
+        // ── 구독취소 — subscriptions cancelled_at OR status='cancelled' ──
+        // (스키마 변형 대비 — cancelled_at 컬럼 우선, 없으면 status 패턴)
+        try {
+            $hasCancelledAt = false;
+            try {
+                $check = $pdo->query("SHOW COLUMNS FROM subscriptions LIKE 'cancelled_at'");
+                $hasCancelledAt = (bool)$check->fetch();
+            } catch (Throwable $e) {}
+            if ($hasCancelledAt) {
+                $stmt = $pdo->prepare("SELECT DATE(cancelled_at) AS d, COUNT(*) AS c
+                    FROM subscriptions
+                    WHERE cancelled_at IS NOT NULL
+                      AND cancelled_at BETWEEN :a AND :b
+                    GROUP BY DATE(cancelled_at)");
+            } else {
+                $stmt = $pdo->prepare("SELECT DATE(updated_at) AS d, COUNT(*) AS c
+                    FROM subscriptions
+                    WHERE status IN ('cancelled','canceled','CANCELLED')
+                      AND updated_at BETWEEN :a AND :b
+                    GROUP BY DATE(updated_at)");
+            }
+            $stmt->execute([':a' => $from . ' 00:00:00', ':b' => $to . ' 23:59:59']);
+            foreach ($stmt as $r) {
+                $d = $r['d'];
+                if (isset($daily[$d])) $daily[$d]['cancelledSubs'] = (int)$r['c'];
+            }
+        } catch (Throwable $e) {}
+
+        // ── 요약보기 (auto_confirm=0) + 양식으로 전송 (auto_confirm=1) ──
+        // trigger_summarize 호출 시점 = status 가 audio_pending → queued/processing 으로 전환되는 시점.
+        // 안전한 기준: recording_jobs.created_at (job 생성 시각). started_at 으로 측정도 가능하나 NULL 있음.
+        try {
+            $stmt = $pdo->prepare("SELECT DATE(created_at) AS d,
+                       SUM(CASE WHEN auto_confirm=0 THEN 1 ELSE 0 END) AS s0,
+                       SUM(CASE WHEN auto_confirm=1 THEN 1 ELSE 0 END) AS s1
+                FROM recording_jobs
+                WHERE created_at BETWEEN :a AND :b
+                GROUP BY DATE(created_at)");
+            $stmt->execute([':a' => $from . ' 00:00:00', ':b' => $to . ' 23:59:59']);
+            foreach ($stmt as $r) {
+                $d = $r['d'];
+                if (isset($daily[$d])) {
+                    $daily[$d]['summaryViews'] = (int)$r['s0'];
+                    $daily[$d]['autoConfirms'] = (int)$r['s1'];
+                }
+            }
+        } catch (Throwable $e) {}
+
+        // 합계 (요약 카드용)
+        $totals = ['visitors'=>0,'pageviews'=>0,'newPayments'=>0,'cancelledSubs'=>0,'summaryViews'=>0,'autoConfirms'=>0];
+        foreach ($daily as $row) {
+            foreach ($totals as $k => $_) $totals[$k] += $row[$k];
+        }
+
+        respond([
+            'ok' => true,
+            'range' => ['from' => $from, 'to' => $to],
+            'totals' => $totals,
+            'daily' => array_values($daily),
+            'referrers' => $referrers,
+        ]);
     }
 
     if ($resource === 'admin-logs') {

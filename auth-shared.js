@@ -1328,7 +1328,49 @@ export async function bootApp(opts) {
     if (opts?.requireAdmin && !requireAdmin()) return false;
     await refreshAppHeader();
     try { setupPlaceholderMasker(); } catch {}
+    try { tryLogPageview(); } catch {}
     return true;
+}
+
+/* 사장님 2026-05-24 — 관리자 통계용 pageview 트래킹.
+ * fire-and-forget POST. 응답 받아도 무시 / 실패해도 사용자 영향 0.
+ * session_id 는 sessionStorage 1회 발급 (브라우저 탭 단위). */
+let _pageviewSent = false;
+function tryLogPageview() {
+    if (_pageviewSent) return;
+    if (typeof window === 'undefined' || typeof document === 'undefined') return;
+    _pageviewSent = true;
+    let sid = '';
+    try {
+        sid = sessionStorage.getItem('erp.pvSid') || '';
+        if (!sid) {
+            sid = (crypto?.randomUUID?.() || (Date.now().toString(36) + Math.random().toString(36).slice(2, 10)));
+            sessionStorage.setItem('erp.pvSid', sid);
+        }
+    } catch {}
+    const params = new URLSearchParams(location.search || '');
+    const payload = {
+        path: location.pathname || '/',
+        referrer: document.referrer || '',
+        utm_source: params.get('utm_source') || '',
+        utm_medium: params.get('utm_medium') || '',
+        utm_campaign: params.get('utm_campaign') || '',
+        session_id: sid,
+        owner_email: (currentSession?.user?.email || ''),
+    };
+    try {
+        const blob = new Blob([JSON.stringify(payload)], { type: 'application/json' });
+        if (navigator.sendBeacon) {
+            navigator.sendBeacon('/pageview.php', blob);
+        } else {
+            fetch('/pageview.php', {
+                method: 'POST',
+                body: JSON.stringify(payload),
+                headers: { 'Content-Type': 'application/json' },
+                keepalive: true,
+            }).catch(() => {});
+        }
+    } catch {}
 }
 
 /* 통화 녹취 처리 중 placeholder text ("AI 분석 중", "처리중...") 를 로딩 dots 로 가림.

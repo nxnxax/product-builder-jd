@@ -356,6 +356,151 @@ async function loadStats() {
     }
 }
 
+/* ── 사장님 2026-05-24 — 관리자 통계 탭 (기간 검색) ── */
+const statsFromInput = document.getElementById('stats-from');
+const statsToInput   = document.getElementById('stats-to');
+const statsApplyBtn  = document.getElementById('stats-apply');
+const statsRangeLabel = document.getElementById('stats-range-label');
+const statsKpiVisitors  = document.getElementById('stats-kpi-visitors');
+const statsKpiPageviews = document.getElementById('stats-kpi-pageviews');
+const statsKpiPayments  = document.getElementById('stats-kpi-payments');
+const statsKpiCancels   = document.getElementById('stats-kpi-cancels');
+const statsKpiUsage     = document.getElementById('stats-kpi-usage');
+const statsReferrersTbody = document.getElementById('stats-referrers');
+const statsDailyTbody     = document.getElementById('stats-daily');
+const statsChartCanvas    = document.getElementById('stats-chart-visitors');
+
+let statsChartInstance = null;
+let statsLoaded = false;
+
+function fmtDateInput(d) {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${dd}`;
+}
+
+function setStatsPreset(kind) {
+    if (!statsFromInput || !statsToInput) return;
+    const today = new Date();
+    statsToInput.value = fmtDateInput(today);
+    if (kind === 'month') {
+        const first = new Date(today.getFullYear(), today.getMonth(), 1);
+        statsFromInput.value = fmtDateInput(first);
+    } else {
+        const days = parseInt(kind, 10) || 7;
+        const from = new Date(today);
+        from.setDate(from.getDate() - (days - 1));
+        statsFromInput.value = fmtDateInput(from);
+    }
+}
+
+async function loadStatsRange() {
+    if (!statsFromInput || !statsToInput) return;
+    const from = statsFromInput.value;
+    const to   = statsToInput.value;
+    if (!from || !to) {
+        statsRangeLabel.textContent = '시작/종료 날짜를 모두 선택하세요.';
+        return;
+    }
+    statsRangeLabel.textContent = '불러오는 중…';
+    statsApplyBtn.disabled = true;
+    try {
+        const payload = await apiRequest('admin-stats-range', {
+            query: `from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
+        });
+        renderStatsRange(payload);
+    } catch (e) {
+        statsRangeLabel.textContent = e.message || '통계 로드 실패';
+    } finally {
+        statsApplyBtn.disabled = false;
+    }
+}
+
+function renderStatsRange(payload) {
+    const totals = payload?.totals || {};
+    const daily = Array.isArray(payload?.daily) ? payload.daily : [];
+    const referrers = Array.isArray(payload?.referrers) ? payload.referrers : [];
+    const range = payload?.range || {};
+    statsRangeLabel.textContent = `${range.from} ~ ${range.to} · 총 ${daily.length}일`;
+
+    statsKpiVisitors.textContent  = (totals.visitors  ?? 0).toLocaleString();
+    statsKpiPageviews.textContent = `페이지뷰 ${(totals.pageviews ?? 0).toLocaleString()}`;
+    statsKpiPayments.textContent  = (totals.newPayments   ?? 0).toLocaleString();
+    statsKpiCancels.textContent   = (totals.cancelledSubs ?? 0).toLocaleString();
+    statsKpiUsage.textContent     = `${(totals.summaryViews ?? 0).toLocaleString()} / ${(totals.autoConfirms ?? 0).toLocaleString()}`;
+
+    // 일별 표
+    statsDailyTbody.innerHTML = daily.length === 0
+        ? `<tr><td colspan="7" style="text-align:center;color:var(--fg-tertiary);padding:24px;">데이터 없음</td></tr>`
+        : daily.map(r => `<tr>
+            <td>${escape(r.date)}</td>
+            <td>${(r.visitors || 0).toLocaleString()}</td>
+            <td>${(r.pageviews || 0).toLocaleString()}</td>
+            <td>${(r.newPayments || 0).toLocaleString()}</td>
+            <td>${(r.cancelledSubs || 0).toLocaleString()}</td>
+            <td>${(r.summaryViews || 0).toLocaleString()}</td>
+            <td>${(r.autoConfirms || 0).toLocaleString()}</td>
+        </tr>`).join('');
+
+    // 유입경로 표
+    statsReferrersTbody.innerHTML = referrers.length === 0
+        ? `<tr><td colspan="2" style="text-align:center;color:var(--fg-tertiary);padding:24px;">데이터 없음</td></tr>`
+        : referrers.map(r => `<tr>
+            <td>${escape(r.source)}</td>
+            <td>${(r.count || 0).toLocaleString()}</td>
+        </tr>`).join('');
+
+    // 방문자 추이 chart (Chart.js)
+    if (typeof window.Chart === 'function' && statsChartCanvas) {
+        if (statsChartInstance) {
+            statsChartInstance.destroy();
+            statsChartInstance = null;
+        }
+        statsChartInstance = new window.Chart(statsChartCanvas.getContext('2d'), {
+            type: 'bar',
+            data: {
+                labels: daily.map(r => r.date),
+                datasets: [{
+                    label: '방문자',
+                    data: daily.map(r => r.visitors || 0),
+                    backgroundColor: 'rgba(200, 54, 44, 0.75)',
+                    borderRadius: 4,
+                }],
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: {
+                    x: { ticks: { maxRotation: 0, autoSkip: true, autoSkipPadding: 8 } },
+                    y: { beginAtZero: true, ticks: { precision: 0 } },
+                },
+            },
+        });
+    }
+}
+
+if (statsApplyBtn) {
+    statsApplyBtn.addEventListener('click', loadStatsRange);
+    document.querySelectorAll('[data-stats-preset]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            setStatsPreset(btn.dataset.statsPreset);
+            loadStatsRange();
+        });
+    });
+    // 통계 탭 처음 진입 시 자동 로드 (최근 30일 default)
+    const statsTabBtn = document.querySelector('.tab[data-tab="stats"]');
+    if (statsTabBtn) {
+        statsTabBtn.addEventListener('click', () => {
+            if (statsLoaded) return;
+            statsLoaded = true;
+            setStatsPreset('30');
+            loadStatsRange();
+        });
+    }
+}
+
 const cleanupBtn = document.getElementById('cleanup-orphans-btn');
 const cleanupMessage = document.getElementById('cleanup-message');
 
