@@ -879,16 +879,25 @@ function renderContentWithTranscriptButtons(text, rowData) {
     while ((m = re.exec(src)) !== null) {
         headers.push({ index: m.index, end: m.index + m[0].length, ts: m[1], round: m[2] });
     }
+    // 사장님 2026-05-24 — 회차 ↔ customer_log_id 자물쇠 매핑 (server data_json.round_log_ids).
+    // 회차 카드 ↔ transcript 영구 결합 → timestamp 매칭 실패해도 다른 회차 transcript 와 혼선 차단.
+    const roundLogIds = (rowData && rowData.round_log_ids && typeof rowData.round_log_ids === 'object')
+        ? rowData.round_log_ids : {};
+    const cidFor = (round) => {
+        const v = roundLogIds[String(round)] || roundLogIds[round];
+        return typeof v === 'string' && v ? v : '';
+    };
     if (headers.length === 0) {
         // 옛 1회차 데이터 — 헤더 없이 본문만. fake header 생성해서 전문보기 버튼 노출.
         const fallbackDate = (rowData && (rowData.date || rowData.consult_at)) || '';
         const round = (rowData && rowData.call_count) ? String(rowData.call_count) : '1';
         const tsForMatch = fallbackDate;
+        const cidAttr = cidFor(round) ? ` data-customer-log-id="${escapeAttr(cidFor(round))}"` : '';
         return `<div class="row-detail-textarea content-rounds">
             <div class="content-round-block" data-round="${escapeAttr(round)}">
                 <div class="content-round-body">${fallbackDate ? `📞 ${escapeHtml(fallbackDate)} 통화 (${escapeHtml(round)}회차)\n\n` : ''}${escapeHtml(src)}</div>
                 <div class="content-round-foot">
-                    <button type="button" class="content-transcript-btn" data-transcript-ts="${escapeAttr(tsForMatch)}" data-transcript-round="${escapeAttr(round)}" title="대화내용 전문보기">
+                    <button type="button" class="content-transcript-btn" data-transcript-ts="${escapeAttr(tsForMatch)}" data-transcript-round="${escapeAttr(round)}"${cidAttr} title="대화내용 전문보기">
                         <span class="ico">📄</span><span>전문보기</span>
                     </button>
                 </div>
@@ -910,11 +919,12 @@ function renderContentWithTranscriptButtons(text, rowData) {
                     <div class="content-round-body">${escapeHtml(block)}</div>
                 </div>`;
         } else {
+            const cidAttr = cidFor(h.round) ? ` data-customer-log-id="${escapeAttr(cidFor(h.round))}"` : '';
             html += `
                 <div class="content-round-block" data-round="${escapeAttr(h.round)}">
                     <div class="content-round-body">${escapeHtml(block)}</div>
                     <div class="content-round-foot">
-                        <button type="button" class="content-transcript-btn" data-transcript-ts="${escapeAttr(h.ts)}" data-transcript-round="${escapeAttr(h.round)}" title="대화내용 전문보기">
+                        <button type="button" class="content-transcript-btn" data-transcript-ts="${escapeAttr(h.ts)}" data-transcript-round="${escapeAttr(h.round)}"${cidAttr} title="대화내용 전문보기">
                             <span class="ico">📄</span><span>전문보기</span>
                         </button>
                     </div>
@@ -926,6 +936,8 @@ function renderContentWithTranscriptButtons(text, rowData) {
 
 /* phone 별 customer_log transcript 캐시 (모달 1회 fetch). */
 const _transcriptCacheByPhone = new Map();
+/* id 별 단건 캐시 — 자물쇠 모드 (사장님 2026-05-24). */
+const _transcriptCacheById = new Map();
 
 async function fetchTranscriptsByPhone(phone) {
     if (!phone) return [];
@@ -941,10 +953,26 @@ async function fetchTranscriptsByPhone(phone) {
     }
 }
 
-/* timestamp 와 가장 가까운 transcript row 찾기. 매칭 우선순위:
- *   1) 1분 이내 정확 매칭
- *   2) 같은 날짜(YYYY-MM-DD) 매칭 — 옛 데이터의 헤더가 date 만인 케이스
- *   3) items 1건만 있으면 그것 반환 (1회차 fallback) */
+/* 사장님 2026-05-24 — id 직접 조회 (회차 자물쇠).
+ * data-customer-log-id 가 있으면 phone 매칭 없이 customer_log 단건 직접 조회 → 혼선 0%. */
+async function fetchTranscriptById(cid) {
+    if (!cid) return null;
+    if (_transcriptCacheById.has(cid)) return _transcriptCacheById.get(cid);
+    try {
+        const r = await api('customer-log', { query: 'action=get_transcript_by_id&id=' + encodeURIComponent(cid) });
+        const item = r && r.item && typeof r.item === 'object' ? r.item : null;
+        _transcriptCacheById.set(cid, item);
+        return item;
+    } catch (e) {
+        console.warn('[transcript by id] fetch 실패', e);
+        return null;
+    }
+}
+
+/* timestamp 와 가장 가까운 transcript row 찾기 (legacy fallback — round_log_ids 없는 옛 ledger row 용).
+ * 사장님 2026-05-24 강화 — 1분 cap + 같은 날짜 find() 첫 row 반환 패턴 제거.
+ * 항상 시간 차 최소인 best row 반환. items 비어있으면 null.
+ * (회차 자물쇠 모드면 이 함수 안 탐. 옛 데이터에만 적용.) */
 function _findTranscriptByTimestamp(items, ts) {
     if (!items.length) return null;
     const tsStr = String(ts || '');
@@ -957,15 +985,8 @@ function _findTranscriptByTimestamp(items, ts) {
             const diff = Math.abs(itMs - targetMs);
             if (diff < bestDiff) { bestDiff = diff; best = it; }
         }
-        if (bestDiff <= 60_000) return best;
-        // 같은 날짜 매칭 (옛 데이터 — 헤더 timestamp 가 date 만인 케이스)
-        const dateOnly = tsStr.slice(0, 10);
-        if (dateOnly) {
-            const sameDate = items.find(it => String(it.consult_at).slice(0, 10) === dateOnly);
-            if (sameDate) return sameDate;
-        }
+        if (best) return best;
     }
-    // 마지막 fallback — items 1건뿐이면 그것 반환
     if (items.length === 1) return items[0];
     return null;
 }
@@ -977,19 +998,27 @@ function bindTranscriptButtons(rootEl, phone) {
             e.stopPropagation();
             const ts = btn.dataset.transcriptTs;
             const round = btn.dataset.transcriptRound || '';
+            const cid = btn.dataset.customerLogId || '';
             btn.disabled = true;
             const origText = btn.textContent;
             btn.textContent = '⏳ 불러오는 중...';
-            const items = await fetchTranscriptsByPhone(phone);
-            const match = _findTranscriptByTimestamp(items, ts);
+            let transcript = '';
+            let aiModel = '';
+            // 사장님 2026-05-24 — 자물쇠 모드: customer_log_id 가 있으면 id 로 직접 조회.
+            // 다른 회차 transcript 와 혼선 0%. 없으면 phone+ts 매칭 (옛 데이터 호환).
+            if (cid) {
+                const item = await fetchTranscriptById(cid);
+                transcript = item?.transcript || '';
+                aiModel = item?.ai_model || '';
+            } else {
+                const items = await fetchTranscriptsByPhone(phone);
+                const match = _findTranscriptByTimestamp(items, ts);
+                transcript = match?.transcript || '';
+                aiModel = match?.ai_model || '';
+            }
             btn.disabled = false;
             btn.textContent = origText;
-            openTranscriptModal({
-                ts,
-                round,
-                transcript: match?.transcript || '',
-                aiModel: match?.ai_model || '',
-            });
+            openTranscriptModal({ ts, round, transcript, aiModel });
         });
     });
 }

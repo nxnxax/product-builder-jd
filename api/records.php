@@ -3917,6 +3917,39 @@ try {
             respond(['status' => 'ok', 'items' => $items, 'count' => count($items)]);
         }
 
+        // ─── GET_TRANSCRIPT_BY_ID (사장님 2026-05-24 — 회차 ↔ transcript 자물쇠 결합) ───
+        // GET /records.php?resource=customer-log&action=get_transcript_by_id&id=<customer_log_id>
+        // customer_log.id 로 직접 조회 → timestamp 매칭 무관, 다른 회차 transcript 와 혼선 차단.
+        if ($action === 'get_transcript_by_id') {
+            ensure_customer_log_table($pdo);
+            $clId = trim((string)($body['id'] ?? $_GET['id'] ?? ''));
+            if ($clId === '') respond(['status' => 'error', 'code' => 'invalid_request', 'message' => 'id 필요.'], 400);
+            try {
+                $stmt = $pdo->prepare('SELECT id, consult_at, transcript, ai_model
+                    FROM customer_log
+                    WHERE owner_email = :o AND id = :id LIMIT 1');
+                $stmt->execute([':o' => $owner, ':id' => $clId]);
+                $row = $stmt->fetch();
+            } catch (Throwable $e) {
+                respond(['status' => 'error', 'code' => 'upstream_failed', 'message' => '조회 실패.'], 503);
+            }
+            if (!$row) respond(['status' => 'error', 'code' => 'not_found', 'message' => 'customer_log 없음.'], 404);
+            $tr = '';
+            if (!empty($row['transcript'])) {
+                $dec = youngman_decrypt($row['transcript']);
+                if (is_string($dec)) $tr = $dec;
+            }
+            respond([
+                'status' => 'ok',
+                'item' => [
+                    'id'         => (string)$row['id'],
+                    'consult_at' => (string)($row['consult_at'] ?? ''),
+                    'transcript' => $tr,
+                    'ai_model'   => (string)($row['ai_model'] ?? ''),
+                ],
+            ]);
+        }
+
         // ─── LIST_UNREVIEWED (사장님 2026-05-23 — "미확인 요약" 페이지 부활) ───
         // GET /records.php?resource=customer-log&action=list_unreviewed
         // customer_log 로 confirm 안 됐고 폐기도 안 된 모든 recording_jobs.
@@ -4573,6 +4606,13 @@ try {
                 $curDataR['phone']    = $clPhoneR !== '' ? $clPhoneR : (string)($curDataR['phone'] ?? '');
                 $curDataR['content']  = $mergedContentR;
                 if (!isset($curDataR['managed'])) $curDataR['managed'] = true;
+                // 사장님 2026-05-24 — 회차별 customer_log_id 자물쇠 매핑.
+                // refresh 는 latest 회차 == callCountR 의 placeholder cid 가 실제 값으로 갱신되는 시점.
+                // 옛 row (round_log_ids 키 없음) 에도 이번 회차 mapping 을 backfill.
+                $existingMapR = (isset($curDataR['round_log_ids']) && is_array($curDataR['round_log_ids']))
+                    ? $curDataR['round_log_ids'] : [];
+                $existingMapR[(string)$callCountR] = (string)$cid;
+                $curDataR['round_log_ids'] = $existingMapR;
                 // 사장님 2026-05-24 — refresh 시점에도 region 갱신 (placeholder → 실제 값).
                 // schema 매칭 못 해도 'region' fallback 사용 (client DEFAULT_FIELDS 호환).
                 try {
@@ -4779,6 +4819,11 @@ try {
                 $mergedData['call_count'] = $newCallCount;
                 $mergedData['content']    = $mergedContent;
                 $mergedData['agent_memo'] = $mergedMemo;
+                // 사장님 2026-05-24 — 회차별 customer_log_id 자물쇠 매핑 누적.
+                $existingMap = (isset($existingData['round_log_ids']) && is_array($existingData['round_log_ids']))
+                    ? $existingData['round_log_ids'] : [];
+                $existingMap[(string)$newCallCount] = (string)$cid;
+                $mergedData['round_log_ids'] = $existingMap;
                 // 사장님 2026-05-24 — 지역 자동 매핑. LLM 이 추출했으면 갱신, 못 했으면 기존 값 유지.
                 // regionFieldKey 는 schema 매칭 시 그 key, 못 찾으면 'region' fallback.
                 if ($clRegion !== '') {
@@ -4852,6 +4897,9 @@ try {
                 'content'    => $firstSection,
                 'agent_memo' => $firstMemo,
                 'memo'       => '',
+                // 사장님 2026-05-24 — 회차별 customer_log_id 자물쇠 매핑.
+                // 회차 카드 ↔ transcript 영구 결합 → timestamp 매칭 실패해도 혼선 차단.
+                'round_log_ids' => [(string)$firstRound => (string)$cid],
             ];
             // 사장님 2026-05-24 — 지역 자동 매핑 (INSERT 분기). regionFieldKey 는 'region' fallback 포함.
             if ($clRegion !== '') {
