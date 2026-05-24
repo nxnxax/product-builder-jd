@@ -467,14 +467,14 @@ async function loadStatsRange() {
     }
 }
 
-const EVENT_LABEL = {
+const STATS_EVENT_LABEL = {
     signup: '가입',
     payment: '결제',
     cancel: '취소',
     summary_view: '요약보기',
     auto_confirm: '양식전송',
 };
-const EVENT_COLOR = {
+const STATS_EVENT_COLOR = {
     signup:       'background:#e8f5e9;color:#2e7d32;',
     payment:      'background:#e3f2fd;color:#1565c0;',
     cancel:       'background:#fbe9e7;color:#c62828;',
@@ -482,9 +482,9 @@ const EVENT_COLOR = {
     auto_confirm: 'background:#f3e5f5;color:#6a1b9a;',
 };
 
-function badge(type) {
-    const style = EVENT_COLOR[type] || 'background:#eee;color:#444;';
-    return `<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11.5px;font-weight:600;${style}">${escape(EVENT_LABEL[type] || type)}</span>`;
+function statsBadge(type) {
+    const style = STATS_EVENT_COLOR[type] || 'background:#eee;color:#444;';
+    return `<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11.5px;font-weight:600;${style}">${escape(STATS_EVENT_LABEL[type] || type)}</span>`;
 }
 
 function renderEventsTable() {
@@ -493,7 +493,7 @@ function renderEventsTable() {
         ? `<tr><td colspan="4" style="text-align:center;color:var(--fg-tertiary);padding:24px;">데이터 없음</td></tr>`
         : list.map(e => `<tr>
             <td style="white-space:nowrap;">${escape((e.occurred_at || '').replace('T',' ').slice(0,19))}</td>
-            <td>${badge(e.type)}</td>
+<td>${statsBadge(e.type)}</td>
             <td>${escape(e.email || '(unknown)')}</td>
             <td style="color:var(--fg-secondary);">${escape(e.detail || '')}</td>
         </tr>`).join('');
