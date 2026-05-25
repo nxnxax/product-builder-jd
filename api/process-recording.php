@@ -232,21 +232,32 @@ function customer_log_free_quota(): int { return 5; }
 function build_plan_info_for_response(PDO $pdo, string $ownerEmail, bool $isAdminUser): array {
     $plan = 'free';
     $freeUsed = 0;
+    $rowFound = false;
     try {
-        $ps = $pdo->prepare('SELECT plan, free_summaries_used FROM members WHERE email = :e LIMIT 1');
+        // 사장님 2026-05-25 — case-insensitive email match. 옛 가입자의 mixed-case email 호환.
+        $ps = $pdo->prepare('SELECT plan, free_summaries_used FROM members WHERE LOWER(email) = LOWER(:e) LIMIT 1');
         $ps->execute([':e' => $ownerEmail]);
         $row = $ps->fetch();
         if ($row) {
+            $rowFound = true;
             $plan = (string)($row['plan'] ?? 'free');
             if ($plan === 'trialing') $plan = 'free';
             $freeUsed = (int)($row['free_summaries_used'] ?? 0);
         }
-    } catch (Throwable $e) { /* plan 컬럼 없음 — 'free' default */ }
+    } catch (Throwable $e) {
+        error_log('[build_plan_info] SELECT fail owner=' . $ownerEmail . ' err=' . $e->getMessage());
+    }
+    $requiresSubscription = ($plan === 'free' && !$isAdminUser);
+    if (!$rowFound) {
+        // member row mismatch — 진단 log. requires_subscription=true (안전 default) 로 처리되지만
+        // 정상 가입자가 이 분기 타면 회귀 위험.
+        error_log('[build_plan_info] member row not found owner=' . $ownerEmail . ' isAdmin=' . ($isAdminUser ? '1' : '0'));
+    }
     return [
         'plan' => $plan,
         'free_summaries_used' => $freeUsed,
         'free_quota' => customer_log_free_quota(),
-        'requires_subscription' => ($plan === 'free' && !$isAdminUser),
+        'requires_subscription' => $requiresSubscription,
     ];
 }
 
