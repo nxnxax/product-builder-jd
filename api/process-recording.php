@@ -649,7 +649,11 @@ $_originalModeRequested = strtolower(trim((string)($body['mode'] ?? '')));   // 
 
 if ($storagePath === '') jerror('invalid_audio', 'storage_path 누락.', 400);
 if ($clientReqId === '') jerror('invalid_audio', 'client_request_id 누락.', 400);
-if (strlen($clientReqId) > 64) jerror('invalid_audio', 'client_request_id 너무 김.', 400);
+if (strlen($clientReqId) > 64) {
+    // 사장님 2026-05-25 — ARS 자동안내 통화 등 native 가 긴 ID (파일명 기반 한글 UTF-8) 보내는 케이스.
+    // SHA-256 hash (정확히 64 hex) 로 자동 대체. 같은 입력 = 같은 hash → idempotency 보장.
+    $clientReqId = hash('sha256', $clientReqId);
+}
 
 $consultAt = '';
 if ($recordedAt !== '') {
