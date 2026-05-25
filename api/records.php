@@ -2623,6 +2623,9 @@ try {
 
         if ($method === 'GET') {
             $rec = fetch_member_by_email($pdo, $email);
+            // 사장님 2026-05-25 — v60 client cache refresh 용. requires_subscription flag
+            // 매 호출마다 DB latest 반영 (member row 의 plan + admin allowlist 기반).
+            $isAdminUserPf = is_admin_email($email);
             if (!$rec) {
                 respond(['ok' => true, 'profile' => [
                     'email' => $email,
@@ -2634,10 +2637,17 @@ try {
                     'createdAt' => '',
                     'updatedAt' => '',
                     'lastLoginAt' => '',
+                    'plan' => 'free',
+                    'plan_status' => 'active',
+                    'requires_subscription' => !$isAdminUserPf,  // member row 없으면 free 간주
                 ]]);
             }
             $profile = member_row_from_store($rec['store'], $rec['row']);
             $profile['email'] = $email;
+            // trialing 폐지: 옛 가입자 호환 — free 로 매핑.
+            $effectivePlanPf = strtolower((string)($profile['plan'] ?? 'free'));
+            if ($effectivePlanPf === 'trialing') $effectivePlanPf = 'free';
+            $profile['requires_subscription'] = ($effectivePlanPf === 'free' && !$isAdminUserPf);
             respond(['ok' => true, 'profile' => $profile]);
         }
 

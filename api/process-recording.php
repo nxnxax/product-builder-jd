@@ -714,6 +714,48 @@ if ($existing) {
     ]);
 }
 
+/* ========== 사장님 2026-05-25 — v60 client 옵션 A ==========
+ * 무료 사용자 (plan='free' + non-admin) request 받으면:
+ *   1. audio 파일 drop (storage_path unlink — best-effort)
+ *   2. recording_jobs INSERT skip (audio_pending row 생성 안 함)
+ *   3. 응답에 plan.requires_subscription=true 만
+ * → 사장님 미확인 요약 페이지에 무료 사용자 row 노출 안 됨 (사장님 정책 충족)
+ * client v60 명세: trigger_summarize 호출 X + outbox dismissed 마감.
+ *
+ * 매 호출마다 build_plan_info_for_response 가 DB SELECT → 결제 즉시 반영 보장.
+ */
+$isAdminUserEarly = is_admin_email_for_recording($ownerEmail);
+$planInfoEarly = build_plan_info_for_response($pdo, $ownerEmail, $isAdminUserEarly);
+if (!empty($planInfoEarly['requires_subscription'])) {
+    // audio 파일 drop — best-effort. storage_path 가 webroot 기준 상대 또는 절대.
+    try {
+        $sp = trim((string)$storagePath);
+        if ($sp !== '') {
+            $candidates = [$sp];
+            if ($sp[0] !== '/') {
+                // webroot 기준 상대 경로일 수도 — script dir 기준 시도.
+                $candidates[] = __DIR__ . '/' . $sp;
+                $candidates[] = dirname(__DIR__) . '/' . $sp;
+            }
+            foreach ($candidates as $p) {
+                if (is_file($p)) { @unlink($p); break; }
+            }
+        }
+    } catch (Throwable $e) {}
+    error_log('[process-recording] free user audio dropped — owner=' . $ownerEmail
+            . ' cri=' . substr($clientReqId, 0, 40)
+            . ' plan=' . ($planInfoEarly['plan'] ?? '?'));
+    jout([
+        'status' => 'ok',
+        'ok' => true,
+        'job_id' => null,
+        'job_status' => 'subscription_required',
+        'mode' => 'subscription_required',
+        'message' => 'AI 통화 요약은 Plus 또는 Pro 구독부터 사용 가능합니다.',
+        'plan' => $planInfoEarly,
+    ]);
+}
+
 /* ========== Phase 2 M2 — async 분기 ==========
  * customer_log idempotency check 까지 통과 (이미 처리된 결과는 없음).
  * async 모드면 recording_jobs row 생성 + 즉시 응답 + 백그라운드 처리 시작.
