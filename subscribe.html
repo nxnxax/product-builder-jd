@@ -247,10 +247,6 @@
         <div id="sub-current-display" style="display:none;"></div>
     </div>
 
-    <div id="sub-trial-banner" class="sub-trial-banner" style="display:none;">
-        🎁 <b>신규 가입 5회 무료 체험</b> 진행 중 — Plus/Pro 가입 없이도 통화 AI 요약을 5회까지 사용해 보실 수 있습니다.
-    </div>
-
     <div id="sub-content"></div>
 
     <p class="sub-fineprint">
@@ -261,7 +257,7 @@
 </main>
 
 <script type="module">
-    import { initSupabase, apiRequest, getSession, mountAppHeader, mountAppFooter } from './auth-shared.js?v=20260525-phone-otp';
+    import { initSupabase, apiRequest, getSession, mountAppHeader, mountAppFooter } from './auth-shared.js?v=20260525-welcome-modal';
 
     const PLAN_DEFS = [
         {
@@ -310,9 +306,14 @@
         },
     ];
 
-    // premium = Phase 1 legacy plan, Plus 와 동일 권한 (백엔드 마이그레이션 적용 후 사라짐).
-    const PLAN_LABEL = { free: 'Free', plus: 'Plus', pro: 'Pro', trialing: '신규 체험', premium: 'Plus' };
-    function normalizePlan(p) { return (p === 'premium') ? 'plus' : p; }
+    // premium = Phase 1 legacy plan, Plus 와 동일 권한.
+    // trialing = 옛 가입자 호환 — 사장님 2026-05-25 5회 무료체험 폐지 후 Free 와 동일 취급.
+    const PLAN_LABEL = { free: 'Free', plus: 'Plus', pro: 'Pro', trialing: 'Free', premium: 'Plus' };
+    function normalizePlan(p) {
+        if (p === 'premium') return 'plus';
+        if (p === 'trialing') return 'free';
+        return p;
+    }
 
     function formatPrice(n) {
         if (!n) return '무료';
@@ -324,11 +325,12 @@
     }
 
     function renderPlans(currentPlan, planStatus) {
-        const isTrialing = planStatus === 'trialing';
+        // 사장님 2026-05-25 — trialing 폐지: trialing 사용자도 free 로 표시.
+        const effectivePlan = (currentPlan === 'trialing') ? 'free' : currentPlan;
         const html = PLAN_DEFS.map(plan => {
             const isCurrent = (
-                (plan.key === 'free' && (currentPlan === 'free' || (isTrialing && currentPlan !== 'plus' && currentPlan !== 'pro'))) ||
-                plan.key === currentPlan
+                (plan.key === 'free' && effectivePlan === 'free') ||
+                plan.key === effectivePlan
             );
             const cardCls = ['plan-card', plan.recommended ? 'recommended' : '', isCurrent ? 'current' : ''].filter(Boolean).join(' ');
             const featuresHtml = plan.features.map(f =>
@@ -363,13 +365,10 @@
         document.getElementById('sub-content').innerHTML = `<div class="plan-grid">${html}</div>`;
 
         // 현재 plan 상단 표시
-        if (currentPlan && currentPlan !== 'free') {
+        if (effectivePlan && effectivePlan !== 'free') {
             const display = document.getElementById('sub-current-display');
             display.style.display = 'block';
-            display.innerHTML = `<span class="sub-current-pill">현재 플랜: ${escapeHtml(PLAN_LABEL[currentPlan] || currentPlan)}</span>`;
-        }
-        if (isTrialing) {
-            document.getElementById('sub-trial-banner').style.display = 'block';
+            display.innerHTML = `<span class="sub-current-pill">현재 플랜: ${escapeHtml(PLAN_LABEL[effectivePlan] || effectivePlan)}</span>`;
         }
     }
 
@@ -606,16 +605,16 @@
             renderAnon();
             return;
         }
-        let currentProfile = { email: session.user.email, plan: 'trialing', plan_status: 'trialing', name: '' };
+        let currentProfile = { email: session.user.email, plan: 'free', plan_status: 'active', name: '' };
         try {
             const res = await apiRequest('auth-profile');
             currentProfile = Object.assign(currentProfile, res?.profile || {});
-            const plan = normalizePlan((currentProfile.plan || 'trialing').toLowerCase());
-            const planStatus = (currentProfile.plan_status || 'trialing').toLowerCase();
+            const plan = normalizePlan((currentProfile.plan || 'free').toLowerCase());
+            const planStatus = (currentProfile.plan_status || 'active').toLowerCase();
             renderPlans(plan, planStatus);
         } catch (e) {
             console.warn('[subscribe] profile fetch failed', e);
-            renderPlans('trialing', 'trialing');
+            renderPlans('free', 'active');
         }
         // 결제 버튼 click handler.
         document.querySelectorAll('[data-pay-plan]').forEach(btn => {

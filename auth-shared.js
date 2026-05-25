@@ -1329,6 +1329,7 @@ export async function bootApp(opts) {
     await refreshAppHeader();
     try { setupPlaceholderMasker(); } catch {}
     try { tryLogPageview(); } catch {}
+    try { maybeShowWelcomeModal(); } catch {}   // 사장님 2026-05-25 — 첫 로그인 환영 모달
     return true;
 }
 
@@ -1818,6 +1819,85 @@ function translateAuthError(raw, fallback) {
 }
 
 /* =========================================================================
+   사장님 2026-05-25 — 환영 모달 (회원가입 최초 완료 후 첫 로그인 1회만 표시).
+   트리거: user_metadata.needs_welcome === true → openWelcomeModal()
+   닫으면 needs_welcome=false 로 갱신 → 다음 로그인부터 표시 안 됨.
+   ========================================================================= */
+function openWelcomeModal() {
+    document.querySelectorAll('[data-welcome-modal]').forEach(el => el.remove());
+
+    // CSS inject once
+    if (!document.getElementById('welcome-modal-style')) {
+        const st = document.createElement('style');
+        st.id = 'welcome-modal-style';
+        st.textContent = `
+.welcome-modal-backdrop { position:fixed; inset:0; background:rgba(0,0,0,.55); display:flex; align-items:center; justify-content:center; z-index:99999; padding:24px; }
+.welcome-modal-panel { background:#fff; border-radius:16px; max-width:420px; width:100%; padding:32px 28px; box-shadow:0 24px 60px rgba(20,14,8,.25); text-align:center; position:relative; font-family:'Pretendard',-apple-system,system-ui,sans-serif; box-sizing:border-box; }
+.welcome-modal-close { position:absolute; top:14px; right:14px; width:32px; height:32px; background:transparent; border:0; color:#4f4943; font-size:22px; cursor:pointer; line-height:1; padding:0; }
+.welcome-modal-brand { margin-bottom:18px; }
+.welcome-modal-brand img { height:34px; opacity:.9; }
+.welcome-modal-panel h2 { margin:0 0 18px; font-size:20px; font-weight:800; color:#0e0d0c; letter-spacing:-.015em; }
+.welcome-line { margin:0 0 10px; font-size:14px; line-height:1.55; color:#4f4943; font-weight:500; }
+.welcome-line.subtle { color:#8a847e; font-size:13px; margin-top:16px; margin-bottom:24px; }
+.welcome-cta { width:100%; padding:13px 18px; background:#c8362c; color:#fff; border:0; border-radius:10px; font-size:14.5px; font-weight:700; cursor:pointer; font-family:inherit; }
+.welcome-cta:hover { background:#a82d24; }
+        `;
+        document.head.appendChild(st);
+    }
+
+    const md = document.createElement('div');
+    md.dataset.welcomeModal = '1';
+    md.innerHTML = `
+        <div class="welcome-modal-backdrop">
+            <div class="welcome-modal-panel" role="dialog" aria-modal="true">
+                <button type="button" class="welcome-modal-close" aria-label="닫기">&times;</button>
+                <div class="welcome-modal-brand"><img src="logo_main.png" alt="YOUNGMAN"></div>
+                <h2>영맨 가입을 축하드립니다!</h2>
+                <p class="welcome-line">플랜을 업그레이드하여 AI 통화 요약 서비스를 시작하세요!</p>
+                <p class="welcome-line">CRM 양식 등 기타 사이트 기능은 무료입니다.</p>
+                <p class="welcome-line subtle">AI 통화 요약 플랜을 이용하시면 더욱 완성된 서비스를 누리실 수 있습니다.</p>
+                <button type="button" class="welcome-cta">요금제 보기</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(md);
+
+    async function markWelcomed() {
+        try {
+            if (supabaseClient?.auth?.updateUser) {
+                await supabaseClient.auth.updateUser({ data: { needs_welcome: false } });
+            }
+        } catch {}
+    }
+
+    md.querySelector('.welcome-modal-close').addEventListener('click', async () => {
+        await markWelcomed();
+        md.remove();
+    });
+    md.querySelector('.welcome-cta').addEventListener('click', async () => {
+        await markWelcomed();
+        md.remove();
+        try { window.location.href = 'subscribe.html'; } catch {}
+    });
+    md.querySelector('.welcome-modal-backdrop').addEventListener('click', async (e) => {
+        if (e.target.classList.contains('welcome-modal-backdrop')) {
+            await markWelcomed();
+            md.remove();
+        }
+    });
+}
+
+function maybeShowWelcomeModal() {
+    try {
+        if (!currentSession?.user) return;
+        const meta = currentSession.user.user_metadata || {};
+        if (meta.needs_welcome === true) {
+            openWelcomeModal();
+        }
+    } catch {}
+}
+
+/* =========================================================================
    서브 페이지용 통합 인증 모달 — 로그인 + 회원가입 모두 지원.
    메인 페이지(#auth-screen) 가 없는 페이지에서 같은 흐름으로 사용.
    Supabase signInWithPassword / signUp / signInWithOAuth + records.php
@@ -2250,6 +2330,7 @@ function openSharedLoginModal(initialMode = 'login') {
                         full_name: fullName, phone, nickname,
                         phone_verified: false, identity_verified: false,
                         app_registered: true, signup_method: 'email',
+                        needs_welcome: true,   // 사장님 2026-05-25 — 첫 로그인 환영 모달
                         ...consentMeta,
                     }},
                 });

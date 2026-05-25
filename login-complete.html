@@ -125,7 +125,7 @@
 
         let session = null;
         try {
-            const mod = await import('./auth-shared.js?v=20260525-phone-otp');
+            const mod = await import('./auth-shared.js?v=20260525-welcome-modal');
             const result = await mod.initSupabase().catch(() => null);
             const client = result?.client;
             if (client?.auth?.getSession) {
@@ -138,7 +138,7 @@
         if (!session) {
             await new Promise(r => setTimeout(r, 120));
             try {
-                const mod = await import('./auth-shared.js?v=20260525-phone-otp');
+                const mod = await import('./auth-shared.js?v=20260525-welcome-modal');
                 const result = await mod.initSupabase().catch(() => null);
                 if (result?.client?.auth?.getSession) {
                     const { data } = await result.client.auth.getSession();
@@ -477,7 +477,7 @@
 
                     // supabase user_metadata 갱신 (이름/닉네임/약관 동의 기록)
                     try {
-                        const mod = await import('./auth-shared.js?v=20260525-phone-otp');
+                        const mod = await import('./auth-shared.js?v=20260525-welcome-modal');
                         const result = await mod.initSupabase().catch(() => null);
                         const client = result?.client;
                         if (client?.auth?.updateUser) {
@@ -492,6 +492,7 @@
                                     marketing_opt_in: !!agreeMarketing.checked,
                                     consent_at: new Date().toISOString(),
                                     app_registered: true,
+                                    needs_welcome: true,   // 사장님 2026-05-25 — 첫 로그인 환영 모달
                                 },
                             });
                         }

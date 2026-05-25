@@ -845,8 +845,8 @@ function member_row_from_store($store, $row) {
         'provider' => $providerCol ? ($row[$providerCol] ?? 'email') : 'email',
         'status' => $status === '' ? 'active' : strtolower($status),
         'role' => $role === '' ? 'member' : strtolower($role),
-        'plan' => $planCol ? (string)($row[$planCol] ?? 'trialing') : 'trialing',
-        'plan_status' => $planStatusCol ? (string)($row[$planStatusCol] ?? 'trialing') : 'trialing',
+        'plan' => $planCol ? ((function($p){ return $p === 'trialing' ? 'free' : $p; })((string)($row[$planCol] ?? 'free'))) : 'free',
+        'plan_status' => $planStatusCol ? ((function($s){ return $s === 'trialing' ? 'active' : $s; })((string)($row[$planStatusCol] ?? 'active'))) : 'active',
         // 레거시 회 단위
         'summary_used' => $summaryUsedCol ? (int)($row[$summaryUsedCol] ?? 0) : 0,
         'summary_limit' => $summaryLimitCol ? ($row[$summaryLimitCol] === null ? null : (int)$row[$summaryLimitCol]) : null,
@@ -3028,7 +3028,8 @@ try {
             $newPlanVal = null;
             if ($planCol && isset($body['plan'])) {
                 $planVal = strtolower(trim((string)$body['plan']));
-                if (!in_array($planVal, ['trialing', 'free', 'plus', 'pro'], true)) {
+                // 사장님 2026-05-25 — trialing 폐지: 허용 list 에서 제외.
+                if (!in_array($planVal, ['free', 'plus', 'pro'], true)) {
                     respond(['ok' => false, 'error' => '허용되지 않는 plan 값입니다.'], 400);
                 }
                 $assignments[] = quote_identifier($planCol) . ' = :plan';
@@ -3037,13 +3038,12 @@ try {
                 $newPlanVal = $planVal;
             }
             // plan 변경 시 summary_limit 도 자동 동기화 (사용자가 명시적으로 summary_limit 안 보낸 경우).
-            // plus=20 / pro=NULL(무제한) / trialing=5 / free=0.
+            // plus=20 / pro=NULL(무제한) / free=0.
             if ($planChanged && $summaryLimitCol && !isset($body['summary_limit'])) {
                 $autoLimit = null;
                 switch ($newPlanVal) {
                     case 'pro':       $autoLimit = null; break;
                     case 'plus':      $autoLimit = 20;   break;
-                    case 'trialing':  $autoLimit = 5;    break;
                     case 'free':      $autoLimit = 0;    break;
                 }
                 if ($autoLimit === null) {
@@ -3060,7 +3060,6 @@ try {
                 switch ($newPlanVal) {
                     case 'pro':       $autoLimitMin = 1000; break;
                     case 'plus':      $autoLimitMin = 300;  break;
-                    case 'trialing':  $autoLimitMin = 30;   break;
                     case 'free':      $autoLimitMin = 30;   break;
                 }
                 $assignments[] = quote_identifier($summaryLimitMinutesCol) . ' = :auto_limit_min';
@@ -3097,7 +3096,8 @@ try {
             $planStatusCol = first_existing_column($cols, ['plan_status']);
             if ($planStatusCol && isset($body['plan_status'])) {
                 $psVal = strtolower(trim((string)$body['plan_status']));
-                if (!in_array($psVal, ['trialing', 'active', 'past_due', 'cancelled'], true)) {
+                // 사장님 2026-05-25 — trialing 폐지.
+                if (!in_array($psVal, ['active', 'past_due', 'cancelled'], true)) {
                     respond(['ok' => false, 'error' => '허용되지 않는 plan_status 값입니다.'], 400);
                 }
                 $assignments[] = quote_identifier($planStatusCol) . ' = :plan_status';

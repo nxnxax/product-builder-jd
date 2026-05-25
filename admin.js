@@ -125,16 +125,17 @@ function renderMembers() {
     }
     membersEmpty.classList.add('hidden');
 
+    // 사장님 2026-05-25 — trialing 폐지. 옛 가입자 호환만 위해 Free 와 동일 매핑.
     const PLAN_DISPLAY = {
         free: { label: 'Free', cls: '' },
-        trialing: { label: '체험', cls: 'pill-trialing' },
+        trialing: { label: 'Free', cls: '' },
         plus: { label: 'Plus', cls: 'pill-plus' },
         premium: { label: 'Plus', cls: 'pill-plus' },
         pro: { label: 'Pro', cls: 'pill-pro' },
     };
     const PLAN_STATUS_DISPLAY = {
         active: { label: '활성', cls: 'active' },
-        trialing: { label: '체험', cls: 'pill-trialing' },
+        trialing: { label: '활성', cls: 'active' },
         past_due: { label: '결제실패', cls: 'suspended' },
         cancelled: { label: '해지', cls: '' },
     };
@@ -193,12 +194,14 @@ function openMemberEdit(email) {
     memberEmailDisplay.textContent = member.email;
     memberRoleInput.value = member.role === 'admin' || member.role === 'owner' ? 'admin' : 'member';
     memberStatusInput.value = ['active', 'suspended', 'banned'].includes(member.status) ? member.status : 'active';
-    // 구독 결제 필드 — 응답에 있으면 채움, 없으면 default.
+    // 구독 결제 필드 — 응답에 있으면 채움, 없으면 default. 옛 trialing 은 자동 free 매핑.
     if (memberPlanInput) {
-        memberPlanInput.value = ['trialing', 'free', 'plus', 'pro'].includes(member.plan) ? member.plan : 'trialing';
+        const planVal = (member.plan === 'trialing') ? 'free' : member.plan;
+        memberPlanInput.value = ['free', 'plus', 'pro'].includes(planVal) ? planVal : 'free';
     }
     if (memberPlanStatusInput) {
-        memberPlanStatusInput.value = ['trialing', 'active', 'past_due', 'cancelled'].includes(member.plan_status) ? member.plan_status : 'trialing';
+        const statusVal = (member.plan_status === 'trialing') ? 'active' : member.plan_status;
+        memberPlanStatusInput.value = ['active', 'past_due', 'cancelled'].includes(statusVal) ? statusVal : 'active';
     }
     if (memberSummaryUsedInput) {
         memberSummaryUsedInput.value = (member.summary_used != null && Number.isFinite(+member.summary_used)) ? String(member.summary_used) : '0';
@@ -401,7 +404,7 @@ const FUNNEL_STEPS = [
     { key: 'firstSavers',  label: '첫 고객 저장' },
     { key: 'firstPayers',  label: '첫 결제' },
 ];
-const PLAN_LABEL = { trialing: '체험', free: 'Free', plus: 'Plus', pro: 'Pro', other: '기타' };
+const PLAN_LABEL = { trialing: 'Free', free: 'Free', plus: 'Plus', pro: 'Pro', other: '기타' };
 const STATUS_LABEL_JOBS = {
     audio_pending: '음성 대기',
     queued: '큐 대기',

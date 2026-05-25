@@ -296,16 +296,16 @@ function ensure_members_plan_columns(PDO $pdo): bool {
         }
         // 옛 컬럼 (Phase 1)
         if (!in_array('plan', $existing, true)) {
-            // 새 default: 'trialing' — 신규 가입자 5회 무료 체험. 기존 row 는 'free' 유지.
-            $pdo->exec("ALTER TABLE `members` ADD COLUMN `plan` VARCHAR(16) NOT NULL DEFAULT 'trialing'");
+            // 사장님 2026-05-25 — 5회 무료체험 폐지: default 'free'. AI 통화 요약은 유료 플랜.
+            $pdo->exec("ALTER TABLE `members` ADD COLUMN `plan` VARCHAR(16) NOT NULL DEFAULT 'free'");
         }
         if (!in_array('free_summaries_used', $existing, true)) {
             $pdo->exec("ALTER TABLE `members` ADD COLUMN `free_summaries_used` INT NOT NULL DEFAULT 0");
         }
         // 신규 컬럼 (구독 결제 시스템 — PortOne + 토스페이먼츠)
-        // trialing(5회) → active(plus 20회 / pro 무제한) → past_due → cancelled
+        // 사장님 2026-05-25 — 5회 무료체험 폐지: default 'active' (free 도 'active').
         if (!in_array('plan_status', $existing, true)) {
-            $pdo->exec("ALTER TABLE `members` ADD COLUMN `plan_status` VARCHAR(16) NOT NULL DEFAULT 'trialing'");
+            $pdo->exec("ALTER TABLE `members` ADD COLUMN `plan_status` VARCHAR(16) NOT NULL DEFAULT 'active'");
         }
         if (!in_array('portone_customer_id', $existing, true)) {
             $pdo->exec("ALTER TABLE `members` ADD COLUMN `portone_customer_id` VARCHAR(64) NULL DEFAULT NULL");
@@ -327,9 +327,9 @@ function ensure_members_plan_columns(PDO $pdo): bool {
         if (!in_array('cancel_at_period_end', $existing, true)) {
             $pdo->exec("ALTER TABLE `members` ADD COLUMN `cancel_at_period_end` TINYINT(1) NOT NULL DEFAULT 0");
         }
-        // summary_limit: NULL = 무제한 (pro), 0 = 차단 (free), 5 = trialing, 20 = plus
+        // summary_limit: NULL = 무제한 (pro), 0 = 차단 (free), 20 = plus. 2026-05-25 trialing 폐지.
         if (!in_array('summary_limit', $existing, true)) {
-            $pdo->exec("ALTER TABLE `members` ADD COLUMN `summary_limit` INT NULL DEFAULT 5");
+            $pdo->exec("ALTER TABLE `members` ADD COLUMN `summary_limit` INT NULL DEFAULT 0");
         }
         // last_usage_reset_at: 매월 결제 갱신 시 free_summaries_used=0 으로 reset 한 시점
         if (!in_array('last_usage_reset_at', $existing, true)) {
@@ -339,8 +339,11 @@ function ensure_members_plan_columns(PDO $pdo): bool {
         // idempotent: 두 번째 호출부터는 영향 받는 row 0개.
         try {
             $pdo->exec("UPDATE `members` SET `plan` = 'plus' WHERE `plan` = 'premium'");
+            // 사장님 2026-05-25 — trialing 폐지: 옛 trialing 가입자 자동 → free 마이그레이션.
+            $pdo->exec("UPDATE `members` SET `plan` = 'free' WHERE `plan` = 'trialing'");
+            $pdo->exec("UPDATE `members` SET `plan_status` = 'active' WHERE `plan_status` = 'trialing'");
         } catch (Throwable $e) {
-            error_log('[process-recording] premium → plus migration: ' . $e->getMessage());
+            error_log('[process-recording] plan migration: ' . $e->getMessage());
         }
         return $done = true;
     } catch (Throwable $e) {
@@ -355,8 +358,8 @@ function ensure_members_plan_columns(PDO $pdo): bool {
  * - 그렇지 않으면 plan 별 기본값:
  *     pro      → null (무제한)
  *     plus     → 20
- *     trialing → 5  (신규 가입 5회 무료 체험)
  *     free     → 0  (차단)
+ * 사장님 2026-05-25 — trialing 폐지: free 와 동일 0회 (옛 가입자 호환만).
  */
 function resolve_summary_limit(?string $plan, $columnValue): ?int {
     // 컬럼 명시값 우선 (관리자가 admin 에서 직접 변경한 경우)
@@ -369,7 +372,7 @@ function resolve_summary_limit(?string $plan, $columnValue): ?int {
         case 'pro':       return null;
         case 'plus':
         case 'premium':   return 20;  // 옛 Phase 1 plan='premium' 안전망 — Plus 와 동일 권한
-        case 'trialing':  return 5;
+        case 'trialing':  // 옛 가입자 호환 — free 와 동일.
         case 'free':
         default:          return 0;
     }
@@ -818,13 +821,12 @@ if ($asyncMode) {
  * 구독 plan 별 quota:
  *   pro      → 무제한 (summary_limit = NULL)
  *   plus     → 월 20회
- *   trialing → 5회 (신규 가입자 체험)
- *   free     → 0 (차단)
- * + plan_status 검사 — past_due / cancelled 면 차단 (active / trialing 만 통과).
+ *   free     → 0 (차단) — 사장님 2026-05-25 trialing 폐지 후 신규 가입자 기본값.
+ * + plan_status 검사 — past_due / cancelled 면 차단 (active 만 통과).
  * + admin allowlist 는 모든 검사 우회.
  */
-$plan = 'trialing';
-$planStatus = 'trialing';
+$plan = 'free';
+$planStatus = 'active';
 $freeUsed = 0;
 $summaryLimitColumn = null;
 $summaryLimitMinutes = null;   // 분 한도 (NULL 이면 회 단위 레거시 흐름 사용)
@@ -839,8 +841,10 @@ try {
     $ps->execute([':e' => $ownerEmail]);
     $row = $ps->fetch();
     if ($row) {
-        $plan = (string)($row['plan'] ?? 'trialing');
-        $planStatus = (string)($row['plan_status'] ?? 'trialing');
+        $plan = (string)($row['plan'] ?? 'free');
+        if ($plan === 'trialing') $plan = 'free';   // 사장님 2026-05-25 — 옛 가입자 호환.
+        $planStatus = (string)($row['plan_status'] ?? 'active');
+        if ($planStatus === 'trialing') $planStatus = 'active';
         $freeUsed = (int)($row['free_summaries_used'] ?? 0);
         $summaryLimitColumn = $row['summary_limit'] ?? null;
         $summaryLimitMinutes = isset($row['summary_limit_minutes']) ? (int)$row['summary_limit_minutes'] : null;
@@ -849,9 +853,9 @@ try {
         $overageBalanceSeconds = (int)($row['overage_balance_seconds'] ?? 0);
     }
 } catch (Throwable $e) {
-    // 컬럼이 아직 없으면 trialing 으로 간주 (안전).
-    $plan = 'trialing';
-    $planStatus = 'trialing';
+    // 컬럼이 아직 없으면 free 로 간주 (안전).
+    $plan = 'free';
+    $planStatus = 'active';
     $freeUsed = 0;
 }
 $isAdminUser = is_admin_email_for_recording($ownerEmail);

@@ -519,7 +519,6 @@
                     <label class="row-label" for="member-plan">구독 플랜</label>
                     <div class="row-control">
                         <select id="member-plan">
-                            <option value="trialing">체험 (30분)</option>
                             <option value="free">Free (30분)</option>
                             <option value="plus">Plus (300분)</option>
                             <option value="pro">Pro (1,000분)</option>
@@ -531,7 +530,6 @@
                     <label class="row-label" for="member-plan-status">구독 상태</label>
                     <div class="row-control">
                         <select id="member-plan-status">
-                            <option value="trialing">체험중</option>
                             <option value="active">활성</option>
                             <option value="past_due">결제실패</option>
                             <option value="cancelled">해지</option>
@@ -592,7 +590,7 @@
                             <button type="button" class="tiny-btn" data-period-quick="365">+1년</button>
                             <button type="button" class="tiny-btn" data-period-clear>지우기</button>
                         </div>
-                        <p class="form-help" style="margin-top:6px;font-size:11.5px;">현금/오프라인 결제 시 또는 테스터 무료 체험 기간 지정용. 이 날짜까지 plan 의 유료 기능이 활성. cron 갱신 시 자동 +30일.</p>
+                        <p class="form-help" style="margin-top:6px;font-size:11.5px;">현금/오프라인 결제 시 만료일 지정용. 이 날짜까지 plan 의 유료 기능이 활성. cron 갱신 시 자동 +30일.</p>
                     </div>
                 </div>
             </div>
@@ -605,6 +603,6 @@
     </div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-<script src="admin.js?v=20260524-stats-mega-fix" type="module"></script>
+<script src="admin.js?v=20260525-trial-removed" type="module"></script>
 </body>
 </html>

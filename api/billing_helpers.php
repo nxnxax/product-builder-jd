@@ -144,7 +144,8 @@ if (!function_exists('plan_default_summary_limit')) {
             case 'pro':       return null;  // 무제한
             case 'plus':
             case 'premium':   return 20;
-            case 'trialing':  return 5;
+            // 사장님 2026-05-25 — trialing 폐지: free 와 동일 (0회 — AI 요약은 유료 플랜).
+            case 'trialing':
             case 'free':
             default:          return 0;
         }
@@ -427,14 +428,15 @@ if (!function_exists('billing_ensure_tables')) {
                 foreach ($pdo->query("SHOW COLUMNS FROM members")->fetchAll() as $c) $cols[] = $c['Field'];
             } catch (Throwable $e) { /* members 자체 없는 환경 — 무시 */ }
             $addColumns = [
-                'plan_status'              => "VARCHAR(16) NOT NULL DEFAULT 'trialing'",
+                // 사장님 2026-05-25 — trialing 폐지: 신규 default 'active' (옛 가입자 호환 코드는 별도).
+                'plan_status'              => "VARCHAR(16) NOT NULL DEFAULT 'active'",
                 'portone_customer_id'      => 'VARCHAR(64) NULL DEFAULT NULL',
                 'portone_billing_key'      => 'VARCHAR(128) NULL DEFAULT NULL',
                 'portone_subscription_id'  => 'VARCHAR(64) NULL DEFAULT NULL',
                 'current_period_start'     => 'DATETIME NULL DEFAULT NULL',
                 'current_period_end'       => 'DATETIME NULL DEFAULT NULL',
                 'cancel_at_period_end'     => 'TINYINT(1) NOT NULL DEFAULT 0',
-                'summary_limit'            => 'INT NULL DEFAULT 5',
+                'summary_limit'            => 'INT NULL DEFAULT 0',
                 'last_usage_reset_at'      => 'DATETIME NULL DEFAULT NULL',
                 // 분 기반 과금 (2026-05-19 추가)
                 'summary_limit_minutes'    => 'INT NULL DEFAULT 30',     // 이번달 한도 (분)
@@ -459,6 +461,10 @@ if (!function_exists('billing_ensure_tables')) {
                 $pdo->exec("UPDATE members SET summary_limit = 20 WHERE plan = 'plus' AND summary_limit = 5");
                 $pdo->exec("UPDATE members SET summary_limit = NULL WHERE plan = 'pro' AND summary_limit IS NOT NULL AND summary_limit <= 20");
                 $pdo->exec("UPDATE members SET summary_limit = 0 WHERE plan = 'free' AND summary_limit = 5");
+                // 사장님 2026-05-25 — trialing 폐지: 옛 trialing 가입자 자동 → free 마이그레이션.
+                $pdo->exec("UPDATE members SET plan = 'free' WHERE plan = 'trialing'");
+                $pdo->exec("UPDATE members SET plan_status = 'active' WHERE plan_status = 'trialing'");
+                $pdo->exec("UPDATE members SET summary_limit = 0 WHERE plan = 'free' AND summary_limit > 0 AND summary_limit <= 5");
             } catch (Throwable $e) {
                 error_log('[billing_ensure_tables] limit migration: ' . $e->getMessage());
             }
