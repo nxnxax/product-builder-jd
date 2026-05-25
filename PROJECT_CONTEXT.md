@@ -1,6 +1,6 @@
 # PROJECT_CONTEXT — youngman-biz.com
 
-*최종 갱신: 2026-05-24 PM 세션 종료 — ✅ **회차 ↔ transcript 자물쇠 결합 라이브** (round_log_ids + get_transcript_by_id) + **5건 회차 카드 동일 transcript root cause = customers.js 캐시** (DB 정상, cache-bust 누락 진짜 원인) + **사장님 정상화 확인 완료**.*
+*최종 갱신: 2026-05-25 세션 종료 — **회원가입 휴대폰 SMS 인증 + 5회 무료체험 폐지 + 환영 모달 + v60/v73 client 대응 server 작업** 완료. 사장님 보고한 무한로딩 / 양식 전송 실패는 **server 측 정상 (SQL 진단 완료) — root cause = 옛 native v49 가 새 server 흐름 미대응**. 앱팀 fix 대기.*
 
 ---
 
@@ -12,7 +12,7 @@
 - 디자인: 한국 캘리그라피 + 인장(seal-red `#c8362c`), Apple/Linear 미니멀
 - 라이브: https://youngman-biz.com (Cafe24 + Supabase + MariaDB + PHP)
 - 결제: PortOne V2 + 토스페이먼츠 정기결제
-- 앱: RN Android WebView + bridge.js (v49 active, audio 업로드 v40+ 필요)
+- 앱: RN Android WebView + bridge.js (v49 active. v60/v73 빌드 대기)
 - 고객층: 보험/자동차/중고차/일반 자영업 다양 — AI 업종 무관 범용
 
 ---
@@ -26,38 +26,35 @@ org.html / contracts.html / customers.html / forms.html / board.html
 card-builder.html / lotto2233.html / Marketing.html / kapp_premium.php
 terms.html / privacy.html / refund.html / auto-billing.html
 subscribe.html / billing.html / tester.html
-unreviewed.html  ← lazy-STT 카드 UI + 체크박스 일괄 동작 + 2줄 라벨
+unreviewed.html  ← lazy-STT 카드 UI
 
 [공통 JS]
 auth-shared.js   — Supabase + 헤더/footer/bottom-nav + 인증 + placeholder masker
-                   + 앱 nav 에 "미확인 요약" 항목 (window.YoungmanBridge.setUnreviewedCount)
-bridge.js        — RN WebView 브리지 (heartbeat 포함)
-ledger-shared.js — 관리대장 공통 (getEffectiveFields = default + server schema 합침)
-customers.js     — 고객관리대장. DEFAULT_FIELDS 에 region 포함 (서버 schema 없어도 UI 표시)
-                   + placeholder 회차 시각화 + 5초 polling
+                   + 회원가입 모달에 휴대폰 OTP 인증 UI (2026-05-25)
+                   + 환영 모달 (openWelcomeModal + DOMContentLoaded 자동 트리거)
+bridge.js        — RN WebView 브리지 (heartbeat 30s)
+ledger-shared.js — 관리대장 공통
+customers.js     — 고객관리대장. region + placeholder + 5초 polling
+admin.js         — 관리자 페이지 (trialing 폐지 매핑 적용)
 
 [PHP API — cafe24 webroot flat]
 api/records.php            — CRUD + customer_log_send_to_group + transcripts_by_phone
                              + trigger_summarize (placeholder INSERT + ledger mirror)
-                             + confirm / preview / discard / summary_status
-                             + find_region_field_key + resolve_region_data_key (fallback)
-api/process-recording.php  — 통화 audio 업로드. lazy-STT (status='audio_pending')
+                             + signup-send-otp / signup-verify-otp (2026-05-25 신규)
+                             + auth-profile (requires_subscription flag, 2026-05-25)
+                             + create_member_from_google (finalize 분기, 2026-05-25)
+api/process-recording.php  — 통화 audio. lazy-STT (status='audio_pending')
+                             + client_request_id 64자 초과 시 SHA-256 hash (2026-05-25)
+                             + 옵션 A: 무료 사용자 audio drop + row skip (2026-05-25)
+                             + customer_name phone_number lookup (v73+ 대응, 2026-05-25)
+                             + build_plan_info_for_response helper (case-insensitive email)
 api/recording-callback.php — Railway worker 결과 수신
-                             + auto_confirm 자동 confirm 분기 (region 포함)
-                             + STT partial fail 감지 + send_to_group mirror fallback
-                             + phone_lookup HMAC-SHA256 통일 (rc_phone_lookup_auto)
-api/cron-process-jobs.php  — 5분 cron + queued/failed_retryable/processing(10분 stuck) 처리
-api/job-status.php         — 앱 polling
-api/recording-audio.php    — HMAC signed audio URL (10분)
-api/audio_cleanup.php      — 7일 cron cleanup
-api/upload.php             — multipart audio 수신
-api/billing_helpers.php / billing/* — 결제
+api/cron-process-jobs.php  — 5분 cron
+api/billing_helpers.php    — trialing 폐지 마이그레이션 (UPDATE plan='free' WHERE plan='trialing')
+api/billing/cancel-subscription.php — default plan_status 'trialing' → 'active'
 
 [Railway worker]
-worker/Dockerfile  — python:3.11-slim + ffmpeg + uvicorn (sh -c CMD)
-worker/main.py     — Whisper + Claude Sonnet 4.6 + transcode_to_mp3
-                     + region 추출 (문맥 파악 — 거주지만)
-worker/railway.json — DOCKERFILE builder
+worker/main.py — Whisper + Claude Sonnet 4.6 + region 추출
 
 [Asset]
 og-thumbnail.png / logo_main.png
@@ -70,120 +67,127 @@ tester.html → /download/youngman-latest.apk (사장님 FTP 직접 업로드)
 
 ## 3. 현재 완성된 기능
 
-### 인증
+### 인증 (2026-05-25 대규모 강화)
 - Supabase + Google OAuth + 6중 race guard + bridge.js heartbeat
 - 7단계 auth header fallback (`/auth/v1/user` 폴백 — sb_publishable_)
-- Google 로그인 race fix + OAuth 후 헤더 깜빡임 fix
+- **휴대폰 SMS 인증 시스템 (신규)**:
+  - 일반(이메일) 회원가입 시 휴대폰 인증 강제
+  - Google 가입 보충 폼에도 동일 패턴
+  - signup-send-otp / signup-verify-otp endpoint (auth_otp 테이블 재사용)
+  - 6자리 OTP 5분 유효 + 1분 cooldown + 5회 시도 제한
+  - 검증 성공 시 'signup_verified' 토큰 (48 hex, 10분 유효, 1회 사용)
+  - records.php `create_member_from_google` 가 phone_verification_token 강제 검증
+  - SMS 발송 = 사장님 admin sms_credentials 재사용 (Solapi)
+  - auth_otp.code 컬럼 VARCHAR(8) → VARCHAR(64) lazy ALTER
+- **Google 가입 보충 폼 전면 개편 (login-complete.html)**:
+  - 자동 ensure POST 가 신규 가입자에게는 pending_signup 응답만 (INSERT 안 함)
+  - "가입 완료" 버튼 누를 때만 finalize=true → INSERT
+  - form 순서: 이름 / 휴대폰(인증) / 닉네임 / 약관
+  - 버튼 줄바꿈 layout (column 방향) — input + button 폭 초과 회피
+- **이름 / 닉네임 분리 저장** (members.name + members.nickname 별도)
+- client_request_id 64자 초과 시 SHA-256 hash 자동 대체 (ARS 한글 파일명 대비)
+
+### 5회 무료체험(trialing) 시스템 완전 폐지 (2026-05-25)
+- 신규 가입자 default plan='free' (옛 'trialing' 폐지)
+- 옛 trialing 가입자 → 'free' 자동 마이그레이션 (lazy UPDATE)
+- 프론트: subscribe.html banner 삭제, billing.html / admin.html / admin.js label 정리
+- 백엔드: plan_default_summary_limit.trialing → 0, ALTER plan DEFAULT 'free', plan_status DEFAULT 'active'
+- 코드의 'trialing' 분기는 옛 row 호환 위해 free 와 동일 매핑으로 유지
+
+### 환영 모달 (회원가입 후 첫 로그인 1회만)
+- auth-shared.js `openWelcomeModal()` + `maybeShowWelcomeModal()`
+- localStorage 'yman_pending_welcome' 기반 트리거 (서버 commit race 회피)
+- 회원가입 완료 시 (signUp + ensure 성공 / Google finalize 성공) 직후 setItem
+- DOMContentLoaded 자동 호출 → bootApp 안 쓰는 페이지 (index.html 등) 도 자동 표시
+- transition 페이지 (login-complete / logout) 는 skip
+- 모달 표시 직전 즉시 localStorage.removeItem → "한 번만" 강력 보장
+- 본문:
+  - "영맨 가입을 축하드립니다!"
+  - "플랜을 업그레이드하여 AI 통화 요약 서비스를 시작하세요!"
+  - "CRM 양식 등 기타 사이트 기능은 무료입니다."
+  - "AI 통화 요약 플랜을 이용하시면 더욱 완성된 서비스를 누리실 수 있습니다."
+- 버튼: "요금제 보기" → subscribe.html
+
+### v60 client 명세 대응 — server 옵션 A (2026-05-25)
+앱팀 v60 client 명세에 따라 server 측 작업:
+- **process-recording.php 응답 plan 객체에 requires_subscription flag**
+  - plan='free' && !isAdminUser → true
+  - plan='plus'/'pro' or admin → false (절대 true 안 됨)
+- **옵션 A**: requires_subscription=true 면 audio drop + recording_jobs INSERT skip
+  - storage_path unlink (best-effort, 절대/상대 경로 모두 시도)
+  - 응답: `{ status:'ok', job_id:null, job_status:'subscription_required', plan:{...} }`
+  - 사장님 정책 (무료 사용자 미확인 요약 노출 X) 충족
+- **auth-profile GET 응답에 requires_subscription flag** (client cache refresh 용)
+- build_plan_info_for_response 의 SELECT 가 LOWER(email) match (옛 mixed-case 호환)
+- 진단 log 추가 (member row not found 시 / SELECT 실패 시)
+
+### v73 client 대응 — customer_name phone_number lookup (2026-05-25)
+앱팀 v73 client (Play Store 정책 — READ_CONTACTS 권한 제거) 대응:
+- process-recording.php 에서 customer_name_hint='' 이면 phone_number 로 customer_log lookup
+- 우선순위: body.customer_name_hint (legacy) → customer_log 옛 customer_name → null (AI 자유 추출)
+- placeholder 값 ('고객', '(처리 중)', '(처리중)') skip 후 다음 row (LIMIT 5)
+- customer_phone_lookup_key (HMAC-SHA256) 사용 — client phone format 무관 normalize
 
 ### CRM / HRM
 - 조직도/계약자/고객 관리대장 + AES-256-GCM 암호화
 - 양식 빌더 (Phase 1~3, 8타입)
-- 회차별 content 분할 + "대화내용 전문보기" 버튼
+- 회차별 content 분할 + 회차 ↔ transcript 자물쇠 결합 (round_log_ids)
 - 단체 SMS + 잔액 카드
-- **고객 거주지 자동 인식** (2026-05-24) — Claude 가 통화 transcript 에서 문맥 파악
+- 고객 거주지 자동 인식 (Claude transcript 분석)
 
-### 통화 녹취 — lazy-STT 모드 (2026-05-24 양식으로 전송 placeholder 부활)
-```
-통화 종료 → /process-recording.php
-  → recording_jobs INSERT (status='audio_pending')
-  → audio 저장 + 즉시 응답 (process-recording 시점은 lazy — placeholder 안 만듦)
-
-① "요약보기" (auto_confirm=0)
-  → trigger_summarize → Railway dispatch → callback (status='ready_to_review')
-  → 사용자 클릭 → preview 모달 → "고객관리대장 전송" → confirm
-  → records.php confirm 분기에서 customer_log INSERT + send_to_group mirror
-
-② "양식으로 전송" (auto_confirm=1) ★ 2026-05-24 placeholder 부활
-  → trigger_summarize 즉시 placeholder customer_log INSERT
-     (source='app-processing', summary='(AI 요약 처리 중...)')
-  → ledger_records mirror (즉시 회차 카드 표시)
-  → 응답에 customer_log_id 포함 (native v40+ 모달 즉시 닫기 결정에 활용)
-  → 사장님 고객관리대장 → "(AI 요약 처리 중...)" 회차 카드 (회색+깜박임)
-  → Railway STT 완료 → callback §7 분기 (customer_log_id 있음) UPDATE
-  → ledger refresh (refresh=true) → 회차 content + region 갱신
-  → 5초 polling 으로 customers.js 자동 갱신 → 실제 요약으로 표시
-  → 실패 시: customer_log DELETE + status='ready_to_review' fallback
-
-③ "폐기" / 모달 "취소" → discard → recording_jobs DELETE + audio unlink
-
-안전망:
-  · STT partial fail (duration≥20s + transcript<10chars) → ready_to_review fallback
-  · callback UPDATE COALESCE NULLIF 보호 (region 포함, 빈 값 덮어쓰기 방지)
-  · phone_lookup HMAC-SHA256 통일 (callback + records.php 동일)
-```
-
-### 회차 ↔ transcript 자물쇠 결합 (2026-05-24 PM 신규)
-- `ledger_records.data_json.round_log_ids` = `{ "회차": "customer_log_id" }`
-- send_to_group 3분기 (refresh §7 / MERGE / INSERT) 모두 mapping 누적
-- 새 endpoint `get_transcript_by_id` — customer_log.id 단건 직접 조회
-- customers.js 전문보기 버튼 `data-customer-log-id` 자동 주입
-- bindTranscriptButtons cid 우선 → 다른 회차 transcript 혼선 0%
-- 옛 데이터 (round_log_ids 없음) 호환 — phone+ts fallback (1분 cap 제거 + best row)
-- customers.html cache-bust querystring `?v=20260524-transcript-lock` 갱신 필수
-
-### Claude 추출 필드 (2026-05-24 region 추가)
-- customer_name / summary / interest / inquiry / budget_condition / next_action / **region** / transcript
-- **region** = 고객 본인 현재 거주지만 (모델하우스/매장/행선지/본가/직장 제외)
-  · "수원에 사는데요 모델하우스가 분당" → "수원" 만
-  · 명확하지 않으면 null
-- customer_log.region 컬럼 (AES-256-GCM 암호문) lazy migration
+### 통화 녹취 — lazy-STT 모드
+- 통화 종료 → process-recording (audio_pending INSERT, lazy)
+- "요약보기" (auto_confirm=0) → trigger_summarize → Railway → callback → ready_to_review
+- "양식으로 전송" (auto_confirm=1) → 즉시 placeholder customer_log + ledger mirror
+- 안전망: STT partial fail → ready_to_review fallback, COALESCE NULLIF 보호, phone_lookup HMAC 통일
 
 ### 미확인 요약 UI (unreviewed.html)
 - 카드 layout (좌측 info / 우측 버튼 2개 stack)
-- **전화번호 / 통화시간 줄바꿈 분리** (2026-05-24)
-- **"✓ 요약완료" 버튼 2줄** ("✓ 요약완료" + "내용확인하기", 2026-05-24)
+- 전화번호 / 통화시간 줄바꿈 분리
+- "✓ 요약완료" 버튼 2줄
 - 5초 polling (queued/processing 카드 있을 때만)
-- 낙관적 UI — confirm/discard 시 카드 즉시 DOM 제거
-- 체크박스 + 전체선택 + 1개+ 선택 시 인라인 버튼 활성화
-- 날짜 구분선 (오늘 / 어제 / N월 N일 (요일))
-
-### 고객관리대장 처리중 placeholder (customers.js / style.css)
-- placeholder 회차 ("(AI 요약 처리 중...)" 포함) 시각화
-  · "전문보기" 버튼 숨김 (transcript NULL)
-  · 회색 배경 + 좌측 깜박이는 빨간 막대 (cl-pulse 1.6s)
-- startProcessingPollIfNeeded — placeholder 있으면 5초 polling, page hidden skip
-
-### 지역 자동 매핑 (records.php)
-- find_region_field_key — strict + loose 매칭 (label "지역" / key "region"/"area")
-- resolve_region_data_key — schema 못 찾으면 'region' fallback (client DEFAULT_FIELDS 호환)
-- send_to_group MERGE/INSERT/refresh 3분기 모두 fallback 적용
-- customer_log_default_group_field_schema 에 region 필드 추가 (새 그룹 대비)
-
-### API endpoint 일관성 (앱팀 v46/v49 spec)
-- trigger_summarize / preview / summary_status 응답에 ok + processing 필드
-- summary_status 경량 endpoint (polling 부하 절감)
-- dispatch_error 필드 (env_file_missing / RAILWAY_WORKER_URL_missing / etc)
+- 낙관적 UI (confirm/discard 즉시 DOM 제거)
+- 체크박스 + 전체선택 + 인라인 일괄 동작
+- 날짜 구분선 (오늘/어제/N월 N일)
 
 ### 결제 / 기타
 - PortOne V2 + 토스 정기결제
 - plan_default_summary_limit_minutes — Free=30/Plus=300/Pro=1000
 - overage_top_up — 5000원/71분/70원per분
+- 사용량 차감: usage_seconds_period 초 단위 누적 (정확)
 
 ---
 
 ## 4. 아직 미완성 (다음 세션 작업)
 
-### ⏳ 1순위 — 2026-05-24 fix 누적 검증
-사장님 다음 통화 테스트:
-1. **양식으로 전송 STT 전문** (6d21674) — "전문보기" 모달이 실제 transcript 표시 ✅ 검증 완료
-2. **고객관리대장 처리중 카드** (d4a6d70) — "(AI 요약 처리 중...)" 회차 + 자동 갱신
-3. **지역 자동 입력** (21fffb9) — "지역" 컬럼 자동 채워짐 ✅ 검증 완료
-4. **카드 UI** (6959a79, 79e2f1a) — 전화번호/통화시간 줄바꿈 + 요약완료 2줄
+### ⏳ 1순위 — 앱팀 v60/v73 빌드 대기 (사장님 → 앱팀 의뢰 완료)
+사장님이 앱팀에 명세 전달 완료. 앱팀 빌드 받으면 사장님 + 무료 테스트 계정으로 회귀 테스트 후 production.
 
-### ⏳ 2순위 — 앱팀 v40+ 명세 (이미 정리됨, 사장님이 앱팀에 전달)
-1. **"양식으로 전송" 모달 즉시 닫기** — trigger_summarize 응답에 `auto_confirm=true` + `customer_log_id!=null` 보면 모달 닫고 토스트
-2. **"요약보기" 흐름은 그대로 유지** — `customer_log_id=null` 이므로 기존 분기 보존
-3. 통화 종료 모달 자동 종료 시 audio 업로드 누락 fix
-4. UnreviewedPreview native screen 하단 버튼 SafeArea
-5. "양식으로 전송" 버튼 활성화를 audio fully written 후로 늦춤
+**v60 client 명세 (앱팀 작업)**:
+1. process-recording 응답의 `plan.requires_subscription === true` 보면 첫 모달 skip + "Plus 구독부터" 모달
+2. `false` 또는 undefined → 기존 첫 모달 (안전망)
+3. PlanCache stale 시 응답으로 정정 (swap 없음)
+4. 무료 verdict 시 trigger_summarize 호출 X + outbox dismissed 마감
+
+**v73 client 명세 (앱팀 작업)**:
+1. Play Store 정책 — READ_CONTACTS / SYSTEM_ALERT_WINDOW / CAMERA / READ_MEDIA_* 권한 제거
+2. customer_name_hint 항상 null 전송 (server 가 phone lookup 으로 옛 이름 복원)
+
+**현재 사장님 client (옛 native v49) 가 처리 미흡한 부분**:
+1. **양식 전송 실패** — 앱이 trigger_summarize(auto_confirm=1) 호출 자체를 안 함 → server recording_jobs 에 row 0건
+2. **요약보기 무한로딩** — 앱이 호출은 했고 server 정상 완료 (status='saved'). callback 후 FCM 알림 못 받음 또는 polling 안 함
+3. **1분 강제 메인 이동** — 웹 측에 1분 timer 없음. RN WebView 의 inactivity / heartbeat 못 받을 시 reload 의심
+4. **옵션 A response (job_id=null) 처리 미흡** — v60 명세대로 빌드 받아야
+
+### ⏳ 2순위 — 사장님 정책 검토 (앱팀 빌드 받기 전 임시 결정 필요)
+- **옵션 A 유지 vs 일시 비활성화**:
+  - 유지 (현재) — 무료 사용자 audio drop + 미확인 요약 노출 X. 단 옛 native UX 일부 깨짐.
+  - 비활성화 — 무료 사용자 audio_pending row 노출 (사장님 정책 위반). 옛 native UX 정상.
+  - 사장님은 유지 + v60 빌드 대기 선택 (default).
 
 ### ⚠️ 보안 마무리 (사장님 작업)
 1. RECORDING_WORKER_TOKEN rotate (3곳 동기화 — Railway + cafe24 .env + GitHub Secrets, **따옴표 없이**)
 2. cafe24 webroot 의 admin_env_diag.php FTP 직접 삭제
-
-### 4순위 — 옛 통화 region backfill (사장님 결정 필요)
-- 옛 customer_log 의 transcript 에서 Claude 로 region 재추출 + UPDATE
-- LLM API 비용 발생 (사장님 옛 통화 개수 × Claude tokens)
 
 ### 기존 backlog (낮은 우선순위)
 - AI 요약 두 모드 분기 (대화형 vs 보고서식)
@@ -191,6 +195,7 @@ tester.html → /download/youngman-latest.apk (사장님 FTP 직접 업로드)
 - card-builder UX / forms 수식 inline help / profile/admin 디자인 일관성
 - records.php dead code cleanup (700줄 — Phase 9)
 - Lottie 비서 애니메이션 (사장님이 lottiefiles.com 에서 선택 후)
+- 옛 통화 region backfill (사장님 결정 필요)
 
 ---
 
@@ -226,18 +231,20 @@ tester.html → /download/youngman-latest.apk (사장님 FTP 직접 업로드)
 - 🚫 **cafe24 .env 는 매 deploy 마다 GitHub Secrets 로부터 재생성됨** — FTP 직접 수정값은 다음 push 시 덮어쓰여짐.
 - 🚫 **dhlottery 직접 호출 금지** (IP 차단).
 - 🚫 **`git add -A` 금지** — PII 누설 위험.
-- 🔑 **.env 값에 따옴표 절대 금지** (2026-05-23 학습) — 일부 PHP 함수가 strip 안 함. 모든 .env parsing 은 `trim($v, "\"' \t\r\n")` 사용.
-- 🔑 **phone_lookup 함수 통일 필수** (2026-05-24 학습) — callback + records.php 양쪽 `customer_phone_lookup_key` (HMAC-SHA256) 사용. 짧은 substr 형식과 다르면 lookup mismatch.
+- 🔑 **.env 값에 따옴표 절대 금지** — 일부 PHP 함수가 strip 안 함. 모든 .env parsing 은 `trim($v, "\"' \t\r\n")` 사용.
+- 🔑 **phone_lookup 함수 통일 필수** — `customer_phone_lookup_key` (HMAC-SHA256). callback + records.php + process-recording 모두 동일.
 - 📁 Webroot flat layout. `api/sms/` → `deploy/sms/providers/` / `api/billing/` → `deploy/billing/`
 - 🔐 `YOUNGMAN_CRYPTO_KEY` 분실 = 복호화 영구 불가
 - 📡 PHP 30초 timeout → process-recording `set_time_limit(300)` + Railway 위임
 - 📡 records.php `/auth/v1/user` 폴백 — sb_publishable_ asymmetric JWT
 - 📡 db_config.php — `return [host, port, database, user, password]`
 - 📊 PII 컬럼 폭 — 암호문 100~200 chars, VARCHAR(255)+
-- 📊 Whisper 25MB 제한 + iPhone/Galaxy m4a codec 변종 거부 → **mp3 통일 변환** (worker main.py:565 transcode_to_mp3)
+- 📊 Whisper 25MB 제한 + iPhone/Galaxy m4a codec 변종 거부 → **mp3 통일 변환**
 - 📊 Authorization 헤더 fallback 7단계 (records.php read_authorization_header)
-- 🔑 **client DEFAULT_FIELDS vs server schema 비대칭 학습** (2026-05-24) — customers.js 의 DEFAULT_FIELDS 에 region 있는데 PHP default 에 없으면 UI 표시되지만 매핑 실패. send_to_group 는 'region' fallback key 사용.
-- 🔑 **cache-bust 누락 학습** (2026-05-24 PM) — JS module 큰 변경 시 HTML import querystring (?v=YYYYMMDD-slug) 도 같은 commit 에서 반드시 갱신. 안 하면 사장님 브라우저 옛 캐시 → 새 코드 효과 0. 자물쇠 commit 후 사장님이 동일 transcript 증상 보고 → DB/서버 전부 정상이었고 진짜 root cause 가 cache-bust 누락. customers.js / auth-shared.js / ledger-shared.js / bridge.js / style.css 손댈 때 항상 querystring 확인.
+- 🔑 **client_request_id 64자 초과 시 SHA-256 hash 자동 대체** (2026-05-25) — ARS 통화 한글 파일명 호환.
+- 🔑 **case-insensitive email match** (2026-05-25) — `WHERE LOWER(email) = LOWER(:e)`. 옛 mixed-case 가입자 호환.
+- 🔑 **auth_otp.code VARCHAR(64)** (2026-05-25) — 48 hex token 저장 위해 lazy ALTER.
+- 🔑 **Cache-bust 필수** — JS module 변경 시 HTML import querystring 도 같은 commit 에서 갱신. 옛 캐시 = 새 코드 효과 0.
 
 ### Railway worker quirks
 - 🚫 `railway.json` 의 `startCommand` 가 Dockerfile 모드에서 shell expansion 안 됨 — Dockerfile CMD `sh -c` wrap.
@@ -245,34 +252,26 @@ tester.html → /download/youngman-latest.apk (사장님 FTP 직접 업로드)
 
 ---
 
-## 7. 최근 수정한 파일
+## 7. 최근 수정한 파일 (2026-05-25 세션)
 
 ```
-# 2026-05-24 PM 세션 — 회차 ↔ transcript 자물쇠 결합 + cache-bust 누락 root cause
-b908c8d fix(customers): customers.js cache-bust v=20260524-transcript-lock ★ root cause
-674bb58 feat(call): 회차 ↔ transcript 자물쇠 결합 — round_log_ids 매핑 + id 직접 조회 ★ 신규 구조
-
-# 2026-05-24 AM 세션 — 양식으로 전송 흐름 완성 + 지역 자동 인식 + UI 다듬기
-79e2f1a fix(unreviewed): "요약완료" 버튼 2줄 ("✓ 요약완료" + "내용확인하기")
-6959a79 fix(unreviewed): 카드 전화번호/통화시간 줄바꿈 분리
-21fffb9 fix(call): region 매핑 root cause — server schema vs client DEFAULT_FIELDS 불일치 ★ 핵심 FIX
-9c2a080 feat(call): 통화 내용 고객 거주지 자동 인식 → 고객관리대장 "지역" ★ 신규 기능
-d4a6d70 feat(call): 양식으로 전송 placeholder 부활 → 고객관리대장 처리중 카드
-6d21674 fix(call): 양식으로 전송 STT 전문 누락 root cause — phone_lookup HMAC 통일 ★ 핵심 FIX
-
-# 2026-05-23 PM 세션 — 미확인 요약 부활 + 전송 실패율 fix
-f32d8fc fix(callback): 전송 실패율 80~90% 근본 원인 — .env 따옴표 strip 누락
-9d1d3ce fix(callback): STT 부분 실패 자동 감지 + COALESCE 보호
-9514045 fix(callback): auto_confirm mirror 실패 시 미확인 요약 자동 복원
-76b2a83 fix(api): preview 응답 ok/processing 필드 + summary_status 경량 endpoint
-f0b9524 fix(api): trigger_summarize 응답 ok + processing 필드
-fa4938b fix(unreviewed): confirm/discard 시 카드 즉시 DOM 제거
-8314144 fix(unreviewed): 일괄 동작 버튼 — 전체선택 헤더 안 인라인
-db86c1f fix(unreviewed): trigger_summarize .env parsing + 카드 UX
-7e82952 feat(unreviewed): 카드 UI 재설계 + 양식으로 전송 백그라운드 자동 confirm
-aad194b fix(unreviewed): 미확인 요약 시스템 전체 정합성 — lazy-STT 정책 fix
-32df40d feat(nav): 앱 하단 nav — "미확인 요약" 부활
-8ccddf5 feat(call): 미확인 요약 부활 — lazy-STT 모드 + 앱팀 v39 연동
+# 2026-05-25 세션 — 회원가입 휴대폰 인증 + 5회무료 폐지 + 환영모달 + v60/v73 대응
+db8259e feat(call): customer_name phone_number 기반 server lookup (v73+ 대응) ★ 신규
+109fdab fix(plan): build_plan_info case-insensitive email match + 진단 log
+22ed93f feat(plan): v60 client 옵션 A — 무료 사용자 audio drop + auth-profile requires_subscription ★ 큰 변경
+a6166a9 feat(plan): process-recording 응답에 requires_subscription flag 추가
+1498072 fix(welcome): 환영 모달 1분 후 재표시 버그 — 한 번만 강력 보장
+724abe9 fix(welcome): bootApp 안 쓰는 페이지에서도 환영 모달 자동 표시
+ca91131 fix(welcome): 환영 모달 트리거 localStorage 기반으로 변경
+ef668d9 fix(signup): finalize 분기를 Google 가입자에게만 적용 ★ 핵심 FIX
+e3949d9 feat(plan): 5회 무료체험(trialing) 시스템 폐지 + 첫 로그인 환영 모달 ★ 큰 변경
+027ab9d fix(signup): Google 가입 모달 — input+button 폭 초과 / 버튼 줄바꿈
+1f20f40 fix(signup): Google 가입 모달 layout — label/input 한 줄 + 가운데 정렬
+2944583 feat(auth): Google 가입 흐름에 이름 + 휴대폰 인증 + 가입 완료 버튼 추가 ★ 신규
+958503d fix(auth): auth_otp.code 컬럼 VARCHAR(8) → VARCHAR(64) lazy 확장
+bf889ee fix(auth): signup OTP endpoint anonymous 허용 추가
+7605d65 feat(auth): 일반(이메일) 회원가입에 휴대폰 SMS 인증 추가 ★ 신규
+3688f98 fix(call): client_request_id 64자 초과 시 SHA-256 hash 자동 대체
 ```
 
 ---
@@ -286,60 +285,66 @@ aad194b fix(unreviewed): 미확인 요약 시스템 전체 정합성 — lazy-ST
 - 🔒 records.php `/auth/v1/user` 폴백
 - 🔒 records.php worker token 우회 분기 (X-Worker-Token + body.owner_email)
 - 🔒 PII owner_email 격리
+- 🔒 admin_email_allowlist = `['nxnxax@gmail.com']` — 사장님 실제 admin 계정 (members 의 nxnxqx 와 다름; nxnxqx 는 옛 시점에 가입된 사용자)
 
-### 회차 ↔ transcript 자물쇠 (2026-05-24 PM)
-- 🔒 records.php send_to_group 3분기 모두 `data_json.round_log_ids[회차]=cid` 저장
-- 🔒 records.php endpoint `get_transcript_by_id` — id 단건 조회
-- 🔒 customers.js 회차 카드 `data-customer-log-id` attribute 주입
-- 🔒 customers.js `fetchTranscriptById` — cid 직접 조회 (혼선 0%)
-- 🔒 customers.js `_findTranscriptByTimestamp` — 1분 cap 제거, 항상 best row 반환 (옛 데이터 호환)
-- 🔒 customers.html `?v=20260524-transcript-lock` querystring (cache-bust)
+### 회원가입 휴대폰 인증 (2026-05-25)
+- 🔒 records.php signup-send-otp / signup-verify-otp endpoint (auth_otp 재사용)
+- 🔒 publicResources allowlist 에 signup-* 포함 (anonymous 호출 가능)
+- 🔒 auth_otp.code VARCHAR(64) — 48 hex token 저장
+- 🔒 send_otp_sms_via_admin → purpose='signup' 메시지 "[영맨] 회원가입 인증번호"
+- 🔒 create_member_from_google 의 token 검증 분기 — provider='email' 또는 finalize=true 시 강제
+- 🔒 auth-shared.js 모달 + login-complete.html form 의 OTP UI + verificationToken state
 
-### lazy-STT 모드 (2026-05-23 부활 / 2026-05-24 placeholder 부분 부활)
-- 🔒 process-recording.php — status='audio_pending' INSERT, placeholder/mirror/dispatch 안 함 (process-recording 시점은 lazy 유지)
-- 🔒 trigger_summarize endpoint — auto_confirm 파라미터 + Railway dispatch
-- 🔒 **trigger_summarize(auto_confirm=1) 시점에 placeholder customer_log INSERT + ledger mirror** (2026-05-24)
-  · source='app-processing' / summary='(AI 요약 처리 중...)' / transcript=NULL
-  · 응답에 customer_log_id 포함 — native v40+ 모달 즉시 닫기 결정에 활용
+### Google 가입 finalize 흐름 (2026-05-25)
+- 🔒 create_member_from_google 의 finalize 분기 — provider='google' && !finalize 일 때만 pending_signup
+- 🔒 일반(email) 가입은 옛 흐름 그대로 (finalize 없이도 INSERT)
+- 🔒 login-complete.html 의 1차 ensure POST 에 provider: isGoogle ? 'google' : 'email' 명시
+- 🔒 finalize=true 호출만 member row INSERT (Google 사용자는 "가입 완료" 버튼 누르기 전 INSERT X)
+
+### 5회 무료체험(trialing) 폐지 (2026-05-25)
+- 🔒 신규 가입자 default plan='free', plan_status='active'
+- 🔒 옛 trialing 가입자 자동 마이그레이션 (billing_helpers.php / process-recording.php 양쪽)
+- 🔒 코드의 'trialing' 분기는 옛 row 호환 위해 free 와 동일 매핑 (삭제 X)
+
+### 환영 모달
+- 🔒 openWelcomeModal — markWelcomed 즉시 localStorage.removeItem + 비동기 updateUser
+- 🔒 maybeShowWelcomeModal — localStorage 만 트리거 (user_metadata fallback 제거)
+- 🔒 표시 직전 즉시 localStorage.removeItem ("한 번만" 강력 보장)
+- 🔒 DOMContentLoaded 자동 호출 — transition 페이지 (login-complete / logout) skip
+- 🔒 signUp + login-complete finalize 시 localStorage.setItem 'yman_pending_welcome'='1'
+
+### v60 client 옵션 A (2026-05-25)
+- 🔒 process-recording.php — requires_subscription=true 면 audio drop + INSERT skip + 응답만
+- 🔒 build_plan_info_for_response — LOWER(email) match + 진단 log
+- 🔒 응답 plan 객체 매 호출 DB SELECT (cache stale 정정 보장)
+- 🔒 auth-profile GET 에도 requires_subscription flag
+
+### v73 client customer_name lookup (2026-05-25)
+- 🔒 process-recording.php customer_name_hint='' 이면 customer_log phone lookup (HMAC)
+- 🔒 placeholder 값 ('고객', '(처리 중)', '(처리중)') skip
+- 🔒 customer_phone_lookup_key — \D 제거 + HMAC-SHA256 (client format 무관)
+
+### 회차 ↔ transcript 자물쇠 (2026-05-24)
+- 🔒 records.php send_to_group 3분기 모두 `data_json.round_log_ids[회차]=cid`
+- 🔒 get_transcript_by_id endpoint
+- 🔒 customers.js 회차 카드 `data-customer-log-id` attribute
+- 🔒 `_findTranscriptByTimestamp` — 1분 cap 제거, best row (옛 데이터 호환)
+
+### lazy-STT 모드 (2026-05-23~24)
+- 🔒 process-recording.php — status='audio_pending', placeholder/mirror/dispatch 안 함
+- 🔒 trigger_summarize — auto_confirm 분기 + placeholder INSERT (auto_confirm=1) + ledger mirror
 - 🔒 recording-callback.php §7 분기 (customer_log_id 있음) UPDATE + ledger refresh
 - 🔒 callback UPDATE COALESCE NULLIF 보호 (region 포함)
-- 🔒 callback INSERT (auto_confirm=1) — customer_log INSERT + send_to_group + 실패 fallback
-- 🔒 recording_jobs.auto_confirm 컬럼 (TINYINT NOT NULL DEFAULT 0)
 - 🔒 cron-process-jobs.php — audio_pending 자동 처리 제외 (lazy)
 - 🔒 audio_cleanup.php — audio_pending / failed_retryable storage_path 영구 보존
 - 🔒 list_unreviewed query — customer_log_id IS NULL + status IN (...)
-- 🔒 phone_lookup 함수 통일 — callback INSERT 도 customer_phone_lookup_key (HMAC-SHA256) 사용 (2026-05-24)
 
 ### 미확인 요약 UI (unreviewed.html)
-- 🔒 카드 layout (좌측 info / 우측 버튼 2개 stack)
-- 🔒 전화번호 / 통화시간 줄바꿈 분리 (.un-card-duration)
-- 🔒 "✓ 요약완료" 버튼 2줄 (.done-multi .bl1/.bl2)
-- 🔒 5초 polling (queued/processing 카드 있을 때만)
-- 🔒 낙관적 UI — confirm/discard 시 카드 즉시 DOM 제거
-- 🔒 체크박스 + 전체선택 + 인라인 버튼 활성화
-- 🔒 날짜 구분선 (오늘 / 어제 / N월 N일 (요일))
-
-### 고객관리대장 처리중 placeholder (customers.js / style.css)
-- 🔒 renderContentWithTranscriptButtons — placeholder 회차 ("(AI 요약 처리 중...)") 시각화
-  · "전문보기" 버튼 숨김 (transcript NULL)
-  · class="content-round-processing" → 회색 + 좌측 빨간 깜박임 막대
-- 🔒 startProcessingPollIfNeeded — placeholder 있으면 5초 polling, page hidden skip
-- 🔒 style.css .content-round-processing — cl-pulse 1.6s animation
-
-### 지역 자동 인식 (2026-05-24)
-- 🔒 worker/main.py CLAUDE_SYSTEM_PROMPT — JSON schema region 필드 + region 결정 규칙 (추출/제외/예시)
-- 🔒 worker/main.py CallbackResult.region (Optional[str])
-- 🔒 customer_log.region 컬럼 (VARCHAR 255, AES-256-GCM 암호문)
-- 🔒 records.php find_region_field_key + resolve_region_data_key (fallback 'region')
-- 🔒 send_to_group MERGE/INSERT/refresh 분기 모두 region 적용 (LLM 추출 시만 갱신)
-- 🔒 customer_log_default_group_field_schema 에 region 필드 (새 그룹용)
-
-### API 응답 일관성 (앱팀 v46/v49 spec)
-- 🔒 trigger_summarize / preview / summary_status 응답 ok + processing 필드 필수
-- 🔒 dispatch_error 필드 진단
+- 🔒 카드 layout / 줄바꿈 / 2줄 버튼 / 5초 polling / 낙관적 UI / 체크박스 / 날짜 구분선
 
 ### 결제
 - 🔒 plan_default_summary_limit_minutes — Free=30/Plus=300/Pro=1000
+- 🔒 사용량 차감 = usage_seconds_period 초 단위 누적 (정확)
 - 🔒 overage_top_up — 5000원/71분/70원per분
 - 🔒 PortOne V2 + 토스 — subscribe.html `requestIssueBillingKey`
 
@@ -349,32 +354,30 @@ aad194b fix(unreviewed): 미확인 요약 시스템 전체 정합성 — lazy-ST
 - 🔒 audio_cleanup 7일 (audio_pending 제외)
 - 🔒 ledger UX — 헤더 클릭 필터 / 행 추가 모달 / accordion
 - 🔒 placeholder masker (auth-shared.js setupPlaceholderMasker) — MutationObserver
-- 🔒 메인 hero CTA 임시 (베타 다운로드) — 결제사 승인 후 원복 예정
 - 🔒 OG/Twitter image = og-thumbnail.png, favicon/logo = logo_main.png
 
 ---
 
 ## 9. 다음에 이어서 해야 할 작업
 
-### 1순위 — 2026-05-24 fix 누적 검증 ✅ 완료
-- 양식으로 전송 → 고객관리대장 placeholder 카드 → 자동 갱신 ✅
-- 지역 자동 입력 ✅ (사장님 보고로 검증됨)
-- 미확인 요약 카드 UI (줄바꿈 + 2줄 버튼) ✅
-- 회차 ↔ transcript 자물쇠 결합 ✅ (사장님 "완전 해결" 확인 — 2026-05-24 PM)
+### 1순위 — 앱팀 v60/v73 빌드 대기 (사장님 측 의뢰 완료)
+사장님이 앱팀에 명세 전부 전달함. 빌드 받으면 사장님 admin 계정 + 무료 테스트 계정 (예: nxnxqx@dddm.com) 두 가지로 회귀 테스트:
+1. Plus 구독자 통화 종료 → 기존 첫 모달 (취소/요약보기/양식에 전송)
+2. 무료 사용자 통화 종료 → 즉시 "Plus 구독부터" 모달 (첫 모달 X)
+3. "양식에 전송" 클릭 후 trigger_summarize(auto_confirm=1) 실제 호출
+4. "요약보기" 후 callback → client 화면 자동 갱신 (FCM 또는 polling)
+5. admin plan 변경 → 사용자 다음 통화에서 즉시 반영
 
-### 2순위 — 앱팀 v40+ 명세 (사장님이 전달)
-명세서 텍스트는 이전 세션 채팅 또는 본 PROJECT_CONTEXT.md 4번 항목 참조.
-핵심: native 모달이 trigger_summarize 응답의 `auto_confirm=true` + `customer_log_id!=null` 보면 즉시 닫고 토스트.
-
-### 3순위 — 보안 마무리 (사장님 작업 필수)
+### 2순위 — 사장님 직접 작업
 1. RECORDING_WORKER_TOKEN rotate (3곳 동기화, **따옴표 없이**)
 2. cafe24 webroot admin_env_diag.php FTP 직접 삭제
+3. 사장님 admin 계정 (nxnxax@gmail.com) members row 없음 — 가입 필요? 또는 admin allowlist 만으로 충분?
 
-### 4순위 — 옛 통화 region backfill (사장님 결정 시)
-- 옛 customer_log.transcript 에서 Claude 로 region 만 재추출 + UPDATE
-- LLM API 비용 발생 → 사장님 명시 요청 시 진행
+### 3순위 — 사장님 결정 시
+- 옛 통화 region backfill (Claude API 비용 발생)
+- 앱팀 v60/v73 빌드 받기 전 옵션 A 임시 비활성화 여부
 
-### 5순위 — 미해결 backlog
+### 4순위 — 미해결 backlog
 - AI 요약 두 모드 분기 / PortOne 라이브 검증 / card-builder UX / records.php dead code cleanup / Lottie 비서 애니메이션
 
 ---
@@ -383,34 +386,50 @@ aad194b fix(unreviewed): 미확인 요약 시스템 전체 정합성 — lazy-ST
 
 - `sessionStorage.erp.ensureError` — members 보강 실패
 - `sessionStorage.erp.memberEnsured = '1'` — 보강 성공
-- 콘솔 prefix: `[auth submit]` / `[google oauth]` / `[bridge]` / `[process-recording]` / `[trigger_summarize]` / `[trigger_summarize placeholder]` / `[recording-callback]` / `[recording-callback auto_confirm]` / `[send_to_group]` / `[send_to_group §7 refresh]` / `[discard]` / `[confirm]` / `[fcm]`
+- `localStorage['yman_pending_welcome']` — 환영 모달 트리거 (회원가입 직후 '1')
+- 콘솔 prefix: `[auth submit]` / `[google oauth]` / `[bridge]` / `[process-recording]` / `[trigger_summarize]` / `[trigger_summarize placeholder]` / `[recording-callback]` / `[send_to_group]` / `[discard]` / `[confirm]` / `[fcm]` / `[build_plan_info]` (신규)
 - 브리지: `window.YoungmanBridge.isInApp()` / `.refreshSession()` / `.sendHeartbeat()` / `.setUnreviewedCount(n)`
 - Railway log: Railway dashboard → Deployments → 가장 위 ACTIVE → Logs
 
 ### 진단 SQL (사장님 phpMyAdmin)
 ```sql
--- 최근 lazy-STT 흐름 진단
-SELECT id, status, customer_log_id, auto_confirm, duration_sec,
-       audio_sha256, client_request_id, retry_count,
-       LEFT(error_message, 300) AS err,
+-- 최근 가입자 + plan 상태 (사장님 + 테스트 사용자)
+SELECT email, plan, plan_status, summary_limit, summary_limit_minutes
+FROM members ORDER BY id DESC LIMIT 10;
+
+-- 최근 통화 흐름 (모든 사용자)
+SELECT id, owner_email, status, customer_log_id, auto_confirm, duration_sec,
+       LEFT(error_message, 200) AS err,
+       TIMESTAMPDIFF(SECOND, created_at, NOW()) AS age_sec,
+       LEFT(client_request_id, 40) AS cri
+FROM recording_jobs ORDER BY created_at DESC LIMIT 10;
+
+-- customer_log 상태 (양식전송 vs 요약보기 vs placeholder 분포)
+SELECT id, owner_email, source, ai_model,
+       LENGTH(summary) AS sum_len, LENGTH(transcript) AS tr_len,
+       linked_ledger_record_id AS lr_id
+FROM customer_log ORDER BY ai_generated_at DESC LIMIT 10;
+
+-- 휴대폰 인증 OTP (auth_otp)
+SELECT purpose, target, LEFT(code, 10) AS code_prefix, attempts,
        TIMESTAMPDIFF(SECOND, created_at, NOW()) AS age_sec
-FROM recording_jobs WHERE owner_email='nxnxax@gmail.com'
-ORDER BY created_at DESC LIMIT 5;
+FROM auth_otp ORDER BY created_at DESC LIMIT 10;
 
--- customer_log 컬럼 길이 진단 (region/summary 정상 저장 여부)
--- region_enc_len NULL/0 = Claude 추출 실패, 50+ = 정상
-SELECT id, consult_at, source, ai_model,
-       LENGTH(region) AS region_enc_len,
-       LENGTH(transcript) AS tr_enc_len,
-       LENGTH(summary) AS sum_enc_len
-FROM customer_log WHERE owner_email='nxnxax@gmail.com'
-ORDER BY ai_generated_at DESC LIMIT 10;
-
--- ledger group schema 확인
-SELECT id, name, page_type, LENGTH(field_schema_json) AS schema_len
-FROM ledger_groups WHERE owner_email='nxnxax@gmail.com'
-ORDER BY page_type, sort_no;
+-- ready_to_review / queued / processing / failed 분포
+SELECT id, owner_email, status, auto_confirm,
+       TIMESTAMPDIFF(SECOND, created_at, NOW()) AS age_sec,
+       LEFT(error_message, 200) AS err
+FROM recording_jobs
+WHERE status IN ('ready_to_review', 'queued', 'processing', 'failed_retryable', 'failed_permanent')
+ORDER BY created_at DESC LIMIT 10;
 ```
+
+### 2026-05-25 진단 결과 요약 (다음 세션 인계)
+- 사장님 admin = `nxnxax@gmail.com` (정답)
+- 신규 테스트 계정 = `nxnxqx@dddm.com` (사장님이 admin UI 로 plan='pro' 변경한 계정)
+- 그 계정 통화 2건 모두 server 측 정상 (status='saved', customer_log INSERT 완료)
+- 사장님이 보고한 "무한로딩 / 양식 전송 실패" = server 측 정상, **옛 native v49 가 새 server 흐름 처리 미흡**
+- 옛 failed_retryable 8건은 모두 옛 사장님 admin 계정 (nxnxax) 의 1~3일 전 통화 (Whisper 400 / Claude 400) — 옛 이슈, 현재 무관
 
 ---
 
