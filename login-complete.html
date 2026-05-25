@@ -9,7 +9,7 @@
 <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
 <style>
     html, body { margin:0; padding:0; background:#fbf8f3; font-family:'Pretendard',-apple-system,system-ui,sans-serif; color:#0e0d0c }
-    .wrap { min-height:100vh; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:20px; padding:24px; text-align:center }
+    .wrap { width:100%; min-height:100vh; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:20px; padding:24px; text-align:center; box-sizing:border-box }
     img { height:38px; opacity:.85 }
     .ring { width:38px; height:38px; border:3px solid rgba(200,54,44,.18); border-top-color:#c8362c; border-radius:50%; animation:spin .9s linear infinite }
     @keyframes spin { to { transform:rotate(360deg) } }
@@ -19,20 +19,22 @@
     .err { color:#c8362c; font-weight:700 }
 
     /* Google 신규 가입자 추가 정보 입력 form */
-    .signup-extra { max-width:420px; margin:0 auto; padding:28px 26px; background:#fff; border-radius:16px; box-shadow:0 24px 60px rgba(20,14,8,.18); }
+    .signup-extra { width:100%; max-width:420px; margin:0 auto; padding:28px 26px; background:#fff; border-radius:16px; box-shadow:0 24px 60px rgba(20,14,8,.18); box-sizing:border-box; text-align:center; }
     .signup-extra h2 { margin:0 0 8px; font-size:22px; font-weight:800; color:#0e0d0c; text-align:center; }
     .signup-extra .sub { margin:0 0 18px; color:#8a847e; font-size:13px; text-align:center; }
-    .signup-extra .field { display:flex; flex-direction:column; gap:5px; font-size:12.5px; font-weight:600; color:#4f4943; }
-    .signup-extra .field input { padding:10px 13px; border:1px solid rgba(20,14,8,.16); border-radius:8px; font-size:14px; font-family:inherit; outline:none; }
+    /* 한 줄 label/input layout (사장님 2026-05-25) */
+    .signup-extra .field { display:flex; flex-direction:row; align-items:center; gap:10px; font-size:13px; font-weight:600; color:#4f4943; margin-bottom:10px; text-align:left; }
+    .signup-extra .field .lbl { min-width:84px; max-width:84px; flex-shrink:0; }
+    .signup-extra .field input { flex:1; min-width:0; padding:10px 13px; border:1px solid rgba(20,14,8,.16); border-radius:8px; font-size:14px; font-family:inherit; outline:none; box-sizing:border-box; }
     .signup-extra .field input:focus { border-color:#0e0d0c; }
-    .signup-extra .nick-row { display:flex; gap:6px; align-items:flex-end; margin-bottom:12px; }
-    .signup-extra .nick-row .field { flex:1; }
-    .signup-extra .check-btn { padding:9px 12px; background:#0e0d0c; color:#fff; border:0; border-radius:8px; font-size:12px; font-weight:700; cursor:pointer; white-space:nowrap; font-family:inherit; }
+    .signup-extra .nick-row { display:flex; gap:6px; align-items:center; margin-bottom:6px; }
+    .signup-extra .nick-row .field { flex:1; margin-bottom:0; }
+    .signup-extra .check-btn { padding:9px 12px; background:#0e0d0c; color:#fff; border:0; border-radius:8px; font-size:12px; font-weight:700; cursor:pointer; white-space:nowrap; font-family:inherit; flex-shrink:0; }
     .signup-extra .check-btn:disabled { opacity:.5; cursor:wait; }
-    .signup-extra .nick-result { font-size:11.5px; font-weight:600; margin:-6px 0 12px; }
+    .signup-extra .nick-result { font-size:11.5px; font-weight:600; margin:0 0 10px 94px; text-align:left; }
     .signup-extra .nick-result.ok { color:#1b5e20; }
     .signup-extra .nick-result.ng { color:#c8362c; }
-    .signup-extra .phone-row { margin-bottom:12px; }
+    .signup-extra .phone-row { margin-bottom:10px; }
     .signup-extra .consents { display:flex; flex-direction:column; gap:8px; padding:12px; background:#fbf7ef; border-radius:8px; margin-bottom:12px; }
     .signup-extra .consents label { display:flex; align-items:center; gap:8px; font-size:13px; font-weight:500; color:#4f4943; cursor:pointer; }
     .signup-extra .consents input[type=checkbox] { width:14px; height:14px; accent-color:#c8362c; margin:0; }
@@ -57,22 +59,22 @@
             <h2>가입을 완료해 주세요</h2>
             <p class="sub">YOUNGMAN 에 처음 오셨네요. 정보를 입력해 주세요.</p>
 
-            <label class="field phone-row">이름 <input type="text" id="extraFullName" autocomplete="name" placeholder="실명" required></label>
+            <label class="field phone-row"><span class="lbl">이름</span><input type="text" id="extraFullName" autocomplete="name" placeholder="실명" required></label>
 
             <div class="nick-row">
-                <label class="field">휴대폰 번호 <input type="tel" id="extraPhone" autocomplete="tel" inputmode="numeric" placeholder="010-0000-0000" required></label>
+                <label class="field"><span class="lbl">휴대폰 번호</span><input type="tel" id="extraPhone" autocomplete="tel" inputmode="numeric" placeholder="010-0000-0000" required></label>
                 <button type="button" class="check-btn" id="extraSendOtp">인증번호 받기</button>
             </div>
             <div class="nick-result" id="extraSendOtpResult" hidden></div>
 
             <div class="nick-row" id="extraOtpRow" hidden>
-                <label class="field">인증번호 <input type="text" id="extraOtpCode" maxlength="6" inputmode="numeric" placeholder="6자리 숫자"></label>
+                <label class="field"><span class="lbl">인증번호</span><input type="text" id="extraOtpCode" maxlength="6" inputmode="numeric" placeholder="6자리 숫자"></label>
                 <button type="button" class="check-btn" id="extraVerifyOtp">확인</button>
             </div>
             <div class="nick-result" id="extraVerifyOtpResult" hidden></div>
 
             <div class="nick-row">
-                <label class="field">닉네임 <input type="text" id="extraNickname" minlength="2" maxlength="20" placeholder="2~20자 한글/영문/숫자" required></label>
+                <label class="field"><span class="lbl">닉네임</span><input type="text" id="extraNickname" minlength="2" maxlength="20" placeholder="2~20자 한글/영문/숫자" required></label>
                 <button type="button" class="check-btn" id="extraCheckNick">중복확인</button>
             </div>
             <div class="nick-result" id="extraNickResult" hidden></div>
