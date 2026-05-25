@@ -680,6 +680,46 @@ $groupIdHint  = trim((string)($body['group_id'] ?? ''));  // 앱이 보내면 re
 $customerNameHint = trim((string)($body['customer_name_hint'] ?? ''));
 if (mb_strlen($customerNameHint) > 80) $customerNameHint = mb_substr($customerNameHint, 0, 80);
 
+// 앱팀 2026-05-26 v73+ — Play Store 정책 준수로 READ_CONTACTS 권한 제거.
+// client 는 customer_name_hint 항상 null 전송 → server 측에서 phone_number 로 customer_log lookup.
+// 우선순위:
+//   1. customer_name_hint (legacy client 호환 — v73 미만)
+//   2. 같은 owner_email + 같은 phone_number 의 옛 customer_log.customer_name (가장 최근)
+//   3. null (AI 가 transcript 에서 자유 추출)
+// "고객" / "(처리 중)" 같은 placeholder 는 제외.
+if ($customerNameHint === '' && $phoneNumber !== '') {
+    try {
+        $lookupKeyHint = customer_phone_lookup_key($phoneNumber);
+        if ($lookupKeyHint !== null) {
+            $hintStmt = $pdo->prepare("
+                SELECT customer_name
+                FROM customer_log
+                WHERE owner_email = :o
+                  AND customer_phone_lookup = :pl
+                  AND customer_name IS NOT NULL
+                  AND customer_name != ''
+                ORDER BY ai_generated_at DESC, created_at DESC
+                LIMIT 5
+            ");
+            $hintStmt->execute([':o' => $ownerEmail, ':pl' => $lookupKeyHint]);
+            $skipNames = ['고객', '(처리 중)', '(처리중)', ''];
+            while ($r = $hintStmt->fetch()) {
+                $decoded = trim((string)(youngman_decrypt($r['customer_name'] ?? '') ?? ''));
+                if ($decoded !== '' && !in_array($decoded, $skipNames, true)) {
+                    $customerNameHint = $decoded;
+                    if (mb_strlen($customerNameHint) > 80) $customerNameHint = mb_substr($customerNameHint, 0, 80);
+                    error_log('[process-recording] name resolved from history — owner=' . $ownerEmail
+                            . ' phone_hash=' . substr($lookupKeyHint, 0, 8)
+                            . ' name=' . substr($decoded, 0, 20));
+                    break;
+                }
+            }
+        }
+    } catch (Throwable $e) {
+        error_log('[process-recording] customer_name history lookup failed: ' . $e->getMessage());
+    }
+}
+
 // 사장님 2026-05-21 §7 — placeholder-first 통합. sync 모드 폐기.
 // 모든 호출이 placeholder customer_log INSERT + 즉시 응답 + background STT/LLM + UPDATE.
 // cafe24 gateway 30s timeout 504 사례 해결 + 사용자 체감 응답 시간 7~60s → 1~2s.
