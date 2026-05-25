@@ -331,11 +331,12 @@ function create_member_from_google(PDO $pdo, $authUser, $data) {
         respond(['ok' => false, 'error' => 'Google 인증 이메일과 가입 이메일이 일치하지 않습니다.'], 403);
     }
 
-    // 사장님 2026-05-25 — Google 가입자는 "가입 완료" 버튼 누르기 전엔 member row INSERT 금지.
-    // login-complete.html 가 OAuth 후 자동 ensure POST 호출 → finalize 없으면 pending_signup 응답.
-    // "가입 완료" 버튼 클릭 시 finalize=true + 이름/휴대폰/닉네임/약관/인증토큰 모두 함께 POST → INSERT.
+    // 사장님 2026-05-25 — Google 가입자만 "가입 완료" 버튼 강제. 일반(이메일) 가입은 옛 흐름.
+    // login-complete.html 의 OAuth 후 ensure POST 시 provider='google' 명시.
+    // "가입 완료" 버튼 클릭 시 finalize=true + 이름/휴대폰/닉네임/약관/인증토큰 모두 POST → INSERT.
     $isFinalize = !empty($data['finalize']);
-    if (!$isFinalize) {
+    $signupProviderEarly = strtolower(trim((string)($data['provider'] ?? '')));
+    if ($signupProviderEarly === 'google' && !$isFinalize) {
         $store = find_member_store($pdo);
         if ($store && member_exists_by_email($pdo, $email) !== true) {
             respond([

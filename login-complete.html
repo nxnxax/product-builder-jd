@@ -179,7 +179,9 @@
                         resource: 'auth-member',
                         ensure: true,
                         email: session.user?.email || '',
-                        // finalize 없음 — 신규 Google 가입자는 form 통해 입력 받기 전 INSERT 금지.
+                        // 사장님 2026-05-25 — Google 가입자만 finalize 강제. provider 명시.
+                        provider: isGoogle ? 'google' : 'email',
+                        // finalize 없음 — Google 신규 가입자는 보충 폼 통해 입력받기 전 INSERT 금지.
                     }),
                 });
                 ensureData = await ensureResp.json().catch(() => ({}));
