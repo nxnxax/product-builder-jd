@@ -2080,7 +2080,8 @@ function verify_auth_token($auth) {
 try {
     // Public resources (no auth) — keep narrow.
     $publicResources = ['auth-availability', 'find-email', 'find-email-send-otp', 'find-email-verify-otp',
-                        'find-pwd-send-otp', 'find-pwd-verify-otp', 'find-pwd-reset'];
+                        'find-pwd-send-otp', 'find-pwd-verify-otp', 'find-pwd-reset',
+                        'signup-send-otp', 'signup-verify-otp'];
     // self-auth resources — global verify_auth_token 우회, handler 안에서 단순 /auth/v1/user 패턴 + spec §4 응답 shape.
     // upload.php / process-recording.php 와 동일한 인증 흐름으로 통일.
     $selfAuthResources = ['customer-log', 'app-fcm-token', 'recording-job'];
