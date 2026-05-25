@@ -643,13 +643,20 @@ function ensure_auth_otp_table(PDO $pdo) {
             id INT AUTO_INCREMENT PRIMARY KEY,
             purpose VARCHAR(32) NOT NULL DEFAULT 'find_email',
             target VARCHAR(32) NOT NULL,
-            code VARCHAR(8) NOT NULL,
+            code VARCHAR(64) NOT NULL,
             attempts INT NOT NULL DEFAULT 0,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             expires_at TIMESTAMP NOT NULL,
             INDEX idx_otp_target_purpose (target, purpose),
             INDEX idx_otp_expires (expires_at)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+        // 사장님 2026-05-25 — 옛 row 의 code VARCHAR(8) 이면 lazy ALTER.
+        // signup_verified / find_pwd_reset token 은 48 hex chars (random 24 bytes) 라 8자로는 부족.
+        try {
+            $pdo->exec("ALTER TABLE auth_otp MODIFY code VARCHAR(64) NOT NULL");
+        } catch (Throwable $e) {
+            // ALTER 실패해도 silent — 이미 충분히 큰 경우.
+        }
         // GC — 만료된 OTP 정리 (request 당 가벼움)
         $pdo->exec("DELETE FROM auth_otp WHERE expires_at < NOW()");
     } catch (Throwable $e) {
