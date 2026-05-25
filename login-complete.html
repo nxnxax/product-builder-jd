@@ -27,11 +27,12 @@
     .signup-extra .field .lbl { min-width:84px; max-width:84px; flex-shrink:0; }
     .signup-extra .field input { flex:1; min-width:0; padding:10px 13px; border:1px solid rgba(20,14,8,.16); border-radius:8px; font-size:14px; font-family:inherit; outline:none; box-sizing:border-box; }
     .signup-extra .field input:focus { border-color:#0e0d0c; }
-    .signup-extra .nick-row { display:flex; gap:6px; align-items:center; margin-bottom:6px; }
+    /* 사장님 2026-05-25 — input+button 폭 합이 모달 초과 → column 방향으로 줄바꿈, button 우측 정렬 */
+    .signup-extra .nick-row { display:flex; flex-direction:column; gap:8px; align-items:stretch; margin-bottom:10px; }
     .signup-extra .nick-row .field { flex:1; margin-bottom:0; }
-    .signup-extra .check-btn { padding:9px 12px; background:#0e0d0c; color:#fff; border:0; border-radius:8px; font-size:12px; font-weight:700; cursor:pointer; white-space:nowrap; font-family:inherit; flex-shrink:0; }
+    .signup-extra .check-btn { padding:8px 16px; background:#0e0d0c; color:#fff; border:0; border-radius:8px; font-size:12px; font-weight:700; cursor:pointer; white-space:nowrap; font-family:inherit; align-self:flex-end; }
     .signup-extra .check-btn:disabled { opacity:.5; cursor:wait; }
-    .signup-extra .nick-result { font-size:11.5px; font-weight:600; margin:0 0 10px 94px; text-align:left; }
+    .signup-extra .nick-result { font-size:11.5px; font-weight:600; margin:-2px 0 10px; text-align:left; }
     .signup-extra .nick-result.ok { color:#1b5e20; }
     .signup-extra .nick-result.ng { color:#c8362c; }
     .signup-extra .phone-row { margin-bottom:10px; }
