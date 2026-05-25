@@ -1891,17 +1891,35 @@ function openWelcomeModal() {
 
 function maybeShowWelcomeModal() {
     try {
-        if (!currentSession?.user) return;
-        // localStorage flag 우선 — 회원가입 직후 즉시 set 되어 첫 페이지 진입에서 신뢰성 높음.
+        // localStorage flag 만으로 트리거 — currentSession 의존성 제거 (init 대기 race 제거).
+        // 회원가입 완료 직후 즉시 set 되므로 다음 페이지 진입 시 어디서든 표시됨.
         let pending = false;
         try { pending = (localStorage.getItem('yman_pending_welcome') === '1'); } catch {}
-        // 보조: user_metadata.needs_welcome (서버 commit 늦어도 fallback).
-        if (!pending) {
+        // 보조: 이미 session 있고 user_metadata.needs_welcome=true 면 표시.
+        if (!pending && currentSession?.user) {
             const meta = currentSession.user.user_metadata || {};
             if (meta.needs_welcome === true) pending = true;
         }
         if (pending) openWelcomeModal();
     } catch {}
+}
+
+// 사장님 2026-05-25 — bootApp 안 쓰는 페이지 (index.html 등) 에서도 자동 표시.
+// DOMContentLoaded 직후 한 번 시도. 회원가입 완료 → navigateAfterAuth → 다음 페이지 진입 즉시 모달.
+// transition 페이지 (login-complete / logout) 는 즉시 redirect 되므로 skip.
+if (typeof document !== 'undefined') {
+    const _triggerWelcome = () => {
+        try {
+            const path = String(window.location?.pathname || '');
+            if (/login-complete\.html|logout\.html/.test(path)) return;
+            maybeShowWelcomeModal();
+        } catch {}
+    };
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', _triggerWelcome, { once: true });
+    } else {
+        setTimeout(_triggerWelcome, 0);
+    }
 }
 
 /* =========================================================================
