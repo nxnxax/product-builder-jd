@@ -225,6 +225,32 @@ function user_dir_segment(string $email): string {
 function customer_log_free_quota(): int { return 5; }
 
 /**
+ * 사장님 2026-05-25 — native A 모달 분기용 plan 정보 빌더.
+ * requires_subscription = free + non-admin → native 가 첫 모달 (취소/요약보기/양식에 전송) 대신
+ * "Plus 구독부터 사용 가능해요" 모달 즉시 표시 분기 트리거.
+ */
+function build_plan_info_for_response(PDO $pdo, string $ownerEmail, bool $isAdminUser): array {
+    $plan = 'free';
+    $freeUsed = 0;
+    try {
+        $ps = $pdo->prepare('SELECT plan, free_summaries_used FROM members WHERE email = :e LIMIT 1');
+        $ps->execute([':e' => $ownerEmail]);
+        $row = $ps->fetch();
+        if ($row) {
+            $plan = (string)($row['plan'] ?? 'free');
+            if ($plan === 'trialing') $plan = 'free';
+            $freeUsed = (int)($row['free_summaries_used'] ?? 0);
+        }
+    } catch (Throwable $e) { /* plan 컬럼 없음 — 'free' default */ }
+    return [
+        'plan' => $plan,
+        'free_summaries_used' => $freeUsed,
+        'free_quota' => customer_log_free_quota(),
+        'requires_subscription' => ($plan === 'free' && !$isAdminUser),
+    ];
+}
+
+/**
  * admin allowlist — 운영자 계정은 free quota 우회.
  * records.php 의 admin_email_allowlist() 와 같은 패턴.
  * 추후 admin 추가 시 양쪽 모두 갱신.
@@ -676,24 +702,15 @@ $idemStmt->execute([':o' => $ownerEmail, ':k' => $clientReqId]);
 $existing = $idemStmt->fetch();
 if ($existing) {
     // 이미 처리됨 — 200 + 같은 row.
-    $planRow = null;
-    try {
-        $ps = $pdo->prepare('SELECT plan, free_summaries_used FROM members WHERE email = :e LIMIT 1');
-        $ps->execute([':e' => $ownerEmail]);
-        $planRow = $ps->fetch();
-    } catch (Throwable $e) { /* plan 컬럼 없음 — 무시 */ }
+    $isAdminUserDup = is_admin_email_for_recording($ownerEmail);
     jout([
         'ok' => true,
         'duplicate' => true,
-        'error_code' => 'JOB_EXISTS',   // 이미 처리 완료 (customer_log row 존재) — 앱이 기존 결과 사용.
-        'status' => 'saved',            // 앱팀 2차 요청 — 실제 job_status 통일.
+        'error_code' => 'JOB_EXISTS',
+        'status' => 'saved',
         'message' => '이미 처리 완료된 작업입니다.',
         'customer_log' => customer_log_row($existing),
-        'plan' => [
-            'plan' => $planRow['plan'] ?? 'free',
-            'free_summaries_used' => (int)($planRow['free_summaries_used'] ?? 0),
-            'free_quota' => customer_log_free_quota(),
-        ],
+        'plan' => build_plan_info_for_response($pdo, $ownerEmail, $isAdminUserDup),
     ]);
 }
 
@@ -810,7 +827,10 @@ if ($asyncMode) {
                 ->execute([':e' => $_elapsedBefore, ':id' => $asyncJobId]);
         }
     } catch (Throwable $e) {}
-    respond_async_queued($asyncJobId, $placeholderClRow, $placeholderMirrorResult);
+    // 사장님 2026-05-25 — async 응답에 plan 정보 포함 (native A 모달 분기용).
+    $isAdminUserAsync = is_admin_email_for_recording($ownerEmail);
+    $planInfoAsync = build_plan_info_for_response($pdo, $ownerEmail, $isAdminUserAsync);
+    respond_async_queued($asyncJobId, $placeholderClRow, $placeholderMirrorResult, $planInfoAsync);
 
     // 사장님 2026-05-23 — lazy-STT 모드. Railway dispatch 안 함.
     // 사용자가 trigger_summarize 호출 시점에 records.php 에서 Railway 위임.
@@ -2019,5 +2039,7 @@ jout([
         'plan' => $plan,
         'free_summaries_used' => $freeUsed,
         'free_quota' => customer_log_free_quota(),
+        // 사장님 2026-05-25 — native A 모달 분기용 flag.
+        'requires_subscription' => ($plan === 'free' && !$isAdminUser),
     ],
 ]);
