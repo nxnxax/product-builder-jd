@@ -1891,16 +1891,15 @@ function openWelcomeModal() {
 
 function maybeShowWelcomeModal() {
     try {
-        // localStorage flag 만으로 트리거 — currentSession 의존성 제거 (init 대기 race 제거).
-        // 회원가입 완료 직후 즉시 set 되므로 다음 페이지 진입 시 어디서든 표시됨.
+        // localStorage flag 만으로 트리거. 회원가입 완료 직후 set, 표시 시점에 즉시 remove.
+        // user_metadata fallback 제거 (서버 commit race 로 인한 재표시 방지).
         let pending = false;
         try { pending = (localStorage.getItem('yman_pending_welcome') === '1'); } catch {}
-        // 보조: 이미 session 있고 user_metadata.needs_welcome=true 면 표시.
-        if (!pending && currentSession?.user) {
-            const meta = currentSession.user.user_metadata || {};
-            if (meta.needs_welcome === true) pending = true;
-        }
-        if (pending) openWelcomeModal();
+        if (!pending) return;
+        // 사장님 2026-05-25 — 표시 직전 즉시 localStorage 제거 → "한 번만" 강력 보장.
+        // 사용자가 X 안 누르고 페이지 이동해도 다음 진입에서 안 뜸.
+        try { localStorage.removeItem('yman_pending_welcome'); } catch {}
+        openWelcomeModal();
     } catch {}
 }
 
