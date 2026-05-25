@@ -331,6 +331,24 @@ function create_member_from_google(PDO $pdo, $authUser, $data) {
         respond(['ok' => false, 'error' => 'Google 인증 이메일과 가입 이메일이 일치하지 않습니다.'], 403);
     }
 
+    // 사장님 2026-05-25 — Google 가입자는 "가입 완료" 버튼 누르기 전엔 member row INSERT 금지.
+    // login-complete.html 가 OAuth 후 자동 ensure POST 호출 → finalize 없으면 pending_signup 응답.
+    // "가입 완료" 버튼 클릭 시 finalize=true + 이름/휴대폰/닉네임/약관/인증토큰 모두 함께 POST → INSERT.
+    $isFinalize = !empty($data['finalize']);
+    if (!$isFinalize) {
+        $store = find_member_store($pdo);
+        if ($store && member_exists_by_email($pdo, $email) !== true) {
+            respond([
+                'ok' => true,
+                'pending_signup' => true,
+                'needsExtra' => true,
+                'needsName' => true,
+                'needsNickname' => true,
+                'needsPhone' => true,
+            ]);
+        }
+    }
+
     // fullName 우선순위: body → supabase user metadata → email local-part
     // (회원가입 모달은 fullName 명시 전달; 로그인 후 자동 보강은 metadata fallback 사용)
     $fullName = clean($data['fullName'] ?? $data['name'] ?? null);
@@ -349,11 +367,11 @@ function create_member_from_google(PDO $pdo, $authUser, $data) {
         $phone = clean($meta['phone'] ?? null);
     }
 
-    // 사장님 2026-05-25 — 일반(이메일) 회원가입 시 휴대폰 인증 토큰 강제.
+    // 사장님 2026-05-25 — 일반(이메일) 회원가입 + Google "가입 완료" 시 휴대폰 인증 토큰 강제.
     // signup-verify-otp 가 발급한 'signup_verified' 행 (10분 유효, 1회 사용) 매칭.
-    // Google 가입 (provider='google') 은 그대로 — 구글 시스템 사용 (사장님 정책 line 아래 주석).
+    // finalize=true (Google "가입 완료" 버튼) 또는 provider='email' (일반 회원가입) 일 때 검증.
     $signupProvider = strtolower(trim((string)($data['provider'] ?? '')));
-    if ($signupProvider === 'email' && $phone !== null && $phone !== '') {
+    if (($signupProvider === 'email' || $isFinalize) && $phone !== null && $phone !== '') {
         $verificationToken = trim((string)($data['phoneVerificationToken'] ?? $data['phone_verification_token'] ?? ''));
         if ($verificationToken === '') {
             respond(['ok'=>false, 'error'=>'휴대폰 인증이 필요합니다.', 'reason'=>'phone_verification_required'], 403);

@@ -55,13 +55,28 @@
     <div class="wrap" id="extraWrap" style="display:none;">
         <form class="signup-extra" id="extraForm">
             <h2>가입을 완료해 주세요</h2>
-            <p class="sub">YOUNGMAN 에 처음 오셨네요. 닉네임 설정과 약관 동의가 필요합니다.</p>
+            <p class="sub">YOUNGMAN 에 처음 오셨네요. 정보를 입력해 주세요.</p>
+
+            <label class="field phone-row">이름 <input type="text" id="extraFullName" autocomplete="name" placeholder="실명" required></label>
+
+            <div class="nick-row">
+                <label class="field">휴대폰 번호 <input type="tel" id="extraPhone" autocomplete="tel" inputmode="numeric" placeholder="010-0000-0000" required></label>
+                <button type="button" class="check-btn" id="extraSendOtp">인증번호 받기</button>
+            </div>
+            <div class="nick-result" id="extraSendOtpResult" hidden></div>
+
+            <div class="nick-row" id="extraOtpRow" hidden>
+                <label class="field">인증번호 <input type="text" id="extraOtpCode" maxlength="6" inputmode="numeric" placeholder="6자리 숫자"></label>
+                <button type="button" class="check-btn" id="extraVerifyOtp">확인</button>
+            </div>
+            <div class="nick-result" id="extraVerifyOtpResult" hidden></div>
+
             <div class="nick-row">
                 <label class="field">닉네임 <input type="text" id="extraNickname" minlength="2" maxlength="20" placeholder="2~20자 한글/영문/숫자" required></label>
                 <button type="button" class="check-btn" id="extraCheckNick">중복확인</button>
             </div>
             <div class="nick-result" id="extraNickResult" hidden></div>
-            <label class="field phone-row">휴대폰 번호 <input type="tel" id="extraPhone" autocomplete="tel" placeholder="010-0000-0000" required></label>
+
             <div class="consents">
                 <label><input type="checkbox" id="extraAgreeAll"> 전체 동의</label>
                 <label><input type="checkbox" id="extraAgreeTerms" data-req> <span class="req">필수</span> <a href="terms.html" target="_blank" rel="noopener">이용약관</a>에 동의</label>
@@ -146,8 +161,9 @@
                 && session.user.identities.some(i => String(i?.provider || '').toLowerCase() === 'google');
             const isGoogle = providerStr === 'google' || providersArr.includes('google') || identitiesGoogle;
             let ensureSucceeded = false;
-            let needsNickname = false;   // 서버: 닉네임 부재 (신규 INSERT or 기존 nickname 비어있음)
-            let needsPhone = false;      // 서버: 휴대폰 부재 (Google 가입자가 휴대폰 안 줬을 때)
+            let needsNickname = false;
+            let needsPhone = false;
+            let isPendingSignup = false;   // 사장님 2026-05-25 — Google 신규 미완료 가입자
             let ensureData = {};
             try {
                 const ensureResp = await fetch('records.php?resource=auth-member&ensure=1', {
@@ -160,16 +176,15 @@
                         resource: 'auth-member',
                         ensure: true,
                         email: session.user?.email || '',
-                        fullName: meta.full_name || meta.name || '',
-                        phone:    meta.phone || '',
-                        nickname: meta.nickname || '',
+                        // finalize 없음 — 신규 Google 가입자는 form 통해 입력 받기 전 INSERT 금지.
                     }),
                 });
                 ensureData = await ensureResp.json().catch(() => ({}));
                 console.log('[ensure member]', ensureResp.status, ensureData);
                 ensureSucceeded = ensureResp.ok && (ensureData?.ok || ensureData?.already);
-                needsNickname = !!ensureData?.needsNickname;
-                needsPhone    = !!ensureData?.needsPhone;
+                isPendingSignup = !!ensureData?.pending_signup;
+                needsNickname   = !!ensureData?.needsNickname;
+                needsPhone      = !!ensureData?.needsPhone;
                 if (!ensureSucceeded) {
                     try {
                         sessionStorage.setItem('erp.ensureError', JSON.stringify({
@@ -184,21 +199,20 @@
                 try { sessionStorage.setItem('erp.ensureError', JSON.stringify({ error: String(e?.message || e), at: new Date().toISOString() })); } catch {}
             }
 
-            // Google 가입자가 nickname 또는 phone 중 하나라도 비어있으면 모달 표시.
-            // meta.nickname 이 채워져 있어도 휴대폰이 없으면 모달 → 휴대폰 슬롯 필수 수집.
-            const needsExtra = isGoogle && (needsNickname || needsPhone);
+            // Google 신규 = pending_signup → 무조건 form. 옛 가입자 보강 필요 = needsNickname || needsPhone.
+            const needsExtra = isPendingSignup || (isGoogle && (needsNickname || needsPhone));
             console.log('[signup-extra trigger]', {
-                provider: providerStr, providers: providersArr, identitiesGoogle,
-                isGoogle, needsNickname, needsPhone, metaNickname: meta.nickname || '',
-                metaPhone: meta.phone || '', needsExtra,
+                provider: providerStr, isGoogle, isPendingSignup,
+                needsNickname, needsPhone, needsExtra,
             });
             if (needsExtra) {
                 document.getElementById('loadingState').style.display = 'none';
                 document.getElementById('extraWrap').style.display = 'flex';
-                // 기존 nickname 이 있으면(휴대폰만 누락 케이스) pre-fill 해서 사용자 부담 ↓
                 setupExtraForm(session, target, {
+                    presetFullName: meta.full_name || meta.name || '',
                     presetNickname: (ensureData && ensureData.nickname) || meta.nickname || '',
                     presetPhone: meta.phone || '',
+                    isPendingSignup,
                 });
                 // submit 후 진행 — 자동 redirect 안 함. module top-level 이라 return 사용 X.
             } else {
@@ -219,32 +233,165 @@
             } /* end else (needsExtra 가 false 인 경우만 redirect) */
         }
 
-        // Google 신규 가입자 — 닉네임 + 약관 입력 form 처리.
+        // 사장님 2026-05-25 — Google 가입자 보충 form.
+        // 이름 / 휴대폰(인증) / 닉네임 / 약관 → "가입 완료" 버튼까지 눌러야 member row INSERT.
         function setupExtraForm(session, target, presets) {
-            const form = document.getElementById('extraForm');
-            const nickEl = document.getElementById('extraNickname');
-            const phoneEl = document.getElementById('extraPhone');
-            const checkBtn = document.getElementById('extraCheckNick');
-            const resultEl = document.getElementById('extraNickResult');
-            const errEl = document.getElementById('extraErr');
-            const submitBtn = document.getElementById('extraSubmit');
-            const agreeAll = document.getElementById('extraAgreeAll');
-            const agreeTerms = document.getElementById('extraAgreeTerms');
-            const agreePrivacy = document.getElementById('extraAgreePrivacy');
-            const agreeMarketing = document.getElementById('extraAgreeMarketing');
+            const form              = document.getElementById('extraForm');
+            const fullNameEl        = document.getElementById('extraFullName');
+            const phoneEl           = document.getElementById('extraPhone');
+            const sendOtpBtn        = document.getElementById('extraSendOtp');
+            const sendOtpResultEl   = document.getElementById('extraSendOtpResult');
+            const otpRowEl          = document.getElementById('extraOtpRow');
+            const otpCodeEl         = document.getElementById('extraOtpCode');
+            const verifyOtpBtn      = document.getElementById('extraVerifyOtp');
+            const verifyOtpResultEl = document.getElementById('extraVerifyOtpResult');
+            const nickEl            = document.getElementById('extraNickname');
+            const checkNickBtn      = document.getElementById('extraCheckNick');
+            const nickResultEl      = document.getElementById('extraNickResult');
+            const errEl             = document.getElementById('extraErr');
+            const submitBtn         = document.getElementById('extraSubmit');
+            const agreeAll          = document.getElementById('extraAgreeAll');
+            const agreeTerms        = document.getElementById('extraAgreeTerms');
+            const agreePrivacy      = document.getElementById('extraAgreePrivacy');
+            const agreeMarketing    = document.getElementById('extraAgreeMarketing');
             let nickChecked = false;
+            let phoneVerificationToken = null;
+            let resendCooldownTimer = null;
 
-            // 기존 nickname/phone 이 이미 채워져 있는 경우 pre-fill.
-            const presetNick = (presets?.presetNickname || '').trim();
-            const presetPhone = (presets?.presetPhone || '').toString().replace(/\D/g, '');
+            // pre-fill
+            const presetFullName = (presets?.presetFullName || '').trim();
+            const presetNick     = (presets?.presetNickname || '').trim();
+            const presetPhone    = (presets?.presetPhone || '').toString().replace(/\D/g, '');
+            if (presetFullName) fullNameEl.value = presetFullName;
             if (presetNick) {
                 nickEl.value = presetNick;
-                nickChecked = true; // 본인이 이미 쓰던 닉네임 → 중복확인 skip
-                resultEl.hidden = false;
-                resultEl.className = 'nick-result ok';
-                resultEl.textContent = '✅ 현재 닉네임을 그대로 사용 (수정 시 다시 중복확인)';
+                nickChecked = true;
+                nickResultEl.hidden = false;
+                nickResultEl.className = 'nick-result ok';
+                nickResultEl.textContent = '✅ 현재 닉네임을 그대로 사용 (수정 시 다시 중복확인)';
             }
-            if (presetPhone) phoneEl.value = presetPhone;
+            if (presetPhone) phoneEl.value = formatPhone(presetPhone);
+
+            function formatPhone(digits) {
+                const d = String(digits || '').replace(/\D/g, '').slice(0, 11);
+                if (d.length < 4)       return d;
+                else if (d.length < 8)  return d.slice(0, 3) + '-' + d.slice(3);
+                else                    return d.slice(0, 3) + '-' + d.slice(3, 7) + '-' + d.slice(7);
+            }
+
+            function showResult(el, ok, text) {
+                el.hidden = false;
+                el.className = ok ? 'nick-result ok' : 'nick-result ng';
+                el.textContent = text;
+            }
+
+            function resetPhoneVerification() {
+                phoneVerificationToken = null;
+                otpRowEl.hidden = true;
+                otpCodeEl.value = '';
+                otpCodeEl.disabled = false;
+                verifyOtpResultEl.hidden = true;
+                verifyOtpBtn.disabled = false;
+                verifyOtpBtn.textContent = '확인';
+                sendOtpResultEl.hidden = true;
+                if (!resendCooldownTimer) {
+                    sendOtpBtn.disabled = false;
+                    sendOtpBtn.textContent = '인증번호 받기';
+                }
+            }
+
+            function startResendCooldown(sec) {
+                if (resendCooldownTimer) { clearInterval(resendCooldownTimer); resendCooldownTimer = null; }
+                let remain = sec;
+                sendOtpBtn.disabled = true;
+                sendOtpBtn.textContent = `재발송 (${remain}초)`;
+                resendCooldownTimer = setInterval(() => {
+                    remain -= 1;
+                    if (remain <= 0) {
+                        clearInterval(resendCooldownTimer); resendCooldownTimer = null;
+                        if (!phoneVerificationToken) {
+                            sendOtpBtn.disabled = false;
+                            sendOtpBtn.textContent = '인증번호 받기';
+                        }
+                    } else {
+                        sendOtpBtn.textContent = `재발송 (${remain}초)`;
+                    }
+                }, 1000);
+            }
+
+            phoneEl.addEventListener('input', () => {
+                phoneEl.value = formatPhone(phoneEl.value);
+                if (phoneVerificationToken) resetPhoneVerification();
+            });
+
+            sendOtpBtn.addEventListener('click', async () => {
+                const phoneDigits = phoneEl.value.replace(/\D/g, '');
+                if (!/^01[016789]\d{7,8}$/.test(phoneDigits)) {
+                    showResult(sendOtpResultEl, false, '올바른 휴대폰 번호를 입력해주세요 (010-...).');
+                    return;
+                }
+                sendOtpBtn.disabled = true;
+                sendOtpBtn.textContent = '발송 중…';
+                try {
+                    const resp = await fetch('records.php?resource=signup-send-otp', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ phone: phoneDigits }),
+                    });
+                    const data = await resp.json().catch(() => ({}));
+                    if (!resp.ok || !data?.ok) {
+                        showResult(sendOtpResultEl, false, data?.error || ('발송 실패 (HTTP ' + resp.status + ')'));
+                        sendOtpBtn.disabled = false;
+                        sendOtpBtn.textContent = '인증번호 받기';
+                        return;
+                    }
+                    showResult(sendOtpResultEl, true, '📩 ' + (data.sentTo || phoneDigits) + ' 로 6자리 인증번호 발송 (5분 유효)');
+                    otpRowEl.hidden = false;
+                    setTimeout(() => otpCodeEl.focus(), 50);
+                    startResendCooldown(60);
+                } catch (e) {
+                    showResult(sendOtpResultEl, false, '발송 실패: ' + (e?.message || e));
+                    sendOtpBtn.disabled = false;
+                    sendOtpBtn.textContent = '인증번호 받기';
+                }
+            });
+
+            verifyOtpBtn.addEventListener('click', async () => {
+                const phoneDigits = phoneEl.value.replace(/\D/g, '');
+                const code = otpCodeEl.value.replace(/\D/g, '');
+                if (!code || code.length !== 6) {
+                    showResult(verifyOtpResultEl, false, '인증번호 6자리를 입력해주세요.');
+                    return;
+                }
+                verifyOtpBtn.disabled = true;
+                verifyOtpBtn.textContent = '확인 중…';
+                try {
+                    const resp = await fetch('records.php?resource=signup-verify-otp', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ phone: phoneDigits, code }),
+                    });
+                    const data = await resp.json().catch(() => ({}));
+                    if (!resp.ok || !data?.ok) {
+                        showResult(verifyOtpResultEl, false, data?.error || ('인증 실패 (HTTP ' + resp.status + ')'));
+                        verifyOtpBtn.disabled = false;
+                        verifyOtpBtn.textContent = '확인';
+                        return;
+                    }
+                    phoneVerificationToken = String(data.verificationToken || '');
+                    showResult(verifyOtpResultEl, true, '✅ 휴대폰 인증 완료');
+                    verifyOtpBtn.textContent = '✓ 인증완료';
+                    verifyOtpBtn.disabled = true;
+                    otpCodeEl.disabled = true;
+                    if (resendCooldownTimer) { clearInterval(resendCooldownTimer); resendCooldownTimer = null; }
+                    sendOtpBtn.disabled = true;
+                    sendOtpBtn.textContent = '✓ 인증완료';
+                } catch (e) {
+                    showResult(verifyOtpResultEl, false, '인증 실패: ' + (e?.message || e));
+                    verifyOtpBtn.disabled = false;
+                    verifyOtpBtn.textContent = '확인';
+                }
+            });
 
             // 전체동의 체크 동기화
             agreeAll.addEventListener('change', () => {
@@ -255,62 +402,77 @@
             }));
 
             nickEl.addEventListener('input', () => {
-                resultEl.hidden = true;
+                nickResultEl.hidden = true;
                 nickChecked = false;
             });
 
             // 닉네임 중복확인
-            checkBtn.addEventListener('click', async () => {
+            checkNickBtn.addEventListener('click', async () => {
                 const v = nickEl.value.trim();
-                if (!v) { resultEl.hidden=false; resultEl.className='nick-result ng'; resultEl.textContent='닉네임을 입력해주세요.'; return; }
-                checkBtn.disabled = true; checkBtn.textContent = '확인 중…';
+                if (!v) { showResult(nickResultEl, false, '닉네임을 입력해주세요.'); return; }
+                checkNickBtn.disabled = true; checkNickBtn.textContent = '확인 중…';
                 try {
                     const resp = await fetch('records.php?resource=auth-availability&nickname=' + encodeURIComponent(v), { method: 'GET' });
                     const data = await resp.json().catch(() => ({}));
                     if (data?.nickname_invalid) {
-                        resultEl.hidden=false; resultEl.className='nick-result ng';
-                        resultEl.textContent = '닉네임은 2~20자, 한글/영문/숫자/_/- 만 가능합니다.';
+                        showResult(nickResultEl, false, '닉네임은 2~20자, 한글/영문/숫자/_/- 만 가능합니다.');
                     } else if (data?.nickname_taken === true) {
-                        resultEl.hidden=false; resultEl.className='nick-result ng';
-                        resultEl.textContent = '이미 사용 중인 닉네임입니다.';
+                        showResult(nickResultEl, false, '이미 사용 중인 닉네임입니다.');
                     } else {
-                        resultEl.hidden=false; resultEl.className='nick-result ok';
-                        resultEl.textContent = '✅ 사용 가능한 닉네임입니다.';
+                        showResult(nickResultEl, true, '✅ 사용 가능한 닉네임입니다.');
                         nickChecked = true;
                     }
                 } catch (e) {
-                    resultEl.hidden=false; resultEl.className='nick-result ng';
-                    resultEl.textContent = '확인 실패: ' + (e?.message || e);
+                    showResult(nickResultEl, false, '확인 실패: ' + (e?.message || e));
                 } finally {
-                    checkBtn.disabled = false; checkBtn.textContent = '중복확인';
+                    checkNickBtn.disabled = false; checkNickBtn.textContent = '중복확인';
                 }
             });
 
-            // submit
+            // 가입 완료 submit — auth-member POST (finalize=true) 가 모든 INSERT 처리.
             form.addEventListener('submit', async (e) => {
                 e.preventDefault();
                 errEl.textContent = '';
+                const fullName = fullNameEl.value.trim();
+                const phoneDigits = phoneEl.value.replace(/\D/g, '');
                 const nickname = nickEl.value.trim();
-                const phoneRaw = phoneEl.value.trim();
-                const phoneDigits = phoneRaw.replace(/\D/g, '');
-                if (!nickname) { errEl.textContent = '닉네임을 입력해주세요.'; return; }
-                if (!nickChecked) { errEl.textContent = '닉네임 중복확인 후 진행해주세요.'; return; }
+
+                if (!fullName) { errEl.textContent = '이름을 입력해주세요.'; return; }
                 if (!phoneDigits) { errEl.textContent = '휴대폰 번호를 입력해주세요.'; return; }
                 if (!/^01[016789]\d{7,8}$/.test(phoneDigits)) { errEl.textContent = '올바른 휴대폰 번호를 입력해주세요 (010-0000-0000).'; return; }
+                if (!phoneVerificationToken) { errEl.textContent = '휴대폰 인증을 완료해주세요.'; return; }
+                if (!nickname) { errEl.textContent = '닉네임을 입력해주세요.'; return; }
+                if (!nickChecked) { errEl.textContent = '닉네임 중복확인 후 진행해주세요.'; return; }
                 if (!agreeTerms.checked || !agreePrivacy.checked) { errEl.textContent = '필수 약관에 동의해주세요.'; return; }
 
-                submitBtn.disabled = true; submitBtn.textContent = '저장 중…';
+                submitBtn.disabled = true; submitBtn.textContent = '가입 처리 중…';
                 try {
-                    // 1) members 행 update (nickname + phone)
-                    const updateResp = await fetch('records.php?resource=auth-profile', {
-                        method: 'PUT',
+                    // member row INSERT (finalize=true → server 가 token 검증 + INSERT)
+                    const finalizeResp = await fetch('records.php?resource=auth-member&ensure=1', {
+                        method: 'POST',
                         headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + session.access_token },
-                        body: JSON.stringify({ resource: 'auth-profile', data: { nickname, phone: phoneDigits } }),
+                        body: JSON.stringify({
+                            resource: 'auth-member',
+                            ensure: true,
+                            finalize: true,
+                            provider: 'google',
+                            email: session.user?.email || '',
+                            fullName,
+                            phone: phoneDigits,
+                            nickname,
+                            phone_verification_token: phoneVerificationToken,
+                            terms_agreed: true,
+                            privacy_agreed: true,
+                            marketing_opt_in: !!agreeMarketing.checked,
+                            consent_at: new Date().toISOString(),
+                        }),
                     });
-                    const updateData = await updateResp.json().catch(() => ({}));
-                    if (!updateResp.ok || !updateData?.ok) throw new Error(updateData?.error || ('HTTP ' + updateResp.status));
+                    const finalizeData = await finalizeResp.json().catch(() => ({}));
+                    if (!finalizeResp.ok || !(finalizeData?.ok || finalizeData?.already)) {
+                        throw new Error(finalizeData?.error || ('HTTP ' + finalizeResp.status));
+                    }
 
-                    // 2) supabase user_metadata 업데이트 (nickname + 약관 동의 기록)
+                    // supabase user_metadata 갱신 (이름/닉네임/약관 동의 기록)
                     try {
                         const mod = await import('./auth-shared.js?v=20260525-phone-otp');
                         const result = await mod.initSupabase().catch(() => null);
@@ -318,8 +480,10 @@
                         if (client?.auth?.updateUser) {
                             await client.auth.updateUser({
                                 data: {
+                                    full_name: fullName,
                                     nickname,
                                     phone: phoneDigits,
+                                    phone_verified: true,
                                     terms_agreed: true,
                                     privacy_agreed: true,
                                     marketing_opt_in: !!agreeMarketing.checked,
@@ -330,19 +494,19 @@
                         }
                     } catch {}
 
-                    // 3) 원래 가려던 페이지로 이동
+                    // 원래 가려던 페이지로 이동
                     const sep = target.includes('?') ? '&' : '?';
                     const url = target + sep + '_a=' + Date.now();
                     try { window.location.replace(url); }
                     catch { try { window.location.href = url; } catch {} }
                 } catch (err) {
-                    errEl.textContent = '저장 실패: ' + (err?.message || err);
+                    errEl.textContent = '가입 실패: ' + (err?.message || err);
                     submitBtn.disabled = false; submitBtn.textContent = '가입 완료';
                 }
             });
 
-            // 닉네임 input 자동 focus
-            setTimeout(() => nickEl?.focus(), 100);
+            // 이름 input 자동 focus (presetFullName 있으면 휴대폰)
+            setTimeout(() => (presetFullName ? phoneEl : fullNameEl)?.focus(), 100);
         }
     </script>
 </body>
