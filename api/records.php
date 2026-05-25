@@ -155,6 +155,7 @@ function normalize_resource($value) {
         'community-posts',
         'find-email', 'find-email-send-otp', 'find-email-verify-otp',
         'find-pwd-send-otp', 'find-pwd-verify-otp', 'find-pwd-reset',
+        'signup-send-otp', 'signup-verify-otp',
     ];
     if (!in_array($resource, $allowed, true)) {
         respond(['ok' => false, 'error' => '지원하지 않는 리소스입니다.'], 400);
@@ -346,6 +347,31 @@ function create_member_from_google(PDO $pdo, $authUser, $data) {
     if (!$phone) {
         $meta = is_array($authUser['user_metadata'] ?? null) ? $authUser['user_metadata'] : [];
         $phone = clean($meta['phone'] ?? null);
+    }
+
+    // 사장님 2026-05-25 — 일반(이메일) 회원가입 시 휴대폰 인증 토큰 강제.
+    // signup-verify-otp 가 발급한 'signup_verified' 행 (10분 유효, 1회 사용) 매칭.
+    // Google 가입 (provider='google') 은 그대로 — 구글 시스템 사용 (사장님 정책 line 아래 주석).
+    $signupProvider = strtolower(trim((string)($data['provider'] ?? '')));
+    if ($signupProvider === 'email' && $phone !== null && $phone !== '') {
+        $verificationToken = trim((string)($data['phoneVerificationToken'] ?? $data['phone_verification_token'] ?? ''));
+        if ($verificationToken === '') {
+            respond(['ok'=>false, 'error'=>'휴대폰 인증이 필요합니다.', 'reason'=>'phone_verification_required'], 403);
+        }
+        $phoneDigits = preg_replace('/\D/', '', (string)$phone);
+        ensure_auth_otp_table($pdo);
+        $vStmt = $pdo->prepare("SELECT id, expires_at FROM auth_otp WHERE target = :t AND purpose = 'signup_verified' AND code = :c LIMIT 1");
+        $vStmt->execute([':t' => $phoneDigits, ':c' => $verificationToken]);
+        $vRow = $vStmt->fetch();
+        if (!$vRow) {
+            respond(['ok'=>false, 'error'=>'휴대폰 인증 토큰이 유효하지 않습니다. 인증을 다시 진행해주세요.', 'reason'=>'phone_token_invalid'], 403);
+        }
+        if (strtotime($vRow['expires_at']) < time()) {
+            $pdo->prepare('DELETE FROM auth_otp WHERE id = ?')->execute([$vRow['id']]);
+            respond(['ok'=>false, 'error'=>'휴대폰 인증이 만료되었습니다 (10분). 다시 진행해주세요.', 'reason'=>'phone_token_expired'], 410);
+        }
+        // 1회 사용 — 검증 통과 후 즉시 삭제.
+        $pdo->prepare('DELETE FROM auth_otp WHERE id = ?')->execute([$vRow['id']]);
     }
 
     $nickname = clean($data['nickname'] ?? null);
@@ -677,7 +703,13 @@ function send_otp_sms_via_admin(PDO $pdo, $purpose, $targetPhone) {
     require_once __DIR__ . '/sms/providers/SolapiProvider.php';
     try {
         $provider = new SolapiProvider(['api_key' => $apiKey, 'api_secret' => $apiSec]);
-        $msg = "[영맨] 아이디 찾기 인증번호: {$code} (5분 안에 입력해주세요)";
+        // 사장님 2026-05-25 — purpose 별 사용자 친화 메시지.
+        $purposeLabel = (function ($p) {
+            if ($p === 'signup')   return '회원가입';
+            if ($p === 'find_pwd') return '비밀번호 찾기';
+            return '아이디 찾기';
+        })($purpose);
+        $msg = "[영맨] {$purposeLabel} 인증번호: {$code} (5분 안에 입력해주세요)";
         $result = $provider->sendBulk([['to' => $targetPhone, 'text' => $msg]], $sender, []);
         if (!isset($result['success']) || $result['success'] < 1) {
             $reason = '';
@@ -2098,6 +2130,87 @@ try {
     if ($resource === 'auth-member') {
         if ($method !== 'POST') respond(['ok' => false, 'error' => '지원하지 않는 요청 방식입니다.'], 405);
         create_member_from_google($pdo, $authUser, $body);
+    }
+
+    // 사장님 2026-05-25 — 일반(이메일) 회원가입 휴대폰 인증.
+    // ① signup-send-otp : 휴대폰 → 6자리 OTP SMS 발송 (auth_otp purpose='signup', 5분 유효, 1분 cooldown).
+    // ② signup-verify-otp: phone+code 검증 → 'signup_verified' 토큰 발급 (10분 유효, 1회 사용).
+    // ③ auth-member 분기에서 provider='email' + phone 입력 시 토큰 강제 (create_member_from_google 내부).
+    if ($resource === 'signup-send-otp') {
+        if ($method !== 'POST') respond(['ok'=>false, 'error'=>'지원하지 않는 요청 방식'], 405);
+        $phone = preg_replace('/\D/', '', (string)($body['phone'] ?? ''));
+        if (!preg_match('/^01[016789]\d{7,8}$/', $phone)) {
+            respond(['ok'=>false, 'error'=>'올바른 휴대폰 번호를 입력해주세요 (010-...).'], 400);
+        }
+
+        ensure_auth_otp_table($pdo);
+
+        // 1분 내 재발송 금지
+        $check = $pdo->prepare("SELECT created_at FROM auth_otp WHERE target = :t AND purpose = 'signup' ORDER BY created_at DESC LIMIT 1");
+        $check->execute([':t' => $phone]);
+        $last = $check->fetch();
+        if ($last && (time() - strtotime($last['created_at'])) < 60) {
+            respond(['ok'=>false, 'error'=>'1분 후 재발송 가능합니다.'], 429);
+        }
+
+        // 이미 가입된 휴대폰이면 거절 — 사장님이 "다음 단계 못 넘어가도록" 요청한 의도와 일치.
+        $store = find_member_store($pdo);
+        if ($store) {
+            $phoneCol = first_existing_column($store['columns'], ['phone', 'mobile', 'tel', 'contact', 'user_phone', 'mb_hp']);
+            if ($phoneCol) {
+                try {
+                    $tableQ = quote_identifier($store['table']);
+                    $phoneQ = quote_identifier($phoneCol);
+                    $rows = $pdo->query("SELECT {$phoneQ} AS ph FROM {$tableQ}")->fetchAll();
+                    foreach ($rows as $r) {
+                        $rPh = function_exists('youngman_decrypt') ? youngman_decrypt((string)$r['ph']) : (string)$r['ph'];
+                        if (preg_replace('/\D/', '', (string)$rPh) === $phone) {
+                            respond(['ok'=>false, 'error'=>'이미 가입된 휴대폰 번호입니다.', 'reason'=>'phone_already_registered'], 409);
+                        }
+                    }
+                } catch (Throwable $e) {}
+            }
+        }
+
+        $sendResult = send_otp_sms_via_admin($pdo, 'signup', $phone);
+        if (!$sendResult['ok']) {
+            respond(['ok'=>false, 'error'=>$sendResult['error'] ?? 'SMS 발송 실패'], $sendResult['status'] ?? 500);
+        }
+        respond(['ok'=>true, 'sentTo'=>mask_phone($phone), 'expiresInSec'=>300]);
+    }
+
+    if ($resource === 'signup-verify-otp') {
+        if ($method !== 'POST') respond(['ok'=>false, 'error'=>'지원하지 않는 요청 방식'], 405);
+        $phone = preg_replace('/\D/', '', (string)($body['phone'] ?? ''));
+        $code  = preg_replace('/\D/', '', (string)($body['code'] ?? ''));
+        if (!$phone || !$code) respond(['ok'=>false, 'error'=>'휴대폰/인증번호를 입력해주세요.'], 400);
+
+        ensure_auth_otp_table($pdo);
+        $stmt = $pdo->prepare("SELECT id, code, attempts, expires_at FROM auth_otp WHERE target = :t AND purpose = 'signup' ORDER BY created_at DESC LIMIT 1");
+        $stmt->execute([':t' => $phone]);
+        $otp = $stmt->fetch();
+        if (!$otp) respond(['ok'=>false, 'error'=>'인증번호를 먼저 받아주세요.'], 400);
+        if (strtotime($otp['expires_at']) < time()) {
+            $pdo->prepare('DELETE FROM auth_otp WHERE id = ?')->execute([$otp['id']]);
+            respond(['ok'=>false, 'error'=>'인증번호가 만료되었습니다. 다시 받아주세요.'], 410);
+        }
+        if ((int)$otp['attempts'] >= 5) respond(['ok'=>false, 'error'=>'시도 횟수를 초과했습니다.'], 429);
+        if ($otp['code'] !== $code) {
+            $pdo->prepare('UPDATE auth_otp SET attempts = attempts + 1 WHERE id = ?')->execute([$otp['id']]);
+            respond(['ok'=>false, 'error'=>'인증번호가 일치하지 않습니다.'], 400);
+        }
+
+        // 검증 성공 — find-pwd 와 동일 패턴: 별도 행 발급 (signup_verified, 10분 유효, 1회 사용).
+        try {
+            $token = bin2hex(random_bytes(24));   // 48 hex chars
+        } catch (Throwable $e) {
+            $token = bin2hex(openssl_random_pseudo_bytes(24));
+        }
+        $pdo->prepare('DELETE FROM auth_otp WHERE id = ?')->execute([$otp['id']]);
+        $pdo->prepare("INSERT INTO auth_otp (purpose, target, code, expires_at)
+                       VALUES ('signup_verified', ?, ?, DATE_ADD(NOW(), INTERVAL 10 MINUTE))")
+            ->execute([$phone, $token]);
+        respond(['ok'=>true, 'verificationToken'=>$token]);
     }
 
     if ($resource === 'find-pwd-send-otp') {

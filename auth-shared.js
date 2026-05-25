@@ -1851,7 +1851,16 @@ function openSharedLoginModal(initialMode = 'login') {
                 <form class="shared-auth-form" novalidate>
                     <div class="shared-auth-fields" data-signup-only hidden>
                         <label>이름 <input type="text" name="fullName" autocomplete="name" placeholder="실명"></label>
-                        <label>휴대폰 <input type="tel" name="phone" autocomplete="tel" placeholder="010-0000-0000"></label>
+                        <div class="signup-input-row">
+                            <label style="flex:1;">휴대폰 <input type="tel" name="phone" autocomplete="tel" inputmode="numeric" placeholder="010-0000-0000"></label>
+                            <button type="button" data-send-otp class="check-dup-btn">인증번호 받기</button>
+                        </div>
+                        <small class="check-result" data-send-otp-result hidden style="margin-top:-6px;display:block;"></small>
+                        <div class="signup-input-row" data-otp-row hidden>
+                            <label style="flex:1;">인증번호 <input type="text" name="otpCode" maxlength="6" inputmode="numeric" placeholder="6자리 숫자"></label>
+                            <button type="button" data-verify-otp class="check-dup-btn">확인</button>
+                        </div>
+                        <small class="check-result" data-verify-otp-result hidden style="margin-top:-6px;display:block;"></small>
                     </div>
                     <div class="signup-input-row" data-signup-input>
                         <label style="flex:1;">이메일 <input type="email" name="email" autocomplete="email" required placeholder="name@example.com"></label>
@@ -2054,6 +2063,128 @@ function openSharedLoginModal(initialMode = 'login') {
         if (checkNickResultEl) checkNickResultEl.hidden = true;
     });
 
+    // 사장님 2026-05-25 — 일반(이메일) 회원가입 휴대폰 인증.
+    // signup-send-otp / signup-verify-otp 호출 + verificationToken 보관.
+    // submit 시 token 없으면 거절. records.php auth-member POST body 에 token 포함.
+    let phoneVerificationToken = null;
+    let resendCooldownTimer = null;
+    const phoneInput        = form.phone;
+    const otpInput          = form.otpCode;
+    const sendOtpBtn        = md.querySelector('[data-send-otp]');
+    const sendOtpResultEl   = md.querySelector('[data-send-otp-result]');
+    const otpRowEl          = md.querySelector('[data-otp-row]');
+    const verifyOtpBtn      = md.querySelector('[data-verify-otp]');
+    const verifyOtpResultEl = md.querySelector('[data-verify-otp-result]');
+
+    function resetPhoneVerification() {
+        phoneVerificationToken = null;
+        if (otpRowEl) otpRowEl.hidden = true;
+        if (otpInput) { otpInput.value = ''; otpInput.disabled = false; }
+        if (verifyOtpResultEl) verifyOtpResultEl.hidden = true;
+        if (verifyOtpBtn)   { verifyOtpBtn.disabled = false; verifyOtpBtn.textContent = '확인'; }
+        if (sendOtpResultEl) sendOtpResultEl.hidden = true;
+        if (sendOtpBtn && !resendCooldownTimer) { sendOtpBtn.disabled = false; sendOtpBtn.textContent = '인증번호 받기'; }
+    }
+
+    // 휴대폰 자동 포맷 (010-XXXX-XXXX) + 변경 시 인증 reset.
+    phoneInput?.addEventListener('input', () => {
+        const d = phoneInput.value.replace(/\D/g, '').slice(0, 11);
+        if (d.length < 4)       phoneInput.value = d;
+        else if (d.length < 8)  phoneInput.value = d.slice(0, 3) + '-' + d.slice(3);
+        else                    phoneInput.value = d.slice(0, 3) + '-' + d.slice(3, 7) + '-' + d.slice(7);
+        if (phoneVerificationToken) resetPhoneVerification();
+    });
+
+    function startResendCooldown(sec) {
+        if (resendCooldownTimer) { clearInterval(resendCooldownTimer); resendCooldownTimer = null; }
+        let remain = sec;
+        sendOtpBtn.disabled = true;
+        sendOtpBtn.textContent = `재발송 (${remain}초)`;
+        resendCooldownTimer = setInterval(() => {
+            remain -= 1;
+            if (remain <= 0) {
+                clearInterval(resendCooldownTimer); resendCooldownTimer = null;
+                if (!phoneVerificationToken) {
+                    sendOtpBtn.disabled = false;
+                    sendOtpBtn.textContent = '인증번호 받기';
+                }
+            } else {
+                sendOtpBtn.textContent = `재발송 (${remain}초)`;
+            }
+        }, 1000);
+    }
+
+    sendOtpBtn?.addEventListener('click', async () => {
+        const phoneDigits = String(phoneInput?.value || '').replace(/\D/g, '');
+        if (!/^01[016789]\d{7,8}$/.test(phoneDigits)) {
+            showCheckResult(sendOtpResultEl, false, '올바른 휴대폰 번호를 입력해주세요 (010-...).');
+            return;
+        }
+        sendOtpBtn.disabled = true;
+        sendOtpBtn.textContent = '발송 중…';
+        try {
+            const resp = await fetch('records.php?resource=signup-send-otp', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ phone: phoneDigits }),
+            });
+            const data = await resp.json().catch(() => ({}));
+            if (!resp.ok || !data?.ok) {
+                showCheckResult(sendOtpResultEl, false, data?.error || ('발송 실패 (HTTP ' + resp.status + ')'));
+                sendOtpBtn.disabled = false;
+                sendOtpBtn.textContent = '인증번호 받기';
+                return;
+            }
+            showCheckResult(sendOtpResultEl, true, '📩 ' + (data.sentTo || phoneDigits) + ' 로 6자리 인증번호 발송 (5분 유효)');
+            if (otpRowEl) otpRowEl.hidden = false;
+            setTimeout(() => otpInput?.focus(), 50);
+            startResendCooldown(60);
+        } catch (e) {
+            showCheckResult(sendOtpResultEl, false, '발송 실패: ' + (e?.message || e));
+            sendOtpBtn.disabled = false;
+            sendOtpBtn.textContent = '인증번호 받기';
+        }
+    });
+
+    verifyOtpBtn?.addEventListener('click', async () => {
+        const phoneDigits = String(phoneInput?.value || '').replace(/\D/g, '');
+        const code = String(otpInput?.value || '').replace(/\D/g, '');
+        if (!code || code.length !== 6) {
+            showCheckResult(verifyOtpResultEl, false, '인증번호 6자리를 입력해주세요.');
+            return;
+        }
+        verifyOtpBtn.disabled = true;
+        verifyOtpBtn.textContent = '확인 중…';
+        try {
+            const resp = await fetch('records.php?resource=signup-verify-otp', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ phone: phoneDigits, code }),
+            });
+            const data = await resp.json().catch(() => ({}));
+            if (!resp.ok || !data?.ok) {
+                showCheckResult(verifyOtpResultEl, false, data?.error || ('인증 실패 (HTTP ' + resp.status + ')'));
+                verifyOtpBtn.disabled = false;
+                verifyOtpBtn.textContent = '확인';
+                return;
+            }
+            phoneVerificationToken = String(data.verificationToken || '');
+            showCheckResult(verifyOtpResultEl, true, '✅ 휴대폰 인증 완료');
+            verifyOtpBtn.textContent = '✓ 인증완료';
+            verifyOtpBtn.disabled = true;
+            if (otpInput) otpInput.disabled = true;
+            if (resendCooldownTimer) { clearInterval(resendCooldownTimer); resendCooldownTimer = null; }
+            if (sendOtpBtn) {
+                sendOtpBtn.disabled = true;
+                sendOtpBtn.textContent = '✓ 인증완료';
+            }
+        } catch (e) {
+            showCheckResult(verifyOtpResultEl, false, '인증 실패: ' + (e?.message || e));
+            verifyOtpBtn.disabled = false;
+            verifyOtpBtn.textContent = '확인';
+        }
+    });
+
     // 전체동의 체크 동기화
     agreeAll?.addEventListener('change', () => {
         [...agreeReqs, ...agreeOpts].forEach(el => { if (el) el.checked = agreeAll.checked; });
@@ -2097,6 +2228,7 @@ function openSharedLoginModal(initialMode = 'login') {
 
             if (!fullName)                              { msgEl.textContent = '이름을 입력해주세요.'; return; }
             if (!phone)                                 { msgEl.textContent = '올바른 휴대폰 번호를 입력해주세요 (010-...).'; return; }
+            if (!phoneVerificationToken)                { msgEl.textContent = '휴대폰 인증을 완료해주세요.'; return; }
             if (!validNickname(nickname))               { msgEl.textContent = '닉네임은 2~20자, 한글/영문/숫자/_/- 만 가능합니다.'; return; }
             if (password !== passwordConfirm)           { msgEl.textContent = '비밀번호와 확인이 일치하지 않습니다.'; return; }
             if (!form.agreeTerms.checked || !form.agreePrivacy.checked) {
@@ -2139,6 +2271,7 @@ function openSharedLoginModal(initialMode = 'login') {
                             resource: 'auth-member',
                             ensure: true,   // idempotent — 이미 있어도 OK
                             email, fullName, phone, nickname, provider: 'email',
+                            phone_verification_token: phoneVerificationToken,   // 2026-05-25
                             ...consentMeta,
                         }),
                     });
