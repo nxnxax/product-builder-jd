@@ -1862,26 +1862,28 @@ function openWelcomeModal() {
     `;
     document.body.appendChild(md);
 
-    async function markWelcomed() {
+    function markWelcomed() {
+        try { localStorage.removeItem('yman_pending_welcome'); } catch {}
         try {
             if (supabaseClient?.auth?.updateUser) {
-                await supabaseClient.auth.updateUser({ data: { needs_welcome: false } });
+                // 보조 — user_metadata 도 갱신 (다른 기기 첫 진입 시 다시 안 뜨도록).
+                supabaseClient.auth.updateUser({ data: { needs_welcome: false } }).catch(() => {});
             }
         } catch {}
     }
 
-    md.querySelector('.welcome-modal-close').addEventListener('click', async () => {
-        await markWelcomed();
+    md.querySelector('.welcome-modal-close').addEventListener('click', () => {
+        markWelcomed();
         md.remove();
     });
-    md.querySelector('.welcome-cta').addEventListener('click', async () => {
-        await markWelcomed();
+    md.querySelector('.welcome-cta').addEventListener('click', () => {
+        markWelcomed();
         md.remove();
         try { window.location.href = 'subscribe.html'; } catch {}
     });
-    md.querySelector('.welcome-modal-backdrop').addEventListener('click', async (e) => {
+    md.querySelector('.welcome-modal-backdrop').addEventListener('click', (e) => {
         if (e.target.classList.contains('welcome-modal-backdrop')) {
-            await markWelcomed();
+            markWelcomed();
             md.remove();
         }
     });
@@ -1890,10 +1892,15 @@ function openWelcomeModal() {
 function maybeShowWelcomeModal() {
     try {
         if (!currentSession?.user) return;
-        const meta = currentSession.user.user_metadata || {};
-        if (meta.needs_welcome === true) {
-            openWelcomeModal();
+        // localStorage flag 우선 — 회원가입 직후 즉시 set 되어 첫 페이지 진입에서 신뢰성 높음.
+        let pending = false;
+        try { pending = (localStorage.getItem('yman_pending_welcome') === '1'); } catch {}
+        // 보조: user_metadata.needs_welcome (서버 commit 늦어도 fallback).
+        if (!pending) {
+            const meta = currentSession.user.user_metadata || {};
+            if (meta.needs_welcome === true) pending = true;
         }
+        if (pending) openWelcomeModal();
     } catch {}
 }
 
@@ -2374,6 +2381,8 @@ function openSharedLoginModal(initialMode = 'login') {
                     submitBtn.disabled = false; submitBtn.textContent = '회원가입';
                     return;
                 }
+                // 사장님 2026-05-25 — 첫 로그인 환영 모달 트리거 (localStorage flag).
+                try { localStorage.setItem('yman_pending_welcome', '1'); } catch {}
                 close();
                 await navigateAfterAuth();
             } catch (err) {
