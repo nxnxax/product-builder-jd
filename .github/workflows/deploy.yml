@@ -146,6 +146,10 @@ jobs:
           cp api/billing/cancel-subscription.php deploy/billing/cancel-subscription.php
           cp api/billing/config.php deploy/billing/config.php
           cp api/billing/cron-renew.php deploy/billing/cron-renew.php
+          # Google Play Billing (사장님 2026-05-26 — 어센트라 v83+ 결제 통합)
+          cp api/billing/google_play_helpers.php deploy/billing/google_play_helpers.php
+          cp api/billing/verify-google-purchase.php deploy/billing/verify-google-purchase.php
+          cp api/billing/rtdn.php deploy/billing/rtdn.php
           # SMS 단체 발송 — 디렉토리 구조 유지 (sms/send-bulk.php + sms/providers/*)
           mkdir -p deploy/sms/providers
           cp api/sms/send-bulk.php deploy/sms/send-bulk.php

@@ -233,36 +233,49 @@ function customer_log_free_quota(): int { return 5; }
 function build_plan_info_for_response(PDO $pdo, string $ownerEmail, bool $isAdminUser): array {
     $plan = 'free';
     $freeUsed = 0;
+    $usageSec = 0;
+    $limitMinDb = null;
     $rowFound = false;
     try {
         // 사장님 2026-05-25 — case-insensitive email match. 옛 가입자의 mixed-case email 호환.
-        $ps = $pdo->prepare('SELECT plan, free_summaries_used FROM members WHERE LOWER(email) = LOWER(:e) LIMIT 1');
+        // 사장님 2026-05-26 (앱팀 §5) — minutes_used / limit / remaining 추가 응답.
+        $ps = $pdo->prepare('SELECT plan, free_summaries_used, usage_seconds_period, summary_limit_minutes FROM members WHERE LOWER(email) = LOWER(:e) LIMIT 1');
         $ps->execute([':e' => $ownerEmail]);
         $row = $ps->fetch();
         if ($row) {
             $rowFound = true;
             $plan = (string)($row['plan'] ?? 'free');
-            // 옛 plan key 정규화 (자동 migration 후에도 응답 일관성)
             if ($plan === 'trialing') $plan = 'free';
             if ($plan === 'plus')     $plan = 'sales';
             if ($plan === 'premium')  $plan = 'sales';
             if ($plan === 'pro')      $plan = 'master';
             $freeUsed = (int)($row['free_summaries_used'] ?? 0);
+            $usageSec = (int)($row['usage_seconds_period'] ?? 0);
+            $limitMinDb = isset($row['summary_limit_minutes']) ? (int)$row['summary_limit_minutes'] : null;
         }
     } catch (Throwable $e) {
         error_log('[build_plan_info] SELECT fail owner=' . $ownerEmail . ' err=' . $e->getMessage());
     }
     $requiresSubscription = ($plan === 'free' && !$isAdminUser);
     if (!$rowFound) {
-        // member row mismatch — 진단 log. requires_subscription=true (안전 default) 로 처리되지만
-        // 정상 가입자가 이 분기 타면 회귀 위험.
         error_log('[build_plan_info] member row not found owner=' . $ownerEmail . ' isAdmin=' . ($isAdminUser ? '1' : '0'));
     }
+    // 분 단위 한도 — DB 값 우선, 없으면 plan default.
+    $limitMin = $limitMinDb;
+    if ($limitMin === null) {
+        require_once __DIR__ . '/billing_helpers.php';
+        $limitMin = plan_default_summary_limit_minutes($plan);
+    }
+    $usedMin = (int)round($usageSec / 60);
+    $remainingMin = ($limitMin === null) ? null : max(0, $limitMin - $usedMin);
     return [
         'plan' => $plan,
         'free_summaries_used' => $freeUsed,
         'free_quota' => customer_log_free_quota(),
         'requires_subscription' => $requiresSubscription,
+        'minutes_used' => $usedMin,
+        'minutes_limit' => $limitMin,         // null = 무제한 (admin override 등)
+        'minutes_remaining' => $remainingMin, // null = 무제한
     ];
 }
 
