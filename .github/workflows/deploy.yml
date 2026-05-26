@@ -207,6 +207,9 @@ jobs:
           LLM_PROVIDER: ${{ secrets.LLM_PROVIDER }}
           RECORDING_WORKER_TOKEN: ${{ secrets.RECORDING_WORKER_TOKEN }}
           RAILWAY_WORKER_URL: ${{ secrets.RAILWAY_WORKER_URL }}
+          GOOGLE_PLAY_PACKAGE_NAME: ${{ secrets.GOOGLE_PLAY_PACKAGE_NAME }}
+          GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
+          RTDN_SHARED_TOKEN: ${{ secrets.RTDN_SHARED_TOKEN }}
         run: |
           set -e
           {
@@ -246,6 +249,15 @@ jobs:
             [ -n "$RECORDING_WORKER_TOKEN" ] && echo "RECORDING_WORKER_TOKEN=$RECORDING_WORKER_TOKEN" || echo "::warning::RECORDING_WORKER_TOKEN missing — cron-process-jobs 비활성"
             # Phase 2 외부 worker — Railway 가입 후 URL 등록 시에만 활성. 없으면 cafe24 자체 처리.
             [ -n "$RAILWAY_WORKER_URL" ] && echo "RAILWAY_WORKER_URL=$RAILWAY_WORKER_URL" || true
+            # Google Play Billing (사장님 2026-05-26)
+            [ -n "$GOOGLE_PLAY_PACKAGE_NAME" ] && echo "GOOGLE_PLAY_PACKAGE_NAME=$GOOGLE_PLAY_PACKAGE_NAME" || echo "GOOGLE_PLAY_PACKAGE_NAME=com.youngmanapp"
+            # Service Account JSON — minified 한 줄. FIREBASE_SERVICE_ACCOUNT_JSON 패턴과 동일.
+            if [ -n "$GOOGLE_PLAY_SERVICE_ACCOUNT_JSON" ]; then
+              echo "GOOGLE_PLAY_SERVICE_ACCOUNT_JSON=$GOOGLE_PLAY_SERVICE_ACCOUNT_JSON"
+            else
+              echo "::warning::GOOGLE_PLAY_SERVICE_ACCOUNT_JSON missing — verify-google-purchase / rtdn 비활성"
+            fi
+            [ -n "$RTDN_SHARED_TOKEN" ] && echo "RTDN_SHARED_TOKEN=$RTDN_SHARED_TOKEN" || true
           } > deploy/.env
           [ -n "$OPENAI_KEY" ]    && echo "OPENAI_API_KEY len=${#OPENAI_KEY}, prefix=$(printf '%s' "$OPENAI_KEY" | head -c6)…"     || true
           [ -n "$RECRAFT_KEY" ]   && echo "RECRAFT_API_KEY len=${#RECRAFT_KEY}, prefix=$(printf '%s' "$RECRAFT_KEY" | head -c6)…"   || true
