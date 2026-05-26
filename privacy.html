@@ -1,272 +1,161 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>개인정보처리방침 · YOUNGMAN</title>
-    <meta name="description" content="YOUNGMAN(영맨) 개인정보처리방침. 통화 녹음·AI 요약·결제·CRM 데이터 수집·보관·처리 위탁 안내.">
-    <meta name="robots" content="index, follow">
-    <link rel="canonical" href="https://youngman-biz.com/privacy.html">
-    <meta property="og:type" content="website">
-    <meta property="og:url" content="https://youngman-biz.com/privacy.html">
-    <meta property="og:title" content="개인정보처리방침 · YOUNGMAN">
-    <meta property="og:description" content="YOUNGMAN 개인정보처리방침.">
-    <meta property="og:image" content="https://youngman-biz.com/og-thumbnail.png">
-    <meta property="og:locale" content="ko_KR">
-    <meta property="og:site_name" content="YOUNGMAN">
-    <link rel="icon" type="image/png" href="logo_main.png">
-    <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
-    <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
-    <link rel="stylesheet" href="style.css?v=20260521-glass-nav">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>개인정보처리방침 — 영맨</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Apple SD Gothic Neo", sans-serif;
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 24px 20px 60px;
+      color: #222;
+      line-height: 1.65;
+      letter-spacing: -0.1px;
+    }
+    h1 { color: #0066FF; font-size: 22px; margin-bottom: 8px; }
+    h2 { color: #0066FF; font-size: 17px; margin-top: 28px; border-bottom: 1px solid #E5E5E5; padding-bottom: 6px; }
+    h3 { font-size: 15px; margin-top: 18px; color: #333; }
+    blockquote { border-left: 3px solid #0066FF; background: #F5F9FF; margin: 14px 0; padding: 10px 14px; font-size: 13px; color: #555; }
+    blockquote p { margin: 4px 0; }
+    ul, ol { padding-left: 22px; }
+    li { margin-bottom: 4px; font-size: 14px; }
+    p { font-size: 14px; }
+    table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 13px; }
+    th, td { border: 1px solid #E5E5E5; padding: 8px 10px; text-align: left; }
+    th { background: #F5F5F7; font-weight: 600; }
+    .footer { margin-top: 40px; padding-top: 16px; border-top: 1px solid #E5E5E5; font-size: 12px; color: #888; }
+  </style>
 </head>
 <body>
+  <h1>개인정보처리방침</h1>
+  <blockquote>
+    <p><strong>시행일</strong>: 2026-05-21</p>
+    <p><strong>사업자</strong>: 어센트라(Ascentra) · 사업자등록번호 393-39-01518</p>
+    <p><strong>개인정보보호책임자</strong>: 장동훈 (nxnxax@gmail.com)</p>
+  </blockquote>
 
-<header id="app-header" class="app-header"></header>
-<script type="module">
-    import { mountAppHeader, mountAppFooter } from './auth-shared.js?v=20260525-welcome-once';
-    mountAppHeader();
-    mountAppFooter();
-</script>
+  <p>본 방침은 어센트라(이하 "회사")가 운영하는 영맨 앱 및 youngman-biz.com 웹사이트(이하 "서비스")의 개인정보 처리 기준을 정합니다. 회사는 「개인정보 보호법」, 「정보통신망 이용촉진 및 정보보호 등에 관한 법률」 등 관련 법령을 준수합니다.</p>
 
-<main class="policy-page">
-    <article class="policy-doc">
-        <header class="policy-head">
-            <h1>개인정보처리방침</h1>
-            <p class="policy-meta">시행일: 2026년 5월 12일</p>
-        </header>
+  <h2>1. 수집하는 개인정보 항목</h2>
 
-        <section class="policy-section">
-            <p><b>어센트라(Ascentra)</b>(이하 "회사")는 「개인정보 보호법」 및 관련 법령을 준수하며, 회원의 개인정보를 보호하기 위해 본 처리방침을 수립·공개합니다. 본 방침은 회사가 운영하는 <b>YOUNGMAN(영맨)</b> 서비스에 적용됩니다.</p>
-        </section>
+  <h3>1-1. 회원가입 / 로그인</h3>
+  <ul>
+    <li>필수: 이메일 주소, 비밀번호 해시</li>
+    <li>선택: 표시 이름</li>
+  </ul>
 
-        <section class="policy-section">
-            <h2>1. 수집하는 개인정보 항목</h2>
-            <h3>가. 회원가입 및 서비스 이용 시 수집</h3>
-            <ul>
-                <li><b>일반 회원가입</b>: 이메일, 비밀번호(해시 저장), 닉네임</li>
-                <li><b>소셜 회원가입(Google·카카오·네이버 등)</b>: 소셜 로그인 식별정보(provider ID), 이메일, 닉네임, 프로필 표시명</li>
-                <li><b>휴대폰 본인확인 시</b>: 이름, 성별, 생년월일, 휴대폰번호, 본인확인기관 결과값(CI/DI), 통신사 정보</li>
-                <li><b>로그인 정보</b>: 세션 토큰, 로그인 일시, 접속 IP, 접속 기기/브라우저 정보</li>
-            </ul>
-            <h3>나. 모바일 앱(영맨 Android) 이용 시 수집 — 통화 녹음 및 AI 요약 기능</h3>
-            <ul>
-                <li><b>통화 녹음 파일</b>: 회원 단말의 통화 녹음 파일 일시 업로드 (회원의 검토/처리 여유를 위해 최대 7일 보존 후 영구 삭제. 회원이 직접 폐기/처리한 경우 즉시 삭제)</li>
-                <li><b>통화 메타데이터</b>: 통화 시각, 통화 길이, 상대방 전화번호(회원이 입력하거나 단말 연락처에서 매칭한 값)</li>
-                <li><b>AI 요약 결과</b>: STT 변환 텍스트(transcript), AI 생성 요약(고객명·관심사·문의사항·예산조건·다음 액션), 영맨 자체 키로 AES-256-GCM 암호화 저장</li>
-                <li><b>FCM 푸시 토큰</b>: 통화 처리 완료/사용량 임박 알림 발송용</li>
-                <li><b>녹음 처리 job 상태</b>: 처리 진행률/재시도 카운트 등 운영 데이터</li>
-            </ul>
-            <h3>다. 결제(유료 플랜) 이용 시 수집</h3>
-            <ul>
-                <li>결제 수단(카드 회사), PortOne BillingKey(자동결제용), 결제 일시·금액·상태, 영수증 식별자</li>
-                <li>회사는 카드 번호 원문을 저장하지 않으며, PG사(PortOne·토스페이먼츠)가 발급한 BillingKey 토큰만 보관합니다.</li>
-            </ul>
-            <h3>라. 서비스 이용 과정에서 자동 수집</h3>
-            <ul>
-                <li>쿠키, 서비스 이용 기록, 접속 로그, 오류 로그</li>
-                <li>분 단위 AI 요약 사용량 (요금제 한도/자동 충전 산정용)</li>
-            </ul>
-            <h3>마. 마케팅 정보 수신에 동의한 회원에 한해 수집</h3>
-            <ul>
-                <li>마케팅 수신 동의 일시, 수신 채널(이메일 등)</li>
-            </ul>
-            <p class="policy-callout">※ 회사는 회원의 비밀번호 원문을 저장하지 않으며, 인증 기반(Supabase Auth)의 단방향 해시 형태로만 보관합니다. 통화 녹음의 STT/AI 요약 결과 등 민감 개인정보는 AES-256-GCM 으로 암호화하여 저장합니다.</p>
-        </section>
+  <h3>1-2. 서비스 이용 과정에서 수집</h3>
+  <ul>
+    <li>통화 메타데이터: 통화 일시, 통화 시간(초), 상대방 전화번호</li>
+    <li>통화녹음 파일: 사용자 단말이 보유한 통화녹음 파일 중 사용자가 "양식으로 전송" 또는 "요약보기" 를 누른 통화에 한해 일시 수집</li>
+    <li>통화 요약 결과: AI(Whisper STT + Claude LLM) 가 생성한 통화 요약 텍스트</li>
+    <li>사용자가 직접 입력한 고객관리대장 메모</li>
+    <li>결제 정보: Google Play 결제 시스템을 통해 처리되며 회사는 카드번호를 직접 수집·저장하지 않음</li>
+  </ul>
 
-        <section class="policy-section">
-            <h2>1-1. 통화 녹음 및 AI 요약 기능(영맨 Android 앱)에 대한 별도 안내</h2>
-            <ul>
-                <li><b>수집·이용 목적</b>: 회원의 통화 내용을 자동으로 텍스트로 변환(STT)하고 인공지능으로 요약하여, 회원의 고객관리대장(CRM)에 자동 저장하는 1인 사업자용 보조 도구를 제공하기 위함.</li>
-                <li><b>처리 방식</b>:
-                    <ol>
-                        <li>회원 단말에서 통화 녹음이 감지되면 영맨 서버로 일시 업로드 (이 시점에 음성만 보관, AI 처리는 아직 안 함)</li>
-                        <li>회원이 영맨 앱/웹에서 "요약보기" 또는 "양식으로 전송"을 직접 요청한 경우에만 다음 단계 진행:</li>
-                        <li>요청 시점에 음성 파일을 OpenAI Whisper 로 텍스트 변환(STT)</li>
-                        <li>변환된 텍스트는 Anthropic Claude 로 요약</li>
-                        <li>"양식으로 전송" 요청 시 요약 결과는 회원의 CRM 에 저장(회원 본인만 열람 가능)</li>
-                        <li>원본 음성 파일은 회원 검토 여유를 위해 최대 7일 보존 후 영구 삭제. 회원이 직접 폐기/처리하면 즉시 삭제</li>
-                        <li>회원이 요청하지 않은 음성은 AI 처리(STT/LLM) 자체가 발생하지 않으며, 7일 이내 영구 삭제됨</li>
-                    </ol>
-                </li>
-                <li><b>중요 — 처리 위탁사</b>:
-                    <ul>
-                        <li>OpenAI, L.L.C. (미국) — 음성 → 텍스트 변환(Whisper). 30일 이내 자체 폐기.</li>
-                        <li>Anthropic, PBC (미국) — 텍스트 요약(Claude). 30일 이내 자체 폐기.</li>
-                        <li>두 위탁사 모두 API 호출 데이터를 자사 AI 모델 학습에 사용하지 않음 (각 사 정책 기준).</li>
-                    </ul>
-                </li>
-                <li><b>회원의 권리</b>:
-                    <ul>
-                        <li>통화 녹음 자동 처리 기능은 회원이 영맨 앱 설치 후 통화 녹음 권한 허용 시점부터 동작합니다.</li>
-                        <li>회원은 언제든지 단말 설정에서 영맨 앱의 권한을 회수하여 기능을 중단할 수 있습니다.</li>
-                        <li>회원은 영맨 앱 [내 정보] 메뉴 또는 고객관리대장 화면에서 저장된 요약을 개별/일괄 삭제할 수 있습니다.</li>
-                        <li>회원 탈퇴 시 모든 통화 녹음 처리 결과·음성 파일·관련 메타데이터가 영구 삭제됩니다.</li>
-                    </ul>
-                </li>
-                <li><b>제3자에 대한 책임</b>: 회원이 통화한 상대방의 개인정보 보호는 회원의 책임이며, 영맨은 회원이 적법한 동의 또는 근거를 갖춘 통화에 한해 본 기능을 사용할 것을 권고합니다. 통신비밀보호법 등 관련 법령을 위반한 녹음·전송에 대해서는 회사가 책임지지 않습니다.</li>
-            </ul>
-            <p class="policy-callout">※ 본 기능은 영맨 Android 앱 사용자에게만 적용되며, 웹사이트(youngman-biz.com) 단독 이용자에게는 해당되지 않습니다.</p>
-        </section>
+  <h3>1-3. 자동 수집</h3>
+  <ul>
+    <li>디바이스 식별자 (FCM 토큰)</li>
+    <li>앱 사용 로그 (오류 로그, 처리 시각)</li>
+    <li>IP 주소</li>
+  </ul>
 
-        <section class="policy-section">
-            <h2>2. 휴대폰 본인확인 및 CI/DI 안내</h2>
-            <ul>
-                <li>회사는 회원의 실명 확인 및 중복가입 방지를 위해 <b>NICE평가정보(주)</b>의 휴대폰 본인확인 서비스를 도입할 예정입니다.</li>
-                <li>본인확인 과정에서 회원의 이름·성별·생년월일·휴대폰번호 등이 NICE평가정보(주)로 전송되며, 회사는 본인확인 결과값(성공 여부, CI, DI)을 전달받아 본인 식별 및 중복가입 확인 목적에 한해 이용합니다.</li>
-                <li><b>CI(Connecting Information)</b>는 본인확인기관에서 발급한 개인 식별 연계정보로, 회사는 회원의 실명 정보 자체를 본인확인 결과로 보관하지 않고 CI/DI 값만 저장하여 동일인 식별에 활용합니다.</li>
-                <li><b>DI(Duplicated Information)</b>는 동일 사이트 내 중복가입 확인용 값으로, 본 사이트 외부에서는 활용되지 않습니다.</li>
-            </ul>
-        </section>
+  <h3>1-4. 단말기 권한 접근</h3>
+  <ul>
+    <li>전화 상태(READ_PHONE_STATE): 통화 시작/종료 시점을 감지하여 모달 표시 시점 결정</li>
+    <li>미디어 오디오(READ_MEDIA_AUDIO): 다른 앱(T전화 등)이 저장한 통화녹음 파일을 사용자 동의 후 읽기</li>
+    <li>알림 표시(POST_NOTIFICATIONS): 처리 진행 안내</li>
+    <li>잠금화면 모달(USE_FULL_SCREEN_INTENT): 통화 종료 시 잠금화면 위에서 한 번에 저장 가능하도록 표시</li>
+    <li>배터리 최적화 예외(REQUEST_IGNORE_BATTERY_OPTIMIZATIONS): 통화 종료 직후 핵심 흐름이 중단되지 않도록 사용자 동의 후 요청</li>
+    <li>발신번호 표시(CallScreening Role): 통화 시작 전 고객관리대장과 매칭한 정보 표시 (차단·스팸 기능 없음)</li>
+  </ul>
+  <p style="font-size: 13px; color: #555;">영맨은 폰 주소록, 카메라, 사진·동영상, 다른 앱 위에 그리기 권한을 사용하지 않습니다.</p>
 
-        <section class="policy-section">
-            <h2>3. 수집 목적</h2>
-            <ol>
-                <li><b>회원가입 및 서비스 제공</b>: 회원 식별, 인증, 서비스 화면 제공, 고객 문의 응대</li>
-                <li><b>본인확인 및 중복가입 방지</b>: 실명 확인, 부정 가입·이용 방지, 명의 도용 방지</li>
-                <li><b>AI 통화 요약 서비스 제공(모바일 앱)</b>: 회원의 통화 녹음을 STT/AI 로 처리하여 CRM 자동 저장</li>
-                <li><b>유료 플랜 결제 처리</b>: 구독 결제(Plus/Pro), 자동결제(BillingKey), 자동 충전, 환불·해지 처리</li>
-                <li><b>푸시 알림 발송</b>: 통화 요약 완료, 사용량 임박/초과, 결제 결과 등 서비스 알림</li>
-                <li><b>서비스 운영·개선</b>: 오류 분석, 보안 모니터링, 통계 기반 기능 개선</li>
-                <li><b>법령상 의무 이행</b>: 세무·전자상거래 등 관련 법령에 따른 보관 의무 이행</li>
-                <li><b>마케팅 정보 발송(선택 동의자에 한함)</b>: 신규 기능·이벤트·혜택 안내 (이메일 등)</li>
-            </ol>
-        </section>
+  <h2>2. 개인정보 수집·이용 목적</h2>
+  <ul>
+    <li>본인 확인 및 회원 식별</li>
+    <li>서비스 제공 (통화 요약, 고객관리대장 저장, 알림 전송)</li>
+    <li>결제 처리 및 구독 관리</li>
+    <li>서비스 개선 및 오류 대응</li>
+    <li>법령 준수 (전자상거래법, 통신비밀보호법 등)</li>
+  </ul>
 
-        <section class="policy-section">
-            <h2>4. 보유 및 이용 기간</h2>
-            <ul>
-                <li>원칙적으로 개인정보의 수집·이용 목적이 달성된 후에는 지체 없이 파기합니다.</li>
-                <li><b>회원정보</b>: 회원 탈퇴 시까지. 단, 부정 이용 방지 및 분쟁 대응을 위해 탈퇴 후 최대 30일간 보관 후 파기.</li>
-                <li><b>본인확인 결과값(CI/DI)</b>: 회원 탈퇴 시 즉시 파기. 단, 관련 법령상 보관 의무가 있는 경우 해당 기간 동안 보관.</li>
-                <li><b>통화 녹음 원본 음성 파일</b>: 회원의 검토/처리 여유를 위해 최대 7일 보존(자동 cron). 회원이 직접 폐기/저장 처리하면 즉시 삭제.</li>
-                <li><b>AI 요약 결과 (transcript / customer_log)</b>: 회원이 직접 삭제하거나 회원 탈퇴 시까지. 영맨 자체 키로 AES-256-GCM 암호화 저장.</li>
-                <li><b>FCM 푸시 토큰</b>: 토큰 무효화 또는 회원 탈퇴 시까지.</li>
-                <li><b>결제 정보(BillingKey, 결제 내역)</b>: 전자상거래법에 따라 5년간 보관 후 파기. 단, 회원 탈퇴 시 owner_email 은 익명화 처리.</li>
-                <li><b>관계 법령에 따른 보관</b>
-                    <ul>
-                        <li>계약 또는 청약철회 기록: 5년 (전자상거래법)</li>
-                        <li>대금 결제 및 재화 공급 기록: 5년 (전자상거래법)</li>
-                        <li>소비자 불만 또는 분쟁처리 기록: 3년 (전자상거래법)</li>
-                        <li>로그인·접속 기록: 3개월 (통신비밀보호법)</li>
-                    </ul>
-                </li>
-                <li>마케팅 수신 동의 정보는 동의 철회 시 즉시 파기합니다.</li>
-            </ul>
-        </section>
+  <h2>3. 개인정보 보유·이용 기간</h2>
+  <ul>
+    <li>회원 정보: 회원 탈퇴 시까지</li>
+    <li>통화 요약 결과: 회원 탈퇴 시까지 (회원이 개별 삭제 가능)</li>
+    <li>통화녹음 파일: AI 요약 처리 완료 후 즉시 삭제 (영구 저장 안 함)</li>
+    <li>결제 기록: 전자상거래법에 따라 5년 보관</li>
+    <li>접속 로그: 통신비밀보호법에 따라 3개월 보관</li>
+  </ul>
 
-        <section class="policy-section">
-            <h2>5. 개인정보의 제3자 제공</h2>
-            <p>회사는 회원의 개인정보를 본 처리방침에서 정한 목적 외 용도로 이용하거나 제3자에게 제공하지 않습니다. 다만, 다음의 경우에는 예외로 합니다.</p>
-            <ul>
-                <li>회원이 사전에 명시적으로 동의한 경우</li>
-                <li>법령에 따라 수사기관 또는 감독기관의 적법한 절차에 따른 요청이 있는 경우</li>
-            </ul>
-        </section>
+  <h2>4. 제3자 제공</h2>
+  <p>회사는 사용자 동의 없이 개인정보를 제3자에게 제공하지 않습니다. 단, 다음 경우는 예외입니다.</p>
+  <ul>
+    <li>법령에 근거한 수사기관의 요청</li>
+    <li>통계·연구 목적의 비식별 가공 후 제공</li>
+  </ul>
 
-        <section class="policy-section">
-            <h2>6. 개인정보 처리 위탁</h2>
-            <p>회사는 안정적인 서비스 제공을 위해 일부 업무를 외부에 위탁할 수 있으며, 위탁 시 「개인정보 보호법」에 따라 필요한 사항을 계약 등으로 명확히 규정합니다.</p>
-            <div class="policy-table-wrap">
-                <table class="policy-table">
-                    <thead>
-                        <tr><th>수탁자</th><th>위탁 업무</th><th>보유 기간</th></tr>
-                    </thead>
-                    <tbody>
-                        <tr><td>Supabase, Inc. (미국)</td><td>인증·데이터베이스 인프라</td><td>회원 탈퇴 또는 위탁 종료 시까지</td></tr>
-                        <tr><td>Google LLC (미국)</td><td>소셜 로그인(OAuth) 인증, FCM 푸시 알림</td><td>각 서비스 이용 시까지</td></tr>
-                        <tr><td>OpenAI, L.L.C. (미국)</td><td>통화 녹음 음성→텍스트 변환 (Whisper STT)</td><td>API 호출 처리 즉시 (자사 30일 이내 폐기, 학습 미사용)</td></tr>
-                        <tr><td>Anthropic, PBC (미국)</td><td>통화 텍스트 AI 요약 (Claude LLM)</td><td>API 호출 처리 즉시 (자사 30일 이내 폐기, 학습 미사용)</td></tr>
-                        <tr><td>Railway Corp. (미국)</td><td>통화 음성 처리 워커 인프라</td><td>처리 직후 자동 삭제</td></tr>
-                        <tr><td>(주)아임포트 (PortOne)</td><td>유료 플랜 결제 처리, BillingKey 토큰 발급</td><td>전자상거래법상 보관기간(5년)까지</td></tr>
-                        <tr><td>토스페이먼츠(주)</td><td>실제 카드 결제 PG 처리</td><td>전자상거래법상 보관기간(5년)까지</td></tr>
-                        <tr><td>NICE평가정보(주)</td><td>휴대폰 본인확인(도입 예정)</td><td>본인확인 완료 시점까지</td></tr>
-                        <tr><td>심플렉스인터넷(주) (Cafe24)</td><td>웹 호스팅·서버 운영</td><td>위탁 계약 종료 시까지</td></tr>
-                    </tbody>
-                </table>
-            </div>
-            <p class="policy-callout">※ Supabase, Google, OpenAI, Anthropic, Railway 는 국외 사업자입니다. 해당 사업자의 인프라를 통해 인증·AI 처리·데이터 저장 처리가 이루어지며, 회원은 가입 및 통화 녹음 기능 사용 시 본 처리방침에 동의함으로써 국외 이전에 동의하는 것으로 봅니다.</p>
-        </section>
+  <h2>5. 처리위탁</h2>
+  <table>
+    <thead>
+      <tr><th>수탁자</th><th>위탁 업무</th><th>위탁 기간</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Supabase Inc.</td><td>사용자 인증·DB 호스팅</td><td>서비스 이용 기간</td></tr>
+      <tr><td>OpenAI</td><td>음성 텍스트 변환 (Whisper API)</td><td>처리 후 즉시 삭제</td></tr>
+      <tr><td>Anthropic</td><td>텍스트 요약 (Claude API)</td><td>처리 후 즉시 삭제</td></tr>
+      <tr><td>Google LLC</td><td>FCM 푸시 알림, Crashlytics 오류 수집, Google Play 결제 시스템</td><td>토큰 / 결제 / 오류 기록 유효 기간</td></tr>
+      <tr><td>cafe24</td><td>웹 호스팅</td><td>서비스 이용 기간</td></tr>
+      <tr><td>Railway</td><td>백엔드 워커</td><td>서비스 이용 기간</td></tr>
+    </tbody>
+  </table>
+  <p style="font-size: 13px; color: #555;">해외 이전: OpenAI(미국), Anthropic(미국), Google(미국). 이전 항목은 위 §1 의 통화 요약 처리 관련 데이터이며, 사용자가 명시적으로 "양식으로 전송" 또는 "요약보기" 를 누른 경우에 한해 이전됩니다.</p>
 
-        <section class="policy-section">
-            <h2>7. 개인정보의 파기 절차 및 방법</h2>
-            <ul>
-                <li><b>파기 절차</b>: 개인정보는 수집·이용 목적이 달성되거나 보관 기간이 종료되면, 내부 방침에 따라 지체 없이 파기됩니다.</li>
-                <li><b>전자적 파일</b>: 복구·재생할 수 없는 기술적 방법으로 안전하게 영구 삭제</li>
-                <li><b>출력물</b>: 분쇄 또는 소각</li>
-            </ul>
-        </section>
+  <h2>6. 정보주체의 권리</h2>
+  <p>사용자는 언제든 다음 권리를 행사할 수 있습니다.</p>
+  <ul>
+    <li>개인정보 열람·정정·삭제·처리정지 요구</li>
+    <li>회원 탈퇴 (앱 설정 → 약관/정책 → 계정 삭제 또는 nxnxax@gmail.com 메일)</li>
+    <li>권리 행사 시 본인 확인 절차를 거칠 수 있습니다.</li>
+  </ul>
 
-        <section class="policy-section">
-            <h2>8. 쿠키의 사용 및 거부 방법</h2>
-            <p>회사는 로그인 세션 유지, 사용자 환경 저장 등 서비스 운영을 위해 쿠키 및 브라우저 저장소(localStorage·sessionStorage)를 사용합니다.</p>
-            <ul>
-                <li>이용자는 브라우저 설정에서 쿠키 저장을 거부할 수 있습니다.</li>
-                <li>쿠키 저장을 거부할 경우 로그인 유지 등 일부 서비스 이용이 제한될 수 있습니다.</li>
-                <li>쿠키 설정 방법: 브라우저 [설정] → [개인정보 및 보안] → [쿠키 및 사이트 데이터]</li>
-            </ul>
-        </section>
+  <h2>7. 개인정보의 안전성 확보 조치</h2>
+  <ul>
+    <li>비밀번호 해시 저장 (bcrypt)</li>
+    <li>전송 구간 HTTPS 암호화</li>
+    <li>사용자별 데이터 격리 (Supabase RLS + owner_email 기반)</li>
+    <li>접근 권한 최소화 및 접근 기록 관리</li>
+    <li>통화녹음 파일은 STT 처리 후 즉시 삭제</li>
+  </ul>
 
-        <section class="policy-section">
-            <h2>9. 이용자의 권리 및 행사 방법</h2>
-            <p>회원은 회사에 대해 언제든지 다음의 권리를 행사할 수 있습니다.</p>
-            <ul>
-                <li>개인정보의 열람·정정·삭제 요청</li>
-                <li>개인정보 처리 정지 요청</li>
-                <li>동의 철회(회원 탈퇴 포함)</li>
-                <li>마케팅 수신 동의 철회</li>
-            </ul>
-            <p>권리 행사는 서비스 내 [내 정보] 메뉴, 회원 탈퇴 기능, 또는 아래 문의처를 통해 요청할 수 있으며, 회사는 지체 없이 조치합니다.</p>
-        </section>
+  <h2>8. 쿠키 / 자동 수집 거부</h2>
+  <p>브라우저 / 앱 설정에서 쿠키 및 알림을 거부할 수 있으며, 거부 시 일부 서비스 이용이 제한될 수 있습니다.</p>
 
-        <section class="policy-section">
-            <h2>10. 마케팅 정보 수신 동의</h2>
-            <ul>
-                <li>회원이 별도로 동의한 경우에 한해, 회사는 이메일 등을 통해 신규 기능·이벤트·혜택 정보를 발송할 수 있습니다.</li>
-                <li>수신 동의는 선택사항이며, 동의하지 않아도 서비스 이용에는 제한이 없습니다.</li>
-                <li>회원은 언제든지 수신 거부를 요청할 수 있으며, 발송되는 메시지 내 수신거부 링크 또는 [내 정보] 메뉴에서 즉시 철회할 수 있습니다.</li>
-            </ul>
-        </section>
+  <h2>9. 개인정보보호책임자</h2>
+  <ul>
+    <li>책임자: 장동훈</li>
+    <li>이메일: nxnxax@gmail.com</li>
+    <li>주소: 경기도 화성시 효행로 30, 202호</li>
+  </ul>
 
-        <section class="policy-section">
-            <h2>11. 개인정보 보호책임자</h2>
-            <p>회사는 회원의 개인정보를 보호하고 관련 민원을 처리하기 위해 아래와 같이 개인정보 보호책임자를 지정하고 있습니다.</p>
-            <ul>
-                <li>이름: 장동훈</li>
-                <li>직책: 대표</li>
-                <li>이메일: <a href="mailto:nxnxax@gmail.com">nxnxax@gmail.com</a></li>
-            </ul>
-        </section>
+  <h2>10. 권익침해 구제</h2>
+  <ul>
+    <li>개인정보침해신고센터: 국번없이 118 (privacy.go.kr)</li>
+    <li>개인정보분쟁조정위원회: 1833-6972 (kopico.go.kr)</li>
+    <li>대검찰청 사이버수사과: 국번없이 1301 (spo.go.kr)</li>
+    <li>경찰청 사이버수사국: 국번없이 182 (ecrm.cyber.go.kr)</li>
+  </ul>
 
-        <section class="policy-section">
-            <h2>12. 처리방침의 변경 및 고지</h2>
-            <p>본 처리방침은 법령·정책 변경에 따라 개정될 수 있으며, 변경이 있을 경우 적용 시행일 최소 7일 전부터 사이트 내 공지사항 또는 이메일을 통해 고지합니다. 회원에게 불리한 변경의 경우 최소 30일 전 고지합니다.</p>
-        </section>
+  <h2>11. 방침 변경</h2>
+  <p>본 방침이 변경되는 경우 변경 사항을 사이트 공지 또는 앱 알림으로 사전 고지합니다.</p>
 
-        <section class="policy-section">
-            <h2>13. 문의처</h2>
-            <ul>
-                <li>운영사: 어센트라(Ascentra)</li>
-                <li>대표자: 장동훈</li>
-                <li>사업자등록번호: 393-39-01518</li>
-                <li>주소: 경기도 화성시 효행로 30, 202호</li>
-                <li>이메일: <a href="mailto:nxnxax@gmail.com">nxnxax@gmail.com</a></li>
-            </ul>
-        </section>
-
-        <section class="policy-section">
-            <h2>14. 권익침해 구제방법</h2>
-            <p>개인정보 침해로 인한 신고나 상담이 필요한 경우 아래 기관에 문의하실 수 있습니다.</p>
-            <ul>
-                <li>개인정보분쟁조정위원회: 국번 없이 1833-6972 (www.kopico.go.kr)</li>
-                <li>개인정보침해신고센터: 국번 없이 118 (privacy.kisa.or.kr)</li>
-                <li>대검찰청 사이버범죄수사단: 02-3480-3573 (www.spo.go.kr)</li>
-                <li>경찰청 사이버안전국: 국번 없이 182 (cyberbureau.police.go.kr)</li>
-            </ul>
-        </section>
-
-        <p class="policy-foot-note">부칙: 본 개인정보처리방침은 2026년 5월 12일부터 시행됩니다.</p>
-    </article>
-</main>
-
+  <div class="footer">
+    최초 시행일: 2026-05-21<br>
+    어센트라(Ascentra) · 사업자등록번호 393-39-01518
+  </div>
 </body>
 </html>
