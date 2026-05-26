@@ -451,16 +451,12 @@
                 </div>
                 <p class="plan-rule">(요약보기 · 양식으로 전송 버튼 클릭 시에만 차감 — 팝업 [취소] / 자동 종료 시 차감 X)</p>
             `;
-            const rateHtml = plan.rate
-                ? `<div class="plan-rate ${plan.rateClass || ''}">${escapeHtml(plan.rate)}</div>`
-                : '';
 
             return `
                 <article class="${cardCls}">
                     <h2 class="plan-name">${escapeHtml(plan.name)}</h2>
                     <div class="plan-price">${priceMainHtml}</div>
                     ${minutesHtml}
-                    ${rateHtml}
                     <p class="plan-tagline">${escapeHtml(plan.tagline)}</p>
                     <ul class="plan-features">${featuresHtml}</ul>
                     ${ctaHtml}
@@ -506,15 +502,11 @@
                 </div>
                 <p class="plan-rule">(요약보기 · 양식으로 전송 버튼 클릭 시에만 차감 — 팝업 [취소] / 자동 종료 시 차감 X)</p>
             `;
-            const rateHtml = plan.rate
-                ? `<div class="plan-rate ${plan.rateClass || ''}">${escapeHtml(plan.rate)}</div>`
-                : '';
             return `
                 <article class="${cardCls}">
                     <h2 class="plan-name">${escapeHtml(plan.name)}</h2>
                     <div class="plan-price">${priceMainHtml}</div>
                     ${minutesHtml}
-                    ${rateHtml}
                     <p class="plan-tagline">${escapeHtml(plan.tagline)}</p>
                     <ul class="plan-features">${featuresHtml}</ul>
                     ${ctaHtml}
