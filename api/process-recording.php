@@ -956,6 +956,27 @@ $summaryLimitMinutes = null;   // 분 한도 (NULL 이면 회 단위 레거시 �
 $usageSecondsPeriod = 0;       // 이번달 누적 초
 $overageEnabled = 0;
 $overageBalanceSeconds = 0;
+// 사장님 2026-05-26 — 사용량 이월 금지 안전망.
+// cron-renew 가 잡지 못하는 사용자 (free / admin 수동 plan / 결제 미연동) 도
+// last_usage_reset_at 기준 30일 경과 시 usage_seconds_period 자동 0 reset.
+// 정상 결제 흐름은 verify-payment / cron-renew 가 reset — 이건 보조 안전망.
+try {
+    $pdo->prepare("UPDATE members SET last_usage_reset_at = NOW()
+                   WHERE email = :e AND last_usage_reset_at IS NULL")
+        ->execute([':e' => $ownerEmail]);
+    $pdo->prepare("UPDATE members SET
+                       usage_seconds_period = 0,
+                       free_summaries_used = 0,
+                       last_usage_warning_pct = 0,
+                       last_usage_reset_at = NOW()
+                   WHERE email = :e
+                     AND last_usage_reset_at IS NOT NULL
+                     AND last_usage_reset_at < DATE_SUB(NOW(), INTERVAL 30 DAY)")
+        ->execute([':e' => $ownerEmail]);
+} catch (Throwable $e) {
+    error_log('[process-recording] lazy usage reset: ' . $e->getMessage());
+}
+
 try {
     $ps = $pdo->prepare('SELECT plan, plan_status, free_summaries_used, summary_limit,
                                 summary_limit_minutes, usage_seconds_period,

@@ -101,11 +101,12 @@
         .plan-card.recommended .plan-name {
             color: var(--accent, #c8362c);
         }
+        /* === 메인 가격 === */
         .plan-card .plan-price {
             display: flex;
             align-items: baseline;
             gap: 6px;
-            margin-bottom: 4px;
+            margin-bottom: 6px;
         }
         .plan-card .price-num {
             font-size: 30px;
@@ -116,13 +117,64 @@
         .plan-card .price-unit {
             font-size: 14px;
             color: var(--fg-tertiary, #908a82);
+            font-weight: 600;
+        }
+        /* === 서브: 분량 === */
+        .plan-card .plan-minutes {
+            display: flex;
+            align-items: baseline;
+            gap: 6px;
+            padding-top: 8px;
+            border-top: 1px dashed var(--border, #ebe8e0);
+            margin-bottom: 8px;
+        }
+        .plan-card .minutes-num {
+            font-size: 20px;
+            font-weight: 700;
+            color: var(--fg, #1a1611);
+            letter-spacing: -0.02em;
+        }
+        .plan-card .minutes-unit {
+            font-size: 13px;
+            color: var(--fg-tertiary, #908a82);
+            font-weight: 600;
+        }
+        /* === 부연: 차감 룰 === */
+        .plan-card .plan-rule {
+            font-size: 11.5px;
+            line-height: 1.5;
+            color: var(--fg-tertiary, #908a82);
+            margin: 0 0 12px;
+        }
+        /* === 차이 배지: 분당 단가 === */
+        .plan-card .plan-rate {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 6px 10px;
+            border-radius: 6px;
+            background: var(--bg-muted, #f5f3ee);
+            font-size: 12.5px;
+            font-weight: 600;
+            color: var(--fg-secondary, #6e655c);
+            margin-bottom: 14px;
+            align-self: flex-start;
+        }
+        .plan-card.recommended .plan-rate,
+        .plan-card .plan-rate.save {
+            background: rgba(22, 163, 74, 0.10);
+            color: #15803d;
+        }
+        .plan-card .plan-rate.warn {
+            background: rgba(200, 54, 44, 0.08);
+            color: var(--accent, #c8362c);
         }
         .plan-card .plan-tagline {
             color: var(--fg-secondary, #6e655c);
-            font-size: 13.5px;
+            font-size: 13px;
             line-height: 1.5;
-            margin: 0 0 18px;
-            min-height: 40px;
+            margin: 0 0 14px;
+            min-height: 36px;
         }
         .plan-card ul.plan-features {
             list-style: none;
@@ -262,17 +314,20 @@
     import { initSupabase, apiRequest, getSession, mountAppHeader, mountAppFooter } from './auth-shared.js?v=20260525-welcome-once';
 
     // 사장님 2026-05-26 — 신규 요금제 (sales/master/agency). 옛 plus/pro 폐지.
+    // 카드 spec: 메인(금액) / 서브(분량) / 부연(차감 룰) / 차이(분당 단가)
     const PLAN_DEFS = [
         {
             key: 'free',
             name: 'Free',
             price: 0,
-            tagline: '무료로 영맨의 기본 기능을 사용하세요.',
+            minutes: 0,
+            rate: 'AI 요약 사용 불가 — 유료 구독 후 사용',
+            rateClass: 'warn',
+            tagline: '기본 CRM / 양식 / 마케팅은 무료로.',
             features: [
                 { text: '고객관리대장 + 양식 커스터마이징', on: true },
                 { text: '문자발송 (사용량 개인 부담)', on: true },
-                { text: '마케팅 분석', on: true },
-                { text: 'AI 사주 + 로또 분석', on: true },
+                { text: '마케팅 분석 + AI 사주 + 로또', on: true },
                 { text: 'AI 통화 요약은 유료 플랜부터', on: false },
             ],
             cta: { primary: false, label: '무료로 시작' },
@@ -281,13 +336,15 @@
             key: 'sales',
             name: 'Sales',
             price: 24000,
-            tagline: '시작하는 영업자에게 — 300분으로 AI 요약 기록을 시작하세요.',
+            minutes: 300,
+            rate: '80원 / 분 (기준)',
+            rateClass: '',
+            tagline: '시작하는 영업자에게.',
             features: [
                 { text: 'Free 전체 기능 포함', on: true },
-                { text: 'AI 통화 요약 월 300분 (분 단위 과금)', on: true },
                 { text: '동일 전화번호 통화 자동 누적', on: true },
                 { text: '담당자 메모 동기화', on: true },
-                { text: '초과 시 자동 충전 (₩5,000 = 71분 추가, 동의 시)', on: true },
+                { text: '초과 시 자동 충전 (₩5,000 = 71분, 동의 시)', on: true },
             ],
             cta: { primary: true, label: 'Sales 시작하기' },
         },
@@ -295,14 +352,16 @@
             key: 'master',
             name: 'Master',
             price: 47000,
-            tagline: '하루 평균 20분+ 통화 영업자에게 — 700분 + 자동 충전.',
+            minutes: 700,
+            rate: '67원 / 분 — Sales 대비 16% 저렴',
+            rateClass: 'save',
             recommended: true,
+            tagline: '하루 평균 20분+ 통화 영업자에게.',
             features: [
                 { text: 'Sales 전체 기능 포함', on: true },
-                { text: 'AI 통화 요약 월 700분 (분 단위 과금)', on: true },
                 { text: '동일 전화번호 통화 자동 누적', on: true },
                 { text: '담당자 메모 동기화', on: true },
-                { text: '초과 시 자동 충전 (₩5,000 = 71분 추가, 동의 시)', on: true },
+                { text: '초과 시 자동 충전 (₩5,000 = 71분, 동의 시)', on: true },
             ],
             cta: { primary: true, label: 'Master 시작하기' },
         },
@@ -310,13 +369,15 @@
             key: 'agency',
             name: 'Agency',
             price: 89000,
-            tagline: '대형 영업 / 대리점급 — 월 1,500분으로 마음껏 기록.',
+            minutes: 1500,
+            rate: '59원 / 분 — Sales 대비 26% 저렴',
+            rateClass: 'save',
+            tagline: '대형 영업 / 대리점급 헤비유저에게.',
             features: [
                 { text: 'Master 전체 기능 포함', on: true },
-                { text: 'AI 통화 요약 월 1,500분 (분 단위 과금)', on: true },
                 { text: '동일 전화번호 통화 자동 누적', on: true },
                 { text: '담당자 메모 동기화', on: true },
-                { text: '초과 시 자동 충전 (₩5,000 = 71분 추가, 동의 시)', on: true },
+                { text: '초과 시 자동 충전 (₩5,000 = 71분, 동의 시)', on: true },
             ],
             cta: { primary: true, label: 'Agency 시작하기' },
         },
@@ -368,13 +429,28 @@
                 ctaHtml = `<button class="plan-cta primary" type="button" data-pay-plan="${plan.key}">${escapeHtml(plan.cta.label)}</button>`;
             }
 
+            const isFree = plan.price === 0;
+            const priceMainHtml = isFree
+                ? `<span class="price-num">무료</span>`
+                : `<span class="price-num">${formatPrice(plan.price)}</span><span class="price-unit">/ 월</span>`;
+            const minutesHtml = `
+                <div class="plan-minutes">
+                    <span class="minutes-num">${plan.minutes.toLocaleString('ko-KR')}분</span>
+                    <span class="minutes-unit">/ 월</span>
+                </div>
+                <p class="plan-rule">(요약보기 · 양식으로 전송 버튼 클릭 시에만 차감 — 모달 [취소] / 자동 종료 시 차감 X)</p>
+                <p class="plan-rule" style="margin-top:-6px;">매월 결제일에 사용량 0으로 초기화 — <b>잔여 분 이월 X</b></p>
+            `;
+            const rateHtml = plan.rate
+                ? `<div class="plan-rate ${plan.rateClass || ''}">${escapeHtml(plan.rate)}</div>`
+                : '';
+
             return `
                 <article class="${cardCls}">
                     <h2 class="plan-name">${escapeHtml(plan.name)}</h2>
-                    <div class="plan-price">
-                        <span class="price-num">${formatPrice(plan.price)}</span>
-                        ${plan.price ? '<span class="price-unit">/ 월</span>' : ''}
-                    </div>
+                    <div class="plan-price">${priceMainHtml}</div>
+                    ${minutesHtml}
+                    ${rateHtml}
                     <p class="plan-tagline">${escapeHtml(plan.tagline)}</p>
                     <ul class="plan-features">${featuresHtml}</ul>
                     ${ctaHtml}
@@ -408,13 +484,27 @@
                 `<li class="${f.on ? '' : 'muted'}">${escapeHtml(f.text)}</li>`
             ).join('');
             const ctaHtml = `<a class="plan-cta ${plan.cta.primary ? 'primary' : 'secondary'}" href="index.html">로그인 후 시작</a>`;
+            const isFree = plan.price === 0;
+            const priceMainHtml = isFree
+                ? `<span class="price-num">무료</span>`
+                : `<span class="price-num">${formatPrice(plan.price)}</span><span class="price-unit">/ 월</span>`;
+            const minutesHtml = `
+                <div class="plan-minutes">
+                    <span class="minutes-num">${plan.minutes.toLocaleString('ko-KR')}분</span>
+                    <span class="minutes-unit">/ 월</span>
+                </div>
+                <p class="plan-rule">(요약보기 · 양식으로 전송 버튼 클릭 시에만 차감 — 모달 [취소] / 자동 종료 시 차감 X)</p>
+                <p class="plan-rule" style="margin-top:-6px;">매월 결제일에 사용량 0으로 초기화 — <b>잔여 분 이월 X</b></p>
+            `;
+            const rateHtml = plan.rate
+                ? `<div class="plan-rate ${plan.rateClass || ''}">${escapeHtml(plan.rate)}</div>`
+                : '';
             return `
                 <article class="${cardCls}">
                     <h2 class="plan-name">${escapeHtml(plan.name)}</h2>
-                    <div class="plan-price">
-                        <span class="price-num">${formatPrice(plan.price)}</span>
-                        ${plan.price ? '<span class="price-unit">/ 월</span>' : ''}
-                    </div>
+                    <div class="plan-price">${priceMainHtml}</div>
+                    ${minutesHtml}
+                    ${rateHtml}
                     <p class="plan-tagline">${escapeHtml(plan.tagline)}</p>
                     <ul class="plan-features">${featuresHtml}</ul>
                     ${ctaHtml}
