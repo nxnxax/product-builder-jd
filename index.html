@@ -1093,10 +1093,11 @@
             return;
             // ── [임시 끝] ──
 
-            // [원복용] plan 별 텍스트/링크/표시 분기:
-            //   비로그인 / free / trialing → 신청 (subscribe.html)
-            //   plus / premium → 업그레이드 (subscribe.html, Upgrade to Pro)
-            //   pro → 숨김
+            // [원복용] plan 별 텍스트/링크/표시 분기 (사장님 2026-05-26 — 신규 요금제):
+            //   비로그인 / free → 신청 (subscribe.html)
+            //   sales → 업그레이드 (subscribe.html, Upgrade to Master)
+            //   master → 업그레이드 (subscribe.html, Upgrade to Agency)
+            //   agency → 숨김
             let plan = '';
             try {
                 await initSupabase();
@@ -1105,13 +1106,20 @@
                     plan = String(res?.profile?.plan || '').toLowerCase();
                 }
             } catch {}
-            const norm = (plan === 'premium') ? 'plus' : plan;
+            // 옛 plan key 호환 매핑
+            let norm = plan;
+            if (norm === 'premium' || norm === 'plus') norm = 'sales';
+            else if (norm === 'pro') norm = 'master';
+            else if (norm === 'trialing') norm = 'free';
             els.forEach(el => {
                 const textEl = el.querySelector('.flagship-text');
-                if (norm === 'pro') {
+                if (norm === 'agency') {
                     el.style.display = 'none';
-                } else if (norm === 'plus') {
-                    if (textEl) textEl.textContent = 'AI 요약 무제한을 원하신다면 Upgrade to Pro';
+                } else if (norm === 'master') {
+                    if (textEl) textEl.textContent = '월 1,500분 Agency 로 업그레이드';
+                    el.setAttribute('href', 'subscribe.html');
+                } else if (norm === 'sales') {
+                    if (textEl) textEl.textContent = '월 700분 Master 로 업그레이드';
                     el.setAttribute('href', 'subscribe.html');
                 } else {
                     if (textEl) textEl.textContent = 'AI 통화 요약 + 고객관리 원터치 전송 서비스 신청';

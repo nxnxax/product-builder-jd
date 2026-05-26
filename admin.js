@@ -196,8 +196,12 @@ function openMemberEdit(email) {
     memberStatusInput.value = ['active', 'suspended', 'banned'].includes(member.status) ? member.status : 'active';
     // 구독 결제 필드 — 응답에 있으면 채움, 없으면 default. 옛 trialing 은 자동 free 매핑.
     if (memberPlanInput) {
-        const planVal = (member.plan === 'trialing') ? 'free' : member.plan;
-        memberPlanInput.value = ['free', 'plus', 'pro'].includes(planVal) ? planVal : 'free';
+        // 사장님 2026-05-26 — 옛 plan key 정규화 (sales/master/agency 신규 요금제).
+        let planVal = member.plan;
+        if (planVal === 'trialing') planVal = 'free';
+        if (planVal === 'plus' || planVal === 'premium') planVal = 'sales';
+        if (planVal === 'pro') planVal = 'master';
+        memberPlanInput.value = ['free', 'sales', 'master', 'agency'].includes(planVal) ? planVal : 'free';
     }
     if (memberPlanStatusInput) {
         const statusVal = (member.plan_status === 'trialing') ? 'active' : member.plan_status;
@@ -404,7 +408,18 @@ const FUNNEL_STEPS = [
     { key: 'firstSavers',  label: '첫 고객 저장' },
     { key: 'firstPayers',  label: '첫 결제' },
 ];
-const PLAN_LABEL = { trialing: 'Free', free: 'Free', plus: 'Plus', pro: 'Pro', other: '기타' };
+const PLAN_LABEL = {
+    free: 'Free',
+    sales: 'Sales',
+    master: 'Master',
+    agency: 'Agency',
+    // 옛 plan key fallback (DB migration 잔재 호환)
+    trialing: 'Free',
+    plus: 'Sales',
+    premium: 'Sales',
+    pro: 'Master',
+    other: '기타',
+};
 const STATUS_LABEL_JOBS = {
     audio_pending: '음성 대기',
     queued: '큐 대기',

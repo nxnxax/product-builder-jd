@@ -4,14 +4,14 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>구독 플랜 · YOUNGMAN</title>
-    <meta name="description" content="YOUNGMAN AI 통화 요약 + CRM 요금제. Free 월 30분 무료 / Plus 19,000원 (300분) / Pro 39,000원 (1,000분). 자동 충전 선택.">
+    <meta name="description" content="YOUNGMAN AI 통화 요약 + CRM 요금제. Free 무료 / Sales 24,000원 (300분) / Master 47,000원 (700분) / Agency 89,000원 (1,500분).">
     <meta name="keywords" content="YOUNGMAN 구독, AI 통화 요약 가격, 영맨 요금제, CRM 구독">
     <meta name="robots" content="index, follow">
     <link rel="canonical" href="https://youngman-biz.com/subscribe.html">
     <meta property="og:type" content="website">
     <meta property="og:url" content="https://youngman-biz.com/subscribe.html">
     <meta property="og:title" content="구독 플랜 · YOUNGMAN">
-    <meta property="og:description" content="Free 월 30분 무료 / Plus 19,000원 / Pro 39,000원">
+    <meta property="og:description" content="Free 무료 / Sales 24,000원 / Master 47,000원 / Agency 89,000원">
     <meta property="og:image" content="https://youngman-biz.com/og-thumbnail.png">
     <meta property="og:locale" content="ko_KR">
     <meta property="og:site_name" content="YOUNGMAN">
@@ -19,8 +19,7 @@
     <link rel="icon" type="image/png" href="logo_main.png">
     <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
     <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
-    <link rel="stylesheet" href="style.css?v=20260518-subscribe">
-    <script src="https://cdn.portone.io/v2/browser-sdk.js" defer></script>
+    <link rel="stylesheet" href="style.css?v=20260526-newplans">
 
     <style>
         .sub-shell {
@@ -56,8 +55,11 @@
         }
         .plan-grid {
             display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 18px;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 14px;
+        }
+        @media (max-width: 1100px) {
+            .plan-grid { grid-template-columns: repeat(2, 1fr); }
         }
         .plan-card {
             background: var(--bg, #fff);
@@ -252,13 +254,14 @@
     <p class="sub-fineprint">
         모든 가격은 부가가치세(VAT) 포함입니다. 결제 전 <a href="auto-billing.html">자동결제 안내</a>와
         <a href="refund.html">환불정책</a>을 확인해 주세요.<br>
-        결제 처리는 PortOne · 토스페이먼츠를 통해 안전하게 이루어집니다.
+        <b>구독 결제는 안드로이드 앱(Google Play 구독)에서 진행됩니다.</b> 앱에서 로그인 후 구독 메뉴를 이용해 주세요.
     </p>
 </main>
 
 <script type="module">
     import { initSupabase, apiRequest, getSession, mountAppHeader, mountAppFooter } from './auth-shared.js?v=20260525-welcome-once';
 
+    // 사장님 2026-05-26 — 신규 요금제 (sales/master/agency). 옛 plus/pro 폐지.
     const PLAN_DEFS = [
         {
             key: 'free',
@@ -270,17 +273,15 @@
                 { text: '문자발송 (사용량 개인 부담)', on: true },
                 { text: '마케팅 분석', on: true },
                 { text: 'AI 사주 + 로또 분석', on: true },
-                { text: 'AI 통화 요약 체험 30분/월', on: true },
-                { text: '유료 플랜 시 자동 충전 사용 가능', on: false },
+                { text: 'AI 통화 요약은 유료 플랜부터', on: false },
             ],
             cta: { primary: false, label: '무료로 시작' },
         },
         {
-            key: 'plus',
-            name: 'Plus',
-            price: 19000,
-            tagline: '하루 평균 10분 통화 영업자에게 — AI 요약으로 기록을 자동화.',
-            recommended: true,
+            key: 'sales',
+            name: 'Sales',
+            price: 24000,
+            tagline: '시작하는 영업자에게 — 300분으로 AI 요약 기록을 시작하세요.',
             features: [
                 { text: 'Free 전체 기능 포함', on: true },
                 { text: 'AI 통화 요약 월 300분 (분 단위 과금)', on: true },
@@ -288,29 +289,48 @@
                 { text: '담당자 메모 동기화', on: true },
                 { text: '초과 시 자동 충전 (₩5,000 = 71분 추가, 동의 시)', on: true },
             ],
-            cta: { primary: true, label: 'Plus 시작하기' },
+            cta: { primary: true, label: 'Sales 시작하기' },
         },
         {
-            key: 'pro',
-            name: 'Pro',
-            price: 39000,
-            tagline: '하루 평균 30분+ 통화 헤비유저에게 — 1,000분 + 자동 충전.',
+            key: 'master',
+            name: 'Master',
+            price: 47000,
+            tagline: '하루 평균 20분+ 통화 영업자에게 — 700분 + 자동 충전.',
+            recommended: true,
             features: [
-                { text: 'Plus 전체 기능 포함', on: true },
-                { text: 'AI 통화 요약 월 1,000분 (분 단위 과금)', on: true },
+                { text: 'Sales 전체 기능 포함', on: true },
+                { text: 'AI 통화 요약 월 700분 (분 단위 과금)', on: true },
                 { text: '동일 전화번호 통화 자동 누적', on: true },
                 { text: '담당자 메모 동기화', on: true },
                 { text: '초과 시 자동 충전 (₩5,000 = 71분 추가, 동의 시)', on: true },
             ],
-            cta: { primary: true, label: 'Pro 시작하기' },
+            cta: { primary: true, label: 'Master 시작하기' },
+        },
+        {
+            key: 'agency',
+            name: 'Agency',
+            price: 89000,
+            tagline: '대형 영업 / 대리점급 — 월 1,500분으로 마음껏 기록.',
+            features: [
+                { text: 'Master 전체 기능 포함', on: true },
+                { text: 'AI 통화 요약 월 1,500분 (분 단위 과금)', on: true },
+                { text: '동일 전화번호 통화 자동 누적', on: true },
+                { text: '담당자 메모 동기화', on: true },
+                { text: '초과 시 자동 충전 (₩5,000 = 71분 추가, 동의 시)', on: true },
+            ],
+            cta: { primary: true, label: 'Agency 시작하기' },
         },
     ];
 
-    // premium = Phase 1 legacy plan, Plus 와 동일 권한.
-    // trialing = 옛 가입자 호환 — 사장님 2026-05-25 5회 무료체험 폐지 후 Free 와 동일 취급.
-    const PLAN_LABEL = { free: 'Free', plus: 'Plus', pro: 'Pro', trialing: 'Free', premium: 'Plus' };
+    // 옛 plan key 호환 — DB migration 잔재 / 옛 응답 대응.
+    const PLAN_LABEL = {
+        free: 'Free', sales: 'Sales', master: 'Master', agency: 'Agency',
+        trialing: 'Free', plus: 'Sales', pro: 'Master', premium: 'Sales',
+    };
     function normalizePlan(p) {
-        if (p === 'premium') return 'plus';
+        if (p === 'premium') return 'sales';
+        if (p === 'plus')    return 'sales';
+        if (p === 'pro')     return 'master';
         if (p === 'trialing') return 'free';
         return p;
     }
@@ -617,8 +637,18 @@
             renderPlans('free', 'active');
         }
         // 결제 버튼 click handler.
+        // 사장님 2026-05-26 — 구독 결제는 Google Play (안드로이드 앱) 로 전환.
+        // PortOne 결제 함수 (startPayment 등) 는 미래 활성화 위해 유지하되 click 흐름만 안내로 교체.
         document.querySelectorAll('[data-pay-plan]').forEach(btn => {
-            btn.addEventListener('click', () => startPayment(btn.dataset.payPlan, currentProfile));
+            btn.addEventListener('click', () => {
+                const inApp = !!(window.YoungmanBridge && typeof window.YoungmanBridge.isInApp === 'function' && window.YoungmanBridge.isInApp());
+                if (inApp && window.YoungmanBridge && typeof window.YoungmanBridge.startSubscription === 'function') {
+                    // 앱 브리지 — 앱팀이 startSubscription(planKey) 구현 시 자동 활성화
+                    try { window.YoungmanBridge.startSubscription(btn.dataset.payPlan); } catch (e) { console.error(e); }
+                    return;
+                }
+                alert('구독 결제는 안드로이드 앱(Google Play)에서 진행됩니다.\n\n앱을 설치하신 후, 앱 내 구독 메뉴에서 결제해 주세요.');
+            });
         });
     })();
 </script>

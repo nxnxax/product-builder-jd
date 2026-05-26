@@ -7,7 +7,7 @@
     <link rel="icon" type="image/png" href="logo_main.png">
     <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
     <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
-    <link rel="stylesheet" href="style.css?v=20260518-billing">
+    <link rel="stylesheet" href="style.css?v=20260526-newplans">
 
     <style>
         .billing-shell {
@@ -146,14 +146,31 @@
 <script type="module">
     import { initSupabase, apiRequest, getSession, mountAppHeader, mountAppFooter } from './auth-shared.js?v=20260525-welcome-once';
 
-    // premium = Phase 1 legacy plan, Plus 와 동일 권한 (백엔드 마이그레이션 적용 후 사라짐).
-    // 사장님 2026-05-25 — trialing 폐지. 옛 가입자 호환 위해 trialing → free 와 동일 매핑.
-    const PLAN_LABEL = { free: 'Free', plus: 'Plus', pro: 'Pro', trialing: 'Free', premium: 'Plus' };
+    // 사장님 2026-05-26 — 신규 요금제 (sales/master/agency). 옛 plus/pro/premium/trialing 호환 매핑.
+    const PLAN_LABEL = {
+        free: 'Free', sales: 'Sales', master: 'Master', agency: 'Agency',
+        trialing: 'Free', plus: 'Sales', pro: 'Master', premium: 'Sales',
+    };
     const STATUS_LABEL = { active: '활성', trialing: '활성', past_due: '결제 실패', cancelled: '해지됨' };
-    const PLAN_LIMITS = { free: 0, trialing: 0, plus: 20, pro: null, premium: 20 };
-    const PLAN_LIMIT_MINUTES = { free: 30, trialing: 30, plus: 300, pro: 1000, premium: 300 };
-    const PLAN_PRICE = { free: 0, trialing: 0, plus: 19000, pro: 39000, premium: 19000 };
-    function normalizePlan(p) { return (p === 'premium') ? 'plus' : p; }
+    const PLAN_LIMITS = {
+        free: 0, sales: 20, master: null, agency: null,
+        trialing: 0, plus: 20, pro: null, premium: 20,
+    };
+    const PLAN_LIMIT_MINUTES = {
+        free: 0, sales: 300, master: 700, agency: 1500,
+        trialing: 0, plus: 300, pro: 700, premium: 300,
+    };
+    const PLAN_PRICE = {
+        free: 0, sales: 24000, master: 47000, agency: 89000,
+        trialing: 0, plus: 24000, pro: 47000, premium: 24000,
+    };
+    function normalizePlan(p) {
+        if (p === 'premium') return 'sales';
+        if (p === 'plus')    return 'sales';
+        if (p === 'pro')     return 'master';
+        if (p === 'trialing') return 'free';
+        return p;
+    }
 
     function escapeHtml(s) {
         return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -237,7 +254,7 @@
             </section>
         `;
 
-        const isPaidPlan = (plan === 'plus' || plan === 'pro' || plan === 'premium');
+        const isPaidPlan = (plan === 'sales' || plan === 'master' || plan === 'agency');
         const overageRow = isPaidPlan ? `
             <div class="billing-row" style="margin-top:16px;border-top:1px solid var(--border);padding-top:14px;">
                 <div class="billing-row-label">자동 충전</div>
@@ -271,7 +288,7 @@
                     <div class="billing-row-value" style="color:var(--fg-tertiary);font-weight:500;">${plan === 'free' || plan === 'trialing' ? '등록된 결제 수단 없음' : '카드 결제 (등록됨)'}</div>
                 </div>
                 <div class="billing-actions">
-                    <button class="billing-btn secondary disabled" type="button" disabled title="PortOne 결합 후 활성화">결제 수단 변경 (준비 중)</button>
+                    <button class="billing-btn secondary disabled" type="button" disabled title="Google Play 구독 → 결제 수단 변경">앱(Google Play)에서 변경</button>
                 </div>
             </section>
         `;

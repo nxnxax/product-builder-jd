@@ -123,12 +123,20 @@ if (!function_exists('portone_verify_webhook')) {
 }
 
 if (!function_exists('portone_plan_amount')) {
-    /** 우리 plan 코드 → 결제 금액 (KRW, VAT 포함). */
+    /** 우리 plan 코드 → 결제 금액 (KRW, VAT 포함).
+     *  2026-05-26 사장님 — 옛 plus/pro 폐지, 신규 sales/master/agency.
+     *  옛 plus → sales, 옛 pro → master 옛 가입자 호환만 유지.
+     */
     function portone_plan_amount(string $plan): int {
         switch (strtolower($plan)) {
-            case 'plus': return 19000;
-            case 'pro':  return 39000;
-            default:     return 0;
+            case 'sales':    return 24000;
+            case 'master':   return 47000;
+            case 'agency':   return 89000;
+            // 옛 가입자 호환 (라이브 구독자 없으나 fail-safe)
+            case 'plus':     return 24000;  // → sales
+            case 'pro':      return 47000;  // → master
+            case 'premium':  return 24000;  // → sales
+            default:         return 0;
         }
     }
 }
@@ -136,12 +144,14 @@ if (!function_exists('portone_plan_amount')) {
 if (!function_exists('plan_default_summary_limit')) {
     /**
      * plan 별 default summary_limit (회 단위 — 레거시).
-     * Phase 1 분 기반 전환 진행 중. 분 단위 한도는 plan_default_summary_limit_minutes() 참조.
-     * verify-payment / cron-renew / admin-members PATCH 가 plan 변경 시 회/분 둘 다 동기화.
+     * 분 단위 한도는 plan_default_summary_limit_minutes() 참조 — 신규 흐름은 분 단위만 사용.
      */
     function plan_default_summary_limit(string $plan): ?int {
         switch (strtolower($plan)) {
-            case 'pro':       return null;  // 무제한
+            case 'agency':
+            case 'master':
+            case 'pro':       return null;  // 무제한 (회 단위는 deprecated)
+            case 'sales':
             case 'plus':
             case 'premium':   return 20;
             // 사장님 2026-05-25 — trialing 폐지: free 와 동일 (0회 — AI 요약은 유료 플랜).
@@ -155,21 +165,25 @@ if (!function_exists('plan_default_summary_limit')) {
 if (!function_exists('plan_default_summary_limit_minutes')) {
     /**
      * plan 별 default summary_limit_minutes (분 단위 — 신규 분 기반 과금).
-     * 2026-05-19 분 기반 전환:
-     *   - Free: 30분/월 (체험)
-     *   - Plus: 300분/월 (₩19,000)
-     *   - Pro: 1,000분/월 (₩39,000)
-     *   - trialing (신규 가입 7일 체험): 30분
+     * 2026-05-26 사장님 — 신규 요금제:
+     *   - Free   : 0분 (무료, AI 요약은 유료 plan 만)
+     *   - Sales  : 300분/월   (₩24,000)
+     *   - Master : 700분/월   (₩47,000)
+     *   - Agency : 1,500분/월 (₩89,000)
      * null = 무제한 (admin 수동 부여 시만, 일반 결제에서는 사용 안 함).
      */
     function plan_default_summary_limit_minutes(string $plan): ?int {
         switch (strtolower($plan)) {
-            case 'pro':       return 1000;
+            case 'agency':   return 1500;
+            case 'master':   return 700;
+            case 'sales':    return 300;
+            // 옛 plan 호환 (자동 migration 으로 사라지지만 fail-safe)
+            case 'pro':      return 700;
             case 'plus':
-            case 'premium':   return 300;
-            case 'trialing':  return 30;
+            case 'premium':  return 300;
+            case 'trialing':
             case 'free':
-            default:          return 30;
+            default:         return 0;
         }
     }
 }
@@ -312,9 +326,14 @@ if (!function_exists('charge_overage_top_up')) {
 if (!function_exists('portone_plan_label')) {
     function portone_plan_label(string $plan): string {
         switch (strtolower($plan)) {
-            case 'plus': return 'YOUNGMAN Plus 월간 구독';
-            case 'pro':  return 'YOUNGMAN Pro 월간 구독';
-            default:     return 'YOUNGMAN 구독';
+            case 'sales':   return 'YOUNGMAN Sales 월간 구독';
+            case 'master':  return 'YOUNGMAN Master 월간 구독';
+            case 'agency':  return 'YOUNGMAN Agency 월간 구독';
+            // 옛 가입자 호환
+            case 'plus':    return 'YOUNGMAN Sales 월간 구독';
+            case 'pro':     return 'YOUNGMAN Master 월간 구독';
+            case 'premium': return 'YOUNGMAN Sales 월간 구독';
+            default:        return 'YOUNGMAN 구독';
         }
     }
 }
@@ -375,7 +394,7 @@ if (!function_exists('billing_ensure_tables')) {
                 CREATE TABLE IF NOT EXISTS subscriptions (
                     id INT AUTO_INCREMENT PRIMARY KEY,
                     owner_email VARCHAR(255) NOT NULL,
-                    plan VARCHAR(16) NOT NULL DEFAULT 'plus',
+                    plan VARCHAR(16) NOT NULL DEFAULT 'free',
                     status VARCHAR(16) NOT NULL DEFAULT 'active',
                     portone_customer_id VARCHAR(64) NULL DEFAULT NULL,
                     portone_billing_key VARCHAR(128) NULL DEFAULT NULL,
@@ -439,7 +458,7 @@ if (!function_exists('billing_ensure_tables')) {
                 'summary_limit'            => 'INT NULL DEFAULT 0',
                 'last_usage_reset_at'      => 'DATETIME NULL DEFAULT NULL',
                 // 분 기반 과금 (2026-05-19 추가)
-                'summary_limit_minutes'    => 'INT NULL DEFAULT 30',     // 이번달 한도 (분)
+                'summary_limit_minutes'    => 'INT NULL DEFAULT 0',      // 이번달 한도 (분). 2026-05-26 free=0 으로 변경.
                 'usage_seconds_period'     => 'INT NOT NULL DEFAULT 0',  // 이번달 누적 사용 (초)
                 'overage_enabled'          => 'TINYINT(1) NOT NULL DEFAULT 0',   // 자동 충전 동의 여부
                 'overage_balance_seconds'  => 'INT NOT NULL DEFAULT 0',          // 충전 잔여 (초)
@@ -455,26 +474,31 @@ if (!function_exists('billing_ensure_tables')) {
                     catch (Throwable $e) { error_log('[billing_ensure_tables] ALTER ' . $col . ': ' . $e->getMessage()); }
                 }
             }
-            // 일괄 마이그레이션 — 옛 trialing default(5) 가 plus/pro 에 잘못 남은 케이스 정리.
-            // plan 별 의도된 default 와 다른 경우만 보정 (admin 명시 override 추정 안 함).
+            // 일괄 마이그레이션 — 사장님 2026-05-26: plus→sales, pro→master, premium→sales 전환.
+            // 라이브 PortOne 구독자 없음 (사장님 확인) — 자유롭게 plan key 교체.
+            // idempotent: 두 번째 호출부터 영향 받는 row 0개.
             try {
-                $pdo->exec("UPDATE members SET summary_limit = 20 WHERE plan = 'plus' AND summary_limit = 5");
-                $pdo->exec("UPDATE members SET summary_limit = NULL WHERE plan = 'pro' AND summary_limit IS NOT NULL AND summary_limit <= 20");
-                $pdo->exec("UPDATE members SET summary_limit = 0 WHERE plan = 'free' AND summary_limit = 5");
-                // 사장님 2026-05-25 — trialing 폐지: 옛 trialing 가입자 자동 → free 마이그레이션.
+                $pdo->exec("UPDATE members SET plan = 'sales'  WHERE plan = 'plus'");
+                $pdo->exec("UPDATE members SET plan = 'master' WHERE plan = 'pro'");
+                $pdo->exec("UPDATE members SET plan = 'sales'  WHERE plan = 'premium'");
+                // 사장님 2026-05-25 — trialing 폐지: 옛 trialing 가입자 자동 → free.
                 $pdo->exec("UPDATE members SET plan = 'free' WHERE plan = 'trialing'");
                 $pdo->exec("UPDATE members SET plan_status = 'active' WHERE plan_status = 'trialing'");
-                $pdo->exec("UPDATE members SET summary_limit = 0 WHERE plan = 'free' AND summary_limit > 0 AND summary_limit <= 5");
+                // 신규 plan key 회 단위 한도 정리 (회 단위는 deprecated 이지만 호환 유지)
+                $pdo->exec("UPDATE members SET summary_limit = 20   WHERE plan = 'sales'  AND (summary_limit IS NULL OR summary_limit < 20)");
+                $pdo->exec("UPDATE members SET summary_limit = NULL WHERE plan IN ('master','agency')");
+                $pdo->exec("UPDATE members SET summary_limit = 0    WHERE plan = 'free'");
             } catch (Throwable $e) {
-                error_log('[billing_ensure_tables] limit migration: ' . $e->getMessage());
+                error_log('[billing_ensure_tables] plan migration: ' . $e->getMessage());
             }
-            // Phase 1 분 기반 마이그레이션 — plan 별 분 한도 자동 설정 (NULL 인 신규 컬럼만 채움).
-            // 기존 사용자 영향 없음: summary_limit (회) 와 summary_limit_minutes (분) 가 병행 운영됨.
-            // Phase 2 에서 process-recording.php 의 차감 로직이 분 단위로 전환되면 summary_limit 은 deprecated.
+            // 분 단위 한도 마이그레이션 — 신규 plan key 기준. NULL/기존값 무관하게 신규 default 강제.
+            // 사장님 2026-05-26 — 옛 plus(300)→sales(300) / 옛 pro(1000)→master(700) 변환.
+            // admin 수동 override 가 있을 수 있으나 라이브 구독자 없음이라 안전.
             try {
-                $pdo->exec("UPDATE members SET summary_limit_minutes = 1000 WHERE plan = 'pro'      AND summary_limit_minutes IS NULL");
-                $pdo->exec("UPDATE members SET summary_limit_minutes = 300  WHERE plan IN ('plus','premium') AND summary_limit_minutes IS NULL");
-                $pdo->exec("UPDATE members SET summary_limit_minutes = 30   WHERE plan IN ('trialing','free') AND summary_limit_minutes IS NULL");
+                $pdo->exec("UPDATE members SET summary_limit_minutes = 1500 WHERE plan = 'agency'");
+                $pdo->exec("UPDATE members SET summary_limit_minutes = 700  WHERE plan = 'master'");
+                $pdo->exec("UPDATE members SET summary_limit_minutes = 300  WHERE plan = 'sales'");
+                $pdo->exec("UPDATE members SET summary_limit_minutes = 0    WHERE plan = 'free'");
             } catch (Throwable $e) {
                 error_log('[billing_ensure_tables] minutes migration: ' . $e->getMessage());
             }

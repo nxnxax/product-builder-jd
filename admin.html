@@ -519,11 +519,12 @@
                     <label class="row-label" for="member-plan">구독 플랜</label>
                     <div class="row-control">
                         <select id="member-plan">
-                            <option value="free">Free (30분)</option>
-                            <option value="plus">Plus (300분)</option>
-                            <option value="pro">Pro (1,000분)</option>
+                            <option value="free">Free (0분)</option>
+                            <option value="sales">Sales (300분 · ₩24,000)</option>
+                            <option value="master">Master (700분 · ₩47,000)</option>
+                            <option value="agency">Agency (1,500분 · ₩89,000)</option>
                         </select>
-                        <p class="form-help" style="margin-top:6px;font-size:11.5px;">분 단위 한도 (2026-05-20 분 기반 전환). plan 변경 시 분 한도/회 한도 자동 동기화.</p>
+                        <p class="form-help" style="margin-top:6px;font-size:11.5px;">신규 요금제 (2026-05-26). plan 변경 시 분 한도 자동 동기화.</p>
                     </div>
                 </div>
                 <div class="modal-row">
@@ -553,7 +554,7 @@
                     <label class="row-label" for="member-summary-limit-minutes">분 단위 한도 (override)</label>
                     <div class="row-control">
                         <input type="number" id="member-summary-limit-minutes" min="0" style="width:120px;" placeholder="default">
-                        <p class="form-help" style="margin-top:6px;font-size:11.5px;">비워두면 plan default (Free=30 / Plus=300 / Pro=1000). 수동 부여 시 입력 (예: 무제한 = 99999, 무료 사용 = 60).</p>
+                        <p class="form-help" style="margin-top:6px;font-size:11.5px;">비워두면 plan default (Free=0 / Sales=300 / Master=700 / Agency=1500). 수동 부여 시 입력 (예: 무제한 = 99999, 무료 사용 = 60).</p>
                     </div>
                 </div>
                 <div class="modal-row">
@@ -603,6 +604,6 @@
     </div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-<script src="admin.js?v=20260525-trial-removed" type="module"></script>
+<script src="admin.js?v=20260526-newplans" type="module"></script>
 </body>
 </html>

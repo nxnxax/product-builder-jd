@@ -8,7 +8,7 @@
  *
  * 흐름:
  *   1. members 중 다음 조건 row 검색:
- *      - plan IN (plus, pro)
+ *      - plan IN (sales, master, agency)
  *      - plan_status = 'active'
  *      - current_period_end <= NOW()
  *      - portone_billing_key IS NOT NULL
@@ -64,7 +64,7 @@ try {
         WHERE cancel_at_period_end = 1
           AND current_period_end IS NOT NULL
           AND current_period_end <= NOW()
-          AND plan IN ('plus', 'pro')");
+          AND plan IN ('sales', 'master', 'agency')");
     $expiredCancelled->execute();
     while ($r = $expiredCancelled->fetch()) {
         if ($dryRun) { $counts['downgraded']++; continue; }
@@ -87,7 +87,7 @@ try {
 try {
     $stmt = $pdo->prepare("SELECT email, plan, portone_billing_key, portone_customer_id
         FROM members
-        WHERE plan IN ('plus', 'pro')
+        WHERE plan IN ('sales', 'master', 'agency')
           AND plan_status IN ('active', 'past_due')
           AND current_period_end IS NOT NULL
           AND current_period_end <= NOW()

@@ -227,7 +227,8 @@ function customer_log_free_quota(): int { return 5; }
 /**
  * 사장님 2026-05-25 — native A 모달 분기용 plan 정보 빌더.
  * requires_subscription = free + non-admin → native 가 첫 모달 (취소/요약보기/양식에 전송) 대신
- * "Plus 구독부터 사용 가능해요" 모달 즉시 표시 분기 트리거.
+ * "구독부터 사용 가능해요" 모달 즉시 표시 분기 트리거.
+ * 2026-05-26 — 신규 요금제 (sales/master/agency) 전환. 옛 plan key 도 정규화.
  */
 function build_plan_info_for_response(PDO $pdo, string $ownerEmail, bool $isAdminUser): array {
     $plan = 'free';
@@ -241,7 +242,11 @@ function build_plan_info_for_response(PDO $pdo, string $ownerEmail, bool $isAdmi
         if ($row) {
             $rowFound = true;
             $plan = (string)($row['plan'] ?? 'free');
+            // 옛 plan key 정규화 (자동 migration 후에도 응답 일관성)
             if ($plan === 'trialing') $plan = 'free';
+            if ($plan === 'plus')     $plan = 'sales';
+            if ($plan === 'premium')  $plan = 'sales';
+            if ($plan === 'pro')      $plan = 'master';
             $freeUsed = (int)($row['free_summaries_used'] ?? 0);
         }
     } catch (Throwable $e) {
@@ -372,12 +377,13 @@ function ensure_members_plan_columns(PDO $pdo): bool {
         if (!in_array('last_usage_reset_at', $existing, true)) {
             $pdo->exec("ALTER TABLE `members` ADD COLUMN `last_usage_reset_at` DATETIME NULL DEFAULT NULL");
         }
-        // Phase 1 lazy 마이그레이션 — 옛 plan='premium' (Phase 1 단순 구조) → 'plus' 로 정규화.
-        // idempotent: 두 번째 호출부터는 영향 받는 row 0개.
+        // 사장님 2026-05-26 — 신규 요금제 (sales/master/agency) 로 전환.
+        // 옛 plan key (plus/pro/premium/trialing) 자동 마이그레이션. idempotent.
         try {
-            $pdo->exec("UPDATE `members` SET `plan` = 'plus' WHERE `plan` = 'premium'");
-            // 사장님 2026-05-25 — trialing 폐지: 옛 trialing 가입자 자동 → free 마이그레이션.
-            $pdo->exec("UPDATE `members` SET `plan` = 'free' WHERE `plan` = 'trialing'");
+            $pdo->exec("UPDATE `members` SET `plan` = 'sales'  WHERE `plan` = 'plus'");
+            $pdo->exec("UPDATE `members` SET `plan` = 'master' WHERE `plan` = 'pro'");
+            $pdo->exec("UPDATE `members` SET `plan` = 'sales'  WHERE `plan` = 'premium'");
+            $pdo->exec("UPDATE `members` SET `plan` = 'free'   WHERE `plan` = 'trialing'");
             $pdo->exec("UPDATE `members` SET `plan_status` = 'active' WHERE `plan_status` = 'trialing'");
         } catch (Throwable $e) {
             error_log('[process-recording] plan migration: ' . $e->getMessage());
@@ -390,13 +396,13 @@ function ensure_members_plan_columns(PDO $pdo): bool {
 }
 
 /**
- * plan 별 월 사용 한도 결정.
+ * plan 별 월 사용 한도 결정 (회 단위 — 레거시. 신규 흐름은 분 단위만 사용).
  * - 사용자의 summary_limit 컬럼이 명시되어 있으면 그 값 (관리자 수동 override 가능).
  * - 그렇지 않으면 plan 별 기본값:
- *     pro      → null (무제한)
- *     plus     → 20
- *     free     → 0  (차단)
- * 사장님 2026-05-25 — trialing 폐지: free 와 동일 0회 (옛 가입자 호환만).
+ *     agency / master → null (무제한)
+ *     sales           → 20
+ *     free            → 0  (차단)
+ * 사장님 2026-05-26 — sales/master/agency 신규 요금제. 옛 plus/pro/premium/trialing 호환.
  */
 function resolve_summary_limit(?string $plan, $columnValue): ?int {
     // 컬럼 명시값 우선 (관리자가 admin 에서 직접 변경한 경우)
@@ -406,10 +412,13 @@ function resolve_summary_limit(?string $plan, $columnValue): ?int {
         return $n;
     }
     switch (strtolower((string)$plan)) {
-        case 'pro':       return null;
+        case 'agency':
+        case 'master':
+        case 'pro':       return null;  // 무제한 (옛 pro = master)
+        case 'sales':
         case 'plus':
-        case 'premium':   return 20;  // 옛 Phase 1 plan='premium' 안전망 — Plus 와 동일 권한
-        case 'trialing':  // 옛 가입자 호환 — free 와 동일.
+        case 'premium':   return 20;    // 옛 plus/premium = sales
+        case 'trialing':                // 옛 가입자 호환 — free 와 동일.
         case 'free':
         default:          return 0;
     }
@@ -931,10 +940,11 @@ if ($asyncMode) {
 }
 
 /* ========== Plan check ==========
- * 구독 plan 별 quota:
- *   pro      → 무제한 (summary_limit = NULL)
- *   plus     → 월 20회
- *   free     → 0 (차단) — 사장님 2026-05-25 trialing 폐지 후 신규 가입자 기본값.
+ * 구독 plan 별 quota (사장님 2026-05-26 — 신규 요금제):
+ *   agency  → 월 1,500분 (₩89,000)
+ *   master  → 월   700분 (₩47,000)
+ *   sales   → 월   300분 (₩24,000)
+ *   free    → 0분 (차단) — AI 요약은 유료 plan 전용.
  * + plan_status 검사 — past_due / cancelled 면 차단 (active 만 통과).
  * + admin allowlist 는 모든 검사 우회.
  */
@@ -955,7 +965,11 @@ try {
     $row = $ps->fetch();
     if ($row) {
         $plan = (string)($row['plan'] ?? 'free');
-        if ($plan === 'trialing') $plan = 'free';   // 사장님 2026-05-25 — 옛 가입자 호환.
+        // 옛 plan key 호환 — 정상 흐름은 ensure_members_plan_columns 가 이미 마이그레이션함.
+        if ($plan === 'trialing') $plan = 'free';
+        if ($plan === 'plus')     $plan = 'sales';
+        if ($plan === 'premium')  $plan = 'sales';
+        if ($plan === 'pro')      $plan = 'master';
         $planStatus = (string)($row['plan_status'] ?? 'active');
         if ($planStatus === 'trialing') $planStatus = 'active';
         $freeUsed = (int)($row['free_summaries_used'] ?? 0);
@@ -1012,9 +1026,7 @@ if (!$isAdminUser) {
             } else {
                 // overage_enabled = 0 (자동 충전 미동의) → 한도 초과 거부
                 if ($plan === 'free') {
-                    jerror('plan_required', '무료 체험 ' . $summaryLimitMinutes . '분을 모두 사용했습니다. Plus 또는 Pro 구독을 시작해 주세요.', 403);
-                } elseif ($plan === 'trialing') {
-                    jerror('plan_required', '신규 가입 체험 ' . $summaryLimitMinutes . '분을 모두 사용했습니다. Plus 또는 Pro 구독을 시작해 주세요.', 403);
+                    jerror('plan_required', 'AI 통화 요약은 유료 플랜에서 사용 가능합니다. Sales / Master / Agency 구독을 시작해 주세요.', 403);
                 } else {
                     jerror('plan_required',
                         '이번 달 ' . $summaryLimitMinutes . '분 한도를 모두 사용했습니다. ' .
@@ -1028,11 +1040,9 @@ if (!$isAdminUser) {
         $effectiveLimit = resolve_summary_limit($plan, $summaryLimitColumn);
         if ($effectiveLimit !== null && $freeUsed >= $effectiveLimit) {
             if ($plan === 'free') {
-                jerror('plan_required', '무료 플랜은 통화 AI 요약을 사용할 수 없습니다. Plus 또는 Pro 구독이 필요합니다.', 403);
-            } elseif ($plan === 'trialing') {
-                jerror('plan_required', '신규 가입 무료 체험을 모두 사용했습니다. Plus 또는 Pro 구독을 시작해 주세요.', 403);
+                jerror('plan_required', '무료 플랜은 통화 AI 요약을 사용할 수 없습니다. Sales / Master / Agency 구독을 시작해 주세요.', 403);
             } else {
-                jerror('plan_required', '이번 달 한도를 모두 사용했습니다. 다음 결제일까지 기다리거나 Pro 로 업그레이드해 주세요.', 403);
+                jerror('plan_required', '이번 달 한도를 모두 사용했습니다. 다음 결제일까지 기다리거나 상위 플랜으로 업그레이드해 주세요.', 403);
             }
         }
     }
@@ -1973,11 +1983,12 @@ try {
 
 /* ========== 사용량 카운트 ==========
  *   - admin allowlist: 카운트 안 함
- *   - pro: 카운트 안 함 (무제한)
- *   - 그 외 (free / trialing / plus): summary 처리 성공 후 +1
+ *   - master / agency: 회 단위 카운트 안 함 (무제한 — 분 단위만 차감)
+ *   - 그 외 (free / sales): summary 처리 성공 후 +1
  *   - usage_logs 에도 row 추가 (감사 / 통계)
  */
-if (!$isAdminUser && strtolower($plan) !== 'pro') {
+$planLowerForCount = strtolower($plan);
+if (!$isAdminUser && $planLowerForCount !== 'master' && $planLowerForCount !== 'agency' && $planLowerForCount !== 'pro') {
     // 레거시 회 단위 카운트 (분 단위 시스템 안정화 전까지 병행 운영)
     try {
         $pdo->prepare('UPDATE members SET free_summaries_used = free_summaries_used + 1 WHERE email = :e')

@@ -28,8 +28,8 @@ $planRequested = strtolower(trim((string)($body['plan'] ?? '')));
 if ($billingKey === '') {
     portone_response(['status' => 'error', 'code' => 'invalid_request', 'message' => 'billingKey 누락.'], 400);
 }
-if (!in_array($planRequested, ['plus', 'pro'], true)) {
-    portone_response(['status' => 'error', 'code' => 'invalid_request', 'message' => 'plan 은 plus 또는 pro 만 허용.'], 400);
+if (!in_array($planRequested, ['sales', 'master', 'agency'], true)) {
+    portone_response(['status' => 'error', 'code' => 'invalid_request', 'message' => 'plan 은 sales / master / agency 만 허용.'], 400);
 }
 
 // 인증 — Supabase Bearer (헬퍼 사용; 실패 시 자동 401 응답 + exit)

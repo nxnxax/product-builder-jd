@@ -846,7 +846,15 @@ function member_row_from_store($store, $row) {
         'provider' => $providerCol ? ($row[$providerCol] ?? 'email') : 'email',
         'status' => $status === '' ? 'active' : strtolower($status),
         'role' => $role === '' ? 'member' : strtolower($role),
-        'plan' => $planCol ? ((function($p){ return $p === 'trialing' ? 'free' : $p; })((string)($row[$planCol] ?? 'free'))) : 'free',
+        'plan' => $planCol ? ((function($p){
+            // 사장님 2026-05-26 — 옛 plan key 정규화 (sales/master/agency 신규 요금제).
+            $p = (string)$p;
+            if ($p === 'trialing') return 'free';
+            if ($p === 'plus')     return 'sales';
+            if ($p === 'premium')  return 'sales';
+            if ($p === 'pro')      return 'master';
+            return $p;
+        })((string)($row[$planCol] ?? 'free'))) : 'free',
         'plan_status' => $planStatusCol ? ((function($s){ return $s === 'trialing' ? 'active' : $s; })((string)($row[$planStatusCol] ?? 'active'))) : 'active',
         // 레거시 회 단위
         'summary_used' => $summaryUsedCol ? (int)($row[$summaryUsedCol] ?? 0) : 0,
@@ -1513,7 +1521,7 @@ function ensure_subscriptions_table(PDO $pdo): bool {
             CREATE TABLE IF NOT EXISTS subscriptions (
                 id INT AUTO_INCREMENT PRIMARY KEY,
                 owner_email VARCHAR(255) NOT NULL,
-                plan VARCHAR(16) NOT NULL DEFAULT 'plus',
+                plan VARCHAR(16) NOT NULL DEFAULT 'free',
                 status VARCHAR(16) NOT NULL DEFAULT 'active',
                 portone_customer_id VARCHAR(64) NULL DEFAULT NULL,
                 portone_billing_key VARCHAR(128) NULL DEFAULT NULL,
@@ -2644,9 +2652,11 @@ try {
             }
             $profile = member_row_from_store($rec['store'], $rec['row']);
             $profile['email'] = $email;
-            // trialing 폐지: 옛 가입자 호환 — free 로 매핑.
+            // 사장님 2026-05-26 — 옛 plan key 호환 매핑 (member_row_from_store 가 이미 정규화하지만 fail-safe).
             $effectivePlanPf = strtolower((string)($profile['plan'] ?? 'free'));
             if ($effectivePlanPf === 'trialing') $effectivePlanPf = 'free';
+            if ($effectivePlanPf === 'plus' || $effectivePlanPf === 'premium') $effectivePlanPf = 'sales';
+            if ($effectivePlanPf === 'pro') $effectivePlanPf = 'master';
             $profile['requires_subscription'] = ($effectivePlanPf === 'free' && !$isAdminUserPf);
             respond(['ok' => true, 'profile' => $profile]);
         }
@@ -3039,8 +3049,8 @@ try {
             $newPlanVal = null;
             if ($planCol && isset($body['plan'])) {
                 $planVal = strtolower(trim((string)$body['plan']));
-                // 사장님 2026-05-25 — trialing 폐지: 허용 list 에서 제외.
-                if (!in_array($planVal, ['free', 'plus', 'pro'], true)) {
+                // 사장님 2026-05-26 — 신규 요금제 (sales/master/agency). 옛 plus/pro 폐지.
+                if (!in_array($planVal, ['free', 'sales', 'master', 'agency'], true)) {
                     respond(['ok' => false, 'error' => '허용되지 않는 plan 값입니다.'], 400);
                 }
                 $assignments[] = quote_identifier($planCol) . ' = :plan';
@@ -3048,13 +3058,14 @@ try {
                 $planChanged = true;
                 $newPlanVal = $planVal;
             }
-            // plan 변경 시 summary_limit 도 자동 동기화 (사용자가 명시적으로 summary_limit 안 보낸 경우).
-            // plus=20 / pro=NULL(무제한) / free=0.
+            // plan 변경 시 summary_limit 도 자동 동기화 (회 단위 — deprecated 이나 호환).
+            // sales=20 / master/agency=NULL(무제한) / free=0.
             if ($planChanged && $summaryLimitCol && !isset($body['summary_limit'])) {
                 $autoLimit = null;
                 switch ($newPlanVal) {
-                    case 'pro':       $autoLimit = null; break;
-                    case 'plus':      $autoLimit = 20;   break;
+                    case 'agency':
+                    case 'master':    $autoLimit = null; break;
+                    case 'sales':     $autoLimit = 20;   break;
                     case 'free':      $autoLimit = 0;    break;
                 }
                 if ($autoLimit === null) {
@@ -3064,14 +3075,15 @@ try {
                     $params[':auto_limit'] = $autoLimit;
                 }
             }
-            // Phase 2 — plan 변경 시 summary_limit_minutes 도 자동 동기화 (분 단위 한도).
+            // plan 변경 시 summary_limit_minutes 도 자동 동기화 (분 단위 — 신규 요금제 기준).
             $summaryLimitMinutesCol = first_existing_column($cols, ['summary_limit_minutes']);
             if ($planChanged && $summaryLimitMinutesCol && !isset($body['summary_limit_minutes'])) {
-                $autoLimitMin = 30;  // default
+                $autoLimitMin = 0;
                 switch ($newPlanVal) {
-                    case 'pro':       $autoLimitMin = 1000; break;
-                    case 'plus':      $autoLimitMin = 300;  break;
-                    case 'free':      $autoLimitMin = 30;   break;
+                    case 'agency':    $autoLimitMin = 1500; break;
+                    case 'master':    $autoLimitMin = 700;  break;
+                    case 'sales':     $autoLimitMin = 300;  break;
+                    case 'free':      $autoLimitMin = 0;    break;
                 }
                 $assignments[] = quote_identifier($summaryLimitMinutesCol) . ' = :auto_limit_min';
                 $params[':auto_limit_min'] = $autoLimitMin;
@@ -3515,7 +3527,8 @@ try {
         }
 
         // ── 플랜별 분포 ──
-        $planDistribution = ['trialing'=>0,'free'=>0,'plus'=>0,'pro'=>0,'other'=>0];
+        // 사장님 2026-05-26 — 신규 요금제 (sales/master/agency). 옛 plus/pro/premium/trialing 은 정규화.
+        $planDistribution = ['free'=>0,'sales'=>0,'master'=>0,'agency'=>0,'other'=>0];
         if ($storeForStats && in_array('plan', $storeForStats['columns'], true)) {
             $tbl = quote_identifier($storeForStats['table']);
             try {
@@ -3523,7 +3536,11 @@ try {
                 foreach ($stmt as $r) {
                     $p = (string)$r['plan'];
                     $c = (int)$r['c'];
-                    if (isset($planDistribution[$p])) $planDistribution[$p] = $c;
+                    // 옛 plan key 정규화 (DB migration 잔재 호환)
+                    if ($p === 'trialing') $p = 'free';
+                    if ($p === 'plus' || $p === 'premium') $p = 'sales';
+                    if ($p === 'pro') $p = 'master';
+                    if (isset($planDistribution[$p])) $planDistribution[$p] += $c;
                     else $planDistribution['other'] += $c;
                 }
             } catch (Throwable $e) {}
@@ -3547,8 +3564,16 @@ try {
         $totalRevenue = array_sum(array_column($dailyRevenue, 'revenue'));
 
         // ── MRR / ARPU ──
-        // MRR = active subscriptions × plan 가격
-        $planPrices = ['plus' => 19000, 'pro' => 39000];
+        // MRR = active subscriptions × plan 가격. 사장님 2026-05-26 — 신규 요금제.
+        $planPrices = [
+            'sales'   => 24000,
+            'master'  => 47000,
+            'agency'  => 89000,
+            // 옛 plan key fallback (DB migration 잔재 호환)
+            'plus'    => 24000,
+            'pro'     => 47000,
+            'premium' => 24000,
+        ];
         $mrr = 0;
         $activeSubsCount = 0;
         try {

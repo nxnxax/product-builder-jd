@@ -29,7 +29,7 @@ if (!$member) portone_response(['status' => 'error', 'code' => 'not_found'], 404
 
 $currentPlan = strtolower((string)($member['plan'] ?? 'free'));
 $currentStatus = strtolower((string)($member['plan_status'] ?? 'active'));
-if (!in_array($currentPlan, ['plus', 'pro'], true)) {
+if (!in_array($currentPlan, ['sales', 'master', 'agency'], true)) {
     portone_response(['status' => 'error', 'code' => 'no_active_subscription', 'message' => '활성 유료 구독이 없습니다.'], 400);
 }
 

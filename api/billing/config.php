@@ -34,13 +34,17 @@ portone_response([
     'storeId' => $storeId,
     'channelKey' => $channelKey,
     'plans' => [
-        'plus' => [
-            'label' => portone_plan_label('plus'),
-            'amount' => portone_plan_amount('plus'),
+        'sales' => [
+            'label' => portone_plan_label('sales'),
+            'amount' => portone_plan_amount('sales'),
         ],
-        'pro' => [
-            'label' => portone_plan_label('pro'),
-            'amount' => portone_plan_amount('pro'),
+        'master' => [
+            'label' => portone_plan_label('master'),
+            'amount' => portone_plan_amount('master'),
+        ],
+        'agency' => [
+            'label' => portone_plan_label('agency'),
+            'amount' => portone_plan_amount('agency'),
         ],
     ],
     'currency' => 'KRW',
