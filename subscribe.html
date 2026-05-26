@@ -97,6 +97,7 @@
             text-transform: uppercase;
             letter-spacing: 0.08em;
             margin: 0 0 8px;
+            text-align: center;
         }
         .plan-card.recommended .plan-name {
             color: var(--accent, #c8362c);
@@ -105,6 +106,7 @@
         .plan-card .plan-price {
             display: flex;
             align-items: baseline;
+            justify-content: center;
             gap: 6px;
             margin-bottom: 6px;
         }
@@ -123,6 +125,7 @@
         .plan-card .plan-minutes {
             display: flex;
             align-items: baseline;
+            justify-content: center;
             gap: 6px;
             padding-top: 8px;
             border-top: 1px dashed var(--border, #ebe8e0);
@@ -145,11 +148,13 @@
             line-height: 1.5;
             color: var(--fg-tertiary, #908a82);
             margin: 0 0 12px;
+            text-align: center;
         }
         /* === 차이 배지: 분당 단가 === */
         .plan-card .plan-rate {
             display: inline-flex;
             align-items: center;
+            justify-content: center;
             gap: 4px;
             padding: 6px 10px;
             border-radius: 6px;
@@ -157,8 +162,9 @@
             font-size: 12.5px;
             font-weight: 600;
             color: var(--fg-secondary, #6e655c);
-            margin-bottom: 14px;
-            align-self: flex-start;
+            margin: 0 auto 14px;
+            align-self: center;
+            text-align: center;
         }
         .plan-card.recommended .plan-rate,
         .plan-card .plan-rate.save {
@@ -175,6 +181,7 @@
             line-height: 1.5;
             margin: 0 0 14px;
             min-height: 36px;
+            text-align: center;
         }
         .plan-card ul.plan-features {
             list-style: none;
@@ -314,7 +321,27 @@
     import { initSupabase, apiRequest, getSession, mountAppHeader, mountAppFooter } from './auth-shared.js?v=20260525-welcome-once';
 
     // 사장님 2026-05-26 — 신규 요금제 (sales/master/agency). 옛 plus/pro 폐지.
-    // 카드 spec: 메인(금액) / 서브(분량) / 부연(차감 룰) / 차이(분당 단가)
+    // 카드 spec: 메인(금액) / 서브(AI요약 분량) / 부연(차감 룰) / 차이(분당 단가)
+    // 공통 features (Free 무료 기능) — 유료 플랜에도 동일 표시.
+    const FREE_FEATURES = [
+        { text: '고객관리대장 + 양식 커스터마이징', on: true },
+        { text: '문자발송 (사용량 개인 부담)', on: true },
+        { text: '마케팅 분석 + AI 사주 + 로또', on: true },
+    ];
+    // 사장님 2026-05-26 — 자동 충전 기능은 나중에 부활. 카드 표시 일단 숨김.
+    // 백엔드 charge_overage_top_up / overage_balance_seconds 는 그대로 keep.
+    const SHOW_OVERAGE_FEATURE = false;
+    function paidFeatures() {
+        const base = [
+            ...FREE_FEATURES,
+            { text: '동일 전화번호 통화 자동 누적', on: true },
+            { text: '담당자 메모 동기화', on: true },
+        ];
+        if (SHOW_OVERAGE_FEATURE) {
+            base.push({ text: '초과 시 자동 충전 (₩5,000 = 71분, 동의 시)', on: true });
+        }
+        return base;
+    }
     const PLAN_DEFS = [
         {
             key: 'free',
@@ -325,9 +352,7 @@
             rateClass: 'warn',
             tagline: '기본 CRM / 양식 / 마케팅은 무료로.',
             features: [
-                { text: '고객관리대장 + 양식 커스터마이징', on: true },
-                { text: '문자발송 (사용량 개인 부담)', on: true },
-                { text: '마케팅 분석 + AI 사주 + 로또', on: true },
+                ...FREE_FEATURES,
                 { text: 'AI 통화 요약은 유료 플랜부터', on: false },
             ],
             cta: { primary: false, label: '무료로 시작' },
@@ -340,12 +365,7 @@
             rate: '80원 / 분 (기준)',
             rateClass: '',
             tagline: '시작하는 영업자에게.',
-            features: [
-                { text: 'Free 전체 기능 포함', on: true },
-                { text: '동일 전화번호 통화 자동 누적', on: true },
-                { text: '담당자 메모 동기화', on: true },
-                { text: '초과 시 자동 충전 (₩5,000 = 71분, 동의 시)', on: true },
-            ],
+            features: paidFeatures(),
             cta: { primary: true, label: 'Sales 시작하기' },
         },
         {
@@ -357,12 +377,7 @@
             rateClass: 'save',
             recommended: true,
             tagline: '하루 평균 20분+ 통화 영업자에게.',
-            features: [
-                { text: 'Sales 전체 기능 포함', on: true },
-                { text: '동일 전화번호 통화 자동 누적', on: true },
-                { text: '담당자 메모 동기화', on: true },
-                { text: '초과 시 자동 충전 (₩5,000 = 71분, 동의 시)', on: true },
-            ],
+            features: paidFeatures(),
             cta: { primary: true, label: 'Master 시작하기' },
         },
         {
@@ -373,12 +388,7 @@
             rate: '59원 / 분 — Sales 대비 26% 저렴',
             rateClass: 'save',
             tagline: '대형 영업 / 대리점급 헤비유저에게.',
-            features: [
-                { text: 'Master 전체 기능 포함', on: true },
-                { text: '동일 전화번호 통화 자동 누적', on: true },
-                { text: '담당자 메모 동기화', on: true },
-                { text: '초과 시 자동 충전 (₩5,000 = 71분, 동의 시)', on: true },
-            ],
+            features: paidFeatures(),
             cta: { primary: true, label: 'Agency 시작하기' },
         },
     ];
@@ -433,13 +443,13 @@
             const priceMainHtml = isFree
                 ? `<span class="price-num">무료</span>`
                 : `<span class="price-num">${formatPrice(plan.price)}</span><span class="price-unit">/ 월</span>`;
+            // 유료 플랜은 "AI요약 N분 / 월" / Free 는 "AI요약 0분 / 월" 일관 표시.
             const minutesHtml = `
                 <div class="plan-minutes">
-                    <span class="minutes-num">${plan.minutes.toLocaleString('ko-KR')}분</span>
+                    <span class="minutes-num">AI요약 ${plan.minutes.toLocaleString('ko-KR')}분</span>
                     <span class="minutes-unit">/ 월</span>
                 </div>
-                <p class="plan-rule">(요약보기 · 양식으로 전송 버튼 클릭 시에만 차감 — 모달 [취소] / 자동 종료 시 차감 X)</p>
-                <p class="plan-rule" style="margin-top:-6px;">매월 결제일에 사용량 0으로 초기화 — <b>잔여 분 이월 X</b></p>
+                <p class="plan-rule">(요약보기 · 양식으로 전송 버튼 클릭 시에만 차감 — 팝업 [취소] / 자동 종료 시 차감 X)</p>
             `;
             const rateHtml = plan.rate
                 ? `<div class="plan-rate ${plan.rateClass || ''}">${escapeHtml(plan.rate)}</div>`
@@ -488,13 +498,13 @@
             const priceMainHtml = isFree
                 ? `<span class="price-num">무료</span>`
                 : `<span class="price-num">${formatPrice(plan.price)}</span><span class="price-unit">/ 월</span>`;
+            // 유료 플랜은 "AI요약 N분 / 월" / Free 는 "AI요약 0분 / 월" 일관 표시.
             const minutesHtml = `
                 <div class="plan-minutes">
-                    <span class="minutes-num">${plan.minutes.toLocaleString('ko-KR')}분</span>
+                    <span class="minutes-num">AI요약 ${plan.minutes.toLocaleString('ko-KR')}분</span>
                     <span class="minutes-unit">/ 월</span>
                 </div>
-                <p class="plan-rule">(요약보기 · 양식으로 전송 버튼 클릭 시에만 차감 — 모달 [취소] / 자동 종료 시 차감 X)</p>
-                <p class="plan-rule" style="margin-top:-6px;">매월 결제일에 사용량 0으로 초기화 — <b>잔여 분 이월 X</b></p>
+                <p class="plan-rule">(요약보기 · 양식으로 전송 버튼 클릭 시에만 차감 — 팝업 [취소] / 자동 종료 시 차감 X)</p>
             `;
             const rateHtml = plan.rate
                 ? `<div class="plan-rate ${plan.rateClass || ''}">${escapeHtml(plan.rate)}</div>`
