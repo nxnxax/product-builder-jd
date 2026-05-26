@@ -505,19 +505,53 @@ function statsBadge(type) {
     return `<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11.5px;font-weight:600;${style}">${escape(STATS_EVENT_LABEL[type] || type)}</span>`;
 }
 
+// 통계 표 페이지네이션 (사장님 2026-05-26 — 15개씩 페이지 분할)
+const STATS_PAGE_SIZE = 15;
+const _statsPage = { daily: 1, referrers: 1, members: 1, events: 1, memberUsage: 1 };
+function renderStatsPaginated(tbody, items, colspan, renderRow, emptyMsg, pageKey) {
+    const total = items.length;
+    if (total === 0) {
+        tbody.innerHTML = `<tr><td colspan="${colspan}" style="text-align:center;color:var(--fg-tertiary);padding:24px;">${emptyMsg}</td></tr>`;
+        _setStatsNav(tbody, 1, 1, pageKey, 0);
+        return;
+    }
+    const totalPages = Math.max(1, Math.ceil(total / STATS_PAGE_SIZE));
+    if (_statsPage[pageKey] > totalPages) _statsPage[pageKey] = 1;
+    const cur = _statsPage[pageKey];
+    tbody.innerHTML = items.slice((cur - 1) * STATS_PAGE_SIZE, cur * STATS_PAGE_SIZE).map(renderRow).join('');
+    _setStatsNav(tbody, cur, totalPages, pageKey, total);
+}
+function _setStatsNav(tbody, cur, totalPages, pageKey, total) {
+    const table = tbody.closest('table');
+    if (!table) return;
+    let nav = table.parentElement.querySelector(`[data-stats-nav="${pageKey}"]`);
+    if (!nav) {
+        nav = document.createElement('div');
+        nav.dataset.statsNav = pageKey;
+        nav.style.cssText = 'display:flex;align-items:center;justify-content:flex-end;gap:8px;padding:8px 0 0;font-size:12px;color:var(--fg-tertiary);';
+        table.parentElement.appendChild(nav);
+    }
+    if (totalPages <= 1) { nav.innerHTML = ''; return; }
+    nav.innerHTML = `<button type="button" class="tiny-btn" data-stats-page="${pageKey}" data-dir="-1" ${cur === 1 ? 'disabled' : ''}>이전</button><span>${cur} / ${totalPages} · 총 ${total}건</span><button type="button" class="tiny-btn" data-stats-page="${pageKey}" data-dir="1" ${cur === totalPages ? 'disabled' : ''}>다음</button>`;
+}
+let _lastStatsPayload = null;
+document.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-stats-page]');
+    if (!btn) return;
+    const k = btn.dataset.statsPage;
+    _statsPage[k] = Math.max(1, _statsPage[k] + Number(btn.dataset.dir));
+    if (_lastStatsPayload) renderStatsRange(_lastStatsPayload);
+});
+
 function renderEventsTable() {
     const list = _eventsFilter === 'all' ? _lastStatsEvents : _lastStatsEvents.filter(e => e.type === _eventsFilter);
-    statsEventsTbody.innerHTML = list.length === 0
-        ? `<tr><td colspan="4" style="text-align:center;color:var(--fg-tertiary);padding:24px;">데이터 없음</td></tr>`
-        : list.map(e => `<tr>
-            <td style="white-space:nowrap;">${escape((e.occurred_at || '').replace('T',' ').slice(0,19))}</td>
-<td>${statsBadge(e.type)}</td>
-            <td>${escape(e.email || '(unknown)')}</td>
-            <td style="color:var(--fg-secondary);">${escape(e.detail || '')}</td>
-        </tr>`).join('');
+    renderStatsPaginated(statsEventsTbody, list, 4,
+        e => `<tr><td style="white-space:nowrap;">${escape((e.occurred_at || '').replace('T',' ').slice(0,19))}</td><td>${statsBadge(e.type)}</td><td>${escape(e.email || '(unknown)')}</td><td style="color:var(--fg-secondary);">${escape(e.detail || '')}</td></tr>`,
+        '데이터 없음', 'events');
 }
 
 function renderStatsRange(payload) {
+    _lastStatsPayload = payload;
     const totals = payload?.totals || {};
     const daily = Array.isArray(payload?.daily) ? payload.daily : [];
     const referrers = Array.isArray(payload?.referrers) ? payload.referrers : [];
@@ -534,39 +568,19 @@ function renderStatsRange(payload) {
     statsKpiUsage.textContent     = `${(totals.summaryViews ?? 0).toLocaleString()} / ${(totals.autoConfirms ?? 0).toLocaleString()}`;
 
     // 일별 표 (8 컬럼)
-    statsDailyTbody.innerHTML = daily.length === 0
-        ? `<tr><td colspan="8" style="text-align:center;color:var(--fg-tertiary);padding:24px;">데이터 없음</td></tr>`
-        : daily.map(r => `<tr>
-            <td>${escape(r.date)}</td>
-            <td>${(r.visitors || 0).toLocaleString()}</td>
-            <td>${(r.pageviews || 0).toLocaleString()}</td>
-            <td>${(r.newSignups || 0).toLocaleString()}</td>
-            <td>${(r.newPayments || 0).toLocaleString()}</td>
-            <td>${(r.cancelledSubs || 0).toLocaleString()}</td>
-            <td>${(r.summaryViews || 0).toLocaleString()}</td>
-            <td>${(r.autoConfirms || 0).toLocaleString()}</td>
-        </tr>`).join('');
+    renderStatsPaginated(statsDailyTbody, daily, 8,
+        r => `<tr><td>${escape(r.date)}</td><td>${(r.visitors || 0).toLocaleString()}</td><td>${(r.pageviews || 0).toLocaleString()}</td><td>${(r.newSignups || 0).toLocaleString()}</td><td>${(r.newPayments || 0).toLocaleString()}</td><td>${(r.cancelledSubs || 0).toLocaleString()}</td><td>${(r.summaryViews || 0).toLocaleString()}</td><td>${(r.autoConfirms || 0).toLocaleString()}</td></tr>`,
+        '데이터 없음', 'daily');
 
     // 유입경로 표
-    statsReferrersTbody.innerHTML = referrers.length === 0
-        ? `<tr><td colspan="2" style="text-align:center;color:var(--fg-tertiary);padding:24px;">데이터 없음</td></tr>`
-        : referrers.map(r => `<tr>
-            <td>${escape(r.source)}</td>
-            <td>${(r.count || 0).toLocaleString()}</td>
-        </tr>`).join('');
+    renderStatsPaginated(statsReferrersTbody, referrers, 2,
+        r => `<tr><td>${escape(r.source)}</td><td>${(r.count || 0).toLocaleString()}</td></tr>`,
+        '데이터 없음', 'referrers');
 
     // 회원별 활동 표
-    statsMembersTbody.innerHTML = members.length === 0
-        ? `<tr><td colspan="7" style="text-align:center;color:var(--fg-tertiary);padding:24px;">활동한 회원이 없습니다.</td></tr>`
-        : members.map(m => `<tr>
-            <td>${escape(m.email || '(unknown)')}</td>
-            <td>${escape((m.signupAt || '').slice(0,10) || '—')}</td>
-            <td>${(m.payments || 0).toLocaleString()}</td>
-            <td>${(m.cancels || 0).toLocaleString()}</td>
-            <td>${(m.summaryViews || 0).toLocaleString()}</td>
-            <td>${(m.autoConfirms || 0).toLocaleString()}</td>
-            <td style="white-space:nowrap;color:var(--fg-secondary);">${escape((m.lastActivity || '').replace('T',' ').slice(0,19) || '—')}</td>
-        </tr>`).join('');
+    renderStatsPaginated(statsMembersTbody, members, 7,
+        m => `<tr><td>${escape(m.email || '(unknown)')}</td><td>${escape((m.signupAt || '').slice(0,10) || '—')}</td><td>${(m.payments || 0).toLocaleString()}</td><td>${(m.cancels || 0).toLocaleString()}</td><td>${(m.summaryViews || 0).toLocaleString()}</td><td>${(m.autoConfirms || 0).toLocaleString()}</td><td style="white-space:nowrap;color:var(--fg-secondary);">${escape((m.lastActivity || '').replace('T',' ').slice(0,19) || '—')}</td></tr>`,
+        '활동한 회원이 없습니다.', 'members');
 
     // 활동 로그 (시간순 + 필터)
     _lastStatsEvents = events;
@@ -624,31 +638,13 @@ function renderStatsRange(payload) {
     }).join('');
 
     // ★ 회원별 요약 사용시간/사용률
-    statsMemberUsageTbody.innerHTML = memberUsage.length === 0
-        ? `<tr><td colspan="9" style="text-align:center;color:var(--fg-tertiary);padding:24px;">데이터 없음</td></tr>`
-        : memberUsage.map(m => {
-            const pct = Number(m.usagePct || 0);
-            const barColor = pct >= 100 ? '#c62828' : (pct >= 80 ? '#ef6c00' : '#1565c0');
-            const barWidth = Math.min(100, pct);
-            const pctBar = `
-                <div style="display:flex;align-items:center;gap:8px;">
-                    <div style="flex:1;height:8px;background:#eee;border-radius:4px;overflow:hidden;min-width:80px;">
-                        <div style="height:100%;width:${barWidth}%;background:${barColor};"></div>
-                    </div>
-                    <span style="font-size:12px;color:${barColor};font-weight:600;">${pct.toFixed(1)}%</span>
-                </div>`;
-            return `<tr>
-                <td>${escape(m.email || '(unknown)')}</td>
-                <td>${escape(PLAN_LABEL[m.plan] || m.plan || '—')}</td>
-                <td>${escape(m.planStatus || '—')}</td>
-                <td>${(m.usedMin || 0).toLocaleString()}</td>
-                <td>${(m.limitMin || 0).toLocaleString()}</td>
-                <td style="min-width:140px;">${pctBar}</td>
-                <td>${m.overageEnabled ? 'ON' : 'OFF'}</td>
-                <td>${(m.overageBalMin || 0).toLocaleString()}</td>
-                <td style="white-space:nowrap;color:var(--fg-secondary);font-size:12px;">${escape((m.periodEnd || '').slice(0,10) || '—')}</td>
-            </tr>`;
-        }).join('');
+    renderStatsPaginated(statsMemberUsageTbody, memberUsage, 9, m => {
+        const pct = Number(m.usagePct || 0);
+        const barColor = pct >= 100 ? '#c62828' : (pct >= 80 ? '#ef6c00' : '#1565c0');
+        const barWidth = Math.min(100, pct);
+        const pctBar = `<div style="display:flex;align-items:center;gap:8px;"><div style="flex:1;height:8px;background:#eee;border-radius:4px;overflow:hidden;min-width:80px;"><div style="height:100%;width:${barWidth}%;background:${barColor};"></div></div><span style="font-size:12px;color:${barColor};font-weight:600;">${pct.toFixed(1)}%</span></div>`;
+        return `<tr><td>${escape(m.email || '(unknown)')}</td><td>${escape(PLAN_LABEL[m.plan] || m.plan || '—')}</td><td>${escape(m.planStatus || '—')}</td><td>${(m.usedMin || 0).toLocaleString()}</td><td>${(m.limitMin || 0).toLocaleString()}</td><td style="min-width:140px;">${pctBar}</td><td>${m.overageEnabled ? 'ON' : 'OFF'}</td><td>${(m.overageBalMin || 0).toLocaleString()}</td><td style="white-space:nowrap;color:var(--fg-secondary);font-size:12px;">${escape((m.periodEnd || '').slice(0,10) || '—')}</td></tr>`;
+    }, '데이터 없음', 'memberUsage');
 
     // recording_jobs status 분포
     const byStatus = jobsStats.byStatus || {};
@@ -750,6 +746,7 @@ if (statsApplyBtn) {
             document.querySelectorAll('[data-events-filter]').forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
             _eventsFilter = btn.dataset.eventsFilter;
+            _statsPage.events = 1;
             renderEventsTable();
         });
     });
