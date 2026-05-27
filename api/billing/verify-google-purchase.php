@@ -142,26 +142,38 @@ try {
             ':email' => $ownerEmail,
         ]);
 
+    // 사장님 2026-05-28 — VAT 별도 정책. 공급가액/세액/합계 분리 저장 (세금계산서 발행용).
+    $supplyAmt = plan_supply_amount($planKey);
+    $vatAmt    = plan_vat_amount($planKey);
+    $totalAmt  = portone_plan_amount($planKey);
     $pdo->prepare("INSERT INTO subscriptions
-            (owner_email, plan, status, portone_customer_id, portone_billing_key, current_period_start, current_period_end)
-            VALUES (:o, :p, 'active', :gp_token, :gp_token, :ps, :pe)")
+            (owner_email, plan, status, portone_customer_id, portone_billing_key, current_period_start, current_period_end,
+             supply_amount, vat_amount, total_amount)
+            VALUES (:o, :p, 'active', :gp_token, :gp_token, :ps, :pe, :sa, :va, :ta)")
         ->execute([
             ':o' => $ownerEmail,
             ':p' => $planKey,
             ':gp_token' => substr($purchaseToken, 0, 120),  // Google purchase token 일부 (이력 추적)
             ':ps' => $now,
             ':pe' => $periodEnd,
+            ':sa' => $supplyAmt,
+            ':va' => $vatAmt,
+            ':ta' => $totalAmt,
         ]);
 
     $pdo->prepare("INSERT INTO payments
-            (owner_email, portone_payment_id, amount, currency, status, paid_at, raw_event_json)
-            VALUES (:o, :pid, :amt, 'KRW', 'PAID', :paid, :raw)")
+            (owner_email, portone_payment_id, amount, currency, status, paid_at, raw_event_json,
+             supply_amount, vat_amount, total_amount)
+            VALUES (:o, :pid, :amt, 'KRW', 'PAID', :paid, :raw, :sa, :va, :ta)")
         ->execute([
             ':o' => $ownerEmail,
             ':pid' => 'gplay-' . substr(md5($purchaseToken), 0, 16),
-            ':amt' => portone_plan_amount($planKey),
+            ':amt' => $totalAmt,
             ':paid' => $now,
             ':raw' => substr(json_encode(['provider' => 'google_play', 'productId' => $productId, 'response' => $resp], JSON_UNESCAPED_UNICODE), 0, 4000),
+            ':sa' => $supplyAmt,
+            ':va' => $vatAmt,
+            ':ta' => $totalAmt,
         ]);
 } catch (Throwable $e) {
     error_log('[verify-google-purchase] DB write 실패: ' . $e->getMessage());

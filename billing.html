@@ -181,8 +181,9 @@
         return m ? `${m[1]}.${m[2]}.${m[3]}` : s;
     }
     function formatPrice(n) {
+        // 사장님 2026-05-28 — VAT 별도 정책. 공급가액 표시 + "(VAT 별도)" 라벨.
         if (!n) return '무료';
-        return '₩' + Number(n).toLocaleString('ko-KR') + ' / 월';
+        return '₩' + Number(n).toLocaleString('ko-KR') + ' / 월 (VAT 별도)';
     }
 
     function renderBilling(profile) {

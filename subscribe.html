@@ -4,14 +4,14 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>구독 플랜 · YOUNGMAN</title>
-    <meta name="description" content="YOUNGMAN AI 통화 요약 + CRM 요금제. Free 무료 / Sales 24,000원 (300분) / Master 47,000원 (700분) / Agency 89,000원 (1,500분).">
+    <meta name="description" content="YOUNGMAN AI 통화 요약 + CRM 요금제. Free 무료 / Sales 24,000원 (300분) / Master 47,000원 (700분) / Agency 89,000원 (1,500분). 모든 가격은 VAT 별도.">
     <meta name="keywords" content="YOUNGMAN 구독, AI 통화 요약 가격, 영맨 요금제, CRM 구독">
     <meta name="robots" content="index, follow">
     <link rel="canonical" href="https://youngman-biz.com/subscribe.html">
     <meta property="og:type" content="website">
     <meta property="og:url" content="https://youngman-biz.com/subscribe.html">
     <meta property="og:title" content="구독 플랜 · YOUNGMAN">
-    <meta property="og:description" content="Free 무료 / Sales 24,000원 / Master 47,000원 / Agency 89,000원">
+    <meta property="og:description" content="Free 무료 / Sales 24,000원 / Master 47,000원 / Agency 89,000원 (VAT 별도)">
     <meta property="og:image" content="https://youngman-biz.com/og-thumbnail.png">
     <meta property="og:locale" content="ko_KR">
     <meta property="og:site_name" content="YOUNGMAN">
@@ -120,6 +120,13 @@
             font-size: 14px;
             color: var(--fg-tertiary, #908a82);
             font-weight: 600;
+        }
+        /* 사장님 2026-05-28 — VAT 별도 정책. 가격 옆 작은 라벨. */
+        .plan-card .price-vat-note {
+            font-size: 12px;
+            color: var(--fg-tertiary, #908a82);
+            font-weight: 500;
+            margin-left: 2px;
         }
         /* === 서브: 분량 === */
         .plan-card .plan-minutes {
@@ -311,7 +318,7 @@
     <div id="sub-content"></div>
 
     <p class="sub-fineprint">
-        모든 가격은 부가가치세(VAT) 포함입니다. 결제 전 <a href="auto-billing.html">자동결제 안내</a>와
+        모든 가격은 부가가치세(VAT) 별도이며, 결제 시 VAT 10%가 추가됩니다. 결제 전 <a href="auto-billing.html">자동결제 안내</a>와
         <a href="refund.html">환불정책</a>을 확인해 주세요.<br>
         <b>구독 결제는 안드로이드 앱(Google Play 구독)에서 진행됩니다.</b> 앱에서 로그인 후 구독 메뉴를 이용해 주세요.
     </p>
@@ -442,7 +449,7 @@
             const isFree = plan.price === 0;
             const priceMainHtml = isFree
                 ? `<span class="price-num">무료</span>`
-                : `<span class="price-num">${formatPrice(plan.price)}</span><span class="price-unit">/ 월</span>`;
+                : `<span class="price-num">${formatPrice(plan.price)}</span><span class="price-unit">/ 월</span><span class="price-vat-note">(VAT 별도)</span>`;
             // 유료 플랜은 "AI요약 N분 / 월" / Free 는 "AI요약 0분 / 월" 일관 표시.
             const minutesHtml = `
                 <div class="plan-minutes">
@@ -493,7 +500,7 @@
             const isFree = plan.price === 0;
             const priceMainHtml = isFree
                 ? `<span class="price-num">무료</span>`
-                : `<span class="price-num">${formatPrice(plan.price)}</span><span class="price-unit">/ 월</span>`;
+                : `<span class="price-num">${formatPrice(plan.price)}</span><span class="price-unit">/ 월</span><span class="price-vat-note">(VAT 별도)</span>`;
             // 유료 플랜은 "AI요약 N분 / 월" / Free 는 "AI요약 0분 / 월" 일관 표시.
             const minutesHtml = `
                 <div class="plan-minutes">

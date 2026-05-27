@@ -133,9 +133,14 @@ try {
             ':email' => $ownerEmail,
         ]);
 
+    // 사장님 2026-05-28 — VAT 별도 정책. 공급가액/세액/합계 분리 저장 (세금계산서 발행용).
+    $supplyAmt = plan_supply_amount($planRequested);
+    $vatAmt    = plan_vat_amount($planRequested);
+    $totalAmt  = portone_plan_amount($planRequested);
     $pdo->prepare("INSERT INTO subscriptions
-            (owner_email, plan, status, portone_customer_id, portone_billing_key, current_period_start, current_period_end)
-            VALUES (:o, :p, 'active', :pcid, :bkey, :ps, :pe)")
+            (owner_email, plan, status, portone_customer_id, portone_billing_key, current_period_start, current_period_end,
+             supply_amount, vat_amount, total_amount)
+            VALUES (:o, :p, 'active', :pcid, :bkey, :ps, :pe, :sa, :va, :ta)")
         ->execute([
             ':o' => $ownerEmail,
             ':p' => $planRequested,
@@ -143,14 +148,18 @@ try {
             ':bkey' => $billingKey,
             ':ps' => $periodStart,
             ':pe' => $periodEnd,
+            ':sa' => $supplyAmt,
+            ':va' => $vatAmt,
+            ':ta' => $totalAmt,
         ]);
     $subscriptionId = (int)$pdo->lastInsertId();
     $pdo->prepare('UPDATE members SET portone_subscription_id = :sid WHERE email = :e')
         ->execute([':sid' => $subscriptionId, ':e' => $ownerEmail]);
 
     $pdo->prepare("INSERT INTO payments
-            (owner_email, portone_payment_id, portone_subscription_id, amount, currency, status, paid_at, raw_event_json)
-            VALUES (:o, :pid, :sid, :amt, 'KRW', 'paid', :paid, :raw)")
+            (owner_email, portone_payment_id, portone_subscription_id, amount, currency, status, paid_at, raw_event_json,
+             supply_amount, vat_amount, total_amount)
+            VALUES (:o, :pid, :sid, :amt, 'KRW', 'paid', :paid, :raw, :sa, :va, :ta)")
         ->execute([
             ':o' => $ownerEmail,
             ':pid' => $paymentId,
@@ -158,6 +167,9 @@ try {
             ':amt' => $paidAmount,
             ':paid' => $now,
             ':raw' => json_encode($payment, JSON_UNESCAPED_UNICODE),
+            ':sa' => $supplyAmt,
+            ':va' => $vatAmt,
+            ':ta' => $totalAmt,
         ]);
 } catch (Throwable $e) {
     error_log('[billing/verify-payment] DB write 실패: ' . $e->getMessage());

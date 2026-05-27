@@ -3564,15 +3564,16 @@ try {
         $totalRevenue = array_sum(array_column($dailyRevenue, 'revenue'));
 
         // ── MRR / ARPU ──
-        // MRR = active subscriptions × plan 가격. 사장님 2026-05-26 — 신규 요금제.
+        // 사장님 2026-05-28 — VAT 별도 정책. price=청구액(VAT 포함) / price_display=공급가액(사장님 매출).
+        // MRR 은 사장님 매출 기준 = price_display (VAT 제외) × active subscriptions.
         $planPrices = [
-            'sales'   => 24000,
-            'master'  => 47000,
-            'agency'  => 89000,
+            'sales'   => ['price' => 26400, 'price_display' => 24000, 'vat_excluded' => true, 'minutes' => 300],
+            'master'  => ['price' => 51700, 'price_display' => 47000, 'vat_excluded' => true, 'minutes' => 700],
+            'agency'  => ['price' => 97900, 'price_display' => 89000, 'vat_excluded' => true, 'minutes' => 1500],
             // 옛 plan key fallback (DB migration 잔재 호환)
-            'plus'    => 24000,
-            'pro'     => 47000,
-            'premium' => 24000,
+            'plus'    => ['price' => 26400, 'price_display' => 24000, 'vat_excluded' => true, 'minutes' => 300],
+            'pro'     => ['price' => 51700, 'price_display' => 47000, 'vat_excluded' => true, 'minutes' => 700],
+            'premium' => ['price' => 26400, 'price_display' => 24000, 'vat_excluded' => true, 'minutes' => 300],
         ];
         $mrr = 0;
         $activeSubsCount = 0;
@@ -3582,7 +3583,7 @@ try {
                 $p = (string)$r['plan'];
                 $c = (int)$r['c'];
                 $activeSubsCount += $c;
-                $mrr += ($planPrices[$p] ?? 0) * $c;
+                $mrr += (int)($planPrices[$p]['price_display'] ?? 0) * $c;
             }
         } catch (Throwable $e) {}
         $arpu = $activeSubsCount > 0 ? (int)round($mrr / $activeSubsCount) : 0;
@@ -3717,6 +3718,8 @@ try {
             'jobsStats' => $jobsStats,
             'memberUsage' => $memberUsage,
             'planDistribution' => $planDistribution,
+            // 사장님 2026-05-28 — VAT 별도 정책. admin UI 가 price/price_display 둘 다 표시 가능.
+            'planPrices' => $planPrices,
             'dailyRevenue' => array_values($dailyRevenue),
             'totalRevenue' => $totalRevenue,
             'mrr' => $mrr,

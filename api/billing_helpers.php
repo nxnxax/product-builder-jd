@@ -123,21 +123,47 @@ if (!function_exists('portone_verify_webhook')) {
 }
 
 if (!function_exists('portone_plan_amount')) {
-    /** 우리 plan 코드 → 결제 금액 (KRW, VAT 포함).
-     *  2026-05-26 사장님 — 옛 plus/pro 폐지, 신규 sales/master/agency.
-     *  옛 plus → sales, 옛 pro → master 옛 가입자 호환만 유지.
+    /** 우리 plan 코드 → 결제 청구 금액 (KRW, VAT 포함 = 공급가액 + 10%).
+     *  2026-05-28 사장님 — VAT 별도 정책 전환:
+     *    sales  : 공급가액 24,000 + VAT 2,400 = 청구 26,400
+     *    master : 공급가액 47,000 + VAT 4,700 = 청구 51,700
+     *    agency : 공급가액 89,000 + VAT 8,900 = 청구 97,900
+     *  Google Play / PortOne 결제 시 실제 청구 금액 = 이 값.
+     *  사용자 카드 표시는 plan_supply_amount() = 공급가액 + "(VAT 별도)" 표기.
      */
     function portone_plan_amount(string $plan): int {
+        switch (strtolower($plan)) {
+            case 'sales':    return 26400;
+            case 'master':   return 51700;
+            case 'agency':   return 97900;
+            // 옛 가입자 호환 (라이브 구독자 없으나 fail-safe)
+            case 'plus':     return 26400;  // → sales
+            case 'pro':      return 51700;  // → master
+            case 'premium':  return 26400;  // → sales
+            default:         return 0;
+        }
+    }
+}
+
+if (!function_exists('plan_supply_amount')) {
+    /** 공급가액 (KRW, VAT 제외). 사용자 카드 표시 / 세금계산서 공급가액 / 사장님 실 매출 기준. */
+    function plan_supply_amount(string $plan): int {
         switch (strtolower($plan)) {
             case 'sales':    return 24000;
             case 'master':   return 47000;
             case 'agency':   return 89000;
-            // 옛 가입자 호환 (라이브 구독자 없으나 fail-safe)
-            case 'plus':     return 24000;  // → sales
-            case 'pro':      return 47000;  // → master
-            case 'premium':  return 24000;  // → sales
+            case 'plus':     return 24000;
+            case 'pro':      return 47000;
+            case 'premium':  return 24000;
             default:         return 0;
         }
+    }
+}
+
+if (!function_exists('plan_vat_amount')) {
+    /** 부가세 (KRW, 공급가액의 10%). 세금계산서 세액. */
+    function plan_vat_amount(string $plan): int {
+        return (int)round(plan_supply_amount($plan) * 0.1);
     }
 }
 
@@ -472,6 +498,41 @@ if (!function_exists('billing_ensure_tables')) {
                 if (!empty($cols) && !in_array($col, $cols, true)) {
                     try { $pdo->exec("ALTER TABLE members ADD COLUMN `{$col}` {$def}"); }
                     catch (Throwable $e) { error_log('[billing_ensure_tables] ALTER ' . $col . ': ' . $e->getMessage()); }
+                }
+            }
+            // 사장님 2026-05-28 — VAT 별도 정책 + 세금계산서 발행 준비.
+            // subscriptions / payments 에 공급가액/세액/합계/세금계산서 ID 컬럼 lazy ALTER.
+            $taxColumns = [
+                'supply_amount'         => 'INT NOT NULL DEFAULT 0',
+                'vat_amount'            => 'INT NOT NULL DEFAULT 0',
+                'total_amount'          => 'INT NOT NULL DEFAULT 0',
+                'tax_invoice_id'        => 'VARCHAR(64) NULL DEFAULT NULL',
+                'tax_invoice_issued_at' => 'DATETIME NULL DEFAULT NULL',
+            ];
+            foreach (['subscriptions', 'payments'] as $tbl) {
+                $tblCols = [];
+                try {
+                    foreach ($pdo->query("SHOW COLUMNS FROM {$tbl}")->fetchAll() as $c) $tblCols[] = $c['Field'];
+                } catch (Throwable $e) { continue; }
+                foreach ($taxColumns as $col => $def) {
+                    if (!in_array($col, $tblCols, true)) {
+                        try { $pdo->exec("ALTER TABLE `{$tbl}` ADD COLUMN `{$col}` {$def}"); }
+                        catch (Throwable $e) { error_log("[billing_ensure_tables] ALTER {$tbl}.{$col}: " . $e->getMessage()); }
+                    }
+                }
+            }
+            // 사업자 회원 정보 (세금계산서 발행자 사전 등록용) — members lazy ALTER.
+            $bizColumns = [
+                'business_number'      => 'VARCHAR(20) NULL DEFAULT NULL',   // 사업자등록번호 (xxx-xx-xxxxx)
+                'business_name'        => 'VARCHAR(100) NULL DEFAULT NULL',  // 상호
+                'business_ceo'         => 'VARCHAR(50) NULL DEFAULT NULL',   // 대표자명
+                'business_email'       => 'VARCHAR(255) NULL DEFAULT NULL',  // 세금계산서 수신 이메일
+                'business_auto_invoice' => 'TINYINT(1) NOT NULL DEFAULT 0',  // 자동 발행 동의
+            ];
+            foreach ($bizColumns as $col => $def) {
+                if (!empty($cols) && !in_array($col, $cols, true)) {
+                    try { $pdo->exec("ALTER TABLE members ADD COLUMN `{$col}` {$def}"); }
+                    catch (Throwable $e) { error_log('[billing_ensure_tables] ALTER members.' . $col . ': ' . $e->getMessage()); }
                 }
             }
             // 일괄 마이그레이션 — 사장님 2026-05-26: plus→sales, pro→master, premium→sales 전환.

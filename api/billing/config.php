@@ -29,23 +29,30 @@ try {
     portone_response(['status' => 'error', 'code' => 'config_missing', 'message' => $e->getMessage()], 503);
 }
 
+// 사장님 2026-05-28 — VAT 별도 정책. 앱팀(어센트라) 요청 §5 스키마 통일.
+//   price         : 실제 결제 청구 금액 (VAT 포함, 26,400 등)
+//   price_display : 사용자 카드 표시 금액 (공급가액, 24,000 등)
+//   vat_excluded  : VAT 별도 플래그 (사용자 표시 시 "(VAT 별도)" 라벨)
+//   minutes       : 월 AI 요약 한도 (분)
+//   amount        : 옛 클라이언트 호환 (= price = 결제 청구액)
+$planKeys = ['sales', 'master', 'agency'];
+$plans = [];
+foreach ($planKeys as $k) {
+    $plans[$k] = [
+        'label'         => portone_plan_label($k),
+        'price'         => portone_plan_amount($k),
+        'price_display' => plan_supply_amount($k),
+        'vat_amount'    => plan_vat_amount($k),
+        'vat_excluded'  => true,
+        'minutes'       => plan_default_summary_limit_minutes($k),
+        'amount'        => portone_plan_amount($k),  // 옛 호환
+    ];
+}
+
 portone_response([
     'status' => 'ok',
     'storeId' => $storeId,
     'channelKey' => $channelKey,
-    'plans' => [
-        'sales' => [
-            'label' => portone_plan_label('sales'),
-            'amount' => portone_plan_amount('sales'),
-        ],
-        'master' => [
-            'label' => portone_plan_label('master'),
-            'amount' => portone_plan_amount('master'),
-        ],
-        'agency' => [
-            'label' => portone_plan_label('agency'),
-            'amount' => portone_plan_amount('agency'),
-        ],
-    ],
+    'plans' => $plans,
     'currency' => 'KRW',
 ]);

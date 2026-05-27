@@ -953,10 +953,10 @@ if ($asyncMode) {
 }
 
 /* ========== Plan check ==========
- * 구독 plan 별 quota (사장님 2026-05-26 — 신규 요금제):
- *   agency  → 월 1,500분 (₩89,000)
- *   master  → 월   700분 (₩47,000)
- *   sales   → 월   300분 (₩24,000)
+ * 구독 plan 별 quota (사장님 2026-05-28 — VAT 별도 정책):
+ *   agency  → 월 1,500분 (₩89,000 + VAT = 결제 ₩97,900)
+ *   master  → 월   700분 (₩47,000 + VAT = 결제 ₩51,700)
+ *   sales   → 월   300분 (₩24,000 + VAT = 결제 ₩26,400)
  *   free    → 0분 (차단) — AI 요약은 유료 plan 전용.
  * + plan_status 검사 — past_due / cancelled 면 차단 (active 만 통과).
  * + admin allowlist 는 모든 검사 우회.
