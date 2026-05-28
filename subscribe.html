@@ -736,16 +736,42 @@
             renderPlans('free', 'active');
         }
         // 결제 버튼 click handler.
-        // 사장님 2026-05-26 — 구독 결제는 Google Play (안드로이드 앱) 로 전환.
-        // PortOne 결제 함수 (startPayment 등) 는 미래 활성화 위해 유지하되 click 흐름만 안내로 교체.
+        // 사장님 2026-05-28 — 앱팀(어센트라) 진단: RN 측 'billing.startSubscription' listen 중.
+        // bridge.js 의 isInApp() / startSubscription 우회 — ReactNativeWebView.postMessage 직접 호출.
+        // 이유: webview cache / bridge.js 로드 타이밍 corner case 회피 + click handler 실행 시각 피드백.
         document.querySelectorAll('[data-pay-plan]').forEach(btn => {
             btn.addEventListener('click', () => {
-                const inApp = !!(window.YoungmanBridge && typeof window.YoungmanBridge.isInApp === 'function' && window.YoungmanBridge.isInApp());
-                if (inApp && window.YoungmanBridge && typeof window.YoungmanBridge.startSubscription === 'function') {
-                    // 앱 브리지 — 앱팀이 startSubscription(planKey) 구현 시 자동 활성화
-                    try { window.YoungmanBridge.startSubscription(btn.dataset.payPlan); } catch (e) { console.error(e); }
-                    return;
+                const planKey = String(btn.dataset.payPlan || '').toLowerCase();
+                const RN = window.ReactNativeWebView;
+
+                // 시각적 피드백 — click 실행 + 메시지 전송 확인용 (사장님 앱 콘솔 접근 불가).
+                const orig = btn.textContent;
+                btn.disabled = true;
+                btn.textContent = '결제창 여는 중…';
+                setTimeout(() => {
+                    if (btn.disabled) { btn.disabled = false; btn.textContent = orig; }
+                }, 8000);
+
+                if (RN && typeof RN.postMessage === 'function') {
+                    // 앱팀 spec: { type: 'billing.startSubscription', payload: { planKey } }
+                    try {
+                        RN.postMessage(JSON.stringify({
+                            type: 'billing.startSubscription',
+                            payload: { planKey },
+                            ts: Date.now(),
+                        }));
+                        return;
+                    } catch (e) {
+                        btn.disabled = false;
+                        btn.textContent = orig;
+                        alert('결제창 호출 실패: ' + (e?.message || e));
+                        return;
+                    }
                 }
+
+                // 외부 브라우저 — 앱 설치 안내.
+                btn.disabled = false;
+                btn.textContent = orig;
                 alert('구독 결제는 안드로이드 앱(Google Play)에서 진행됩니다.\n\n앱을 설치하신 후, 앱 내 구독 메뉴에서 결제해 주세요.');
             });
         });
