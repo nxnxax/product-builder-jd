@@ -66,6 +66,12 @@ if ($expectedProductId !== '' && $productId !== $expectedProductId) {
     portone_response(['ok' => false, 'code' => 'product_mismatch', 'message' => 'productId 가 planKey 와 불일치'], 400);
 }
 
+// 사장님 2026-05-29 — 앱팀 401 진단용 호출 파라미터 로깅 (raw token / packageName / productId / 사용자).
+error_log(sprintf(
+    '[verify-google-purchase] call params: pkg=%s productId=%s planKey=%s tokenLen=%d ownerEmail=%s',
+    $packageName, $productId, $planKey, strlen($purchaseToken), $ownerEmail
+));
+
 // Google Play API 호출 (helper 가 access token 발급까지 처리)
 try {
     $result = google_play_get_subscription($packageName, $productId, $purchaseToken);
@@ -76,9 +82,27 @@ try {
 $httpCode = $result['http'];
 $resp = $result['body'];
 if ($httpCode < 200 || $httpCode >= 300 || !is_array($resp)) {
-    $msg = is_array($resp) ? ($resp['error']['message'] ?? '') : '';
-    error_log('[verify-google-purchase] http ' . $httpCode . ' resp=' . substr((string)$result['raw'], 0, 300));
-    portone_response(['ok' => false, 'code' => 'google_api_error', 'message' => 'Google 검증 실패 (' . $httpCode . '): ' . $msg, 'http' => $httpCode], 400);
+    // 사장님 2026-05-29 — Google API errors 자세히 추출 + client 에 노출 (앱팀 진단).
+    $err = is_array($resp) ? ($resp['error'] ?? []) : [];
+    $errMsg    = is_array($err) ? (string)($err['message'] ?? '') : '';
+    $errStatus = is_array($err) ? (string)($err['status'] ?? '') : '';
+    $errFirst  = is_array($err) && is_array($err['errors'] ?? null) ? ($err['errors'][0] ?? []) : [];
+    $errReason = is_array($errFirst) ? (string)($errFirst['reason'] ?? '') : '';
+    $errDomain = is_array($errFirst) ? (string)($errFirst['domain'] ?? '') : '';
+    error_log(sprintf(
+        '[verify-google-purchase] http=%d status=%s reason=%s domain=%s msg=%s raw=%s',
+        $httpCode, $errStatus, $errReason, $errDomain, $errMsg, substr((string)$result['raw'], 0, 800)
+    ));
+    portone_response([
+        'ok' => false,
+        'code' => 'google_api_error',
+        'message' => 'Google 검증 실패 (' . $httpCode . '): ' . $errMsg,
+        'http' => $httpCode,
+        'google_status' => $errStatus,
+        'google_reason' => $errReason,
+        'google_domain' => $errDomain,
+        'google_raw_excerpt' => substr((string)$result['raw'], 0, 600),
+    ], 400);
 }
 
 /**
