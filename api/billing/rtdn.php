@@ -15,7 +15,7 @@
  *       version: "1.0",
  *       notificationType: 1..13,   // 아래 상수 참조
  *       purchaseToken: "...",
- *       subscriptionId: "youngman_sales_monthly"
+ *       subscriptionId: "sales_monthly"   // 사장님 2026-05-28 — Play Console 실제 등록 ID
  *     }
  *   }
  *
@@ -115,6 +115,11 @@ if ($purchaseToken === '' || $productId === '') {
 // productId → planKey 역매핑
 $planKey = '';
 switch ($productId) {
+    // 사장님 2026-05-28 — Play Console 실제 등록 ID (youngman_ prefix 제거).
+    case 'sales_monthly':  $planKey = 'sales'; break;
+    case 'master_monthly': $planKey = 'master'; break;
+    case 'agency_monthly': $planKey = 'agency'; break;
+    // 옛 ID 호환 (구 영수증 처리용 — 안전망)
     case 'youngman_sales_monthly':  $planKey = 'sales'; break;
     case 'youngman_master_monthly': $planKey = 'master'; break;
     case 'youngman_agency_monthly': $planKey = 'agency'; break;

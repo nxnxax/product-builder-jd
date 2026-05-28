@@ -10,13 +10,15 @@ require_once __DIR__ . '/../billing_helpers.php';
 
 if (!function_exists('google_play_product_id')) {
     /**
-     * planKey → Google Play productId 매핑 (앱팀 §7 spec).
+     * planKey → Google Play productId 매핑.
+     * 사장님 2026-05-28 — 앱팀(어센트라) v92 BillingManager + Play Console 실제 등록 ID 통일.
+     * 옛(2026-05-26): youngman_<plan>_monthly → 신: <plan>_monthly (prefix 제거).
      */
     function google_play_product_id(string $planKey): string {
         switch (strtolower($planKey)) {
-            case 'sales':   return 'youngman_sales_monthly';
-            case 'master':  return 'youngman_master_monthly';
-            case 'agency':  return 'youngman_agency_monthly';
+            case 'sales':   return 'sales_monthly';
+            case 'master':  return 'master_monthly';
+            case 'agency':  return 'agency_monthly';
             default:        return '';
         }
     }

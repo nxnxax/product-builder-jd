@@ -261,7 +261,9 @@ abbf487  feat(plan): 신규 요금제 sales/master/agency 전환 (2026-05-26)
 - 🔒 PortOne 코드 keep — plan whitelist 만 sales/master/agency 갱신. 미래 재활성화 가능.
 
 ### Google Play Billing
-- 🔒 productId 매핑: sales→youngman_sales_monthly / master→...master / agency→...agency
+- 🔒 productId 매핑 (2026-05-28 사장님 — 어센트라 v92 + Play Console 실제 등록 ID 통일):
+  sales→`sales_monthly` / master→`master_monthly` / agency→`agency_monthly`
+  (옛 `youngman_<plan>_monthly` 은 rtdn.php switch 에 안전망으로 keep)
 - 🔒 verify-google-purchase.php — `paymentState` 1(완료) / 2(무료체험) 만 활성화
 - 🔒 verify-google-purchase.php — `emailAddress` 있을 때만 매칭
 - 🔒 verify-google-purchase.php — 검증 성공 시 `subscriptions.portone_billing_key` 에 purchase token prefix 120자 저장
