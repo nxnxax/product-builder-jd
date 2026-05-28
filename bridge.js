@@ -252,6 +252,12 @@ const YoungmanBridge = {
     sendHeartbeat,
     setSessionSnapshot,
     setRefreshInflight,
+    // Google Play Billing trigger (앱팀 2026-05-28 어센트라 v83+ BillingClient 통합).
+    // 웹에서 결제 버튼 클릭 시 호출 → 앱이 'billing.startSubscription' 메시지 수신 → BillingClient 실행.
+    startSubscription(planKey) {
+        if (!isInApp()) return false;
+        return postToApp('billing.startSubscription', { planKey: String(planKey || '') });
+    },
 };
 
 if (typeof window !== 'undefined') {

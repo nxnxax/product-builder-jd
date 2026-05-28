@@ -9,7 +9,7 @@ import {
     notifyLogout as _bridgeLogout,
     setSessionSnapshot as _bridgeSnap,
     setRefreshInflight as _bridgeRefreshFlag,
-} from './bridge.js?v=20260520-bridge-v3';
+} from './bridge.js?v=20260528-startsubscription';
 
 const API_URL = 'records.php';
 

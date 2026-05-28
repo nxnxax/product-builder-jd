@@ -118,14 +118,14 @@
 
             // 0-2) 네이티브 앱에 logout 먼저 통보 — navigation race 로 SIGNED_OUT 이벤트가 못 닿는 경우 대비.
             try {
-                const b = await import('./bridge.js?v=20260517-bridge-v2');
+                const b = await import('./bridge.js?v=20260528-startsubscription');
                 b.notifyLogout();
             } catch {}
 
             // 1) Supabase signOut — scope: 'global' 로 서버의 모든 refresh token revoke.
             //    다른 브라우저/디바이스에서 silent refresh 로 살아나는 시나리오 차단.
             try {
-                const mod = await import('./auth-shared.js?v=20260525-welcome-once');
+                const mod = await import('./auth-shared.js?v=20260528-bridge-subs');
                 const result = await mod.initSupabase().catch(() => null);
                 const client = result?.client;
                 if (client?.auth?.signOut) {
