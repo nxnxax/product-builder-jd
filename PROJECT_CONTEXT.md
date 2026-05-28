@@ -140,7 +140,7 @@ tester.html → /download/youngman-latest.apk (사장님 FTP 직접 업로드)
 3. `RTDN_SHARED_TOKEN` = 임의 32자 (RTDN 작업 시점)
 
 **C. Play Console**:
-- API 액세스 → Service Account `youngman-billing-verifier@youngmanapp-e8a9d.iam.gserviceaccount.com` 연결 + "주문 및 구독 관리" 권한
+- API 액세스 → Service Account `youngman-billing-verify@youngmanapp-e8a9d.iam.gserviceaccount.com` 연결 + "주문 및 구독 관리" 권한
 - 정기구독 상품 3개 등록 (위 productId)
 
 **D. RTDN (출시 후 OK)**:
