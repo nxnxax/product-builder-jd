@@ -2022,15 +2022,18 @@ try {
  *   - usage_logs 에도 row 추가 (감사 / 통계)
  */
 $planLowerForCount = strtolower($plan);
+// 회 단위 카운트 (free_summaries_used) — admin/master/agency/pro 제외 (free/sales 만)
 if (!$isAdminUser && $planLowerForCount !== 'master' && $planLowerForCount !== 'agency' && $planLowerForCount !== 'pro') {
-    // 레거시 회 단위 카운트 (분 단위 시스템 안정화 전까지 병행 운영)
     try {
         $pdo->prepare('UPDATE members SET free_summaries_used = free_summaries_used + 1 WHERE email = :e')
             ->execute([':e' => $ownerEmail]);
         $freeUsed += 1;
     } catch (Throwable $e) {}
+}
 
-    // Phase 2 분 단위 차감: usage_seconds_period 누적 + 한도 초과량은 overage_balance_seconds 에서 차감.
+// 분 단위 차감 + usage_logs — admin 만 제외, 모든 유료 플랜 (free 포함) 누적
+// Why: master/agency 가 회 단위 skip 조건에 묶여서 분 단위까지 누락되던 버그 fix
+if (!$isAdminUser) {
     if ($durationSeconds > 0) {
         try {
             $pdo->prepare('UPDATE members SET usage_seconds_period = COALESCE(usage_seconds_period,0) + :d WHERE email = :e')
