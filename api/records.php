@@ -4738,39 +4738,8 @@ try {
                 respond(['ok'=>false,'status'=>'error','processing'=>false,'code'=>'upstream_failed','message'=>'UPDATE 실패: ' . $e->getMessage()], 503);
             }
 
-            // 사장님 2026-06-01 — 사용량 차감 (요약보기/양식전송 첫 클릭 시점, 멱등)
-            // Why: lazy-STT 흐름에서 사용자 클릭 시점에 차감 (사장님 룰). 한도 차단만 admin skip.
-            // How: usage_counted_at IS NULL 일 때만 NOW() 채우고 members.usage_seconds_period 누적.
-            // 활동 로그 (activity_logs INSERT) 는 별도 try 블록으로 격리 — DB 락 등 hang 영향 차단.
-            $usageDur = 0;
-            $usageMarked = false;
-            try {
-                $mk = $pdo->prepare("UPDATE recording_jobs SET usage_counted_at = NOW() WHERE id = :id AND usage_counted_at IS NULL");
-                $mk->execute([':id' => $jobId]);
-                if ($mk->rowCount() > 0) {
-                    $usageMarked = true;
-                    $usageDur = (int)($jRow['duration_sec'] ?? 0);
-                    if ($usageDur > 0) {
-                        $pdo->prepare('UPDATE members SET usage_seconds_period = COALESCE(usage_seconds_period,0) + :d WHERE LOWER(email) = LOWER(:e)')
-                            ->execute([':d' => $usageDur, ':e' => $owner]);
-                    }
-                }
-            } catch (Throwable $e) {
-                error_log('[trigger_summarize] usage 누적 실패: ' . $e->getMessage());
-            }
-            // activity_logs INSERT — 별도 격리 (실패해도 trigger_summarize 진행 영향 X)
-            if ($usageMarked) {
-                try {
-                    $pdo->prepare("INSERT INTO activity_logs (actor_email, event_type, detail) VALUES (:e, :t, :d)")
-                        ->execute([
-                            ':e' => (string)$owner,
-                            ':t' => $autoConfirm ? 'auto_confirm' : 'summary_view',
-                            ':d' => json_encode(['job_id' => $jobId, 'duration_sec' => $usageDur], JSON_UNESCAPED_UNICODE),
-                        ]);
-                } catch (Throwable $e) {
-                    error_log('[trigger_summarize] activity_logs INSERT 실패: ' . $e->getMessage());
-                }
-            }
+            // 사장님 2026-06-01 — trigger_summarize 안 차감 시도가 미확인 요약 흐름 무한 로딩 유발.
+            // 차감은 recording-callback.php (STT 처리 완료 시점) 로 이동. 사용자가 받은 서비스에 대해 청구.
 
             // 2) Railway dispatch (RAILWAY_WORKER_URL 있을 때만; 없으면 cron worker 가 5분 후 처리)
             // 사장님 2026-05-23 — .env parsing 정규식 + quote strip + 변수 init (이전 코드 $rwTok 미정의 버그 fix).
