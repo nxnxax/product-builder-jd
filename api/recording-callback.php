@@ -399,34 +399,6 @@ try {
     rc_jerror('recording_jobs UPDATE 실패: ' . $e->getMessage(), 502);
 }
 
-/* 사장님 2026-06-01 — 사용량 차감 + 활동 로그 (STT 처리 성공 시점, 멱등)
- * Why: STT 처리 + customer_log INSERT 가 진짜 성공한 시점에 청구. trigger_summarize 시점에 차감하면
- *      미확인 요약 흐름 무한 로딩 유발 + STT 실패 시 무서비스 청구 위험.
- * How: usage_counted_at IS NULL 일 때만 mark 하고 사용량 누적 + activity_logs INSERT.
- *      auto_confirm=1 → 양식전송, 0 → 요약보기. admin (사장님 본인) 도 카운트 — 한도 차단만 process-recording 측에서 skip.
- */
-$jobDur = (int)($jobRow['duration_sec'] ?? 0);
-try {
-    $mk = $pdo->prepare("UPDATE recording_jobs SET usage_counted_at = NOW() WHERE id = :id AND usage_counted_at IS NULL");
-    $mk->execute([':id' => $jobId]);
-    if ($mk->rowCount() > 0 && $jobDur > 0) {
-        $pdo->prepare('UPDATE members SET usage_seconds_period = COALESCE(usage_seconds_period,0) + :d WHERE LOWER(email) = LOWER(:e)')
-            ->execute([':d' => $jobDur, ':e' => $ownerEmail]);
-        try {
-            $pdo->prepare("INSERT INTO activity_logs (actor_email, event_type, detail) VALUES (:e, :t, :d)")
-                ->execute([
-                    ':e' => (string)$ownerEmail,
-                    ':t' => $autoConfirm ? 'auto_confirm' : 'summary_view',
-                    ':d' => json_encode(['job_id' => $jobId, 'duration_sec' => $jobDur], JSON_UNESCAPED_UNICODE),
-                ]);
-        } catch (Throwable $e) {
-            error_log('[recording-callback] activity_logs INSERT 실패: ' . $e->getMessage());
-        }
-    }
-} catch (Throwable $e) {
-    error_log('[recording-callback] usage 누적 실패: ' . $e->getMessage());
-}
-
 /* auto_confirm=1 + customer_log INSERT 성공 → send_to_group mirror
  * 사장님 2026-05-23 — send_to_group 실패 시 사용자가 인지 못 하는 silent failure 방지.
  * customer_log INSERT 됐는데 mirror 안 됐으면 → 자동으로 미확인 요약 복원
