@@ -401,6 +401,11 @@
         btn.disabled = true;
         btn.innerHTML = '<span class="un-mini-spinner"></span>요약중...';
         try {
+            // 사장님 2026-06-01 — 사용자 클릭 시점 사용량 차감 신호 (멱등). 실패해도 trigger 진행.
+            apiRequest('customer-log', {
+                method: 'POST',
+                body: JSON.stringify({ action: 'mark_usage', job_id: jobId, click_type: 'summary_view' })
+            }).catch(() => {});
             const r = await apiRequest('customer-log', {
                 method: 'POST',
                 body: JSON.stringify({ action: 'trigger_summarize', job_id: jobId, auto_confirm: false })
@@ -420,6 +425,11 @@
         btn.disabled = true;
         btn.innerHTML = '<span class="un-mini-spinner"></span>전송 중...';
         try {
+            // 사장님 2026-06-01 — 사용자 클릭 시점 사용량 차감 신호 (멱등). 실패해도 trigger 진행.
+            apiRequest('customer-log', {
+                method: 'POST',
+                body: JSON.stringify({ action: 'mark_usage', job_id: jobId, click_type: 'auto_confirm' })
+            }).catch(() => {});
             const r = await apiRequest('customer-log', {
                 method: 'POST',
                 body: JSON.stringify({ action: 'trigger_summarize', job_id: jobId, auto_confirm: true })
@@ -618,6 +628,11 @@
         let sent = 0;
         for (const id of ids) {
             try {
+                // 사장님 2026-06-01 — 사용자 클릭 시점 사용량 차감 신호 (멱등).
+                apiRequest('customer-log', {
+                    method: 'POST',
+                    body: JSON.stringify({ action: 'mark_usage', job_id: id, click_type: 'auto_confirm' })
+                }).catch(() => {});
                 await apiRequest('customer-log', {
                     method: 'POST',
                     body: JSON.stringify({ action: 'trigger_summarize', job_id: id, auto_confirm: true })

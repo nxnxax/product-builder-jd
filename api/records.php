@@ -4677,6 +4677,58 @@ try {
             respond(['status' => 'ok', 'items' => $items, 'count' => count($items)]);
         }
 
+        // ─── MARK_USAGE (사장님 2026-06-01 — 사용자 클릭 시점 사용량 차감 신호) ───
+        // POST /records.php?resource=customer-log&action=mark_usage
+        // body: { job_id, click_type }   // click_type: 'summary_view' | 'auto_confirm'
+        // 동작: usage_counted_at IS NULL 일 때만 차감 + activity_logs 기록 (멱등).
+        //       사용자가 "요약보기" 또는 "양식으로 전송" 누른 시점에만 호출 — 사장님 룰 정확 매핑.
+        //       통화 후 모달 / 미확인 요약 페이지 모두 같은 endpoint 사용.
+        if ($action === 'mark_usage') {
+            $jobId = trim((string)($body['job_id'] ?? ''));
+            $clickAction = trim((string)($body['click_type'] ?? 'summary_view'));
+            if ($jobId === '') respond(['ok'=>false, 'code'=>'invalid_request', 'message'=>'job_id 필요.'], 400);
+            if (!in_array($clickAction, ['summary_view', 'auto_confirm'], true)) {
+                $clickAction = 'summary_view';
+            }
+            try {
+                $jStmt = $pdo->prepare('SELECT duration_sec FROM recording_jobs WHERE id = :id AND owner_email = :o LIMIT 1');
+                $jStmt->execute([':id' => $jobId, ':o' => $owner]);
+                $jRow = $jStmt->fetch();
+            } catch (Throwable $e) {
+                respond(['ok'=>false, 'code'=>'upstream_failed', 'message'=>'조회 실패.'], 503);
+            }
+            if (!$jRow) respond(['ok'=>false, 'code'=>'not_found', 'message'=>'해당 job 없음 또는 권한 없음.'], 404);
+
+            $dur = (int)($jRow['duration_sec'] ?? 0);
+            $counted = false;
+            try {
+                $mk = $pdo->prepare("UPDATE recording_jobs SET usage_counted_at = NOW() WHERE id = :id AND usage_counted_at IS NULL");
+                $mk->execute([':id' => $jobId]);
+                if ($mk->rowCount() > 0) {
+                    $counted = true;
+                    if ($dur > 0) {
+                        $pdo->prepare('UPDATE members SET usage_seconds_period = COALESCE(usage_seconds_period,0) + :d WHERE LOWER(email) = LOWER(:e)')
+                            ->execute([':d' => $dur, ':e' => $owner]);
+                    }
+                    // activity_logs INSERT (별도 try, INSERT 실패해도 차감은 유효)
+                    try {
+                        $pdo->prepare("INSERT INTO activity_logs (actor_email, event_type, detail) VALUES (:e, :t, :d)")
+                            ->execute([
+                                ':e' => (string)$owner,
+                                ':t' => $clickAction,
+                                ':d' => json_encode(['job_id' => $jobId, 'duration_sec' => $dur], JSON_UNESCAPED_UNICODE),
+                            ]);
+                    } catch (Throwable $e) {
+                        error_log('[mark_usage] activity_logs INSERT 실패: ' . $e->getMessage());
+                    }
+                }
+            } catch (Throwable $e) {
+                error_log('[mark_usage] usage 누적 실패: ' . $e->getMessage());
+                respond(['ok'=>false, 'code'=>'upstream_failed', 'message'=>'차감 실패: ' . $e->getMessage()], 503);
+            }
+            respond(['ok'=>true, 'counted'=>$counted, 'duration_sec'=>$dur, 'action'=>$clickAction]);
+        }
+
         // ─── TRIGGER_SUMMARIZE (사장님 2026-05-23 — lazy-STT 모드 STT 시작) ───
         // POST /records.php?resource=customer-log&action=trigger_summarize
         // body: { job_id }

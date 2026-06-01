@@ -948,13 +948,11 @@ if ($asyncMode) {
     respond_async_queued($asyncJobId, $placeholderClRow, $placeholderMirrorResult, $planInfoAsync);
 
     // 사장님 2026-06-01 — 통화 후 모달 무한 로딩 fix (옵션 A — 앱팀 클라이언트 fix 불가).
-    // 클라이언트가 통화 후 모달에서 trigger_summarize 호출 안 함 → status='audio_pending' 영영 → 무한 로딩.
-    // 우회: process-recording.php async 응답 후 background 에서 자동 trigger 와 동등한 처리 수행
-    //   1. status='queued' (auto_confirm=0 — 요약보기 모드, 사용자가 미확인 요약에서 양식전송 가능)
-    //   2. 사용량 차감 + activity_logs (멱등 키 usage_counted_at)
-    //   3. Railway dispatch (없으면 cron worker 가 5분 후 처리)
-    // fastcgi_finish_request 이후 background — 클라이언트 응답 영향 없음.
-    if (!$isAdminUserAsync || true) {  // admin 도 카운트 (한도 차단만 별도)
+    // STT 자동 dispatch 만 수행 — 차감은 별도 mark_usage endpoint 가 사용자 클릭 시점에 처리.
+    //   1. status='queued' (auto_confirm=0 — 요약보기 모드)
+    //   2. Railway dispatch (없으면 cron worker 가 5분 후 처리)
+    // 차감은 사용자가 "요약보기"/"양식전송" 클릭 시 mark_usage 호출 시점에 (사장님 룰).
+    {
         // 1. status='queued' UPDATE
         try {
             $pdo->prepare("UPDATE recording_jobs SET status='queued', updated_at=NOW(), auto_confirm=0 WHERE id=:id")
@@ -962,27 +960,7 @@ if ($asyncMode) {
         } catch (Throwable $e) {
             error_log('[process-recording auto-dispatch] status UPDATE 실패: ' . $e->getMessage());
         }
-        // 2. 사용량 차감 (멱등 — usage_counted_at IS NULL 일 때만 1회)
-        try {
-            $mk = $pdo->prepare("UPDATE recording_jobs SET usage_counted_at = NOW() WHERE id = :id AND usage_counted_at IS NULL");
-            $mk->execute([':id' => $asyncJobId]);
-            if ($mk->rowCount() > 0 && $durationSec > 0) {
-                $pdo->prepare('UPDATE members SET usage_seconds_period = COALESCE(usage_seconds_period,0) + :d WHERE LOWER(email) = LOWER(:e)')
-                    ->execute([':d' => $durationSec, ':e' => $ownerEmail]);
-                try {
-                    $pdo->prepare("INSERT INTO activity_logs (actor_email, event_type, detail) VALUES (:e, 'summary_view', :d)")
-                        ->execute([
-                            ':e' => (string)$ownerEmail,
-                            ':d' => json_encode(['job_id' => $asyncJobId, 'duration_sec' => $durationSec, 'source' => 'auto-dispatch'], JSON_UNESCAPED_UNICODE),
-                        ]);
-                } catch (Throwable $e) {
-                    error_log('[process-recording auto-dispatch] activity_logs 실패: ' . $e->getMessage());
-                }
-            }
-        } catch (Throwable $e) {
-            error_log('[process-recording auto-dispatch] usage 누적 실패: ' . $e->getMessage());
-        }
-        // 3. Railway dispatch
+        // 2. Railway dispatch
         $railwayUrl = '';
         $rwTok = '';
         foreach ([__DIR__ . '/.env', dirname(__DIR__) . '/.env'] as $envPath) {
