@@ -1485,6 +1485,8 @@ function ensure_recording_jobs_table(PDO $pdo): bool {
             'response_elapsed_ms'    => 'INT NULL DEFAULT NULL',
             // 사장님 2026-05-23 — "양식으로 전송" 자동 confirm. trigger_summarize 시 1 설정 → callback 이 ready_to_review 대신 자동 confirm.
             'auto_confirm'           => 'TINYINT(1) NOT NULL DEFAULT 0',
+            // 사장님 2026-06-01 — 사용량 차감 멱등 키. "요약보기"/"양식전송" 첫 클릭 시 NOW() 채움.
+            'usage_counted_at'       => 'DATETIME NULL DEFAULT NULL',
         ];
         foreach ($needAlter as $col => $def) {
             if (!empty($cols) && !in_array($col, $cols, true)) {
@@ -4731,6 +4733,25 @@ try {
                     ->execute([':ac' => $autoConfirm, ':id' => $jobId]);
             } catch (Throwable $e) {
                 respond(['ok'=>false,'status'=>'error','processing'=>false,'code'=>'upstream_failed','message'=>'UPDATE 실패: ' . $e->getMessage()], 503);
+            }
+
+            // 사장님 2026-06-01 — 사용량 차감 (요약보기/양식전송 첫 클릭 시점, 멱등)
+            // Why: lazy-STT 흐름에서 통화 발생 시점이 아닌 "사용자 클릭 시점" 에 차감해야 한다는 룰
+            // How: usage_counted_at IS NULL 일 때만 NOW() 채우고 members.usage_seconds_period 누적. retry 재호출 시 중복 차감 X.
+            if (strtolower(trim((string)$owner)) !== 'nxnxax@gmail.com') {
+                try {
+                    $mk = $pdo->prepare("UPDATE recording_jobs SET usage_counted_at = NOW() WHERE id = :id AND usage_counted_at IS NULL");
+                    $mk->execute([':id' => $jobId]);
+                    if ($mk->rowCount() > 0) {
+                        $dur = (int)($jRow['duration_sec'] ?? 0);
+                        if ($dur > 0) {
+                            $pdo->prepare('UPDATE members SET usage_seconds_period = COALESCE(usage_seconds_period,0) + :d WHERE LOWER(email) = LOWER(:e)')
+                                ->execute([':d' => $dur, ':e' => $owner]);
+                        }
+                    }
+                } catch (Throwable $e) {
+                    error_log('[trigger_summarize] usage 누적 실패: ' . $e->getMessage());
+                }
             }
 
             // 2) Railway dispatch (RAILWAY_WORKER_URL 있을 때만; 없으면 cron worker 가 5분 후 처리)
