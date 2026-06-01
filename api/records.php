@@ -410,6 +410,35 @@ function create_member_from_google(PDO $pdo, $authUser, $data) {
     $ensure = !empty($_GET['ensure']) || !empty($data['ensure']);
     if (member_exists_by_email($pdo, $email) === true) {
         if ($ensure) {
+            // 사장님 2026-06-01 — finalize=true 면 기존 row 의 phone/nickname UPDATE (Google OAuth 자동 row 가
+            // phone/nickname 누락 케이스 — 이전엔 already=true 만 응답하고 UPDATE 안 해서 모달 매번 표시되던 버그).
+            if ($isFinalize) {
+                $updateAssign = [];
+                $updateParams = [':email' => $email];
+                $phoneColUp = first_existing_column($store['columns'], ['phone', 'mobile', 'tel', 'contact', 'user_phone', 'mb_hp']);
+                $nickColUp = first_existing_column($store['columns'], ['nickname', 'nick', 'display_name']);
+                if ($phoneColUp && $phone !== null && $phone !== '') {
+                    $updateAssign[] = quote_identifier($phoneColUp) . ' = :phone';
+                    $updateParams[':phone'] = function_exists('youngman_encrypt') ? youngman_encrypt($phone) : $phone;
+                }
+                if ($nickColUp && $nickname !== null) {
+                    if (nickname_taken($pdo, $store, $nickname, $email)) {
+                        respond(['ok' => false, 'error' => '이미 사용 중인 닉네임입니다.'], 409);
+                    }
+                    $updateAssign[] = quote_identifier($nickColUp) . ' = :nickname';
+                    $updateParams[':nickname'] = $nickname;
+                }
+                if (!empty($updateAssign)) {
+                    try {
+                        $emailColUp = quote_identifier($store['email_column']);
+                        $tableUp = quote_identifier($store['table']);
+                        $upSql = "UPDATE {$tableUp} SET " . implode(', ', $updateAssign) . " WHERE LOWER({$emailColUp}) = :email";
+                        $pdo->prepare($upSql)->execute($updateParams);
+                    } catch (Throwable $e) {
+                        error_log('[auth-member finalize ensure] phone/nickname UPDATE 실패: ' . $e->getMessage());
+                    }
+                }
+            }
             // 기존 row 의 nickname/phone 도 함께 반환 → client 가 "추가 입력 필요" 판단 가능
             $existingNick = null;
             $existingPhonePlain = '';
