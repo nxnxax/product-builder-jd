@@ -1,4 +1,6 @@
 <?php
+// 2026-06-01 — cafe24 opcache 강제 invalidate (5171cc2 fix 적용 안 되던 이슈)
+if (function_exists('opcache_invalidate')) { @opcache_invalidate(__FILE__, true); }
 header('Content-Type: application/json; charset=utf-8');
 
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
