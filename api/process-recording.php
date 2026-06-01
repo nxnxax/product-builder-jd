@@ -2031,9 +2031,10 @@ if (!$isAdminUser && $planLowerForCount !== 'master' && $planLowerForCount !== '
     } catch (Throwable $e) {}
 }
 
-// 분 단위 차감 + usage_logs — admin 만 제외, 모든 유료 플랜 (free 포함) 누적
-// Why: master/agency 가 회 단위 skip 조건에 묶여서 분 단위까지 누락되던 버그 fix
-if (!$isAdminUser) {
+// 분 단위 차감 + usage_logs — admin 포함 모두 누적 (사장님 본인 테스트 통계 반영)
+// Why: 1) master/agency 가 회 단위 skip 조건에 묶여 분 단위까지 누락되던 버그 fix
+//      2) admin (사장님) 본인 테스트도 통계에 반영. 한도 차단은 별도 (line 1024) 에서 admin skip 유지
+{
     if ($durationSeconds > 0) {
         try {
             $pdo->prepare('UPDATE members SET usage_seconds_period = COALESCE(usage_seconds_period,0) + :d WHERE email = :e')
