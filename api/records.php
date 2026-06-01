@@ -3414,12 +3414,14 @@ try {
         } catch (Throwable $e) {}
 
         // ── 요약보기 (auto_confirm=0) + 양식으로 전송 (auto_confirm=1) + events ──
-        // trigger_summarize 호출 시점 = recording_jobs.created_at 기준.
+        // 사장님 2026-06-01 — 실제 사용자 클릭 시점 = usage_counted_at 기준 (통화 발생 시점 아님)
+        // Why: 옛 코드는 created_at (통화 시점) 을 카운트해서 클릭 안 한 audio_pending 잡도 카운트되던 부정확. 멱등 키와 일치.
         try {
-            $stmt = $pdo->prepare("SELECT created_at AS at, owner_email AS email, auto_confirm
+            $stmt = $pdo->prepare("SELECT usage_counted_at AS at, owner_email AS email, auto_confirm
                 FROM recording_jobs
-                WHERE created_at BETWEEN :a AND :b
-                ORDER BY created_at DESC");
+                WHERE usage_counted_at IS NOT NULL
+                  AND usage_counted_at BETWEEN :a AND :b
+                ORDER BY usage_counted_at DESC");
             $stmt->execute([':a' => $from . ' 00:00:00', ':b' => $to . ' 23:59:59']);
             foreach ($stmt as $r) {
                 $at = (string)$r['at'];
