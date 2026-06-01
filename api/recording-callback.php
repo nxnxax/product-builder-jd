@@ -309,11 +309,12 @@ if ($autoConfirm) {
         $sttFailReason = sprintf('STT 결과 너무 짧음 (duration=%ds, transcript=%d chars)', $durationSec, $transcriptLen);
     }
     if ($sttPartialFail) {
-        $autoConfirm = false;  // auto_confirm 비활성화 → ready_to_review 분기로
-        error_log('[recording-callback auto_confirm] STT partial fail 감지 → fallback ready_to_review: ' . $sttFailReason);
-        // recording_jobs.error_message 에 진단 기록 (사장님 미확인 요약 카드에 안내 가능)
+        // 사장님 2026-06-01 — auto_confirm 강제 유지 (사용자 양식전송 의도 우선).
+        // STT 결과가 비어있어도 customer_log INSERT 진행 → 고객관리대장에 빈 카드 표시 (사용자 수정 가능).
+        // 옛 fallback (auto_confirm=false → ready_to_review) 폐기 — 양식전송이 미확인 요약으로 빠지던 원인.
+        error_log('[recording-callback auto_confirm] STT partial fail 감지 (auto_confirm 강제 유지): ' . $sttFailReason);
         try {
-            $pdo->prepare("UPDATE recording_jobs SET error_message = CONCAT(IFNULL(error_message, ''), ' [auto_confirm STT partial fail: ', :reason, ']') WHERE id = :id")
+            $pdo->prepare("UPDATE recording_jobs SET error_message = CONCAT(IFNULL(error_message, ''), ' [STT partial fail: ', :reason, ']') WHERE id = :id")
                 ->execute([':reason' => $sttFailReason, ':id' => $jobId]);
         } catch (Throwable $e) {}
     }
