@@ -4691,7 +4691,7 @@ try {
                 $clickAction = 'summary_view';
             }
             try {
-                $jStmt = $pdo->prepare('SELECT id, status, duration_sec, summary_json_encrypted, customer_log_id, recorded_at, group_id, phone_number, client_request_id FROM recording_jobs WHERE id = :id AND owner_email = :o LIMIT 1');
+                $jStmt = $pdo->prepare('SELECT id, status, duration_sec, summary_json_encrypted, customer_log_id, recorded_at, group_id, phone_number, client_request_id, storage_path, customer_name_hint FROM recording_jobs WHERE id = :id AND owner_email = :o LIMIT 1');
                 $jStmt->execute([':id' => $jobId, ':o' => $owner]);
                 $jRow = $jStmt->fetch();
             } catch (Throwable $e) {
@@ -4850,7 +4850,95 @@ try {
                 }
             }
 
-            respond(['ok'=>true, 'counted'=>$counted, 'duration_sec'=>$dur, 'action'=>$clickAction, 'auto_confirm_result'=>$autoConfirmResult]);
+            // 3) STT 시작 — status='audio_pending'/'failed_retryable' 면 status='queued' UPDATE + Railway dispatch
+            // Why: 자동 dispatch 제거 후 사용자 클릭 시점에만 STT 처리 (사장님 룰 정확 매핑)
+            $dispatched = false;
+            $dispatchError = null;
+            $newAutoConfirm = ($clickAction === 'auto_confirm') ? 1 : 0;
+            $currentStatus = (string)$jRow['status'];
+            if (in_array($currentStatus, ['audio_pending', 'failed_retryable'], true)) {
+                try {
+                    $pdo->prepare("UPDATE recording_jobs SET status='queued', updated_at=NOW(), retry_count=0, error_message=NULL, auto_confirm=:ac WHERE id=:id")
+                        ->execute([':ac' => $newAutoConfirm, ':id' => $jobId]);
+                } catch (Throwable $e) {
+                    error_log('[mark_usage dispatch] status UPDATE 실패: ' . $e->getMessage());
+                }
+                // Railway dispatch
+                $railwayUrl = '';
+                $rwTok = '';
+                foreach ([__DIR__ . '/.env', dirname(__DIR__) . '/.env'] as $envPath) {
+                    if (!is_file($envPath)) continue;
+                    $lines = @file($envPath, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) ?: [];
+                    foreach ($lines as $ln) {
+                        if (preg_match('/^\s*(?:export\s+)?([A-Z0-9_]+)\s*=\s*(.*)$/i', $ln, $m)) {
+                            $k = $m[1];
+                            $v = trim($m[2], "\"' \t\r\n");
+                            if (strcasecmp($k, 'RAILWAY_WORKER_URL') === 0)        { $railwayUrl = $v; }
+                            if (strcasecmp($k, 'RECORDING_WORKER_TOKEN') === 0)    { $rwTok = $v; }
+                        }
+                    }
+                    if ($railwayUrl !== '' && $rwTok !== '') break;
+                }
+                if ($railwayUrl !== '' && $rwTok !== '') {
+                    try {
+                        $expires = time() + 600;
+                        $audioToken = hash_hmac('sha256', $jobId . '.' . $expires, $rwTok);
+                        $audioUrl = 'https://youngman-biz.com/recording-audio.php?job_id=' . urlencode($jobId)
+                                  . '&token=' . urlencode($audioToken) . '&expires=' . $expires;
+                        $payload = json_encode([
+                            'job_id'             => $jobId,
+                            'owner_email'        => $owner,
+                            'audio_url'          => $audioUrl,
+                            'duration_sec'       => $dur,
+                            'customer_name_hint' => (string)($jRow['customer_name_hint'] ?? ''),
+                            'phone_number'       => (string)($jRow['phone_number'] ?? ''),
+                            'recorded_at'        => (string)($jRow['recorded_at'] ?? ''),
+                            'group_id'           => (string)($jRow['group_id'] ?? ''),
+                            'storage_path'       => (string)($jRow['storage_path'] ?? ''),
+                        ], JSON_UNESCAPED_UNICODE);
+                        $ch = curl_init(rtrim($railwayUrl, '/') . '/process');
+                        curl_setopt_array($ch, [
+                            CURLOPT_RETURNTRANSFER => true,
+                            CURLOPT_POST => true,
+                            CURLOPT_POSTFIELDS => $payload,
+                            CURLOPT_HTTPHEADER => [
+                                'Content-Type: application/json',
+                                'X-Worker-Token: ' . $rwTok,
+                            ],
+                            CURLOPT_TIMEOUT => 8,
+                            CURLOPT_CONNECTTIMEOUT => 4,
+                        ]);
+                        $rwResp = curl_exec($ch);
+                        $rwStatus = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+                        curl_close($ch);
+                        if ($rwStatus >= 200 && $rwStatus < 300) {
+                            $dispatched = true;
+                            $pdo->prepare("UPDATE recording_jobs SET status='processing', started_at=NOW(), updated_at=NOW() WHERE id=:id")
+                                ->execute([':id' => $jobId]);
+                        } else {
+                            $dispatchError = 'http_' . $rwStatus;
+                            error_log('[mark_usage dispatch] Railway http=' . $rwStatus . ' resp=' . substr((string)$rwResp, 0, 200));
+                        }
+                    } catch (Throwable $e) {
+                        $dispatchError = 'exception';
+                        error_log('[mark_usage dispatch] Railway 예외: ' . $e->getMessage());
+                    }
+                } else {
+                    $dispatchError = 'env_missing';
+                    error_log('[mark_usage dispatch] Railway env missing — cron worker 가 5분 후 처리');
+                }
+            }
+
+            respond([
+                'ok' => true,
+                'counted' => $counted,
+                'duration_sec' => $dur,
+                'action' => $clickAction,
+                'dispatched' => $dispatched,
+                'dispatch_error' => $dispatchError,
+                'job_status' => $currentStatus,
+                'auto_confirm_result' => $autoConfirmResult,
+            ]);
         }
 
         // ─── TRIGGER_SUMMARIZE (사장님 2026-05-23 — lazy-STT 모드 STT 시작) ───

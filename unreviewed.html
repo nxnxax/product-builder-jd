@@ -401,14 +401,10 @@
         btn.disabled = true;
         btn.innerHTML = '<span class="un-mini-spinner"></span>요약중...';
         try {
-            // 사장님 2026-06-01 — 사용자 클릭 시점 사용량 차감 신호 (멱등). 실패해도 trigger 진행.
-            apiRequest('customer-log', {
-                method: 'POST',
-                body: JSON.stringify({ action: 'mark_usage', job_id: jobId, click_type: 'summary_view' })
-            }).catch(() => {});
+            // 사장님 2026-06-01 — mark_usage 하나로 통합 (차감 + STT 시작).
             const r = await apiRequest('customer-log', {
                 method: 'POST',
-                body: JSON.stringify({ action: 'trigger_summarize', job_id: jobId, auto_confirm: false })
+                body: JSON.stringify({ action: 'mark_usage', job_id: jobId, click_type: 'summary_view' })
             });
             if (r?.dispatched === false && r?.dispatch_error) {
                 showToast('AI 분석 시작 대기 — cron 5분 내 자동 진행 (' + r.dispatch_error + ')');
@@ -425,14 +421,10 @@
         btn.disabled = true;
         btn.innerHTML = '<span class="un-mini-spinner"></span>전송 중...';
         try {
-            // 사장님 2026-06-01 — 사용자 클릭 시점 사용량 차감 신호 (멱등). 실패해도 trigger 진행.
-            apiRequest('customer-log', {
-                method: 'POST',
-                body: JSON.stringify({ action: 'mark_usage', job_id: jobId, click_type: 'auto_confirm' })
-            }).catch(() => {});
+            // 사장님 2026-06-01 — mark_usage 하나로 통합 (차감 + STT 시작 + 양식전송 처리).
             const r = await apiRequest('customer-log', {
                 method: 'POST',
-                body: JSON.stringify({ action: 'trigger_summarize', job_id: jobId, auto_confirm: true })
+                body: JSON.stringify({ action: 'mark_usage', job_id: jobId, click_type: 'auto_confirm' })
             });
             if (r?.dispatched === false && r?.dispatch_error) {
                 showToast('전송 대기 — cron 5분 내 자동 진행 (' + r.dispatch_error + ')');
@@ -628,14 +620,10 @@
         let sent = 0;
         for (const id of ids) {
             try {
-                // 사장님 2026-06-01 — 사용자 클릭 시점 사용량 차감 신호 (멱등).
-                apiRequest('customer-log', {
-                    method: 'POST',
-                    body: JSON.stringify({ action: 'mark_usage', job_id: id, click_type: 'auto_confirm' })
-                }).catch(() => {});
+                // 사장님 2026-06-01 — mark_usage 하나로 통합 (차감 + STT 시작 + 양식전송 처리).
                 await apiRequest('customer-log', {
                     method: 'POST',
-                    body: JSON.stringify({ action: 'trigger_summarize', job_id: id, auto_confirm: true })
+                    body: JSON.stringify({ action: 'mark_usage', job_id: id, click_type: 'auto_confirm' })
                 });
                 sent++;
                 selectedSet.delete(id);

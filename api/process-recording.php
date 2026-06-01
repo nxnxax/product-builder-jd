@@ -947,80 +947,10 @@ if ($asyncMode) {
     $planInfoAsync = build_plan_info_for_response($pdo, $ownerEmail, $isAdminUserAsync);
     respond_async_queued($asyncJobId, $placeholderClRow, $placeholderMirrorResult, $planInfoAsync);
 
-    // 사장님 2026-06-01 — 통화 후 모달 무한 로딩 fix (옵션 A — 앱팀 클라이언트 fix 불가).
-    // STT 자동 dispatch 만 수행 — 차감은 별도 mark_usage endpoint 가 사용자 클릭 시점에 처리.
-    //   1. status='queued' (auto_confirm=0 — 요약보기 모드)
-    //   2. Railway dispatch (없으면 cron worker 가 5분 후 처리)
-    // 차감은 사용자가 "요약보기"/"양식전송" 클릭 시 mark_usage 호출 시점에 (사장님 룰).
-    {
-        // 1. status='queued' UPDATE
-        try {
-            $pdo->prepare("UPDATE recording_jobs SET status='queued', updated_at=NOW(), auto_confirm=0 WHERE id=:id")
-                ->execute([':id' => $asyncJobId]);
-        } catch (Throwable $e) {
-            error_log('[process-recording auto-dispatch] status UPDATE 실패: ' . $e->getMessage());
-        }
-        // 2. Railway dispatch
-        $railwayUrl = '';
-        $rwTok = '';
-        foreach ([__DIR__ . '/.env', dirname(__DIR__) . '/.env'] as $envPath) {
-            if (!is_file($envPath)) continue;
-            $lines = @file($envPath, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) ?: [];
-            foreach ($lines as $ln) {
-                if (preg_match('/^\s*(?:export\s+)?([A-Z0-9_]+)\s*=\s*(.*)$/i', $ln, $m)) {
-                    $k = $m[1];
-                    $v = trim($m[2], "\"' \t\r\n");
-                    if (strcasecmp($k, 'RAILWAY_WORKER_URL') === 0)        { $railwayUrl = $v; }
-                    if (strcasecmp($k, 'RECORDING_WORKER_TOKEN') === 0)    { $rwTok = $v; }
-                }
-            }
-            if ($railwayUrl !== '' && $rwTok !== '') break;
-        }
-        if ($railwayUrl !== '' && $rwTok !== '') {
-            try {
-                $expires = time() + 600;
-                $audioToken = hash_hmac('sha256', $asyncJobId . '.' . $expires, $rwTok);
-                $audioUrl = 'https://youngman-biz.com/recording-audio.php?job_id=' . urlencode($asyncJobId)
-                          . '&token=' . urlencode($audioToken) . '&expires=' . $expires;
-                $payload = json_encode([
-                    'job_id'             => $asyncJobId,
-                    'owner_email'        => $ownerEmail,
-                    'audio_url'          => $audioUrl,
-                    'duration_sec'       => $durationSec,
-                    'customer_name_hint' => $customerNameHint,
-                    'phone_number'       => $phoneNumber,
-                    'recorded_at'        => $recordedAt,
-                    'group_id'           => $groupIdHint,
-                    'storage_path'       => $storagePath,
-                ], JSON_UNESCAPED_UNICODE);
-                $ch = curl_init(rtrim($railwayUrl, '/') . '/process');
-                curl_setopt_array($ch, [
-                    CURLOPT_RETURNTRANSFER => true,
-                    CURLOPT_POST => true,
-                    CURLOPT_POSTFIELDS => $payload,
-                    CURLOPT_HTTPHEADER => [
-                        'Content-Type: application/json',
-                        'X-Worker-Token: ' . $rwTok,
-                    ],
-                    CURLOPT_TIMEOUT => 8,
-                    CURLOPT_CONNECTTIMEOUT => 4,
-                ]);
-                $rwResp = curl_exec($ch);
-                $rwStatus = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
-                curl_close($ch);
-                if ($rwStatus >= 200 && $rwStatus < 300) {
-                    $pdo->prepare("UPDATE recording_jobs SET status='processing', started_at=NOW(), updated_at=NOW() WHERE id=:id")
-                        ->execute([':id' => $asyncJobId]);
-                } else {
-                    error_log('[process-recording auto-dispatch] Railway http=' . $rwStatus . ' resp=' . substr((string)$rwResp, 0, 200));
-                }
-            } catch (Throwable $e) {
-                error_log('[process-recording auto-dispatch] Railway 예외: ' . $e->getMessage());
-            }
-        } else {
-            error_log('[process-recording auto-dispatch] Railway env missing — cron worker 가 5분 후 처리');
-        }
-    }
+    // 사장님 2026-06-01 — 자동 dispatch 제거. STT 처리는 사용자 mark_usage 호출 시점에만 시작.
+    // Why: 사장님 룰 = 사용자 클릭 안 하면 STT 처리 X (껍데기만 미확인 요약에 저장). 자동 dispatch 시
+    //      비클릭 통화도 STT 처리되어 미확인 요약에 요약된 카드 표시되던 문제 fix.
+    // 흐름: audio_pending 으로만 저장. records.php mark_usage 가 호출되면 status='queued' + Railway dispatch.
     exit;
 }
 
