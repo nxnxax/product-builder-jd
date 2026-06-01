@@ -3413,21 +3413,22 @@ try {
             }
         } catch (Throwable $e) {}
 
-        // ── 요약보기 (auto_confirm=0) + 양식으로 전송 (auto_confirm=1) + events ──
-        // 사장님 2026-06-01 — 실제 사용자 클릭 시점 = usage_counted_at 기준 (통화 발생 시점 아님)
-        // Why: 옛 코드는 created_at (통화 시점) 을 카운트해서 클릭 안 한 audio_pending 잡도 카운트되던 부정확. 멱등 키와 일치.
+        // ── 요약보기 (summary_view) + 양식으로 전송 (auto_confirm) + events ──
+        // 사장님 2026-06-01 — activity_logs 기준 (trigger_summarize 호출 시점에 직접 기록).
+        // Why: recording_jobs 의 status 는 앱/callback 측에서 우리 모르는 경로로 변경될 수 있어 부정확.
+        //      activity_logs 는 trigger_summarize 가 호출된 시점에만 기록되어 진짜 클릭만 카운트.
         try {
-            $stmt = $pdo->prepare("SELECT usage_counted_at AS at, owner_email AS email, auto_confirm
-                FROM recording_jobs
-                WHERE usage_counted_at IS NOT NULL
-                  AND usage_counted_at BETWEEN :a AND :b
-                ORDER BY usage_counted_at DESC");
+            $stmt = $pdo->prepare("SELECT created_at AS at, actor_email AS email, event_type
+                FROM activity_logs
+                WHERE event_type IN ('summary_view', 'auto_confirm')
+                  AND created_at BETWEEN :a AND :b
+                ORDER BY created_at DESC");
             $stmt->execute([':a' => $from . ' 00:00:00', ':b' => $to . ' 23:59:59']);
             foreach ($stmt as $r) {
                 $at = (string)$r['at'];
                 $email = strtolower(trim((string)$r['email']));
                 $d = substr($at, 0, 10);
-                $isAuto = !empty($r['auto_confirm']);
+                $isAuto = ($r['event_type'] === 'auto_confirm');
                 if (isset($daily[$d])) {
                     if ($isAuto) $daily[$d]['autoConfirms']++;
                     else         $daily[$d]['summaryViews']++;
@@ -4737,10 +4738,11 @@ try {
                 respond(['ok'=>false,'status'=>'error','processing'=>false,'code'=>'upstream_failed','message'=>'UPDATE 실패: ' . $e->getMessage()], 503);
             }
 
-            // 사장님 2026-06-01 — 사용량 차감 (요약보기/양식전송 첫 클릭 시점, 멱등)
+            // 사장님 2026-06-01 — 사용량 차감 + 활동 로그 (요약보기/양식전송 첫 클릭 시점, 멱등)
             // Why: lazy-STT 흐름에서 통화 발생 시점이 아닌 "사용자 클릭 시점" 에 차감 (사장님 룰)
-            //      admin 본인도 테스트 가능하도록 카운트는 모두 적용. 한도 차단만 admin skip (process-recording.php 측).
-            // How: usage_counted_at IS NULL 일 때만 NOW() 채우고 members.usage_seconds_period 누적. retry 중복 차감 X.
+            //      admin 본인도 테스트 가능하도록 카운트는 모두 적용. 한도 차단만 admin skip.
+            // How: usage_counted_at IS NULL 일 때만 NOW() 채우고 members.usage_seconds_period 누적 + activity_logs 직접 기록.
+            //      activity_logs 가 통계 source 라 recording_jobs status 변화 영향 없이 정확.
             try {
                 $mk = $pdo->prepare("UPDATE recording_jobs SET usage_counted_at = NOW() WHERE id = :id AND usage_counted_at IS NULL");
                 $mk->execute([':id' => $jobId]);
@@ -4750,6 +4752,9 @@ try {
                         $pdo->prepare('UPDATE members SET usage_seconds_period = COALESCE(usage_seconds_period,0) + :d WHERE LOWER(email) = LOWER(:e)')
                             ->execute([':d' => $dur, ':e' => $owner]);
                     }
+                    // 활동 로그 기록 — auto_confirm=1 이면 양식전송, 0 이면 요약보기
+                    record_activity($pdo, $owner, $autoConfirm ? 'auto_confirm' : 'summary_view',
+                        json_encode(['job_id' => $jobId, 'duration_sec' => $dur], JSON_UNESCAPED_UNICODE));
                 }
             } catch (Throwable $e) {
                 error_log('[trigger_summarize] usage 누적 실패: ' . $e->getMessage());
