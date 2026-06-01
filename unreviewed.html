@@ -318,8 +318,9 @@
                 const id = String(j.id);
                 const isSel = selectedSet.has(id);
                 // 사장님 2026-05-24 — 전화번호 / 통화시간 줄바꿈 분리.
+                // 2026-06-01 — duration_sec=0 (앱 측 짧은 통화 측정 누락 케이스) 도 카드 표시.
                 const phoneLine = j.phone_number ? escapeHtml(j.phone_number) : '';
-                const durationLine = j.duration_sec ? '통화 ' + fmtDuration(j.duration_sec) : '';
+                const durationLine = j.duration_sec > 0 ? '통화 ' + fmtDuration(j.duration_sec) : '통화 시간 확인 중';
                 parts.push(`
                     <div class="un-card${isSel ? ' selected' : ''}" data-job-id="${escapeHtml(id)}">
                         <div class="un-check">
