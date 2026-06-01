@@ -4691,7 +4691,7 @@ try {
                 $clickAction = 'summary_view';
             }
             try {
-                $jStmt = $pdo->prepare('SELECT duration_sec FROM recording_jobs WHERE id = :id AND owner_email = :o LIMIT 1');
+                $jStmt = $pdo->prepare('SELECT id, status, duration_sec, summary_json_encrypted, customer_log_id, recorded_at, group_id, phone_number, client_request_id FROM recording_jobs WHERE id = :id AND owner_email = :o LIMIT 1');
                 $jStmt->execute([':id' => $jobId, ':o' => $owner]);
                 $jRow = $jStmt->fetch();
             } catch (Throwable $e) {
@@ -4701,6 +4701,7 @@ try {
 
             $dur = (int)($jRow['duration_sec'] ?? 0);
             $counted = false;
+            // 1) 차감 (멱등)
             try {
                 $mk = $pdo->prepare("UPDATE recording_jobs SET usage_counted_at = NOW() WHERE id = :id AND usage_counted_at IS NULL");
                 $mk->execute([':id' => $jobId]);
@@ -4710,7 +4711,6 @@ try {
                         $pdo->prepare('UPDATE members SET usage_seconds_period = COALESCE(usage_seconds_period,0) + :d WHERE LOWER(email) = LOWER(:e)')
                             ->execute([':d' => $dur, ':e' => $owner]);
                     }
-                    // activity_logs INSERT (별도 try, INSERT 실패해도 차감은 유효)
                     try {
                         $pdo->prepare("INSERT INTO activity_logs (actor_email, event_type, detail) VALUES (:e, :t, :d)")
                             ->execute([
@@ -4726,7 +4726,131 @@ try {
                 error_log('[mark_usage] usage 누적 실패: ' . $e->getMessage());
                 respond(['ok'=>false, 'code'=>'upstream_failed', 'message'=>'차감 실패: ' . $e->getMessage()], 503);
             }
-            respond(['ok'=>true, 'counted'=>$counted, 'duration_sec'=>$dur, 'action'=>$clickAction]);
+
+            // 2) "양식으로 전송" 처리 — auto_confirm=1 UPDATE + status='ready_to_review' 면 즉시 confirm
+            // Why: 자동 dispatch 는 auto_confirm=0 default → callback 이 ready_to_review 로 둠.
+            //      사용자가 양식전송 누르면 customer_log INSERT + send_to_group 까지 처리해야 고객관리대장으로 감.
+            $autoConfirmResult = null;
+            if ($clickAction === 'auto_confirm') {
+                try {
+                    $pdo->prepare("UPDATE recording_jobs SET auto_confirm = 1 WHERE id = :id")
+                        ->execute([':id' => $jobId]);
+                } catch (Throwable $e) {
+                    error_log('[mark_usage auto_confirm] UPDATE 실패: ' . $e->getMessage());
+                }
+                $jobStatus = (string)$jRow['status'];
+                $alreadyHasLog = !empty($jRow['customer_log_id']);
+                // status='ready_to_review' 이면 즉시 confirm 처리 (callback 이 auto_confirm=0 으로 처리한 케이스)
+                if ($jobStatus === 'ready_to_review' && !$alreadyHasLog) {
+                    $summaryArr = [];
+                    if (!empty($jRow['summary_json_encrypted'])) {
+                        $dec = youngman_decrypt($jRow['summary_json_encrypted']);
+                        $tmp = is_string($dec) ? json_decode($dec, true) : null;
+                        if (is_array($tmp)) $summaryArr = $tmp;
+                    }
+                    $get = function(string $key, $fb = '') use ($summaryArr) {
+                        if (array_key_exists($key, $summaryArr) && is_string($summaryArr[$key])) return trim($summaryArr[$key]);
+                        return $fb;
+                    };
+                    $customerName    = $get('customer_name', '고객');
+                    $phoneNumber     = $get('phone_number', (string)($jRow['phone_number'] ?? ''));
+                    $summary         = $get('summary', '');
+                    $interest        = $get('interest', '');
+                    $inquiry         = $get('inquiry', '');
+                    $budgetCondition = $get('budget_condition', '');
+                    $nextAction      = $get('next_action', '');
+                    $region          = $get('region', '');
+                    $transcript      = $get('transcript', '');
+                    $consultAtIn     = (string)($jRow['recorded_at'] ?? '');
+                    $groupId         = (string)($jRow['group_id'] ?? '');
+                    $aiModel         = is_string($summaryArr['ai_model'] ?? null) ? trim($summaryArr['ai_model']) : 'unknown';
+                    $ts = $consultAtIn !== '' ? @strtotime($consultAtIn) : false;
+                    $consultAt = $ts ? date('Y-m-d H:i:s', $ts) : date('Y-m-d H:i:s');
+                    if ($summary === '') $summary = $transcript ?: '(요약 없음)';
+
+                    $rowId = (function() {
+                        $data = random_bytes(16);
+                        $data[6] = chr(ord($data[6]) & 0x0f | 0x40);
+                        $data[8] = chr(ord($data[8]) & 0x3f | 0x80);
+                        return vsprintf('%s%s-%s-%s-%s-%s%s%s', str_split(bin2hex($data), 4));
+                    })();
+                    $phoneLookup = customer_phone_lookup_key($phoneNumber !== '' ? $phoneNumber : null);
+                    try {
+                        $pdo->prepare("INSERT INTO customer_log (
+                                id, owner_email, customer_phone_lookup,
+                                customer_name, phone_number,
+                                summary, interest, inquiry, budget_condition, next_action,
+                                region, transcript, consult_at, audio_storage_path, audio_kept,
+                                ai_model, ai_generated_at, source, client_request_id
+                            ) VALUES (
+                                :id, :o, :pl, :nm, :ph,
+                                :sum, :intr, :inq, :bg, :nx,
+                                :rg, :tr, :ca, :asp, 0,
+                                :am, NOW(), 'app-review', :cri
+                            )")
+                            ->execute([
+                                ':id'  => $rowId, ':o' => $owner, ':pl' => $phoneLookup,
+                                ':nm'  => $customerName !== '' ? youngman_encrypt($customerName) : null,
+                                ':ph'  => $phoneNumber  !== '' ? youngman_encrypt($phoneNumber)  : null,
+                                ':sum' => youngman_encrypt($summary),
+                                ':intr'=> $interest !== '' ? youngman_encrypt($interest) : null,
+                                ':inq' => $inquiry  !== '' ? youngman_encrypt($inquiry)  : null,
+                                ':bg'  => $budgetCondition !== '' ? youngman_encrypt($budgetCondition) : null,
+                                ':nx'  => $nextAction !== '' ? youngman_encrypt($nextAction) : null,
+                                ':rg'  => $region !== '' ? youngman_encrypt($region) : null,
+                                ':tr'  => $transcript !== '' ? youngman_encrypt($transcript) : null,
+                                ':ca'  => $consultAt, ':asp' => null, ':am' => $aiModel,
+                                ':cri' => (string)($jRow['client_request_id'] ?? $jobId),
+                            ]);
+                        $pdo->prepare("UPDATE recording_jobs SET status='saved', customer_log_id=:cl, updated_at=NOW() WHERE id=:id AND owner_email=:o")
+                            ->execute([':cl' => $rowId, ':id' => $jobId, ':o' => $owner]);
+                        $autoConfirmResult = ['customer_log_id' => $rowId, 'mirrored' => false];
+                        // send_to_group mirror
+                        try {
+                            $envWorkerTok = '';
+                            foreach ([__DIR__, dirname(__DIR__)] as $envDir) {
+                                $envFile = $envDir . '/.env';
+                                if (!is_file($envFile)) continue;
+                                foreach (file($envFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as $ln) {
+                                    if (preg_match('/^\s*(?:export\s+)?([A-Z0-9_]+)\s*=\s*(.*)$/i', $ln, $m)) {
+                                        if (strcasecmp($m[1], 'RECORDING_WORKER_TOKEN') === 0) {
+                                            $envWorkerTok = trim($m[2], "\"' \t\r\n");
+                                            break 2;
+                                        }
+                                    }
+                                }
+                            }
+                            if ($envWorkerTok !== '') {
+                                $sendUrl = 'https://' . ($_SERVER['HTTP_HOST'] ?? 'youngman-biz.com') . '/records.php?resource=customer-log';
+                                $sendPayload = ['action' => 'customer_log_send_to_group', 'id' => $rowId, 'owner_email' => $owner];
+                                if ($groupId !== '') $sendPayload['group_id'] = (int)$groupId;
+                                $sCh = curl_init($sendUrl);
+                                curl_setopt_array($sCh, [
+                                    CURLOPT_RETURNTRANSFER => true,
+                                    CURLOPT_POST => true,
+                                    CURLOPT_POSTFIELDS => json_encode($sendPayload, JSON_UNESCAPED_UNICODE),
+                                    CURLOPT_HTTPHEADER => ['Content-Type: application/json', 'X-Worker-Token: ' . $envWorkerTok],
+                                    CURLOPT_TIMEOUT => 15,
+                                    CURLOPT_CONNECTTIMEOUT => 5,
+                                ]);
+                                $sResp = curl_exec($sCh);
+                                $sStat = (int)curl_getinfo($sCh, CURLINFO_HTTP_CODE);
+                                curl_close($sCh);
+                                if ($sResp !== false && $sStat >= 200 && $sStat < 300) {
+                                    $autoConfirmResult['mirrored'] = true;
+                                }
+                                error_log('[mark_usage auto_confirm] send_to_group http=' . $sStat . ' cl=' . $rowId);
+                            }
+                        } catch (Throwable $e) {
+                            error_log('[mark_usage auto_confirm] send_to_group 실패: ' . $e->getMessage());
+                        }
+                    } catch (Throwable $e) {
+                        error_log('[mark_usage auto_confirm] customer_log INSERT 실패: ' . $e->getMessage());
+                    }
+                }
+            }
+
+            respond(['ok'=>true, 'counted'=>$counted, 'duration_sec'=>$dur, 'action'=>$clickAction, 'auto_confirm_result'=>$autoConfirmResult]);
         }
 
         // ─── TRIGGER_SUMMARIZE (사장님 2026-05-23 — lazy-STT 모드 STT 시작) ───
