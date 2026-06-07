@@ -4294,6 +4294,32 @@ select:focus {
         color: var(--fg-tertiary);
         font-size: 13px;
     }
+    /* 모바일 카드 전체선택 줄 — 60대+ 가독성 위해 큰 터치영역 + 또렷한 글자 */
+    .ledger-cards-selectall {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 12px 14px;
+        border-bottom: 1px solid var(--border);
+        background: var(--bg-subtle);
+        cursor: pointer;
+        font-size: 15px;
+        font-weight: 700;
+        color: var(--fg-primary);
+        user-select: none;
+    }
+    .ledger-cards-selectall input[type="checkbox"] {
+        width: 22px;
+        height: 22px;
+        accent-color: #c8362c;
+        flex: 0 0 auto;
+        margin: 0;
+    }
+    .ledger-cards-selectall-count {
+        font-weight: 600;
+        font-size: 14px;
+        color: var(--fg-tertiary);
+    }
     /* 그룹 액션 바 (+ 행 추가) 모바일 정렬 — 검색바 + 행 추가 버튼을 한 줄에.
        검색바가 남는 폭 모두 차지하되, 버튼은 min-width 고정으로 절대 찌그러지지 않음. */
     .ledger-cards-toolbar {

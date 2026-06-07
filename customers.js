@@ -455,6 +455,13 @@ function renderMobileCards(group, rows) {
         ? `<div class="ledger-cards-empty">표시할 항목이 없습니다.</div>`
         : rows.map((r, i) => renderMobileCard(r, i + 1, group, fields)).join('');
     const q = escapeAttr(searchByGroup[group.id] || '');
+    const allSelected = rows.length > 0 && rows.every(r => selectedIds.has(r.id));
+    const selectAllBar = rows.length === 0 ? '' : `
+        <label class="ledger-cards-selectall">
+            <input type="checkbox" data-select-all="${group.id}" ${allSelected ? 'checked' : ''}>
+            <span>전체선택</span>
+            <span class="ledger-cards-selectall-count">(${rows.length}건)</span>
+        </label>`;
     return `
         <div class="ledger-cards-toolbar">
             <div class="ledger-search-wrap">
@@ -463,6 +470,7 @@ function renderMobileCards(group, rows) {
             </div>
             <button class="tiny-btn primary" type="button" data-add-row data-gid="${group.id}">+ 새 고객 추가</button>
         </div>
+        ${selectAllBar}
         <div class="ledger-cards">${cardsHtml}</div>`;
 }
 
