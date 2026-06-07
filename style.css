@@ -3413,6 +3413,10 @@ select:focus {
 }
 .org-pick-item .org-pick-badge.dim { background: #f4efe7; color: #8a847e; }
 
+/* 그룹 제목 직접 탭으로 이름 수정 — ✎ 아이콘은 모바일에서만 노출 (데스크탑은 편집 버튼 있음) */
+.accordion-title { cursor: pointer; }
+.title-edit-ico { display: none; }
+
 /* 그룹 카드 헤더 — 제목 옆 갯수 inline */
 .accordion-head h3 .head-count {
     margin-left: 6px;
@@ -4366,6 +4370,14 @@ select:focus {
         line-height: 1.3 !important;
         margin: 0 !important;
         min-width: 0;
+    }
+    /* 모바일: 제목 옆 ✎ 표시 — 제목을 탭하면 이름 수정 창이 열림을 안내 */
+    .title-edit-ico {
+        display: inline-block;
+        margin-left: 8px;
+        color: #c8362c;
+        font-size: 0.8em;
+        vertical-align: middle;
     }
     .accordion-head h3 .head-count {
         font-size: 13.5px !important;

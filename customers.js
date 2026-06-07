@@ -401,7 +401,7 @@ function renderGroupCard(group) {
     return `
         <div class="accordion-card ${open ? 'open' : ''}" data-gid="${group.id}">
             <div class="accordion-head">
-                <h3>${escapeHtml(group.name)} <span class="head-count">(${grpRecs.length}건)</span></h3>
+                <h3 class="accordion-title" data-edit-title-gid="${group.id}" title="그룹 이름 수정">${escapeHtml(group.name)} <span class="head-count">(${grpRecs.length}건)</span><span class="title-edit-ico" aria-hidden="true">✎</span></h3>
                 <label class="main-checkbox" title="이 그룹을 메인으로 설정">
                     <input type="checkbox" data-set-main="${group.id}" ${group.isDefault ? 'checked' : ''}>
                     <span>메인그룹</span>
@@ -535,6 +535,10 @@ function renderMobileCard(r, displayNo, group, fields) {
 function bindAccordionEvents() {
     document.querySelectorAll('[data-edit-gid]').forEach(b => {
         b.addEventListener('click', (e) => { e.stopPropagation(); openGroupModal(parseInt(b.dataset.editGid, 10)); });
+    });
+    // 그룹 제목 직접 탭 → 이름 수정 (특히 모바일에서 편집 버튼이 묻혀 안 보이던 문제 해소)
+    document.querySelectorAll('[data-edit-title-gid]').forEach(el => {
+        el.addEventListener('click', (e) => { e.stopPropagation(); openGroupModal(parseInt(el.dataset.editTitleGid, 10)); });
     });
     document.querySelectorAll('[data-settings-gid]').forEach(b => {
         b.addEventListener('click', (e) => { e.stopPropagation(); openSettingsModal(parseInt(b.dataset.settingsGid, 10)); });
