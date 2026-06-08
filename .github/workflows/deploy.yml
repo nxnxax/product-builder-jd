@@ -57,6 +57,7 @@ jobs:
           grep -q 'admin.js?v=' admin.html
           php -l api/analyze.php
           php -l api/records.php
+          php -l api/error_logger.php
           php -l api/upload.php
           php -l api/card-design.php
           php -l api/saju-reading.php
@@ -124,6 +125,7 @@ jobs:
           cp sitemap.xml deploy/sitemap.xml                      # SEO — 인덱싱 지도
           cp api/analyze.php deploy/analyze.php
           cp api/records.php deploy/records.php
+          cp api/error_logger.php deploy/error_logger.php     # 서버 에러 진단 로거 — recording-callback/process-recording 이 require
           cp api/upload.php deploy/upload.php
           cp api/card-design.php deploy/card-design.php
           cp api/saju-reading.php deploy/saju-reading.php
