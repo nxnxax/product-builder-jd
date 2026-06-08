@@ -695,7 +695,7 @@ async def summarize_together(transcript: str) -> dict:
                 "Content-Type": "application/json",
             },
             json={
-                "model": "Qwen/Qwen2.5-72B-Instruct-Turbo",
+                "model": "Qwen/Qwen3.5-397B-A17B",
                 "max_tokens": 2048,
                 "temperature": 0.3,
                 "response_format": {"type": "json_object"},
@@ -745,7 +745,7 @@ async def run_llm(transcript: str, provider: str) -> tuple[dict, str, bool]:
     if provider == "together":
         try:
             data = await summarize_together(transcript)
-            return data, "together-qwen2.5-72b", False
+            return data, "together-qwen3.5-397b", False
         except Exception as e:
             log.warning("Together LLM 실패 → claude fallback: %s", e)
             data = await summarize_claude(transcript)
