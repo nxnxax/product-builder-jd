@@ -978,6 +978,27 @@ function ensure_site_settings_table(PDO $pdo) {
     }
 }
 
+/**
+ * 관리자 AI 모델 토글값(site_settings)을 Railway worker dispatch payload 용으로 변환.
+ * 값이 없거나 기본값(whisper/anthropic)이면 빈 배열 반환 → payload 미주입 → worker 가 기존 whisper/claude 사용(동작 변화 0).
+ * 대체 provider 선택 시에만 stt_provider='groq' / llm_provider='together' 주입.
+ */
+function get_ai_provider_dispatch(PDO $pdo): array {
+    $out = [];
+    try {
+        ensure_site_settings_table($pdo);
+        $stmt = $pdo->query("SELECT setting_key, setting_value FROM site_settings WHERE setting_key IN ('stt_primary','llm_primary')");
+        $rows = $stmt ? $stmt->fetchAll(PDO::FETCH_KEY_PAIR) : [];
+        $stt = strtolower(trim((string)($rows['stt_primary'] ?? '')));
+        $llm = strtolower(trim((string)($rows['llm_primary'] ?? '')));
+        if ($stt === 'groq')     $out['stt_provider'] = 'groq';
+        if ($llm === 'together') $out['llm_provider'] = 'together';
+    } catch (Throwable $e) {
+        // 무시 — 실패해도 기존 whisper/claude 로 정상 동작
+    }
+    return $out;
+}
+
 function record_activity(PDO $pdo, $email, $eventType, $detail = null) {
     if (!ensure_activity_log_table($pdo)) return;
     try {
@@ -4916,7 +4937,7 @@ try {
                         $audioToken = hash_hmac('sha256', $jobId . '.' . $expires, $rwTok);
                         $audioUrl = 'https://youngman-biz.com/recording-audio.php?job_id=' . urlencode($jobId)
                                   . '&token=' . urlencode($audioToken) . '&expires=' . $expires;
-                        $payload = json_encode([
+                        $payload = json_encode(array_merge([
                             'job_id'             => $jobId,
                             'owner_email'        => $owner,
                             'audio_url'          => $audioUrl,
@@ -4926,7 +4947,7 @@ try {
                             'recorded_at'        => (string)($jRow['recorded_at'] ?? ''),
                             'group_id'           => (string)($jRow['group_id'] ?? ''),
                             'storage_path'       => (string)($jRow['storage_path'] ?? ''),
-                        ], JSON_UNESCAPED_UNICODE);
+                        ], get_ai_provider_dispatch($pdo)), JSON_UNESCAPED_UNICODE);
                         $ch = curl_init(rtrim($railwayUrl, '/') . '/process');
                         curl_setopt_array($ch, [
                             CURLOPT_RETURNTRANSFER => true,
@@ -5063,7 +5084,7 @@ try {
                     $audioToken = hash_hmac('sha256', $jobId . '.' . $expires, $rwTok);
                     $audioUrl = 'https://youngman-biz.com/recording-audio.php?job_id=' . urlencode($jobId)
                               . '&token=' . urlencode($audioToken) . '&expires=' . $expires;
-                    $payload = json_encode([
+                    $payload = json_encode(array_merge([
                         'job_id'             => $jobId,
                         'owner_email'        => $owner,
                         'audio_url'          => $audioUrl,
@@ -5073,7 +5094,7 @@ try {
                         'recorded_at'        => (string)($jRow['recorded_at'] ?? ''),
                         'group_id'           => (string)($jRow['group_id'] ?? ''),
                         'storage_path'       => (string)($jRow['storage_path'] ?? ''),
-                    ], JSON_UNESCAPED_UNICODE);
+                    ], get_ai_provider_dispatch($pdo)), JSON_UNESCAPED_UNICODE);
                     $ch = curl_init(rtrim($railwayUrl, '/') . '/process');
                     curl_setopt_array($ch, [
                         CURLOPT_RETURNTRANSFER => true,

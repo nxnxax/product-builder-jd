@@ -166,6 +166,43 @@
                     </form>
                 </div>
 
+                <div class="card" style="margin-top:24px;">
+                    <h3>AI 모델</h3>
+                    <p class="card-subtitle">통화 요약에 사용할 AI를 선택합니다. 선택한 AI가 응답하지 않으면 자동으로 다른 AI로 대체 처리되어, 요약이 중단되지 않습니다. 변경은 즉시 적용되며, 다음 통화 요약부터 반영됩니다.</p>
+                    <form id="ai-model-form">
+                        <div class="field-row">
+                            <label class="field-label">요약 AI</label>
+                            <div class="field-control">
+                                <label style="display:block;margin-bottom:10px;font-size:15px;cursor:pointer;">
+                                    <input type="radio" name="llm-primary" value="anthropic" style="margin-right:8px;accent-color:#c8362c;width:18px;height:18px;vertical-align:middle;">
+                                    Claude Sonnet 4.6 <span style="color:#8a847e;">— 최고 품질 (비용 높음)</span>
+                                </label>
+                                <label style="display:block;font-size:15px;cursor:pointer;">
+                                    <input type="radio" name="llm-primary" value="together" style="margin-right:8px;accent-color:#c8362c;width:18px;height:18px;vertical-align:middle;">
+                                    Qwen 2.5 72B <span style="color:#8a847e;">— 가성비 (비용 낮음)</span>
+                                </label>
+                            </div>
+                        </div>
+                        <div class="field-row">
+                            <label class="field-label">받아쓰기 AI</label>
+                            <div class="field-control">
+                                <label style="display:block;margin-bottom:10px;font-size:15px;cursor:pointer;">
+                                    <input type="radio" name="stt-primary" value="whisper" style="margin-right:8px;accent-color:#c8362c;width:18px;height:18px;vertical-align:middle;">
+                                    OpenAI Whisper <span style="color:#8a847e;">— 안정</span>
+                                </label>
+                                <label style="display:block;font-size:15px;cursor:pointer;">
+                                    <input type="radio" name="stt-primary" value="groq" style="margin-right:8px;accent-color:#c8362c;width:18px;height:18px;vertical-align:middle;">
+                                    Groq Whisper large-v3 <span style="color:#8a847e;">— 빠름·저렴</span>
+                                </label>
+                            </div>
+                        </div>
+                        <div class="form-actions">
+                            <span id="ai-model-message" class="form-help" style="margin-right:auto;"></span>
+                            <button type="submit" class="primary-btn" id="ai-model-save">AI 설정 저장</button>
+                        </div>
+                    </form>
+                </div>
+
                 <div class="card" style="margin-top:24px;border-color:rgba(200,54,44,.25);">
                     <h3 style="color:#c8362c;">데이터 정리 (위험)</h3>
                     <p class="card-subtitle">소유자가 지정되지 않은 옛 고객/직원 행 (2026-05-09 보안 마이그레이션 이전 데이터) 을 일괄 삭제합니다. 복구 불가능합니다.</p>
@@ -604,6 +641,6 @@
     </div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-<script src="admin.js?v=20260526-paginate" type="module"></script>
+<script src="admin.js?v=20260608-ai-model" type="module"></script>
 </body>
 </html>

@@ -145,6 +145,8 @@ if (!empty($jobRow['customer_log_id'])) {
     $transcriptCb      = trim((string)($body['transcript'] ?? ''));
     $sttModelCb        = trim((string)($body['stt_model'] ?? 'unknown'));
     $llmModelCb        = trim((string)($body['llm_model'] ?? 'unknown'));
+    // 대체 provider 가 실패해 검증된 provider 로 넘어갔으면 ai_model 에 '*' 표기 (관리자 진단용).
+    $fbCb              = (!empty($body['stt_fallback_used']) || !empty($body['llm_fallback_used'])) ? '*' : '';
     $phoneNumberCb     = trim((string)($body['phone_number'] ?? ($jobRow['phone_number'] ?? '')));
 
     if ($summaryCb === '') $summaryCb = $transcriptCb ?: '(요약 없음)';
@@ -178,7 +180,7 @@ if (!empty($jobRow['customer_log_id'])) {
                 ':nx'  => $nextActionCb !== '' ? youngman_encrypt($nextActionCb) : '',
                 ':rg'  => $regionCb !== '' ? youngman_encrypt($regionCb) : '',
                 ':tr'  => $transcriptCb !== '' ? youngman_encrypt($transcriptCb) : '',
-                ':am'  => $sttModelCb . '+' . $llmModelCb,
+                ':am'  => $sttModelCb . '+' . $llmModelCb . $fbCb,
                 ':id'  => $jobRow['customer_log_id'],
                 ':o'   => $ownerEmail,
             ]);
@@ -265,6 +267,7 @@ $region          = trim((string)($body['region'] ?? ''));
 $transcript      = trim((string)($body['transcript'] ?? ''));
 $sttModel        = trim((string)($body['stt_model'] ?? 'unknown'));
 $llmModel        = trim((string)($body['llm_model'] ?? 'unknown'));
+$fb              = (!empty($body['stt_fallback_used']) || !empty($body['llm_fallback_used'])) ? '*' : '';
 $groupId         = trim((string)($body['group_id'] ?? ($jobRow['group_id'] ?? '')));
 $phoneNumber     = trim((string)($body['phone_number'] ?? ($jobRow['phone_number'] ?? '')));
 $consultAt       = (string)($jobRow['recorded_at'] ?? date('Y-m-d H:i:s'));
@@ -372,7 +375,7 @@ if ($autoConfirm) {
                 ':tr'  => youngman_encrypt($transcript),
                 ':ca'  => $consultAt,
                 ':asp' => null,
-                ':am'  => $sttModel . '+' . $llmModel,
+                ':am'  => $sttModel . '+' . $llmModel . $fb,
                 ':cri' => $clientReqId,
             ]);
         $finalStatus = 'saved';

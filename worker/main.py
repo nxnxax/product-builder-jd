@@ -79,6 +79,12 @@ STT_PROVIDER              = os.getenv("STT_PROVIDER", "whisper").lower()
 LLM_PROVIDER              = os.getenv("LLM_PROVIDER", "anthropic").lower()
 NCP_CLOVA_INVOKE_URL      = os.getenv("NCP_CLOVA_INVOKE_URL", "")
 NCP_CLOVA_SECRET          = os.getenv("NCP_CLOVA_SECRET", "")
+# 비용 절감용 대체 provider (2026-06-08). 키 없으면 자동으로 기존 whisper/claude 만 사용.
+GROQ_API_KEY              = os.getenv("GROQ_API_KEY", "")        # Groq Whisper large-v3 (STT)
+TOGETHER_API_KEY          = os.getenv("TOGETHER_API_KEY", "")    # Together AI Qwen 2.5 72B (LLM)
+# 대체 provider 전용 timeout. 초과 시 검증된 provider 로 fallback. 기존 whisper/claude timeout 은 안 건드림.
+GROQ_STT_TIMEOUT          = float(os.getenv("STT_TIMEOUT_SEC", "60"))
+TOGETHER_LLM_TIMEOUT      = float(os.getenv("LLM_TIMEOUT_SEC", "60"))
 
 logging.basicConfig(
     level=logging.INFO,
@@ -119,6 +125,9 @@ class ProcessRequest(BaseModel):
     recorded_at: Optional[str] = None
     group_id: Optional[str] = None
     storage_path: Optional[str] = None
+    # cafe24 가 admin 토글값(site_settings)을 실어 보냄. 없으면 None → 기존 whisper/claude.
+    stt_provider: Optional[str] = None    # 'groq' or None/'whisper'
+    llm_provider: Optional[str] = None    # 'together' or None/'anthropic'
 
 
 class CallbackResult(BaseModel):
@@ -134,6 +143,8 @@ class CallbackResult(BaseModel):
     transcript: str = ""
     stt_model: str = ""
     llm_model: str = ""
+    stt_fallback_used: bool = False    # 대체 STT 실패 → whisper 로 넘어갔으면 true
+    llm_fallback_used: bool = False    # 대체 LLM 실패 → claude 로 넘어갔으면 true
     group_id: Optional[str] = None
     status: str = "completed"          # completed / failed_retryable / failed_permanent
     error_message: Optional[str] = None
@@ -166,6 +177,33 @@ async def transcribe_whisper(audio_bytes: bytes, filename: str = "audio.m4a") ->
         )
         if resp.status_code >= 400:
             raise HTTPException(status_code=502, detail=f"Whisper {resp.status_code}: {resp.text[:200]}")
+        result = resp.json()
+        return {
+            "text": result.get("text", ""),
+            "duration": result.get("duration", 0),
+            "language": result.get("language", "ko"),
+        }
+
+
+# ─── STT: Groq Whisper large-v3 (비용 절감 대체, OpenAI 호환 REST) ────────
+async def transcribe_groq(audio_bytes: bytes, filename: str = "audio.mp3") -> dict:
+    """Groq Whisper API 호출. OpenAI Whisper 와 동일한 반환 형태({text,duration,language})."""
+    async with httpx.AsyncClient(timeout=GROQ_STT_TIMEOUT) as client:
+        files = {"file": (filename, audio_bytes, "audio/mpeg")}
+        data = {
+            "model": "whisper-large-v3",
+            "language": "ko",
+            "response_format": "verbose_json",
+            "temperature": "0",
+            "prompt": "한국어 부동산/영업 통화입니다. 사장님, 사모님, 평수, 매물, 자료, 견적, 자료 발송, 재컨택 같은 용어가 자주 등장합니다.",
+        }
+        headers = {"Authorization": f"Bearer {GROQ_API_KEY}"}
+        resp = await client.post(
+            "https://api.groq.com/openai/v1/audio/transcriptions",
+            headers=headers, files=files, data=data,
+        )
+        if resp.status_code >= 400:
+            raise HTTPException(status_code=502, detail=f"Groq Whisper {resp.status_code}: {resp.text[:200]}")
         result = resp.json()
         return {
             "text": result.get("text", ""),
@@ -430,15 +468,29 @@ def ffmpeg_split_audio(audio_bytes: bytes, chunk_sec: int = CHUNK_DURATION_SEC, 
         return [audio_bytes]
 
 
-async def transcribe_chunks_parallel(chunks: List[bytes], ext: str = ".mp3") -> List[str]:
-    """청크별 Whisper 병렬 호출. asyncio.gather + semaphore 로 rate limit 회피.
-    ext: 청크 컨테이너 확장자 (.mp3 / .m4a). transcode_to_mp3 결과에 따라 호출자가 전달."""
+async def transcribe_chunks_parallel(chunks: List[bytes], ext: str = ".mp3",
+                                     provider: str = "whisper") -> tuple[List[str], bool]:
+    """청크별 STT 병렬 호출. asyncio.gather + semaphore 로 rate limit 회피.
+    ext: 청크 컨테이너 확장자 (.mp3 / .m4a).
+    provider: 'groq' 면 청크별 Groq 우선 + 실패 시 whisper 개별 fallback. 그 외/누락이면 whisper 만(기존 동작).
+    반환: (transcripts, fallback_used). provider='whisper' 면 기존과 100% 동일하게 whisper 만 호출."""
     semaphore = asyncio.Semaphore(MAX_PARALLEL_CHUNKS)
+    fb = {"used": False}
 
     async def transcribe_one(idx: int, chunk_bytes: bytes) -> str:
         async with semaphore:
+            fname = f"chunk_{idx:03d}{ext}"
+            if provider == "groq":
+                try:
+                    result = await transcribe_groq(chunk_bytes, fname)
+                    text = result.get("text", "").strip()
+                    log.info("chunk %d transcribed (groq): %d chars", idx, len(text))
+                    return text
+                except Exception:
+                    log.warning("chunk %d Groq 실패 → whisper fallback", idx)
+                    fb["used"] = True
             try:
-                result = await transcribe_whisper(chunk_bytes, f"chunk_{idx:03d}{ext}")
+                result = await transcribe_whisper(chunk_bytes, fname)
                 text = result.get("text", "").strip()
                 log.info("chunk %d transcribed: %d chars", idx, len(text))
                 return text
@@ -448,7 +500,7 @@ async def transcribe_chunks_parallel(chunks: List[bytes], ext: str = ".mp3") -> 
 
     tasks = [transcribe_one(i, c) for i, c in enumerate(chunks)]
     results = await asyncio.gather(*tasks)
-    return [r for r in results if r]  # 빈 청크 제외
+    return [r for r in results if r], fb["used"]  # 빈 청크 제외
 
 
 async def summarize_claude(transcript: str) -> dict:
@@ -565,6 +617,99 @@ async def summarize_claude(transcript: str) -> dict:
         raise HTTPException(status_code=502, detail=f"Claude JSON 파싱 실패: {text[:300]}")
 
 
+def _extract_json(text: str):
+    """LLM 응답 텍스트에서 JSON dict 추출 (직접 → markdown ``` → brace counting). 실패 시 None."""
+    import json, re
+    if not text:
+        return None
+    try:
+        return json.loads(text)
+    except Exception:
+        pass
+    m = re.search(r"```(?:json)?\s*(\{[\s\S]*?\})\s*```", text, re.IGNORECASE)
+    if m:
+        try:
+            return json.loads(m.group(1))
+        except Exception:
+            pass
+    start = text.find("{")
+    if start != -1:
+        depth = 0
+        for i in range(start, len(text)):
+            if text[i] == "{":
+                depth += 1
+            elif text[i] == "}":
+                depth -= 1
+                if depth == 0:
+                    try:
+                        return json.loads(text[start:i + 1])
+                    except Exception:
+                        break
+    return None
+
+
+# ─── LLM: Together AI Qwen 2.5 72B (비용 절감 대체, OpenAI 호환 REST) ──────
+async def summarize_together(transcript: str) -> dict:
+    """Together AI Qwen 호출. Claude 와 동일 system prompt + 동일 JSON schema 반환."""
+    async with httpx.AsyncClient(timeout=TOGETHER_LLM_TIMEOUT) as client:
+        resp = await client.post(
+            "https://api.together.xyz/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {TOGETHER_API_KEY}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": "Qwen/Qwen2.5-72B-Instruct-Turbo",
+                "max_tokens": 2048,
+                "temperature": 0.3,
+                "response_format": {"type": "json_object"},
+                "messages": [
+                    {"role": "system", "content": CLAUDE_SYSTEM_PROMPT},
+                    {"role": "user", "content": transcript},
+                ],
+            },
+        )
+        if resp.status_code >= 400:
+            raise HTTPException(status_code=502, detail=f"Together {resp.status_code}: {resp.text[:200]}")
+        data = resp.json()
+        text = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+        parsed = _extract_json(text)
+        if not isinstance(parsed, dict):
+            raise HTTPException(status_code=502, detail=f"Together JSON 파싱 실패: {text[:200]}")
+        return parsed
+
+
+# ─── provider 선택 + fallback wrapper ─────────────────────────────────────
+# 핵심: provider 미지정/기존값이면 기존 whisper/claude 경로와 100% 동일하게 동작.
+#       대체 provider 가 실패(timeout/5xx/429/파싱실패)하면 검증된 provider 로 자동 fallback.
+async def run_stt_single(audio_bytes: bytes, filename: str, provider: str) -> tuple[str, str, bool]:
+    """단일(짧은 통화) STT. 반환: (transcript, stt_model_label, fallback_used)."""
+    if provider == "groq":
+        try:
+            r = await transcribe_groq(audio_bytes, filename)
+            return r.get("text", ""), "groq-whisper-large-v3", False
+        except Exception as e:
+            log.warning("Groq STT 실패 → whisper fallback: %s", e)
+            r = await transcribe_whisper(audio_bytes, filename)
+            return r.get("text", ""), "openai-whisper-1", True
+    r = await transcribe_whisper(audio_bytes, filename)
+    return r.get("text", ""), "openai-whisper-1", False
+
+
+async def run_llm(transcript: str, provider: str) -> tuple[dict, str, bool]:
+    """요약 LLM. 반환: (summary_data, llm_model_label, fallback_used)."""
+    if provider == "together":
+        try:
+            data = await summarize_together(transcript)
+            return data, "together-qwen2.5-72b", False
+        except Exception as e:
+            log.warning("Together LLM 실패 → claude fallback: %s", e)
+            data = await summarize_claude(transcript)
+            return data, "claude-sonnet-4-6", True
+    data = await summarize_claude(transcript)
+    return data, "claude-sonnet-4-6", False
+
+
 # ─── cafe24 callback ─────────────────────────────────────────────────────
 async def callback_to_cafe24(result: CallbackResult) -> None:
     url = f"{CAFE24_BASE_URL}/recording-callback.php"
@@ -600,27 +745,33 @@ async def process_job(req: ProcessRequest) -> None:
         audio_bytes, audio_suffix = transcode_to_mp3(audio_bytes, src_suffix=".m4a")
         log.info("mp3 변환 완료: suffix=%s, bytes=%d", audio_suffix, len(audio_bytes))
 
+        # provider 선택 — payload 값만 사용. 누락 시 기존 whisper/claude (동작 변화 0).
+        stt_choice = (req.stt_provider or "whisper").lower()
+        llm_choice = (req.llm_provider or "anthropic").lower()
+        stt_fb = False
+        llm_fb = False
+
         # 2. STT — 10분+ 통화는 청크 분할 + 병렬 처리
         if req.duration_sec >= CHUNK_THRESHOLD_SEC:
             log.info("긴 통화 (%ds) 청크 분할 시작", req.duration_sec)
             chunks = ffmpeg_split_audio(audio_bytes, CHUNK_DURATION_SEC, src_suffix=audio_suffix)
-            log.info("청크 %d 개, 병렬 Whisper 시작 (max parallel=%d)", len(chunks), MAX_PARALLEL_CHUNKS)
-            partial_transcripts = await transcribe_chunks_parallel(chunks, ext=audio_suffix)
+            log.info("청크 %d 개, 병렬 STT 시작 (provider=%s, max parallel=%d)", len(chunks), stt_choice, MAX_PARALLEL_CHUNKS)
+            partial_transcripts, stt_fb = await transcribe_chunks_parallel(chunks, ext=audio_suffix, provider=stt_choice)
             if not partial_transcripts:
                 raise HTTPException(status_code=502, detail="모든 청크 STT 실패")
             # 청크별 transcript 를 시간 순으로 합침 (각 청크 사이 공백 구분)
             transcript = "\n\n".join(partial_transcripts)
+            stt_model_used = "groq-whisper-large-v3" if stt_choice == "groq" else "openai-whisper-1"
             log.info("STT 완료 (청크 모드): %d chunks → %d chars", len(partial_transcripts), len(transcript))
         else:
-            stt = await transcribe_whisper(audio_bytes, "audio" + audio_suffix)
-            transcript = stt["text"]
+            transcript, stt_model_used, stt_fb = await run_stt_single(audio_bytes, "audio" + audio_suffix, stt_choice)
             if not transcript:
                 raise HTTPException(status_code=502, detail="STT 결과 비어있음")
-            log.info("STT 완료 (단일 모드): %d chars, duration=%s", len(transcript), stt.get("duration"))
+            log.info("STT 완료 (단일 모드): %d chars, model=%s", len(transcript), stt_model_used)
 
         # 3. LLM
-        summary_data = await summarize_claude(transcript)
-        log.info("LLM 완료: customer_name=%s", summary_data.get("customer_name"))
+        summary_data, llm_model_used, llm_fb = await run_llm(transcript, llm_choice)
+        log.info("LLM 완료: model=%s, customer_name=%s", llm_model_used, summary_data.get("customer_name"))
 
         # 4. customer_name_hint 우선 (앱 contacts 매칭)
         customer_name = summary_data.get("customer_name", "")
@@ -639,8 +790,10 @@ async def process_job(req: ProcessRequest) -> None:
             next_action=summary_data.get("next_action"),
             region=summary_data.get("region"),
             transcript=transcript,
-            stt_model="openai-whisper-1",
-            llm_model="claude-sonnet-4-6",
+            stt_model=stt_model_used,
+            llm_model=llm_model_used,
+            stt_fallback_used=stt_fb,
+            llm_fallback_used=llm_fb,
             group_id=req.group_id,
             status="completed",
         )
@@ -675,6 +828,8 @@ async def health():
             "token_set": bool(RECORDING_WORKER_TOKEN),
             "openai_set": bool(OPENAI_API_KEY),
             "anthropic_set": bool(ANTHROPIC_API_KEY),
+            "groq_set": bool(GROQ_API_KEY),
+            "together_set": bool(TOGETHER_API_KEY),
         },
     }
 

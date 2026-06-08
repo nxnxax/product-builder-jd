@@ -39,6 +39,9 @@ const settingNotice = document.getElementById('setting-notice');
 const settingSignupEnabled = document.getElementById('setting-signup-enabled');
 const settingsMessage = document.getElementById('settings-message');
 const settingsSave = document.getElementById('settings-save');
+const aiModelForm = document.getElementById('ai-model-form');
+const aiModelMessage = document.getElementById('ai-model-message');
+const aiModelSave = document.getElementById('ai-model-save');
 
 const logsList = document.getElementById('logs-list');
 const logsEmpty = document.getElementById('logs-empty');
@@ -822,6 +825,43 @@ settingsForm.addEventListener('submit', async (event) => {
     }
 });
 
+if (aiModelForm) {
+    aiModelForm.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        aiModelSave.disabled = true;
+        aiModelMessage.textContent = '저장 중…';
+        aiModelMessage.className = 'form-help';
+        const llm = (aiModelForm.querySelector('input[name="llm-primary"]:checked') || {}).value || 'anthropic';
+        const stt = (aiModelForm.querySelector('input[name="stt-primary"]:checked') || {}).value || 'whisper';
+        try {
+            await apiRequest('admin-settings', {
+                method: 'PUT',
+                body: JSON.stringify({
+                    resource: 'admin-settings',
+                    settings: { llm_primary: llm, stt_primary: stt },
+                }),
+            });
+            aiModelMessage.textContent = '저장되었습니다. 다음 통화 요약부터 적용됩니다.';
+            aiModelMessage.className = 'form-help success';
+        } catch (error) {
+            aiModelMessage.textContent = error.message || '저장 실패';
+            aiModelMessage.className = 'form-help error';
+        } finally {
+            aiModelSave.disabled = false;
+        }
+    });
+}
+
+function applyAiModelSettings(settings) {
+    if (!aiModelForm) return;
+    const llm = settings.llm_primary === 'together' ? 'together' : 'anthropic';
+    const stt = settings.stt_primary === 'groq' ? 'groq' : 'whisper';
+    const llmEl = aiModelForm.querySelector(`input[name="llm-primary"][value="${llm}"]`);
+    const sttEl = aiModelForm.querySelector(`input[name="stt-primary"][value="${stt}"]`);
+    if (llmEl) llmEl.checked = true;
+    if (sttEl) sttEl.checked = true;
+}
+
 async function loadSettings() {
     try {
         const payload = await apiRequest('admin-settings');
@@ -831,6 +871,7 @@ async function loadSettings() {
         settingContactEmail.value = settings.contact_email || '';
         settingNotice.value = settings.notice || '';
         settingSignupEnabled.checked = settings.signup_enabled !== '0';
+        applyAiModelSettings(settings);
     } catch (error) {
         settingsMessage.textContent = error.message || '설정 로드 실패';
         settingsMessage.className = 'form-help error';
