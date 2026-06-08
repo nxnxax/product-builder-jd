@@ -122,6 +122,14 @@ function respond($payload, $status = 200) {
         if (!isset($payload['http_status'])) $payload['http_status'] = $status;
         if (!isset($payload['message']) && isset($payload['error'])) $payload['message'] = $payload['error'];
     }
+    // 서버 장애(5xx)만 진단 기록 (4xx 인증/검증은 정상 흐름). 사장님 2026-06-08.
+    if ($status >= 500) {
+        $p = $GLOBALS['__ym_pdo'] ?? null;
+        if ($p instanceof PDO && function_exists('log_server_error')) {
+            $em = is_array($payload) ? (string)($payload['error'] ?? $payload['message'] ?? '') : '';
+            log_server_error($p, 'records.5xx', $em, 'resource=' . ($_GET['resource'] ?? '?') . ' http=' . $status);
+        }
+    }
     echo json_encode($payload, JSON_UNESCAPED_UNICODE);
     exit;
 }
@@ -2229,6 +2237,18 @@ try {
             PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
         ]
     );
+    // fatal(서버 500=빈 팝업/무한로딩) 자동 포착 + respond(5xx) 진단 기록용 전역 노출. 사장님 2026-06-08.
+    $GLOBALS['__ym_pdo'] = $pdo;
+    register_shutdown_function(function () {
+        $err = error_get_last();
+        if (!$err) return;
+        if (!in_array($err['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR, E_USER_ERROR, E_RECOVERABLE_ERROR], true)) return;
+        $p = $GLOBALS['__ym_pdo'] ?? null;
+        if ($p instanceof PDO && function_exists('log_server_error')) {
+            log_server_error($p, 'fatal.records', (string)($err['message'] ?? 'fatal'),
+                ($err['file'] ?? '') . ':' . ($err['line'] ?? '') . ' resource=' . ($_GET['resource'] ?? '?'));
+        }
+    });
 
     $method = $_SERVER['REQUEST_METHOD'];
     $body = in_array($method, ['POST', 'PUT', 'PATCH', 'DELETE'], true) ? read_json_body() : [];
@@ -5045,9 +5065,15 @@ try {
                                     $autoConfirmResult['mirrored'] = true;
                                 }
                                 error_log('[mark_usage auto_confirm] send_to_group http=' . $sStat . ' cl=' . $rowId);
+                                if (!($sResp !== false && $sStat >= 200 && $sStat < 300)) {
+                                    log_server_error($pdo, 'send_to_group.fail', '양식전송 후 고객관리대장 반영 실패 (http=' . $sStat . ')',
+                                        'job=' . $jobId . ' cl=' . $rowId, $owner);
+                                }
                             }
                         } catch (Throwable $e) {
                             error_log('[mark_usage auto_confirm] send_to_group 실패: ' . $e->getMessage());
+                            log_server_error($pdo, 'send_to_group.fail', '양식전송 후 고객관리대장 반영 예외: ' . $e->getMessage(),
+                                'job=' . $jobId, $owner);
                         }
                     } catch (Throwable $e) {
                         error_log('[mark_usage auto_confirm] customer_log INSERT 실패: ' . $e->getMessage());
@@ -5124,10 +5150,14 @@ try {
                         } else {
                             $dispatchError = 'http_' . $rwStatus;
                             error_log('[mark_usage dispatch] Railway http=' . $rwStatus . ' resp=' . substr((string)$rwResp, 0, 200));
+                            log_server_error($pdo, 'dispatch.fail', 'Railway worker 응답 ' . $rwStatus . ' (요약 안 시작 → 무한로딩 가능)',
+                                'job=' . $jobId . ' resp=' . substr((string)$rwResp, 0, 300), $owner);
                         }
                     } catch (Throwable $e) {
                         $dispatchError = 'exception';
                         error_log('[mark_usage dispatch] Railway 예외: ' . $e->getMessage());
+                        log_server_error($pdo, 'dispatch.fail', 'Railway 호출 예외 (요약 안 시작 → 무한로딩 가능): ' . $e->getMessage(),
+                            'job=' . $jobId, $owner);
                     }
                 } else {
                     $dispatchError = 'env_missing';

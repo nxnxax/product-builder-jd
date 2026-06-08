@@ -27,7 +27,17 @@ header('Cache-Control: no-store');
 set_time_limit(60);
 ignore_user_abort(true);
 
+// 서버 에러 진단 로거 (사장님 2026-06-08) — callback 실패는 무한로딩/양식전송 실패와 직결.
+require_once __DIR__ . '/error_logger.php';
+ym_register_fatal_logger('fatal.callback');
+
 function rc_jerror(string $msg, int $http = 500): void {
+    // 모든 callback 실패를 error_logs 에 기록 (정상 callback 은 이 함수를 안 탐).
+    $pdo = $GLOBALS['__ym_pdo'] ?? null;
+    if ($pdo instanceof PDO) {
+        log_server_error($pdo, 'callback.fail', $msg, 'http=' . $http
+            . ' job=' . ($GLOBALS['__ym_job_id'] ?? '?'));
+    }
     http_response_code($http);
     echo json_encode(['ok' => false, 'error' => $msg], JSON_UNESCAPED_UNICODE);
     exit;
@@ -74,6 +84,7 @@ if (!is_array($body)) rc_jerror('Invalid JSON body.', 400);
 $jobId = trim((string)($body['job_id'] ?? ''));
 $ownerEmail = strtolower(trim((string)($body['owner_email'] ?? '')));
 if ($jobId === '' || $ownerEmail === '') rc_jerror('job_id / owner_email 누락.', 400);
+$GLOBALS['__ym_job_id'] = $jobId;
 
 $statusReq = (string)($body['status'] ?? 'completed');
 $errorMessage = (string)($body['error_message'] ?? '');
@@ -98,6 +109,7 @@ try {
 } catch (Throwable $e) {
     rc_jerror('DB 연결 실패: ' . $e->getMessage(), 503);
 }
+$GLOBALS['__ym_pdo'] = $pdo;  // fatal handler / rc_jerror 진단 기록용
 
 require_once __DIR__ . '/crypto_helpers.php';
 

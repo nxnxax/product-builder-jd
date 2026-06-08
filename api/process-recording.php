@@ -26,6 +26,10 @@ header('X-Content-Type-Options: nosniff');
 // Whisper + LLM 호출 합산 시간이 cafe24 기본 30s 를 넘을 수 있음.
 @set_time_limit(240);   // ffmpeg transcode + Whisper + LLM 합산 여유.
 
+// 서버 에러 진단 로거 (사장님 2026-06-08) — 통화 업로드 실패 = 무한로딩 원인 추적.
+require_once __DIR__ . '/error_logger.php';
+ym_register_fatal_logger('fatal.process_recording');
+
 /* ========== 응답/입력 헬퍼 ========== */
 function jout(array $payload, int $code = 200): void {
     http_response_code($code);
@@ -41,6 +45,13 @@ function jerror(string $code, string $message, int $status, array $extra = []): 
         elseif ($status >= 500) $extra['error_code'] = 'RETRYABLE_SERVER_ERROR';
         elseif ($status === 401) $extra['error_code'] = 'AUTH_INVALID';
         else $extra['error_code'] = strtoupper($code);
+    }
+    // 서버 장애(5xx)만 진단 기록 — 4xx(중복/인증/플랜)는 정상 흐름이라 제외.
+    if ($status >= 500) {
+        $pdo = $GLOBALS['__ym_pdo'] ?? null;
+        if ($pdo instanceof PDO) {
+            log_server_error($pdo, 'process_rec.fail', $message, 'code=' . $code . ' http=' . $status);
+        }
     }
     $payload = array_merge([
         'ok'          => false,
@@ -682,6 +693,7 @@ try {
     error_log('[process-recording] PDO connect failed: ' . $e->getMessage());
     jerror('upstream_failed', 'DB 연결 실패.', 500);
 }
+$GLOBALS['__ym_pdo'] = $pdo;  // fatal handler / jerror 진단 기록용
 
 if (!ensure_customer_log_table($pdo)) jerror('upstream_failed', 'customer_log 마이그레이션 실패.', 503);
 ensure_members_plan_columns($pdo);   // best-effort — plan 컬럼 없어도 'free' 디폴트로 처리.
