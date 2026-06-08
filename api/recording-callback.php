@@ -28,13 +28,15 @@ set_time_limit(60);
 ignore_user_abort(true);
 
 // 서버 에러 진단 로거 (사장님 2026-06-08) — callback 실패는 무한로딩/양식전송 실패와 직결.
-require_once __DIR__ . '/error_logger.php';
-ym_register_fatal_logger('fatal.callback');
+// 파일이 아직 배포 안 됐어도 핵심 흐름은 절대 안 깨지게 is_file 가드.
+$__elog = __DIR__ . '/error_logger.php';
+if (is_file($__elog)) require_once $__elog;
+if (function_exists('ym_register_fatal_logger')) ym_register_fatal_logger('fatal.callback');
 
 function rc_jerror(string $msg, int $http = 500): void {
     // 모든 callback 실패를 error_logs 에 기록 (정상 callback 은 이 함수를 안 탐).
     $pdo = $GLOBALS['__ym_pdo'] ?? null;
-    if ($pdo instanceof PDO) {
+    if ($pdo instanceof PDO && function_exists('log_server_error')) {
         log_server_error($pdo, 'callback.fail', $msg, 'http=' . $http
             . ' job=' . ($GLOBALS['__ym_job_id'] ?? '?'));
     }

@@ -27,8 +27,10 @@ header('X-Content-Type-Options: nosniff');
 @set_time_limit(240);   // ffmpeg transcode + Whisper + LLM 합산 여유.
 
 // 서버 에러 진단 로거 (사장님 2026-06-08) — 통화 업로드 실패 = 무한로딩 원인 추적.
-require_once __DIR__ . '/error_logger.php';
-ym_register_fatal_logger('fatal.process_recording');
+// 파일 미배포 시에도 핵심 흐름 안 깨지게 is_file 가드.
+$__elog = __DIR__ . '/error_logger.php';
+if (is_file($__elog)) require_once $__elog;
+if (function_exists('ym_register_fatal_logger')) ym_register_fatal_logger('fatal.process_recording');
 
 /* ========== 응답/입력 헬퍼 ========== */
 function jout(array $payload, int $code = 200): void {
@@ -49,7 +51,7 @@ function jerror(string $code, string $message, int $status, array $extra = []): 
     // 서버 장애(5xx)만 진단 기록 — 4xx(중복/인증/플랜)는 정상 흐름이라 제외.
     if ($status >= 500) {
         $pdo = $GLOBALS['__ym_pdo'] ?? null;
-        if ($pdo instanceof PDO) {
+        if ($pdo instanceof PDO && function_exists('log_server_error')) {
             log_server_error($pdo, 'process_rec.fail', $message, 'code=' . $code . ' http=' . $status);
         }
     }
