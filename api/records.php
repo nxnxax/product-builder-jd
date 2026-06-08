@@ -148,7 +148,7 @@ function normalize_resource($value) {
         'auth-membership', 'auth-member', 'auth-availability',
         'auth-profile', 'account-delete', 'sms-credentials',
         'admin-members', 'admin-stats', 'admin-stats-range', 'admin-logs', 'admin-settings',
-        'admin-bootstrap', 'admin-cleanup-orphans',
+        'admin-bootstrap', 'admin-cleanup-orphans', 'admin-errors', 'admin-job-trace',
         'ledger-groups', 'ledger-records', 'ledger-records-bulk',
         'mobile-tokens',
         'customer-log',
@@ -975,6 +975,43 @@ function ensure_site_settings_table(PDO $pdo) {
         return true;
     } catch (Throwable $e) {
         return false;
+    }
+}
+
+function ensure_error_logs_table(PDO $pdo) {
+    try {
+        $pdo->exec("CREATE TABLE IF NOT EXISTS error_logs (
+            id BIGINT AUTO_INCREMENT PRIMARY KEY,
+            context VARCHAR(64) NOT NULL,
+            message TEXT,
+            detail TEXT,
+            actor_email VARCHAR(190) NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_err_created (created_at),
+            INDEX idx_err_context (context)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+        return true;
+    } catch (Throwable $e) {
+        return false;
+    }
+}
+
+/**
+ * 서버측 에러/이상 상황을 DB(error_logs)에 기록 — 관리자 진단용.
+ * 절대 예외를 던지지 않음 (실패해도 호출부 흐름에 영향 0). PHP error_log 와 병행.
+ */
+function log_server_error(PDO $pdo, $context, $message, $detail = null, $email = null) {
+    try {
+        ensure_error_logs_table($pdo);
+        $pdo->prepare("INSERT INTO error_logs (context, message, detail, actor_email) VALUES (:c, :m, :d, :e)")
+            ->execute([
+                ':c' => substr((string)$context, 0, 64),
+                ':m' => $message === null ? null : substr((string)$message, 0, 4000),
+                ':d' => $detail === null ? null : substr((string)$detail, 0, 4000),
+                ':e' => $email === null ? null : substr((string)$email, 0, 190),
+            ]);
+    } catch (Throwable $e) {
+        // 진단 로그 자체 실패는 무시 — 핵심 흐름 보호 최우선
     }
 }
 
@@ -3469,8 +3506,9 @@ try {
         // 사장님 2026-06-01 — activity_logs 기준 (trigger_summarize 호출 시점에 직접 기록).
         // Why: recording_jobs 의 status 는 앱/callback 측에서 우리 모르는 경로로 변경될 수 있어 부정확.
         //      activity_logs 는 trigger_summarize 가 호출된 시점에만 기록되어 진짜 클릭만 카운트.
+        $aiJobRefs = [];  // job_id => [event index, ...] — 아래에서 customer_log.ai_model 일괄 매핑
         try {
-            $stmt = $pdo->prepare("SELECT created_at AS at, actor_email AS email, event_type
+            $stmt = $pdo->prepare("SELECT created_at AS at, actor_email AS email, event_type, detail
                 FROM activity_logs
                 WHERE event_type IN ('summary_view', 'auto_confirm')
                   AND created_at BETWEEN :a AND :b
@@ -3485,15 +3523,43 @@ try {
                     if ($isAuto) $daily[$d]['autoConfirms']++;
                     else         $daily[$d]['summaryViews']++;
                 }
+                // detail JSON 에서 job_id 추출 → 사용된 AI 모델 매핑용
+                $jid = '';
+                if (!empty($r['detail'])) {
+                    $dd = json_decode((string)$r['detail'], true);
+                    if (is_array($dd) && !empty($dd['job_id'])) $jid = (string)$dd['job_id'];
+                }
+                $evIdx = count($events);
                 $events[] = [
                     'occurred_at' => $at,
                     'email' => $email,
                     'type' => $isAuto ? 'auto_confirm' : 'summary_view',
                     'detail' => '',
+                    'aiModel' => '',
                 ];
+                if ($jid !== '') { $aiJobRefs[$jid][] = $evIdx; }
                 $bumpAgg($email, $isAuto ? 'autoConfirms' : 'summaryViews', $at);
             }
         } catch (Throwable $e) {}
+
+        // 사장님 2026-06-08 — 활동로그에 실제 사용된 STT/LLM AI 표시.
+        // job_id → recording_jobs.customer_log_id → customer_log.ai_model 일괄 조회.
+        if (!empty($aiJobRefs)) {
+            try {
+                $ph = implode(',', array_fill(0, count($aiJobRefs), '?'));
+                $q = $pdo->prepare("SELECT rj.id AS jid, cl.ai_model AS am
+                    FROM recording_jobs rj LEFT JOIN customer_log cl ON cl.id = rj.customer_log_id
+                    WHERE rj.id IN ($ph)");
+                $q->execute(array_keys($aiJobRefs));
+                foreach ($q as $row) {
+                    $am = (string)($row['am'] ?? '');
+                    if ($am === '') continue;
+                    foreach (($aiJobRefs[$row['jid']] ?? []) as $ei) {
+                        if (isset($events[$ei])) $events[$ei]['aiModel'] = $am;
+                    }
+                }
+            } catch (Throwable $e) {}
+        }
 
         // ── 사장님 2026-05-24 (확장) — recording_jobs 상태별 + STT 성공률 + latency + 통화길이 ──
         $jobsStats = [
@@ -3810,6 +3876,92 @@ try {
                 'createdAt' => $r['created_at'] ?? '',
             ];
         }, $items)]);
+    }
+
+    // 서버 에러 로그 — 관리자 진단용 (GET: 최근 목록 / DELETE: 비우기)
+    if ($resource === 'admin-errors') {
+        enforce_admin($pdo, $authUser);
+        ensure_error_logs_table($pdo);
+
+        if ($method === 'GET') {
+            $limit = max(1, min(300, (int)($_GET['limit'] ?? 100)));
+            $ctx = trim((string)($_GET['context'] ?? ''));
+            try {
+                if ($ctx !== '') {
+                    $stmt = $pdo->prepare('SELECT context, message, detail, actor_email, created_at FROM error_logs WHERE context = :c ORDER BY id DESC LIMIT ' . $limit);
+                    $stmt->execute([':c' => $ctx]);
+                } else {
+                    $stmt = $pdo->prepare('SELECT context, message, detail, actor_email, created_at FROM error_logs ORDER BY id DESC LIMIT ' . $limit);
+                    $stmt->execute();
+                }
+                $items = $stmt->fetchAll() ?: [];
+            } catch (Throwable $e) {
+                $items = [];
+            }
+            respond(['ok' => true, 'items' => array_map(function ($r) {
+                return [
+                    'context' => $r['context'] ?? '',
+                    'message' => $r['message'] ?? '',
+                    'detail' => $r['detail'] ?? '',
+                    'actor' => $r['actor_email'] ?? '',
+                    'createdAt' => $r['created_at'] ?? '',
+                ];
+            }, $items)]);
+        }
+
+        if ($method === 'DELETE') {
+            try { $pdo->exec('DELETE FROM error_logs'); } catch (Throwable $e) {}
+            respond(['ok' => true]);
+        }
+
+        respond(['ok' => false, 'error' => '지원하지 않는 요청 방식입니다.'], 405);
+    }
+
+    // 통화 job 추적 — 특정 사용자 recording_jobs 조회 (중복/백로그 무더기 처리 진단).
+    // recorded_at(실제 녹음) vs usage_counted_at(처리 클릭) 시간차로 "밀린 백로그 일괄처리" 식별.
+    if ($resource === 'admin-job-trace') {
+        enforce_admin($pdo, $authUser);
+        if ($method !== 'GET') respond(['ok' => false, 'error' => '지원하지 않는 요청 방식입니다.'], 405);
+
+        $targetEmail = trim((string)($_GET['email'] ?? ''));
+        if ($targetEmail === '') respond(['ok' => false, 'error' => '조회할 사용자 이메일이 필요합니다.'], 400);
+        $limit = max(1, min(200, (int)($_GET['limit'] ?? 50)));
+
+        // PII 보호: phone_number / customer_name_hint 등 민감 컬럼은 제외. 진단에 필요한 메타만.
+        try {
+            $stmt = $pdo->prepare('SELECT id, client_request_id, audio_sha256, duration_sec, recorded_at, status, usage_counted_at, created_at
+                FROM recording_jobs WHERE LOWER(owner_email) = LOWER(:e) ORDER BY created_at DESC LIMIT ' . $limit);
+            $stmt->execute([':e' => $targetEmail]);
+            $rows = $stmt->fetchAll() ?: [];
+        } catch (Throwable $e) {
+            respond(['ok' => false, 'error' => '조회 실패: ' . $e->getMessage()], 503);
+        }
+
+        $items = array_map(function ($r) {
+            // recorded_at ↔ usage_counted_at 갭(초) — 클수록 "밀린 통화가 뒤늦게 처리됨".
+            $gapSec = null;
+            $rec = $r['recorded_at'] ?? null;
+            $used = $r['usage_counted_at'] ?? null;
+            if (!empty($rec) && !empty($used)) {
+                $t1 = strtotime((string)$rec);
+                $t2 = strtotime((string)$used);
+                if ($t1 && $t2) $gapSec = $t2 - $t1;
+            }
+            $sha = (string)($r['audio_sha256'] ?? '');
+            return [
+                'id' => $r['id'] ?? '',
+                'clientReqId' => $r['client_request_id'] ?? '',
+                'audioSha' => $sha !== '' ? substr($sha, 0, 12) : '',
+                'durationSec' => (int)($r['duration_sec'] ?? 0),
+                'recordedAt' => $r['recorded_at'] ?? '',
+                'status' => $r['status'] ?? '',
+                'usageCountedAt' => $r['usage_counted_at'] ?? '',
+                'createdAt' => $r['created_at'] ?? '',
+                'gapSec' => $gapSec,
+            ];
+        }, $rows);
+
+        respond(['ok' => true, 'email' => $targetEmail, 'count' => count($items), 'items' => $items]);
     }
 
     if ($resource === 'admin-cleanup-orphans') {
@@ -4776,6 +4928,7 @@ try {
                 }
             } catch (Throwable $e) {
                 error_log('[mark_usage] usage 누적 실패: ' . $e->getMessage());
+                log_server_error($pdo, 'mark_usage.usage', $e->getMessage(), 'job_id=' . $jobId, $owner);
                 respond(['ok'=>false, 'code'=>'upstream_failed', 'message'=>'차감 실패: ' . $e->getMessage()], 503);
             }
 
@@ -4898,6 +5051,7 @@ try {
                         }
                     } catch (Throwable $e) {
                         error_log('[mark_usage auto_confirm] customer_log INSERT 실패: ' . $e->getMessage());
+                        log_server_error($pdo, 'mark_usage.confirm', $e->getMessage(), 'job_id=' . $jobId, $owner);
                     }
                 }
             }

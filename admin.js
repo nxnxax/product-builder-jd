@@ -43,6 +43,20 @@ const aiModelForm = document.getElementById('ai-model-form');
 const aiModelMessage = document.getElementById('ai-model-message');
 const aiModelSave = document.getElementById('ai-model-save');
 
+// 진단 탭
+const traceEmail = document.getElementById('trace-email');
+const traceBtn = document.getElementById('trace-btn');
+const traceMessage = document.getElementById('trace-message');
+const traceTable = document.getElementById('trace-table');
+const traceList = document.getElementById('trace-list');
+const traceEmpty = document.getElementById('trace-empty');
+const errorsRefresh = document.getElementById('errors-refresh');
+const errorsClear = document.getElementById('errors-clear');
+const errorsMessage = document.getElementById('errors-message');
+const errorsTable = document.getElementById('errors-table');
+const errorsList = document.getElementById('errors-list');
+const errorsEmpty = document.getElementById('errors-empty');
+
 const logsList = document.getElementById('logs-list');
 const logsEmpty = document.getElementById('logs-empty');
 
@@ -546,10 +560,30 @@ document.addEventListener('click', (e) => {
     if (_lastStatsPayload) renderStatsRange(_lastStatsPayload);
 });
 
+// 사장님 2026-06-08 — 실제 사용된 STT/LLM AI 를 작은 뱃지로 표시 ("STT모델+LLM모델" 문자열 파싱).
+function aiModelBadges(model) {
+    if (!model) return '';
+    const fallback = model.includes('*');
+    const parts = model.replace(/\*/g, '').split('+');
+    const friendly = (s) => {
+        s = (s || '').toLowerCase().trim();
+        if (s.includes('together-whisper')) return ['받아쓰기 · Together', '#e8f0fe', '#1967d2'];
+        if (s.includes('groq-whisper'))     return ['받아쓰기 · Groq', '#e8f0fe', '#1967d2'];
+        if (s.includes('whisper'))          return ['받아쓰기 · OpenAI', '#e8f0fe', '#1967d2'];
+        if (s.includes('qwen'))             return ['요약 · Qwen', '#f3e8fd', '#8a2620'];
+        if (s.includes('claude'))           return ['요약 · Claude', '#f3e8fd', '#8a2620'];
+        return null;
+    };
+    const badges = parts.map(friendly).filter(Boolean).map(([t, bg, fg]) =>
+        `<span style="display:inline-block;padding:2px 8px;border-radius:9px;font-size:11.5px;font-weight:600;background:${bg};color:${fg};margin-right:4px;">${escape(t)}</span>`
+    ).join('');
+    return badges + (fallback ? '<span style="color:#c8362c;font-size:11.5px;font-weight:600;">⚠️ 대체 처리됨</span>' : '');
+}
+
 function renderEventsTable() {
     const list = _eventsFilter === 'all' ? _lastStatsEvents : _lastStatsEvents.filter(e => e.type === _eventsFilter);
     renderStatsPaginated(statsEventsTbody, list, 4,
-        e => `<tr><td style="white-space:nowrap;">${escape((e.occurred_at || '').replace('T',' ').slice(0,19))}</td><td>${statsBadge(e.type)}</td><td>${escape(e.email || '(unknown)')}</td><td style="color:var(--fg-secondary);">${escape(e.detail || '')}</td></tr>`,
+        e => `<tr><td style="white-space:nowrap;">${escape((e.occurred_at || '').replace('T',' ').slice(0,19))}</td><td>${statsBadge(e.type)}</td><td>${escape(e.email || '(unknown)')}</td><td style="color:var(--fg-secondary);">${e.aiModel ? aiModelBadges(e.aiModel) : escape(e.detail || '')}</td></tr>`,
         '데이터 없음', 'events');
 }
 
@@ -918,6 +952,80 @@ async function loadLogs() {
         logsList.innerHTML = `<li class="activity-item"><div class="activity-body" style="color:var(--danger);">${escape(error.message || '로그 로드 실패')}</div></li>`;
     }
 }
+
+/* ───── 진단 탭: 통화 job 추적 + 서버 에러 로그 ───── */
+async function traceJobs() {
+    const email = (traceEmail.value || '').trim();
+    if (!email) { traceMessage.textContent = '이메일을 입력하세요.'; traceMessage.className = 'form-help error'; return; }
+    traceMessage.textContent = '조회 중…'; traceMessage.className = 'form-help';
+    try {
+        const payload = await apiRequest('admin-job-trace', { query: 'email=' + encodeURIComponent(email) + '&limit=80' });
+        const items = Array.isArray(payload.items) ? payload.items : [];
+        traceMessage.textContent = `${payload.count ?? items.length}건`;
+        traceMessage.className = 'form-help success';
+        if (items.length === 0) { traceTable.style.display = 'none'; traceEmpty.classList.remove('hidden'); traceList.innerHTML = ''; return; }
+        traceEmpty.classList.add('hidden'); traceTable.style.display = '';
+        traceList.innerHTML = items.map(it => {
+            const gap = it.gapSec;
+            let gapCell = '-', rowStyle = '';
+            if (gap != null) {
+                if (gap >= 3600) { gapCell = `<b style="color:#c8362c;">${(gap / 3600).toFixed(1)}시간 밀림</b>`; rowStyle = 'background:#fff5f5;'; }
+                else if (gap >= 600) { gapCell = `<span style="color:#c8362c;">${Math.round(gap / 60)}분 밀림</span>`; }
+                else if (gap >= 0) { gapCell = `${Math.round(gap / 60)}분`; }
+                else { gapCell = '즉시'; }
+            }
+            return `<tr style="${rowStyle}">
+                <td style="white-space:nowrap;">${escape((it.recordedAt || '').slice(0, 19))}</td>
+                <td style="white-space:nowrap;">${escape((it.usageCountedAt || '').slice(0, 19) || '-')}</td>
+                <td style="white-space:nowrap;">${gapCell}</td>
+                <td>${it.durationSec ?? 0}</td>
+                <td>${escape(it.status || '')}</td>
+                <td style="font-size:11px;color:var(--fg-tertiary);">${escape(it.clientReqId || '')}</td>
+                <td style="font-size:11px;color:var(--fg-tertiary);">${escape(it.audioSha || '')}</td>
+            </tr>`;
+        }).join('');
+    } catch (e) {
+        traceMessage.textContent = e.message || '조회 실패'; traceMessage.className = 'form-help error';
+    }
+}
+
+async function loadErrors() {
+    try {
+        const payload = await apiRequest('admin-errors', { query: 'limit=150' });
+        const items = Array.isArray(payload.items) ? payload.items : [];
+        if (items.length === 0) { errorsTable.style.display = 'none'; errorsEmpty.classList.remove('hidden'); errorsList.innerHTML = ''; return; }
+        errorsEmpty.classList.add('hidden'); errorsTable.style.display = '';
+        errorsList.innerHTML = items.map(it => `<tr>
+            <td style="white-space:nowrap;">${escape((it.createdAt || '').slice(0, 19))}</td>
+            <td><span style="font-size:11px;font-weight:600;color:#c8362c;">${escape(it.context || '')}</span></td>
+            <td style="max-width:360px;word-break:break-word;">${escape(it.message || '')}</td>
+            <td style="font-size:11px;color:var(--fg-tertiary);max-width:240px;word-break:break-word;">${escape(it.detail || '')}</td>
+            <td style="font-size:11px;">${escape(it.actor || '')}</td>
+        </tr>`).join('');
+    } catch (e) {
+        errorsTable.style.display = '';
+        errorsList.innerHTML = `<tr><td colspan="5" style="color:var(--danger);">${escape(e.message || '로드 실패')}</td></tr>`;
+    }
+}
+
+async function clearErrors() {
+    if (!confirm('서버 에러 로그를 전부 삭제할까요?')) return;
+    errorsMessage.textContent = '비우는 중…'; errorsMessage.className = 'form-help';
+    try {
+        await apiRequest('admin-errors', { method: 'DELETE', body: JSON.stringify({ resource: 'admin-errors' }) });
+        errorsMessage.textContent = '비웠습니다.'; errorsMessage.className = 'form-help success';
+        loadErrors();
+    } catch (e) {
+        errorsMessage.textContent = e.message || '실패'; errorsMessage.className = 'form-help error';
+    }
+}
+
+if (traceBtn) traceBtn.addEventListener('click', traceJobs);
+if (traceEmail) traceEmail.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); traceJobs(); } });
+if (errorsRefresh) errorsRefresh.addEventListener('click', loadErrors);
+if (errorsClear) errorsClear.addEventListener('click', clearErrors);
+const _diagTabBtn = document.querySelector('.tab[data-tab="diagnostics"]');
+if (_diagTabBtn) _diagTabBtn.addEventListener('click', () => { loadErrors(); });
 
 (async function start() {
     mountAppHeader();

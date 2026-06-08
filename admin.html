@@ -35,6 +35,7 @@
                 <button type="button" class="tab" data-tab="members">회원 관리</button>
                 <button type="button" class="tab" data-tab="settings">사이트 설정</button>
                 <button type="button" class="tab" data-tab="logs">활동 로그</button>
+                <button type="button" class="tab" data-tab="diagnostics">진단</button>
             </nav>
 
             <!-- Dashboard -->
@@ -518,6 +519,59 @@
                     </div>
                 </div>
             </section>
+
+            <!-- Diagnostics (사장님 2026-06-08) -->
+            <section id="tab-diagnostics" class="admin-tab hidden">
+                <!-- 통화 job 추적 -->
+                <div class="card">
+                    <h3>통화 처리 추적</h3>
+                    <p class="card-subtitle">사용자 이메일로 통화 녹음 처리 기록을 조회합니다. <b>녹음시각</b>과 <b>처리시각</b>의 차이가 크면(빨간색) 밀려있던 통화가 한꺼번에 자동 처리된 것 — 사용자가 직접 누르지 않은 자동 양식전송을 의심할 수 있습니다.</p>
+                    <div class="field-row" style="margin-top:12px;">
+                        <div class="field-control" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                            <input type="search" id="trace-email" placeholder="user@example.com" style="min-width:240px;">
+                            <button type="button" class="primary-btn" id="trace-btn">조회</button>
+                            <span id="trace-message" class="form-help"></span>
+                        </div>
+                    </div>
+                    <div style="overflow-x:auto;">
+                        <table class="data-table" id="trace-table" style="display:none;margin-top:8px;">
+                            <thead>
+                                <tr>
+                                    <th>녹음시각</th>
+                                    <th>처리시각(차감)</th>
+                                    <th>시간차</th>
+                                    <th>길이(초)</th>
+                                    <th>상태</th>
+                                    <th>요청ID</th>
+                                    <th>파일해시</th>
+                                </tr>
+                            </thead>
+                            <tbody id="trace-list"></tbody>
+                        </table>
+                    </div>
+                    <div id="trace-empty" class="empty-state hidden"><p>조회 결과가 없습니다.</p></div>
+                </div>
+
+                <!-- 서버 에러 로그 -->
+                <div class="card" style="margin-top:24px;">
+                    <h3>서버 에러 로그</h3>
+                    <p class="card-subtitle">서버측에서 발생한 오류/이상 상황을 모아 표시합니다. 문제 진단에 활용하세요.</p>
+                    <div class="form-actions" style="margin-top:4px;margin-bottom:10px;">
+                        <span id="errors-message" class="form-help" style="margin-right:auto;"></span>
+                        <button type="button" class="secondary-btn" id="errors-refresh">새로고침</button>
+                        <button type="button" class="secondary-btn" id="errors-clear" style="border-color:#c8362c;color:#c8362c;">전체 비우기</button>
+                    </div>
+                    <div style="overflow-x:auto;">
+                        <table class="data-table" id="errors-table" style="display:none;">
+                            <thead>
+                                <tr><th>시각</th><th>구분</th><th>메시지</th><th>상세</th><th>사용자</th></tr>
+                            </thead>
+                            <tbody id="errors-list"></tbody>
+                        </table>
+                    </div>
+                    <div id="errors-empty" class="empty-state hidden"><p>기록된 에러가 없습니다.</p></div>
+                </div>
+            </section>
         </div>
     </main>
 
@@ -641,6 +695,6 @@
     </div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-<script src="admin.js?v=20260608-together-stt" type="module"></script>
+<script src="admin.js?v=20260608-diagnostics" type="module"></script>
 </body>
 </html>
