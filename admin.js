@@ -855,7 +855,7 @@ if (aiModelForm) {
 function applyAiModelSettings(settings) {
     if (!aiModelForm) return;
     const llm = settings.llm_primary === 'together' ? 'together' : 'anthropic';
-    const stt = settings.stt_primary === 'groq' ? 'groq' : 'whisper';
+    const stt = (settings.stt_primary === 'together' || settings.stt_primary === 'groq') ? settings.stt_primary : 'whisper';
     const llmEl = aiModelForm.querySelector(`input[name="llm-primary"][value="${llm}"]`);
     const sttEl = aiModelForm.querySelector(`input[name="stt-primary"][value="${stt}"]`);
     if (llmEl) llmEl.checked = true;

@@ -84,6 +84,7 @@ GROQ_API_KEY              = os.getenv("GROQ_API_KEY", "")        # Groq Whisper 
 TOGETHER_API_KEY          = os.getenv("TOGETHER_API_KEY", "")    # Together AI Qwen 2.5 72B (LLM)
 # 대체 provider 전용 timeout. 초과 시 검증된 provider 로 fallback. 기존 whisper/claude timeout 은 안 건드림.
 GROQ_STT_TIMEOUT          = float(os.getenv("STT_TIMEOUT_SEC", "60"))
+TOGETHER_STT_TIMEOUT      = float(os.getenv("TOGETHER_STT_TIMEOUT_SEC", "120"))  # Together STT (긴 파일 한 번에 처리 가능)
 TOGETHER_LLM_TIMEOUT      = float(os.getenv("LLM_TIMEOUT_SEC", "60"))
 
 logging.basicConfig(
@@ -204,6 +205,32 @@ async def transcribe_groq(audio_bytes: bytes, filename: str = "audio.mp3") -> di
         )
         if resp.status_code >= 400:
             raise HTTPException(status_code=502, detail=f"Groq Whisper {resp.status_code}: {resp.text[:200]}")
+        result = resp.json()
+        return {
+            "text": result.get("text", ""),
+            "duration": result.get("duration", 0),
+            "language": result.get("language", "ko"),
+        }
+
+
+# ─── STT: Together AI Whisper large-v3 (STT+LLM 한 곳 결제, 같은 Whisper 모델) ──
+async def transcribe_together(audio_bytes: bytes, filename: str = "audio.mp3") -> dict:
+    """Together AI STT. OpenAI Whisper 와 동일 모델(whisper-large-v3) + 동일 반환 형태.
+    Together 는 25MB/청크 제한 없음 — 긴 파일도 한 번에 처리."""
+    async with httpx.AsyncClient(timeout=TOGETHER_STT_TIMEOUT) as client:
+        files = {"file": (filename, audio_bytes, "audio/mpeg")}
+        data = {
+            "model": "openai/whisper-large-v3",
+            "language": "ko",
+            "response_format": "json",
+        }
+        headers = {"Authorization": f"Bearer {TOGETHER_API_KEY}"}
+        resp = await client.post(
+            "https://api.together.xyz/v1/audio/transcriptions",
+            headers=headers, files=files, data=data,
+        )
+        if resp.status_code >= 400:
+            raise HTTPException(status_code=502, detail=f"Together STT {resp.status_code}: {resp.text[:200]}")
         result = resp.json()
         return {
             "text": result.get("text", ""),
@@ -480,7 +507,16 @@ async def transcribe_chunks_parallel(chunks: List[bytes], ext: str = ".mp3",
     async def transcribe_one(idx: int, chunk_bytes: bytes) -> str:
         async with semaphore:
             fname = f"chunk_{idx:03d}{ext}"
-            if provider == "groq":
+            if provider == "together":
+                try:
+                    result = await transcribe_together(chunk_bytes, fname)
+                    text = result.get("text", "").strip()
+                    log.info("chunk %d transcribed (together): %d chars", idx, len(text))
+                    return text
+                except Exception:
+                    log.warning("chunk %d Together STT 실패 → whisper fallback", idx)
+                    fb["used"] = True
+            elif provider == "groq":
                 try:
                     result = await transcribe_groq(chunk_bytes, fname)
                     text = result.get("text", "").strip()
@@ -684,6 +720,14 @@ async def summarize_together(transcript: str) -> dict:
 #       대체 provider 가 실패(timeout/5xx/429/파싱실패)하면 검증된 provider 로 자동 fallback.
 async def run_stt_single(audio_bytes: bytes, filename: str, provider: str) -> tuple[str, str, bool]:
     """단일(짧은 통화) STT. 반환: (transcript, stt_model_label, fallback_used)."""
+    if provider == "together":
+        try:
+            r = await transcribe_together(audio_bytes, filename)
+            return r.get("text", ""), "together-whisper-large-v3", False
+        except Exception as e:
+            log.warning("Together STT 실패 → whisper fallback: %s", e)
+            r = await transcribe_whisper(audio_bytes, filename)
+            return r.get("text", ""), "openai-whisper-1", True
     if provider == "groq":
         try:
             r = await transcribe_groq(audio_bytes, filename)
@@ -761,7 +805,10 @@ async def process_job(req: ProcessRequest) -> None:
                 raise HTTPException(status_code=502, detail="모든 청크 STT 실패")
             # 청크별 transcript 를 시간 순으로 합침 (각 청크 사이 공백 구분)
             transcript = "\n\n".join(partial_transcripts)
-            stt_model_used = "groq-whisper-large-v3" if stt_choice == "groq" else "openai-whisper-1"
+            stt_model_used = {
+                "together": "together-whisper-large-v3",
+                "groq": "groq-whisper-large-v3",
+            }.get(stt_choice, "openai-whisper-1")
             log.info("STT 완료 (청크 모드): %d chunks → %d chars", len(partial_transcripts), len(transcript))
         else:
             transcript, stt_model_used, stt_fb = await run_stt_single(audio_bytes, "audio" + audio_suffix, stt_choice)

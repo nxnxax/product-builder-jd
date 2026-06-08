@@ -991,7 +991,7 @@ function get_ai_provider_dispatch(PDO $pdo): array {
         $rows = $stmt ? $stmt->fetchAll(PDO::FETCH_KEY_PAIR) : [];
         $stt = strtolower(trim((string)($rows['stt_primary'] ?? '')));
         $llm = strtolower(trim((string)($rows['llm_primary'] ?? '')));
-        if ($stt === 'groq')     $out['stt_provider'] = 'groq';
+        if ($stt === 'together' || $stt === 'groq') $out['stt_provider'] = $stt;
         if ($llm === 'together') $out['llm_provider'] = 'together';
     } catch (Throwable $e) {
         // 무시 — 실패해도 기존 whisper/claude 로 정상 동작
