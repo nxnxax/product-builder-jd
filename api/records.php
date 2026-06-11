@@ -4631,7 +4631,10 @@ try {
             $recStmt = $pdo->prepare("SELECT data_json FROM ledger_records WHERE owner_email = ? AND group_id IN ($ph)");
             $recStmt->execute(array_merge([$owner], $groupIds));
 
-            $agg = []; // normalizedPhone => [maxCount, rows, last_at, name, summary]
+            // ★ 같은 phone 이 여러 그룹에 분산될 수 있음(예: 그룹 33=228회차 / 그룹 58=1회차).
+            //   call_count·summary·name 을 "가장 최근 통화한 row" 하나에서 함께 뽑아야 일관됨.
+            //   (MAX call_count 와 latest summary 를 분리하면 서로 다른 row 가 섞여 어긋남)
+            $agg = []; // normalizedPhone => [rows, last_at, name, summary, callCount]
             while ($r = $recStmt->fetch()) {
                 $d = !empty($r['data_json']) ? youngman_decrypt_json($r['data_json']) : null;
                 if (!is_array($d)) continue;
@@ -4640,13 +4643,13 @@ try {
                 $cc = (int)($d['call_count'] ?? 0);
                 $consult = (string)($d['date'] ?? '');
                 if (!isset($agg[$norm])) {
-                    $agg[$norm] = ['maxCount' => 0, 'rows' => 0, 'last_at' => '', 'name' => '', 'summary' => ''];
+                    $agg[$norm] = ['rows' => 0, 'last_at' => '', 'name' => '', 'summary' => '', 'callCount' => 0];
                 }
                 $agg[$norm]['rows']++;
-                if ($cc > $agg[$norm]['maxCount']) $agg[$norm]['maxCount'] = $cc;
                 if ($consult >= $agg[$norm]['last_at']) {
-                    $agg[$norm]['last_at'] = $consult;
-                    $agg[$norm]['name']    = (string)($d['customer'] ?? '');
+                    $agg[$norm]['last_at']   = $consult;
+                    $agg[$norm]['name']      = (string)($d['customer'] ?? '');
+                    $agg[$norm]['callCount'] = $cc;   // 최신 통화 row 기준 (summary 와 같은 row 보장)
                     // content 는 "📞 날짜 통화 (N회차)\n\n요약\n\n\n이전회차" 누적 형태.
                     // 모달 미리보기용으로 최신 회차 본문만 + "📞..." 헤더 줄 제거.
                     $rawContent = (string)($d['content'] ?? '');
@@ -4660,12 +4663,10 @@ try {
 
             $items = [];
             foreach ($agg as $norm => $a) {
-                // 화면 표시값 = 저장된 call_count 필드 최대값. 비어있던 옛 row 만 있으면 row 수로 폴백.
-                $callCount = $a['maxCount'] > 0 ? $a['maxCount'] : $a['rows'];
                 $items[] = [
                     'phone_number'    => $norm,
                     'customer_name'   => $a['name'],
-                    'call_count'      => $callCount,
+                    'call_count'      => $a['callCount'] > 0 ? $a['callCount'] : $a['rows'],
                     'last_summary'    => $a['summary'],
                     'last_consult_at' => $a['last_at'] !== '' ? $a['last_at'] : null,
                 ];
