@@ -882,6 +882,24 @@ function openRowDetailModal(rec, group, fields) {
  * 패턴: "📞 YYYY-MM-DD HH:MM:SS 통화 (N회차)" 헤더 마다 새 block 시작.
  * 각 block 끝에 data-transcript-ts 버튼 노출. 클릭 시 phone 의 transcript fetch + 큰 모달 표시.
  * 옛 1회차 데이터(헤더 없음) 도 record.data 의 date/call_count 로 fake header fallback 적용. */
+/* 회차 본문 HTML — 보고서형(불릿 포함)이면 제목 줄(헤더 다음 첫 본문 줄)을 굵게.
+ * 줄글형은 그대로. 사장님 2026-06-12 — 보고서형 제목 강조. */
+function formatRoundBodyHtml(block) {
+    const lines = String(block ?? '').split('\n');
+    const isReport = lines.some(l => l.trimStart().startsWith('• '));
+    let titleDone = false;
+    return lines.map((ln, idx) => {
+        const esc = escapeHtml(ln);
+        if (idx === 0 && /^📞/.test(ln.trim())) return esc; // 회차 헤더
+        if (isReport && !titleDone && ln.trim() !== ''
+            && !ln.trimStart().startsWith('•') && !/^AI 의견\s*:/.test(ln.trim())) {
+            titleDone = true;
+            return `<strong class="report-title">${esc}</strong>`;
+        }
+        return esc;
+    }).join('\n');
+}
+
 function renderContentWithTranscriptButtons(text, rowData) {
     const src = String(text ?? '');
     if (!src.trim()) return `<div class="row-detail-textarea"></div>`;
@@ -934,7 +952,7 @@ function renderContentWithTranscriptButtons(text, rowData) {
             const cidAttr = cidFor(h.round) ? ` data-customer-log-id="${escapeAttr(cidFor(h.round))}"` : '';
             html += `
                 <div class="content-round-block" data-round="${escapeAttr(h.round)}">
-                    <div class="content-round-body">${escapeHtml(block)}</div>
+                    <div class="content-round-body">${formatRoundBodyHtml(block)}</div>
                     <div class="content-round-foot">
                         <button type="button" class="content-transcript-btn" data-transcript-ts="${escapeAttr(h.ts)}" data-transcript-round="${escapeAttr(h.round)}"${cidAttr} title="대화내용 전문보기">
                             <span class="ico">📄</span><span>전문보기</span>

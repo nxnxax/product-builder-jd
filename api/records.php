@@ -1061,6 +1061,37 @@ function summary_format_for_owner(PDO $pdo, string $owner): string {
     return 'narrative';
 }
 
+/* customer_log.summary_json_encrypted 복호화 → 배열 (없거나 깨지면 null). */
+function ledger_decode_summary_json($enc): ?array {
+    if ($enc === null || $enc === '') return null;
+    $dec = function_exists('youngman_decrypt') ? youngman_decrypt((string)$enc) : (string)$enc;
+    if (!is_string($dec) || $dec === '') return null;
+    $arr = json_decode($dec, true);
+    return is_array($arr) ? $arr : null;
+}
+
+/* customer_log → ledger content 본문 텍스트.
+ * 보고서형(v2 summary_json title+bullets 있음): "[태그] 제목" + "• 불릿" + "AI 의견: ..." (제목 첫 줄).
+ * 아니면 줄글: summary + 관심 + 문의. (보고서형 사용자에겐 줄글이 고객관리대장에 안 들어가게 분리) */
+function ledger_content_body(string $summary, string $interest, string $inquiry, ?array $sj): string {
+    if (is_array($sj) && trim((string)($sj['title'] ?? '')) !== '' && !empty($sj['bullets']) && is_array($sj['bullets'])) {
+        $lines = [];
+        $tag = trim((string)($sj['tag'] ?? ''));
+        $lines[] = ($tag !== '' ? "[{$tag}] " : '') . trim((string)$sj['title']);
+        $bul = [];
+        foreach ($sj['bullets'] as $b) { $b = trim((string)$b); if ($b !== '') $bul[] = '• ' . $b; }
+        if ($bul) { $lines[] = ''; foreach ($bul as $x) $lines[] = $x; }
+        $aio = trim((string)($sj['ai_opinion'] ?? ''));
+        if ($aio !== '') { $lines[] = ''; $lines[] = 'AI 의견: ' . $aio; }
+        return implode("\n", $lines);
+    }
+    $parts = [];
+    if ($summary !== '') $parts[] = $summary;
+    if ($interest !== '') $parts[] = '관심: ' . $interest;
+    if ($inquiry !== '') $parts[] = '문의: ' . $inquiry;
+    return implode("\n\n", $parts);
+}
+
 function record_activity(PDO $pdo, $email, $eventType, $detail = null) {
     if (!ensure_activity_log_table($pdo)) return;
     try {
@@ -5903,25 +5934,15 @@ try {
                 $clNameR    = trim((string)(youngman_decrypt($clRow['customer_name'] ?? '') ?? ''));
                 $clPhoneR   = trim((string)(youngman_decrypt($clRow['phone_number'] ?? '') ?? ''));
                 $clSummaryR = trim((string)(youngman_decrypt($clRow['summary'] ?? '') ?? ''));
-                // 보고서식(v2) — 명함첩 미리보기용 제목(title). summary_json 에서 추출. content/줄글은 무영향.
-                $clTitleR = '';
-                $sjEncR = (string)($clRow['summary_json_encrypted'] ?? '');
-                if ($sjEncR !== '') {
-                    $sjDecR = youngman_decrypt($sjEncR);
-                    if (is_string($sjDecR) && $sjDecR !== '') {
-                        $sjArrR = json_decode($sjDecR, true);
-                        if (is_array($sjArrR) && !empty($sjArrR['title'])) $clTitleR = trim((string)$sjArrR['title']);
-                    }
-                }
+                // 보고서식(v2) — summary_json 복호화. title=명함첩용, 전체=content 보고서형 조립용.
+                $sjArrR = ledger_decode_summary_json($clRow['summary_json_encrypted'] ?? null);
+                $clTitleR = is_array($sjArrR) ? trim((string)($sjArrR['title'] ?? '')) : '';
                 $clIntrR    = trim((string)(youngman_decrypt($clRow['interest'] ?? '') ?? ''));
                 $clInqR     = trim((string)(youngman_decrypt($clRow['inquiry'] ?? '') ?? ''));
                 $clRegionR  = trim((string)(youngman_decrypt($clRow['region'] ?? '') ?? ''));
 
-                $contentPartsR = [];
-                if ($clSummaryR !== '') $contentPartsR[] = $clSummaryR;
-                if ($clIntrR    !== '') $contentPartsR[] = '관심: ' . $clIntrR;
-                if ($clInqR     !== '') $contentPartsR[] = '문의: ' . $clInqR;
-                $newSectionContentR = implode("\n\n", $contentPartsR);
+                // 보고서형 사용자면 보고서형 본문, 아니면 줄글. (줄글/보고서 표시 분리)
+                $newSectionContentR = ledger_content_body($clSummaryR, $clIntrR, $clInqR, $sjArrR);
                 $todayDateR = (string)($clRow['consult_at'] ?? '');
 
                 $curDataR = !empty($exLrRowR['data_json']) ? youngman_decrypt_json($exLrRowR['data_json']) : [];
@@ -6090,6 +6111,9 @@ try {
             $clInq     = trim((string)(youngman_decrypt($clRow['inquiry'] ?? '') ?? ''));
             $clRegion  = trim((string)(youngman_decrypt($clRow['region'] ?? '') ?? ''));
             $clAgentMemo = trim((string)(youngman_decrypt($clRow['agent_memo'] ?? '') ?? ''));
+            // 보고서식(v2) — summary_json 복호화 (title=명함첩, 전체=content 보고서형).
+            $sjArr = ledger_decode_summary_json($clRow['summary_json_encrypted'] ?? null);
+            $clTitle = is_array($sjArr) ? trim((string)($sjArr['title'] ?? '')) : '';
 
             // 사장님 2026-05-24 — 그룹 schema 에서 "지역" 필드 key 찾기.
             // 못 찾으면 'region' fallback (client DEFAULT_FIELDS 가 항상 data.region 읽음).
@@ -6099,11 +6123,8 @@ try {
                 $regionFieldKey = resolve_region_data_key($groupSchemaArr);
             } catch (Throwable $e) { /* schema 파싱 실패 시 'region' fallback 그대로 사용 */ }
 
-            $contentParts = [];
-            if ($clSummary !== '') $contentParts[] = $clSummary;
-            if ($clIntr    !== '') $contentParts[] = '관심: ' . $clIntr;
-            if ($clInq     !== '') $contentParts[] = '문의: ' . $clInq;
-            $newSectionContent = implode("\n\n", $contentParts);
+            // 보고서형 사용자면 보고서형 본문, 아니면 줄글. (줄글/보고서 표시 분리)
+            $newSectionContent = ledger_content_body($clSummary, $clIntr, $clInq, $sjArr);
             $todayDate = (string)($clRow['consult_at'] ?? '');
 
             // ─── Phone 정규화 기반 기존 row 탐색 ───
@@ -6161,6 +6182,7 @@ try {
                 $mergedData['call_count'] = $newCallCount;
                 $mergedData['content']    = $mergedContent;
                 $mergedData['agent_memo'] = $mergedMemo;
+                if ($clTitle !== '') $mergedData['title'] = $clTitle;  // 보고서형 명함첩 미리보기용
                 // 사장님 2026-05-24 — 회차별 customer_log_id 자물쇠 매핑 누적.
                 $existingMap = (isset($existingData['round_log_ids']) && is_array($existingData['round_log_ids']))
                     ? $existingData['round_log_ids'] : [];
@@ -6239,6 +6261,7 @@ try {
                 'content'    => $firstSection,
                 'agent_memo' => $firstMemo,
                 'memo'       => '',
+                'title'      => $clTitle,  // 보고서형 명함첩 미리보기용 (빈 문자열이면 줄글 사용자)
                 // 사장님 2026-05-24 — 회차별 customer_log_id 자물쇠 매핑.
                 // 회차 카드 ↔ transcript 영구 결합 → timestamp 매칭 실패해도 혼선 차단.
                 'round_log_ids' => [(string)$firstRound => (string)$cid],
