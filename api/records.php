@@ -5151,17 +5151,20 @@ try {
                     })();
                     $phoneLookup = customer_phone_lookup_key($phoneNumber !== '' ? $phoneNumber : null);
                     try {
+                        // 보고서식(v2) — recording_jobs.summary_json_encrypted 에 머지돼 온 summary_json 을 customer_log 로 보존.
+                        $sjV2review = (isset($summaryArr['summary_json']) && is_array($summaryArr['summary_json']))
+                            ? youngman_encrypt(json_encode($summaryArr['summary_json'], JSON_UNESCAPED_UNICODE)) : null;
                         $pdo->prepare("INSERT INTO customer_log (
                                 id, owner_email, customer_phone_lookup,
                                 customer_name, phone_number,
                                 summary, interest, inquiry, budget_condition, next_action,
                                 region, transcript, consult_at, audio_storage_path, audio_kept,
-                                ai_model, ai_generated_at, source, client_request_id
+                                ai_model, ai_generated_at, source, client_request_id, summary_json_encrypted
                             ) VALUES (
                                 :id, :o, :pl, :nm, :ph,
                                 :sum, :intr, :inq, :bg, :nx,
                                 :rg, :tr, :ca, :asp, 0,
-                                :am, NOW(), 'app-review', :cri
+                                :am, NOW(), 'app-review', :cri, :sj
                             )")
                             ->execute([
                                 ':id'  => $rowId, ':o' => $owner, ':pl' => $phoneLookup,
@@ -5176,6 +5179,7 @@ try {
                                 ':tr'  => $transcript !== '' ? youngman_encrypt($transcript) : null,
                                 ':ca'  => $consultAt, ':asp' => null, ':am' => $aiModel,
                                 ':cri' => (string)($jRow['client_request_id'] ?? $jobId),
+                                ':sj'  => $sjV2review,
                             ]);
                         $pdo->prepare("UPDATE recording_jobs SET status='saved', customer_log_id=:cl, updated_at=NOW() WHERE id=:id AND owner_email=:o")
                             ->execute([':cl' => $rowId, ':id' => $jobId, ':o' => $owner]);

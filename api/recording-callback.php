@@ -334,7 +334,31 @@ $summaryJsonObj = [
     'transcript'       => $transcript,
     'ai_model'         => $sttModel . '+' . $llmModel,
 ];
+// 보고서식(v2) — worker 가 structured 로 생성해 보낸 summary_json 머지.
+// 중첩(summary_json) + 평면(title/tag/bullets/ai_opinion) 둘 다 넣어 앱 어느 경로로 읽어도 호환.
+// preview/미확인요약 endpoint 가 이 객체를 그대로 반환하므로 여기 넣으면 즉시 반영됨.
+$sjV2raw = (string)($body['summary_json'] ?? '');
+$sjV2arr = null;
+if ($sjV2raw !== '') {
+    $tmpV2 = json_decode($sjV2raw, true);
+    if (is_array($tmpV2)) {
+        $sjV2arr = $tmpV2;
+        $summaryJsonObj['summary_json'] = $tmpV2;
+        foreach (['title', 'tag', 'bullets', 'ai_opinion'] as $kV2) {
+            if (isset($tmpV2[$kV2])) $summaryJsonObj[$kV2] = $tmpV2[$kV2];
+        }
+    }
+}
 $summaryJsonEnc = youngman_encrypt(json_encode($summaryJsonObj, JSON_UNESCAPED_UNICODE));
+
+// customer_log.summary_json_encrypted 컬럼 보장 (auto_confirm INSERT 가 이 컬럼 사용 → 없으면 실패).
+try {
+    $hasSjCol2 = false;
+    foreach ($pdo->query("SHOW COLUMNS FROM customer_log")->fetchAll(PDO::FETCH_ASSOC) as $c) {
+        if (($c['Field'] ?? '') === 'summary_json_encrypted') { $hasSjCol2 = true; break; }
+    }
+    if (!$hasSjCol2) $pdo->exec("ALTER TABLE customer_log ADD COLUMN summary_json_encrypted LONGTEXT NULL DEFAULT NULL");
+} catch (Throwable $e) { error_log('[recording-callback] customer_log summary_json 컬럼 보장 실패: ' . $e->getMessage()); }
 
 $autoConfirm = !empty($jobRow['auto_confirm']);
 $customerLogId = null;
@@ -397,13 +421,13 @@ if ($autoConfirm) {
                 customer_name, phone_number,
                 summary, interest, inquiry, budget_condition, next_action,
                 region, transcript, consult_at, audio_storage_path, audio_kept,
-                ai_model, ai_generated_at, source, client_request_id
+                ai_model, ai_generated_at, source, client_request_id, summary_json_encrypted
             ) VALUES (
                 :id, :o, :pl,
                 :nm, :ph,
                 :sum, :intr, :inq, :bg, :nx,
                 :rg, :tr, :ca, :asp, 0,
-                :am, NOW(), 'app-auto-confirm', :cri
+                :am, NOW(), 'app-auto-confirm', :cri, :sj
             )")->execute([
                 ':id'  => $customerLogId,
                 ':o'   => $ownerEmail,
@@ -421,6 +445,7 @@ if ($autoConfirm) {
                 ':asp' => null,
                 ':am'  => $sttModel . '+' . $llmModel . $fb,
                 ':cri' => $clientReqId,
+                ':sj'  => $sjV2arr !== null ? youngman_encrypt(json_encode($sjV2arr, JSON_UNESCAPED_UNICODE)) : null,
             ]);
         $finalStatus = 'saved';
     } catch (Throwable $e) {
