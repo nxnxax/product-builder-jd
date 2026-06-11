@@ -247,7 +247,7 @@ if (!empty($jobRow['customer_log_id'])) {
         require_once __DIR__ . '/fcm_helpers.php';
         $sumPreview = $summaryCb;
         if (mb_strlen($sumPreview) > 60) $sumPreview = mb_substr($sumPreview, 0, 57) . '...';
-        send_fcm_to_user($pdo, $ownerEmail, [
+        $fcmRes = send_fcm_to_user($pdo, $ownerEmail, [
             'title' => '통화 요약 완료 — ' . $customerNameCb,
             'body'  => $sumPreview,
             'data'  => [
@@ -256,6 +256,14 @@ if (!empty($jobRow['customer_log_id'])) {
                 'customer_log_id' => $jobRow['customer_log_id'],
             ],
         ]);
+        // 진단 — 발사 결과 기록 (앱팀 2026-06-11: FCM 도착 흔적 추적용).
+        error_log('[recording-callback §7] FCM call_summary_ready job=' . $jobId
+            . ' cl=' . $jobRow['customer_log_id'] . ' sent=' . (int)($fcmRes['sent'] ?? 0)
+            . ' failed=' . (int)($fcmRes['failed'] ?? 0) . ' reason=' . ($fcmRes['reason'] ?? '-'));
+        if (function_exists('log_server_error') && (int)($fcmRes['sent'] ?? 0) === 0) {
+            log_server_error($pdo, 'fcm.summary_ready.zero', 'call_summary_ready 발송 0건',
+                'reason=' . ($fcmRes['reason'] ?? '-') . ' failed=' . (int)($fcmRes['failed'] ?? 0) . ' job=' . $jobId, $ownerEmail);
+        }
     } catch (Throwable $e) {
         error_log('[recording-callback §7] FCM 발송 실패: ' . $e->getMessage());
     }
@@ -497,7 +505,7 @@ try {
     } else {
         $fcmTitle = '통화 요약 완료 — ' . $customerName;
     }
-    send_fcm_to_user($pdo, $ownerEmail, [
+    $fcmRes = send_fcm_to_user($pdo, $ownerEmail, [
         'title' => $fcmTitle,
         'body'  => $sumPreview,
         'data'  => [
@@ -510,6 +518,14 @@ try {
             'mirror_failed'   => $mirrorFailed ? '1' : '0',
         ],
     ]);
+    // 진단 — 발사 결과 기록 (앱팀 2026-06-11).
+    error_log('[recording-callback] FCM call_summary_ready (insert) job=' . $jobId
+        . ' cl=' . $customerLogId . ' sent=' . (int)($fcmRes['sent'] ?? 0)
+        . ' failed=' . (int)($fcmRes['failed'] ?? 0) . ' reason=' . ($fcmRes['reason'] ?? '-'));
+    if (function_exists('log_server_error') && (int)($fcmRes['sent'] ?? 0) === 0) {
+        log_server_error($pdo, 'fcm.summary_ready.zero', 'call_summary_ready 발송 0건',
+            'reason=' . ($fcmRes['reason'] ?? '-') . ' failed=' . (int)($fcmRes['failed'] ?? 0) . ' job=' . $jobId, $ownerEmail);
+    }
 } catch (Throwable $e) {
     error_log('[recording-callback] FCM 발송 실패: ' . $e->getMessage());
 }
