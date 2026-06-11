@@ -4585,6 +4585,51 @@ try {
             ]);
         }
 
+        // ─── 집계 (phone 별 통화수) ───
+        // 앱팀 요청 2026-06-11 — 명함첩 callCount 를 고객관리대장 화면 "(N)번 통화함" 과 100% 일치.
+        // 소스 = ledger_records (사용자가 저장한 것), page_type='customer' 그룹 전체 합산.
+        // call_count = 같은 정규화 phone row 수 (= calculate_call_count 누적 최종값과 동일).
+        if ($action === 'customer_aggregate') {
+            $grpStmt = $pdo->prepare("SELECT id FROM ledger_groups WHERE owner_email = :o AND page_type = 'customer'");
+            $grpStmt->execute([':o' => $owner]);
+            $groupIds = array_map('intval', array_column($grpStmt->fetchAll(), 'id'));
+            if (empty($groupIds)) respond(['ok' => true, 'items' => []]);
+
+            $ph = implode(',', array_fill(0, count($groupIds), '?'));
+            $recStmt = $pdo->prepare("SELECT data_json FROM ledger_records WHERE owner_email = ? AND group_id IN ($ph)");
+            $recStmt->execute(array_merge([$owner], $groupIds));
+
+            $agg = []; // normalizedPhone => [count, last_at, name, summary]
+            while ($r = $recStmt->fetch()) {
+                $d = !empty($r['data_json']) ? youngman_decrypt_json($r['data_json']) : null;
+                if (!is_array($d)) continue;
+                $norm = preg_replace('/[^0-9]/', '', (string)($d['phone'] ?? ''));
+                if ($norm === '') continue;
+                $consult = (string)($d['date'] ?? '');
+                if (!isset($agg[$norm])) {
+                    $agg[$norm] = ['count' => 0, 'last_at' => '', 'name' => '', 'summary' => ''];
+                }
+                $agg[$norm]['count']++;
+                if ($consult >= $agg[$norm]['last_at']) {
+                    $agg[$norm]['last_at'] = $consult;
+                    $agg[$norm]['name']    = (string)($d['customer'] ?? '');
+                    $agg[$norm]['summary'] = (string)($d['content'] ?? '');
+                }
+            }
+
+            $items = [];
+            foreach ($agg as $norm => $a) {
+                $items[] = [
+                    'phone_number'    => $norm,
+                    'customer_name'   => $a['name'],
+                    'call_count'      => $a['count'],
+                    'last_summary'    => $a['summary'],
+                    'last_consult_at' => $a['last_at'] !== '' ? $a['last_at'] : null,
+                ];
+            }
+            respond(['ok' => true, 'items' => $items]);
+        }
+
         // ─── GET (단일 row) ───
         if ($action === 'customer_log_get') {
             $id = trim((string)($body['id'] ?? $_GET['id'] ?? ''));
