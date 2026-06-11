@@ -2165,9 +2165,8 @@ if ($asyncMode) {
         $custName = (string)(youngman_decrypt($savedRow['customer_name'] ?? '') ?: '고객');
         $sumPreview = (string)(youngman_decrypt($savedRow['summary'] ?? '') ?: '');
         if (mb_strlen($sumPreview) > 60) $sumPreview = mb_substr($sumPreview, 0, 57) . '...';
+        // data-only (앱팀 2026-06-11 옵션 A) — notification 제거.
         $fcmResult = send_fcm_to_user($pdo, $ownerEmail, [
-            'title' => '통화 요약 완료 — ' . $custName,
-            'body'  => $sumPreview !== '' ? $sumPreview : '새 통화 요약이 저장되었습니다.',
             'data'  => [
                 'type'            => 'call_summary_ready',
                 'job_id'          => (string)$asyncJobId,

@@ -247,9 +247,9 @@ if (!empty($jobRow['customer_log_id'])) {
         require_once __DIR__ . '/fcm_helpers.php';
         $sumPreview = $summaryCb;
         if (mb_strlen($sumPreview) > 60) $sumPreview = mb_substr($sumPreview, 0, 57) . '...';
+        // data-only (앱팀 2026-06-11 옵션 A) — notification 제거.
+        // Android 백그라운드/killed 에서도 onMessageReceived 호출 보장 (priority high 는 헬퍼가 자동).
         $fcmRes = send_fcm_to_user($pdo, $ownerEmail, [
-            'title' => '통화 요약 완료 — ' . $customerNameCb,
-            'body'  => $sumPreview,
             'data'  => [
                 'type'            => 'call_summary_ready',
                 'job_id'          => $jobId,
@@ -505,9 +505,8 @@ try {
     } else {
         $fcmTitle = '통화 요약 완료 — ' . $customerName;
     }
+    // data-only (앱팀 2026-06-11 옵션 A) — notification 제거.
     $fcmRes = send_fcm_to_user($pdo, $ownerEmail, [
-        'title' => $fcmTitle,
-        'body'  => $sumPreview,
         'data'  => [
             'type'            => 'call_summary_ready',
             'job_id'          => $jobId,
