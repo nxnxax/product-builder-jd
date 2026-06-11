@@ -1,0 +1,76 @@
+name: FCM Keep-Alive (every 30 min)
+
+# 매 30분마다 cron-keep-alive.php 호출.
+# 앱 process 가 Doze 에 들어가도 silent push 로 미리 깨워 CallScreening cold start 회피.
+# 활동성 최적화: 최근 1시간 통화 있던 사용자는 server 측에서 skip.
+#
+# 작동 조건:
+#   - GitHub Secret RECORDING_WORKER_TOKEN 등록 필수 (cron-process-jobs.php 와 같은 토큰 재사용).
+#   - cafe24 .env 에 FIREBASE_SERVICE_ACCOUNT_JSON 등록 (deploy.yml 의 .env assembly 가 동기화).
+#
+# 수동 실행: Actions 탭 → "FCM Keep-Alive" → Run workflow.
+
+on:
+  schedule:
+    # 매 30분 (UTC, 한국 시간과 무관)
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: '한 번에 발송할 토큰 수 (1~5000)'
+        required: false
+        default: '2000'
+
+concurrency:
+  group: keep-alive
+  cancel-in-progress: false
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify RECORDING_WORKER_TOKEN secret
+        env:
+          TOKEN: ${{ secrets.RECORDING_WORKER_TOKEN }}
+        run: |
+          if [ -z "$TOKEN" ]; then
+            echo "::error::RECORDING_WORKER_TOKEN secret 미등록. GitHub Settings → Secrets → Actions 에서 등록 필요."
+            exit 1
+          fi
+          echo "Token secret OK (length=${#TOKEN})"
+
+      - name: Call cron-keep-alive.php
+        env:
+          TOKEN: ${{ secrets.RECORDING_WORKER_TOKEN }}
+          LIMIT: ${{ inputs.limit || '2000' }}
+        run: |
+          set -e
+          URL="https://youngman-biz.com/cron-keep-alive.php?limit=$LIMIT"
+          echo "Calling: $URL"
+
+          RESPONSE=$(curl -sk -w "\n__HTTP_CODE__%{http_code}" \
+            -H "X-Cron-Token: $TOKEN" \
+            --max-time 240 \
+            "$URL")
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n1 | sed 's/__HTTP_CODE__//')
+          BODY=$(echo "$RESPONSE" | sed '$d')
+
+          echo "── Response ($HTTP_CODE) ──"
+          echo "$BODY"
+          echo "──────────────"
+
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "::error::HTTP $HTTP_CODE — cron-keep-alive.php 호출 실패"
+            exit 1
+          fi
+          if ! echo "$BODY" | grep -q '"ok":true'; then
+            echo "::error::응답에 ok:true 없음"
+            exit 1
+          fi
+
+          TARGETS=$(echo "$BODY" | grep -oE '"targets":[0-9]+' | head -1 | grep -oE '[0-9]+' || echo '0')
+          SENT=$(echo "$BODY" | grep -oE '"sent":[0-9]+' | head -1 | grep -oE '[0-9]+' || echo '0')
+          FAILED=$(echo "$BODY" | grep -oE '"failed":[0-9]+' | head -1 | grep -oE '[0-9]+' || echo '0')
+
+          echo "Summary — targets: $TARGETS, sent: $SENT, failed: $FAILED"
