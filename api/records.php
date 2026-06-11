@@ -876,9 +876,12 @@ function member_row_from_store($store, $row) {
     $overageTopUpCountCol = first_existing_column($cols, ['overage_top_up_count']);
     $overageLastTopUpAtCol = first_existing_column($cols, ['overage_last_top_up_at']);
     $periodEndCol = first_existing_column($cols, ['current_period_end']);
+    $summaryFormatCol = first_existing_column($cols, ['summary_format']);
 
     return [
         'email' => $row[$emailCol] ?? '',
+        // 통화 요약 표시 모드 toggle. 'narrative'(기본) / 'structured'.
+        'summary_format' => $summaryFormatCol ? ((string)($row[$summaryFormatCol] ?? 'narrative') === 'structured' ? 'structured' : 'narrative') : 'narrative',
         'name' => $decName,
         'nickname' => $nicknameCol ? ($row[$nicknameCol] ?? '') : '',
         'phone' => $decPhone,
@@ -1042,6 +1045,20 @@ function get_ai_provider_dispatch(PDO $pdo): array {
         // 무시 — 실패해도 기존 whisper/claude 로 정상 동작
     }
     return $out;
+}
+
+/* 사용자(owner)의 통화 요약 표시 모드. worker dispatch 에 실어 보냄.
+ * 'structured'(보고서식) 또는 'narrative'(줄글, 기본). 조회 실패 시 안전하게 narrative. */
+function summary_format_for_owner(PDO $pdo, string $owner): string {
+    try {
+        ensure_members_plan_columns($pdo);
+        $rec = fetch_member_by_email($pdo, strtolower($owner));
+        if ($rec) {
+            $p = member_row_from_store($rec['store'], $rec['row']);
+            return (($p['summary_format'] ?? 'narrative') === 'structured') ? 'structured' : 'narrative';
+        }
+    } catch (Throwable $e) {}
+    return 'narrative';
 }
 
 function record_activity(PDO $pdo, $email, $eventType, $detail = null) {
@@ -1228,10 +1245,12 @@ function ensure_customer_log_table(PDO $pdo): bool {
             $cols = $pdo->query("SHOW COLUMNS FROM customer_log")->fetchAll(PDO::FETCH_ASSOC);
             $hasLink = false;
             $hasRegion = false;
+            $hasSummaryJson = false;
             foreach ($cols as $c) {
                 $f = $c['Field'] ?? '';
                 if ($f === 'linked_ledger_record_id') $hasLink = true;
                 if ($f === 'region') $hasRegion = true;
+                if ($f === 'summary_json_encrypted') $hasSummaryJson = true;
             }
             if (!$hasLink) {
                 $pdo->exec("ALTER TABLE customer_log
@@ -1241,6 +1260,10 @@ function ensure_customer_log_table(PDO $pdo): bool {
             // 사장님 2026-05-24 — 고객 거주지 자동 인식. AES-256-GCM 암호문 저장.
             if (!$hasRegion) {
                 $pdo->exec("ALTER TABLE customer_log ADD COLUMN region VARCHAR(255) NULL DEFAULT NULL");
+            }
+            // 2026-06-11 — v2 보고서식 요약 JSON (title/tag/bullets/ai_opinion). AES-256-GCM 암호문 저장.
+            if (!$hasSummaryJson) {
+                $pdo->exec("ALTER TABLE customer_log ADD COLUMN summary_json_encrypted LONGTEXT NULL DEFAULT NULL");
             }
         } catch (Throwable $e) {
             error_log('[records] customer_log ALTER linked_ledger_record_id/region failed: ' . $e->getMessage());
@@ -1266,6 +1289,10 @@ function ensure_members_plan_columns(PDO $pdo): bool {
         }
         if (!in_array('free_summaries_used', $cols, true)) {
             $pdo->exec("ALTER TABLE `members` ADD COLUMN `free_summaries_used` INT NOT NULL DEFAULT 0");
+        }
+        // 2026-06-11 — 통화 요약 표시 모드. 'narrative'(줄글, 기본) / 'structured'(보고서식). PII 아님.
+        if (!in_array('summary_format', $cols, true)) {
+            $pdo->exec("ALTER TABLE `members` ADD COLUMN `summary_format` VARCHAR(16) NOT NULL DEFAULT 'narrative'");
         }
         return $done = true;
     } catch (Throwable $e) {
@@ -1298,6 +1325,14 @@ function customer_log_row(array $row): array {
         'phone_number'        => youngman_decrypt($row['phone_number'] ?? null),
         'consult_at'          => $row['consult_at'] ?? null,
         'summary'             => youngman_decrypt($row['summary'] ?? null),
+        // v2 보고서식 — 복호화 후 JSON 디코드. 없거나 깨지면 null → 앱은 summary(줄글) 표시.
+        'summary_json'        => (function ($v) {
+                                    if ($v === null || $v === '') return null;
+                                    $dec = youngman_decrypt($v);
+                                    if (!is_string($dec) || $dec === '') return null;
+                                    $j = json_decode($dec, true);
+                                    return is_array($j) ? $j : null;
+                                })($row['summary_json_encrypted'] ?? null),
         'interest'            => youngman_decrypt($row['interest'] ?? null),
         'inquiry'             => youngman_decrypt($row['inquiry'] ?? null),
         'budget_condition'    => youngman_decrypt($row['budget_condition'] ?? null),
@@ -1584,6 +1619,8 @@ function ensure_recording_jobs_table(PDO $pdo): bool {
             'auto_confirm'           => 'TINYINT(1) NOT NULL DEFAULT 0',
             // 사장님 2026-06-01 — 사용량 차감 멱등 키. "요약보기"/"양식전송" 첫 클릭 시 NOW() 채움.
             'usage_counted_at'       => 'DATETIME NULL DEFAULT NULL',
+            // 2026-06-11 — 통화 시점 요약 모드 스냅샷 (앱 body 값 우선, race 차단). NULL = profile fallback.
+            'summary_format'         => 'VARCHAR(16) NULL DEFAULT NULL',
         ];
         foreach ($needAlter as $col => $def) {
             if (!empty($cols) && !in_array($col, $cols, true)) {
@@ -2737,6 +2774,7 @@ try {
         $email = strtolower((string)($authUser['email'] ?? ''));
         if ($email === '') respond(['ok' => false, 'error' => '인증 사용자 이메일을 확인할 수 없습니다.'], 400);
 
+        ensure_members_plan_columns($pdo); // summary_format 등 컬럼 보장 (idempotent)
         $store = find_member_store($pdo);
         if (!$store) respond(['ok' => false, 'error' => '회원 테이블을 찾을 수 없습니다.'], 500);
 
@@ -2814,6 +2852,18 @@ try {
                 $params[':overage_enabled'] = (int)(!!$data['overage_enabled']);
             }
 
+            // 통화 요약 표시 모드 toggle (narrative/structured). PII 아님. 본인 직접 변경.
+            // 앱팀 2026-06-11 — validation/server 에러 구분 위해 잘못된 값은 400 으로 명시 거절 (조용한 보정 금지).
+            $summaryFormatCol = first_existing_column($cols, ['summary_format']);
+            if ($summaryFormatCol && array_key_exists('summary_format', $data)) {
+                $sfVal = (string)$data['summary_format'];
+                if ($sfVal !== 'structured' && $sfVal !== 'narrative') {
+                    respond(['ok' => false, 'code' => 'validation_error', 'error' => "summary_format 은 'structured' 또는 'narrative' 만 가능합니다."], 400);
+                }
+                $assignments[] = quote_identifier($summaryFormatCol) . ' = :summary_format';
+                $params[':summary_format'] = $sfVal;
+            }
+
             $updatedCol = first_existing_column($cols, ['updated_at', 'modified_at']);
             if ($updatedCol) {
                 $assignments[] = quote_identifier($updatedCol) . ' = :updated_at';
@@ -2825,11 +2875,20 @@ try {
             $emailCol = quote_identifier($store['email_column']);
             $sql = 'UPDATE ' . quote_identifier($store['table']) . ' SET ' . implode(', ', $assignments)
                 . " WHERE LOWER({$emailCol}) = :email";
-            $stmt = $pdo->prepare($sql);
-            $stmt->execute($params);
+            // 앱팀 2026-06-11 — DB 실패(server_error 500)와 validation(400)·network(앱측 timeout) 구분.
+            try {
+                $stmt = $pdo->prepare($sql);
+                $stmt->execute($params);
+            } catch (Throwable $e) {
+                error_log('[auth-profile PUT] UPDATE 실패: ' . $e->getMessage());
+                respond(['ok' => false, 'code' => 'server_error', 'error' => '저장에 실패했습니다. 잠시 후 다시 시도해주세요.'], 500);
+            }
 
             record_activity($pdo, $email, 'profile.update');
-            respond(['ok' => true]);
+            // 저장된 summary_format 반환 → 앱이 server-app 일치 확인 (변경 안 했으면 키 없음).
+            $resp = ['ok' => true];
+            if (array_key_exists(':summary_format', $params)) $resp['summary_format'] = $params[':summary_format'];
+            respond($resp);
         }
 
         respond(['ok' => false, 'error' => '지원하지 않는 요청 방식입니다.'], 405);
@@ -4643,12 +4702,13 @@ try {
                 $cc = (int)($d['call_count'] ?? 0);
                 $consult = (string)($d['date'] ?? '');
                 if (!isset($agg[$norm])) {
-                    $agg[$norm] = ['rows' => 0, 'last_at' => '', 'name' => '', 'summary' => '', 'callCount' => 0];
+                    $agg[$norm] = ['rows' => 0, 'last_at' => '', 'name' => '', 'summary' => '', 'title' => '', 'callCount' => 0];
                 }
                 $agg[$norm]['rows']++;
                 if ($consult >= $agg[$norm]['last_at']) {
                     $agg[$norm]['last_at']   = $consult;
                     $agg[$norm]['name']      = (string)($d['customer'] ?? '');
+                    $agg[$norm]['title']     = (string)($d['title'] ?? '');  // 보고서식 사용자 명함첩 미리보기용
                     $agg[$norm]['callCount'] = $cc;   // 최신 통화 row 기준 (summary 와 같은 row 보장)
                     // content 는 "📞 날짜 통화 (N회차)\n\n요약\n\n\n이전회차" 누적 형태.
                     // 모달 미리보기용으로 최신 회차 본문만 + "📞..." 헤더 줄 제거.
@@ -4667,7 +4727,8 @@ try {
                     'phone_number'    => $norm,
                     'customer_name'   => $a['name'],
                     'call_count'      => $a['callCount'] > 0 ? $a['callCount'] : $a['rows'],
-                    'last_summary'    => $a['summary'],
+                    'last_summary'    => $a['summary'],   // 항상 채움 (앱 fallback). 보고서 row 없어도 줄글 미리보기 보장.
+                    'last_title'      => ($a['title'] !== '' ? $a['title'] : null),  // null = 보고서 row 없음 → 앱이 last_summary fallback
                     'last_consult_at' => $a['last_at'] !== '' ? $a['last_at'] : null,
                 ];
             }
@@ -5004,7 +5065,7 @@ try {
                 $clickAction = 'summary_view';
             }
             try {
-                $jStmt = $pdo->prepare('SELECT id, status, duration_sec, summary_json_encrypted, customer_log_id, recorded_at, group_id, phone_number, client_request_id, storage_path, customer_name_hint FROM recording_jobs WHERE id = :id AND owner_email = :o LIMIT 1');
+                $jStmt = $pdo->prepare('SELECT id, status, duration_sec, summary_json_encrypted, customer_log_id, recorded_at, group_id, phone_number, client_request_id, storage_path, customer_name_hint, summary_format FROM recording_jobs WHERE id = :id AND owner_email = :o LIMIT 1');
                 $jStmt->execute([':id' => $jobId, ':o' => $owner]);
                 $jRow = $jStmt->fetch();
             } catch (Throwable $e) {
@@ -5216,6 +5277,8 @@ try {
                             'recorded_at'        => (string)($jRow['recorded_at'] ?? ''),
                             'group_id'           => (string)($jRow['group_id'] ?? ''),
                             'storage_path'       => (string)($jRow['storage_path'] ?? ''),
+                            'summary_format'     => in_array(($jRow['summary_format'] ?? null), ['structured','narrative'], true)
+                                                        ? $jRow['summary_format'] : summary_format_for_owner($pdo, $owner),
                         ], get_ai_provider_dispatch($pdo)), JSON_UNESCAPED_UNICODE);
                         $ch = curl_init(rtrim($railwayUrl, '/') . '/process');
                         curl_setopt_array($ch, [
@@ -5275,7 +5338,7 @@ try {
             $jobId = trim((string)($body['job_id'] ?? ''));
             if ($jobId === '') respond(['ok'=>false,'status'=>'error','processing'=>false,'code'=>'invalid_request','message'=>'job_id 필요.'], 400);
             try {
-                $jStmt = $pdo->prepare('SELECT id, owner_email, status, storage_path, duration_sec, customer_name_hint, phone_number, recorded_at, group_id, customer_log_id, client_request_id
+                $jStmt = $pdo->prepare('SELECT id, owner_email, status, storage_path, duration_sec, customer_name_hint, phone_number, recorded_at, group_id, customer_log_id, client_request_id, summary_format
                     FROM recording_jobs WHERE id = :id AND owner_email = :o LIMIT 1');
                 $jStmt->execute([':id' => $jobId, ':o' => $owner]);
                 $jRow = $jStmt->fetch();
@@ -5367,6 +5430,8 @@ try {
                         'recorded_at'        => (string)($jRow['recorded_at'] ?? ''),
                         'group_id'           => (string)($jRow['group_id'] ?? ''),
                         'storage_path'       => (string)($jRow['storage_path'] ?? ''),
+                        'summary_format'     => in_array(($jRow['summary_format'] ?? null), ['structured','narrative'], true)
+                                                    ? $jRow['summary_format'] : summary_format_for_owner($pdo, $owner),
                     ], get_ai_provider_dispatch($pdo)), JSON_UNESCAPED_UNICODE);
                     $ch = curl_init(rtrim($railwayUrl, '/') . '/process');
                     curl_setopt_array($ch, [
@@ -5834,6 +5899,16 @@ try {
                 $clNameR    = trim((string)(youngman_decrypt($clRow['customer_name'] ?? '') ?? ''));
                 $clPhoneR   = trim((string)(youngman_decrypt($clRow['phone_number'] ?? '') ?? ''));
                 $clSummaryR = trim((string)(youngman_decrypt($clRow['summary'] ?? '') ?? ''));
+                // 보고서식(v2) — 명함첩 미리보기용 제목(title). summary_json 에서 추출. content/줄글은 무영향.
+                $clTitleR = '';
+                $sjEncR = (string)($clRow['summary_json_encrypted'] ?? '');
+                if ($sjEncR !== '') {
+                    $sjDecR = youngman_decrypt($sjEncR);
+                    if (is_string($sjDecR) && $sjDecR !== '') {
+                        $sjArrR = json_decode($sjDecR, true);
+                        if (is_array($sjArrR) && !empty($sjArrR['title'])) $clTitleR = trim((string)$sjArrR['title']);
+                    }
+                }
                 $clIntrR    = trim((string)(youngman_decrypt($clRow['interest'] ?? '') ?? ''));
                 $clInqR     = trim((string)(youngman_decrypt($clRow['inquiry'] ?? '') ?? ''));
                 $clRegionR  = trim((string)(youngman_decrypt($clRow['region'] ?? '') ?? ''));
@@ -5867,6 +5942,7 @@ try {
                 $curDataR['customer'] = $clNameR !== '' ? $clNameR : (string)($curDataR['customer'] ?? '');
                 $curDataR['phone']    = $clPhoneR !== '' ? $clPhoneR : (string)($curDataR['phone'] ?? '');
                 $curDataR['content']  = $mergedContentR;
+                if ($clTitleR !== '') $curDataR['title'] = $clTitleR;  // 보고서식 명함첩 미리보기용
                 if (!isset($curDataR['managed'])) $curDataR['managed'] = true;
                 // 사장님 2026-05-24 — 회차별 customer_log_id 자물쇠 매핑.
                 // refresh 는 latest 회차 == callCountR 의 placeholder cid 가 실제 값으로 갱신되는 시점.

@@ -507,6 +507,9 @@ function ensure_recording_jobs_table(PDO $pdo): bool {
             'response_elapsed_ms'  => 'INT NULL DEFAULT NULL',
             // 사장님 2026-05-23 — "양식으로 전송" 자동 confirm. trigger_summarize 시 1 설정 → callback 이 ready_to_review 대신 customer_log INSERT + send_to_group 자동 실행.
             'auto_confirm'         => 'TINYINT(1) NOT NULL DEFAULT 0',
+            // 2026-06-11 — 통화 시점 요약 모드 스냅샷. 앱이 toggle 변경 직후 통화 시 race 차단용.
+            // NULL = 앱 미전송 → dispatch 시 profile fallback.
+            'summary_format'       => 'VARCHAR(16) NULL DEFAULT NULL',
         ];
         foreach ($needAlter as $col => $def) {
             if (!empty($cols) && !in_array($col, $cols, true)) {
@@ -712,6 +715,10 @@ $phoneNumber  = trim((string)($body['phone_number'] ?? ''));
 $durationSec  = (int)($body['duration_sec'] ?? 0);
 $origFilename = trim((string)($body['original_filename'] ?? ''));
 $groupIdHint  = trim((string)($body['group_id'] ?? ''));  // 앱이 보내면 recording_jobs 에 저장 + FCM payload 에 포함
+// 앱팀 2026-06-11 — 통화 시점 요약 모드 스냅샷. toggle 변경 직후 race 차단용.
+// 앱이 명시 전송한 경우만 저장. 미전송(NULL)이면 dispatch 시 profile 값 fallback.
+$sfRaw = trim((string)($body['summary_format'] ?? ''));
+$summaryFormatHint = ($sfRaw === 'structured' || $sfRaw === 'narrative') ? $sfRaw : null;
 // 앱이 폰 contacts lookup 결과로 매칭한 이름. 있으면 LLM 출력보다 우선 적용 (룰 §1).
 $customerNameHint = trim((string)($body['customer_name_hint'] ?? ''));
 if (mb_strlen($customerNameHint) > 80) $customerNameHint = mb_substr($customerNameHint, 0, 80);
@@ -922,9 +929,9 @@ if ($asyncMode) {
     $asyncJobId = uuid_v4();
     $insJob = $pdo->prepare("INSERT INTO recording_jobs
         (id, owner_email, status, storage_path, client_request_id,
-         audio_sha256, duration_sec, customer_name_hint, phone_number, recorded_at, group_id, review_required)
+         audio_sha256, duration_sec, customer_name_hint, phone_number, recorded_at, group_id, review_required, summary_format)
         VALUES (:id, :o, 'audio_pending', :sp, :k,
-                :sha, :dur, :hint, :ph, :ra, :gid, :rr)");
+                :sha, :dur, :hint, :ph, :ra, :gid, :rr, :sf)");
     $insJob->execute([
         ':id'  => $asyncJobId,
         ':o'   => $ownerEmail,
@@ -937,6 +944,7 @@ if ($asyncMode) {
         ':ra'  => $consultAt !== '' ? $consultAt : null,
         ':gid' => $groupIdHint !== '' ? $groupIdHint : null,
         ':rr'  => $reviewRequiredInt,
+        ':sf'  => $summaryFormatHint,
     ]);
 
     // 사장님 2026-05-23 — lazy-STT 모드. placeholder customer_log INSERT / ledger mirror 안 함.

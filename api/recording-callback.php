@@ -202,6 +202,28 @@ if (!empty($jobRow['customer_log_id'])) {
         rc_jerror('customer_log UPDATE 실패: ' . $e->getMessage(), 502);
     }
 
+    /* v2 보고서식 JSON 저장 — 완전 격리. 컬럼 없거나 실패해도 위 검증된 summary 흐름은 무영향. */
+    $summaryJsonCb = (string)($body['summary_json'] ?? '');
+    if ($summaryJsonCb !== '') {
+        try {
+            $hasSjCol = false;
+            foreach ($pdo->query("SHOW COLUMNS FROM customer_log")->fetchAll(PDO::FETCH_ASSOC) as $c) {
+                if (($c['Field'] ?? '') === 'summary_json_encrypted') { $hasSjCol = true; break; }
+            }
+            if (!$hasSjCol) {
+                $pdo->exec("ALTER TABLE customer_log ADD COLUMN summary_json_encrypted LONGTEXT NULL DEFAULT NULL");
+            }
+            $pdo->prepare("UPDATE customer_log SET summary_json_encrypted = :sj WHERE id = :id AND owner_email = :o")
+                ->execute([
+                    ':sj' => youngman_encrypt($summaryJsonCb),
+                    ':id' => $jobRow['customer_log_id'],
+                    ':o'  => $ownerEmail,
+                ]);
+        } catch (Throwable $e) {
+            error_log('[recording-callback §7] summary_json 저장 skip cl=' . $jobRow['customer_log_id'] . ': ' . $e->getMessage());
+        }
+    }
+
     /* recording_jobs UPDATE — completed */
     try {
         $pdo->prepare("UPDATE recording_jobs SET

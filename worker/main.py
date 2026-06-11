@@ -129,6 +129,7 @@ class ProcessRequest(BaseModel):
     # cafe24 가 admin 토글값(site_settings)을 실어 보냄. 없으면 None → 기존 whisper/claude.
     stt_provider: Optional[str] = None    # 'groq' or None/'whisper'
     llm_provider: Optional[str] = None    # 'together' or None/'anthropic'
+    summary_format: Optional[str] = None  # 'structured'(보고서식) or None/'narrative'(줄글, 기본)
 
 
 class CallbackResult(BaseModel):
@@ -136,6 +137,7 @@ class CallbackResult(BaseModel):
     owner_email: str
     customer_name: str = ""
     summary: str = ""
+    summary_json: Optional[str] = None  # v2 보고서식 JSON 문자열 (title/tag/bullets/ai_opinion). 없으면 v1.
     interest: Optional[str] = None
     inquiry: Optional[str] = None
     budget_condition: Optional[str] = None
@@ -385,6 +387,25 @@ AI 의견 포함 요소:
 - JSON 외 다른 텍스트 출력 금지."""
 
 
+# ─── 보고서식(v2) 프롬프트 ──────────────────────────────────────────────
+# 사용자가 설정에서 '보고서 형식' 을 고른 경우에만 사용. 줄글(narrative) 프롬프트는
+# 검증된 CLAUDE_SYSTEM_PROMPT 를 그대로 두고, 여기서 v2 필드 4개를 추가로 요구한다.
+CLAUDE_SYSTEM_PROMPT_STRUCTURED = CLAUDE_SYSTEM_PROMPT + """
+
+==== 보고서식 추가 필드 (위 JSON 에 아래 4개 키도 반드시 포함) ====
+{
+  "title": string,
+  "tag": string,
+  "bullets": [string, ...],
+  "ai_opinion": string
+}
+- title: 통화 전체를 한 줄로 압축한 헤드라인. 50자 이내. "~논의함/~문의함/~안내함" 보고서식 종결.
+- tag: 통화 성격 한 단어. 문의 / 상담 / 분양 / 결제 / 컴플레인 / 정보수집 / 계약 중 가장 가까운 것. 10자 이내.
+- bullets: 핵심 사실 3~5개의 배열. 각 항목 한 문장 "~함/~임" 종결. 마지막 항목은 가능하면 다음 행동(next action).
+- ai_opinion: 위 'AI 의견' 작성 규칙과 동일한 분석. 단 "AI 의견:" 접두어 없이 본문만.
+summary(줄글)도 동일하게 채울 것 — 명함첩/그룹전송이 사용한다."""
+
+
 # ─── 청크 분할 (긴 통화 10분+) ─────────────────────────────────────────
 CHUNK_THRESHOLD_SEC = 10 * 60      # 10분 이상이면 청크 분할
 CHUNK_DURATION_SEC = 5 * 60        # 청크당 5분
@@ -539,7 +560,7 @@ async def transcribe_chunks_parallel(chunks: List[bytes], ext: str = ".mp3",
     return [r for r in results if r], fb["used"]  # 빈 청크 제외
 
 
-async def summarize_claude(transcript: str) -> dict:
+async def summarize_claude(transcript: str, system_prompt: str = CLAUDE_SYSTEM_PROMPT, max_tokens: int = 2048) -> dict:
     async with httpx.AsyncClient(timeout=60.0) as client:
         resp = await client.post(
             "https://api.anthropic.com/v1/messages",
@@ -550,10 +571,10 @@ async def summarize_claude(transcript: str) -> dict:
             },
             json={
                 "model": "claude-sonnet-4-6",
-                "max_tokens": 2048,
+                "max_tokens": max_tokens,  # 줄글=2048(검증 baseline) / 보고서=4096(v2 필드 잘림 방지)
                 "temperature": 0.3,
                 "system": [
-                    {"type": "text", "text": CLAUDE_SYSTEM_PROMPT,
+                    {"type": "text", "text": system_prompt,
                      "cache_control": {"type": "ephemeral"}},
                 ],
                 # 주의: Claude Sonnet 4.x 는 assistant prefill 미지원 (3.x 만 지원).
@@ -685,7 +706,7 @@ def _extract_json(text: str):
 
 
 # ─── LLM: Together AI Qwen 2.5 72B (비용 절감 대체, OpenAI 호환 REST) ──────
-async def summarize_together(transcript: str) -> dict:
+async def summarize_together(transcript: str, system_prompt: str = CLAUDE_SYSTEM_PROMPT, max_tokens: int = 2048) -> dict:
     """Together AI Qwen 호출. Claude 와 동일 system prompt + 동일 JSON schema 반환."""
     async with httpx.AsyncClient(timeout=TOGETHER_LLM_TIMEOUT) as client:
         resp = await client.post(
@@ -696,11 +717,11 @@ async def summarize_together(transcript: str) -> dict:
             },
             json={
                 "model": "Qwen/Qwen3.5-397B-A17B",
-                "max_tokens": 2048,
+                "max_tokens": max_tokens,  # 줄글=2048 / 보고서=4096
                 "temperature": 0.3,
                 "response_format": {"type": "json_object"},
                 "messages": [
-                    {"role": "system", "content": CLAUDE_SYSTEM_PROMPT},
+                    {"role": "system", "content": system_prompt},
                     {"role": "user", "content": transcript},
                 ],
             },
@@ -740,17 +761,20 @@ async def run_stt_single(audio_bytes: bytes, filename: str, provider: str) -> tu
     return r.get("text", ""), "openai-whisper-1", False
 
 
-async def run_llm(transcript: str, provider: str) -> tuple[dict, str, bool]:
-    """요약 LLM. 반환: (summary_data, llm_model_label, fallback_used)."""
+async def run_llm(transcript: str, provider: str, structured: bool = False) -> tuple[dict, str, bool]:
+    """요약 LLM. 반환: (summary_data, llm_model_label, fallback_used).
+    structured=True 면 보고서식 프롬프트(+4096 tokens), 아니면 검증된 줄글 프롬프트(2048)."""
+    sys_prompt = CLAUDE_SYSTEM_PROMPT_STRUCTURED if structured else CLAUDE_SYSTEM_PROMPT
+    max_tok = 4096 if structured else 2048
     if provider == "together":
         try:
-            data = await summarize_together(transcript)
+            data = await summarize_together(transcript, sys_prompt, max_tok)
             return data, "together-qwen3.5-397b", False
         except Exception as e:
             log.warning("Together LLM 실패 → claude fallback: %s", e)
-            data = await summarize_claude(transcript)
+            data = await summarize_claude(transcript, sys_prompt, max_tok)
             return data, "claude-sonnet-4-6", True
-    data = await summarize_claude(transcript)
+    data = await summarize_claude(transcript, sys_prompt, max_tok)
     return data, "claude-sonnet-4-6", False
 
 
@@ -816,9 +840,36 @@ async def process_job(req: ProcessRequest) -> None:
                 raise HTTPException(status_code=502, detail="STT 결과 비어있음")
             log.info("STT 완료 (단일 모드): %d chars, model=%s", len(transcript), stt_model_used)
 
-        # 3. LLM
-        summary_data, llm_model_used, llm_fb = await run_llm(transcript, llm_choice)
-        log.info("LLM 완료: model=%s, customer_name=%s", llm_model_used, summary_data.get("customer_name"))
+        # 3. LLM — 사용자 설정이 '보고서식' 이면 v2 필드까지 생성, 아니면 검증된 줄글만.
+        structured = (req.summary_format or "narrative").lower() == "structured"
+        summary_data, llm_model_used, llm_fb = await run_llm(transcript, llm_choice, structured)
+        log.info("LLM 완료: model=%s, structured=%s, customer_name=%s", llm_model_used, structured, summary_data.get("customer_name"))
+
+        # 3.5. v2 보고서식 JSON 조립 — 보고서식 사용자 + 3개 핵심 필드(title/tag/bullets≥3) 있을 때만.
+        #      누락/예외면 summary_json=None → cafe24 가 줄글로 저장(동작 변화 0).
+        summary_json_str = None
+        if structured:
+            try:
+                import json as _json
+                _title = str(summary_data.get("title") or "").strip()
+                _tag = str(summary_data.get("tag") or "").strip()
+                _bullets_raw = summary_data.get("bullets")
+                _bullets = [str(b).strip() for b in _bullets_raw if str(b).strip()] if isinstance(_bullets_raw, list) else []
+                _ai_op = str(summary_data.get("ai_opinion") or "").strip()
+                if _title and _tag and len(_bullets) >= 3:
+                    summary_json_str = _json.dumps({
+                        "version": 2,
+                        "title": _title[:80],
+                        "tag": _tag[:20],
+                        "bullets": _bullets[:5],
+                        "narrative": summary_data.get("summary", ""),
+                        "ai_opinion": _ai_op,
+                    }, ensure_ascii=False)
+                else:
+                    log.warning("보고서식 필드 부족 → 줄글 fallback (job=%s)", req.job_id)
+            except Exception as _e:
+                log.warning("summary_json 조립 실패 → 줄글 fallback (job=%s): %s", req.job_id, _e)
+                summary_json_str = None
 
         # 4. customer_name_hint 우선 (앱 contacts 매칭)
         customer_name = summary_data.get("customer_name", "")
@@ -831,6 +882,7 @@ async def process_job(req: ProcessRequest) -> None:
             owner_email=req.owner_email,
             customer_name=customer_name,
             summary=summary_data.get("summary", ""),
+            summary_json=summary_json_str,
             interest=summary_data.get("interest"),
             inquiry=summary_data.get("inquiry"),
             budget_condition=summary_data.get("budget_condition"),
