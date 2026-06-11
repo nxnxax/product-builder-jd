@@ -4617,7 +4617,14 @@ try {
                 if ($consult >= $agg[$norm]['last_at']) {
                     $agg[$norm]['last_at'] = $consult;
                     $agg[$norm]['name']    = (string)($d['customer'] ?? '');
-                    $agg[$norm]['summary'] = (string)($d['content'] ?? '');
+                    // content 는 "📞 날짜 통화 (N회차)\n\n요약\n\n\n이전회차" 누적 형태.
+                    // 모달 미리보기용으로 최신 회차 본문만 + "📞..." 헤더 줄 제거.
+                    $rawContent = (string)($d['content'] ?? '');
+                    $firstSec   = explode("\n\n\n", $rawContent)[0];
+                    $secParts   = explode("\n\n", $firstSec, 2);
+                    $summaryBody = (count($secParts) === 2 && strncmp($secParts[0], '📞', 3) === 0)
+                        ? $secParts[1] : $firstSec;
+                    $agg[$norm]['summary'] = trim($summaryBody);
                 }
             }
 
