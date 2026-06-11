@@ -4597,6 +4597,36 @@ try {
             $groupIds = array_map('intval', array_column($grpStmt->fetchAll(), 'id'));
             if (empty($groupIds)) respond(['ok' => true, 'items' => []]);
 
+            // ── 진단 (debug_phone) — 그 phone 매칭 ledger row 전수(page_type 무관) raw 덤프.
+            //    화면값과 endpoint값 불일치 원인(row 분산 / 시점 / page_type 누락) 확정용. owner 본인 데이터만. ──
+            $debugPhone = preg_replace('/[^0-9]/', '', (string)($body['debug_phone'] ?? $_GET['debug_phone'] ?? ''));
+            if ($debugPhone !== '') {
+                $allStmt = $pdo->prepare("SELECT lr.id, lr.group_id, lr.sort_no, lr.updated_at, lr.data_json,
+                    (SELECT page_type FROM ledger_groups g WHERE g.id = lr.group_id) AS page_type
+                    FROM ledger_records lr WHERE lr.owner_email = :o");
+                $allStmt->execute([':o' => $owner]);
+                $dbg = [];
+                while ($r = $allStmt->fetch()) {
+                    $d = !empty($r['data_json']) ? youngman_decrypt_json($r['data_json']) : null;
+                    if (!is_array($d)) continue;
+                    $p = preg_replace('/[^0-9]/', '', (string)($d['phone'] ?? ''));
+                    if ($p !== $debugPhone) continue;
+                    $dbg[] = [
+                        'lr_id'        => (int)$r['id'],
+                        'group_id'     => (int)$r['group_id'],
+                        'page_type'    => (string)$r['page_type'],
+                        'sort_no'      => (int)$r['sort_no'],
+                        'updated_at'   => (string)$r['updated_at'],
+                        'call_count'   => (int)($d['call_count'] ?? 0),
+                        'date'         => (string)($d['date'] ?? ''),
+                        'content_head' => mb_substr((string)($d['content'] ?? ''), 0, 120),
+                        'content_len'  => mb_strlen((string)($d['content'] ?? '')),
+                        'in_customer_groups' => in_array((int)$r['group_id'], $groupIds, true),
+                    ];
+                }
+                respond(['ok' => true, 'debug_phone' => $debugPhone, 'customer_group_ids' => $groupIds, 'matched_rows' => $dbg]);
+            }
+
             $ph = implode(',', array_fill(0, count($groupIds), '?'));
             $recStmt = $pdo->prepare("SELECT data_json FROM ledger_records WHERE owner_email = ? AND group_id IN ($ph)");
             $recStmt->execute(array_merge([$owner], $groupIds));
