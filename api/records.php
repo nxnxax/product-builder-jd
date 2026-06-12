@@ -4749,19 +4749,12 @@ try {
                     $summaryBody = (count($secParts) === 2 && strncmp($secParts[0], '📞', 3) === 0)
                         ? $secParts[1] : $firstSec;
                     $agg[$norm]['summary'] = trim($summaryBody);
-                    // 명함첩 한 줄 미리보기: 보고서형이면 첫 핵심 불릿, 줄글이면 첫 문장. ([태그]제목·AI의견 줄은 건너뜀)
+                    // 명함첩 한 줄 미리보기 — 보고서형(첫 핵심 불릿)일 때만 채움.
+                    // 설명형(줄글)은 빈 값 → last_preview=null → 앱이 last_summary 를 그냥 두 줄로 표시(제목/내용 구분 없음).
                     $prevLine = '';
-                    $bodyLinesP = preg_split('/\n+/', trim($summaryBody));
-                    foreach ($bodyLinesP as $bl) {
+                    foreach (preg_split('/\n+/', trim($summaryBody)) as $bl) {
                         $bl = trim($bl);
                         if (mb_strpos($bl, '•') === 0) { $prevLine = trim(ltrim($bl, "• \t")); break; }
-                    }
-                    if ($prevLine === '') {
-                        foreach ($bodyLinesP as $bl) {
-                            $bl = trim($bl);
-                            if ($bl === '' || preg_match('/^\[.+?\]/u', $bl) || mb_strpos($bl, 'AI 의견') === 0) continue;
-                            $prevLine = $bl; break;
-                        }
                     }
                     $agg[$norm]['preview'] = $prevLine;
                 }
