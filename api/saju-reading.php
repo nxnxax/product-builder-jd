@@ -26,8 +26,20 @@ function load_env_value(string $key): string {
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 if ($method !== 'POST') jout(['ok' => false, 'error' => 'POST only'], 405);
 
-$apiKey = load_env_value('OPENAI_API_KEY');
-if ($apiKey === '') jout(['ok' => false, 'error' => 'OPENAI_API_KEY 미설정'], 500);
+// LLM 선택: Together(Qwen) 우선, 없으면 gpt-4o 폴백
+$togetherKey = load_env_value('TOGETHER_API_KEY');
+if ($togetherKey !== '') {
+    $apiKey   = $togetherKey;
+    $llmUrl   = 'https://api.together.xyz/v1/chat/completions';
+    $llmModel = 'Qwen/Qwen3.5-397B-A17B';
+    $llmLabel = 'Together';
+} else {
+    $apiKey   = load_env_value('OPENAI_API_KEY');
+    $llmUrl   = 'https://api.openai.com/v1/chat/completions';
+    $llmModel = 'gpt-4o';
+    $llmLabel = 'OpenAI';
+}
+if ($apiKey === '') jout(['ok' => false, 'error' => 'TOGETHER_API_KEY/OPENAI_API_KEY 미설정'], 500);
 
 $raw = file_get_contents('php://input');
 $body = is_string($raw) ? json_decode($raw, true) : null;
@@ -88,13 +100,13 @@ $sys = <<<SYS
 추첨번호의 적중을 보장하는 발언은 금지. "운이 모이는 자리"라고는 해도 "당첨된다"는 단정은 금지.
 SYS;
 
-// Call gpt-4o
-$ch = curl_init('https://api.openai.com/v1/chat/completions');
+// Call LLM (Together/Qwen 우선, gpt-4o 폴백 — OpenAI 호환 REST)
+$ch = curl_init($llmUrl);
 curl_setopt_array($ch, [
     CURLOPT_RETURNTRANSFER => true,
     CURLOPT_POST => true,
     CURLOPT_POSTFIELDS => json_encode([
-        'model' => 'gpt-4o',
+        'model' => $llmModel,
         'messages' => [
             ['role' => 'system', 'content' => $sys],
             ['role' => 'user', 'content' => $summary],
@@ -114,11 +126,11 @@ $status = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
 $err = curl_error($ch);
 curl_close($ch);
 
-if ($resp === false) jout(['ok' => false, 'error' => 'OpenAI 호출 실패: ' . $err], 502);
+if ($resp === false) jout(['ok' => false, 'error' => $llmLabel . ' 호출 실패: ' . $err], 502);
 $data = json_decode((string)$resp, true);
 if ($status < 200 || $status >= 300) {
     $msg = is_array($data) ? ($data['error']['message'] ?? json_encode($data)) : substr((string)$resp, 0, 300);
-    jout(['ok' => false, 'error' => 'OpenAI ' . $status . ': ' . $msg], 502);
+    jout(['ok' => false, 'error' => $llmLabel . ' ' . $status . ': ' . $msg], 502);
 }
 
 $reading = (string)($data['choices'][0]['message']['content'] ?? '');

@@ -192,6 +192,7 @@ jobs:
           RECRAFT_KEY: ${{ secrets.RECRAFT_API_KEY }}
           IDEOGRAM_KEY: ${{ secrets.IDEOGRAM_API_KEY }}
           ANTHROPIC_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          TOGETHER_KEY: ${{ secrets.TOGETHER_API_KEY }}
           NCP_CLOVA_INVOKE_URL: ${{ secrets.NCP_CLOVA_INVOKE_URL }}
           NCP_CLOVA_SECRET: ${{ secrets.NCP_CLOVA_SECRET }}
           FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
@@ -225,6 +226,7 @@ jobs:
             [ -n "$RECRAFT_KEY" ]   && echo "RECRAFT_API_KEY=$RECRAFT_KEY"     || true
             [ -n "$IDEOGRAM_KEY" ]  && echo "IDEOGRAM_API_KEY=$IDEOGRAM_KEY"   || echo "::warning::IDEOGRAM_API_KEY missing"
             [ -n "$ANTHROPIC_KEY" ] && echo "ANTHROPIC_API_KEY=$ANTHROPIC_KEY" || echo "::warning::ANTHROPIC_API_KEY missing — Claude HTML 명함 기능 비활성"
+            [ -n "$TOGETHER_KEY" ]  && echo "TOGETHER_API_KEY=$TOGETHER_KEY"   || echo "::warning::TOGETHER_API_KEY missing — 사주풀이 gpt-4o 폴백"
             [ -n "$NCP_CLOVA_INVOKE_URL" ] && echo "NCP_CLOVA_INVOKE_URL=$NCP_CLOVA_INVOKE_URL" || echo "::warning::NCP_CLOVA_INVOKE_URL missing — Clova STT 비활성"
             [ -n "$NCP_CLOVA_SECRET" ] && echo "NCP_CLOVA_SECRET=$NCP_CLOVA_SECRET" || echo "::warning::NCP_CLOVA_SECRET missing — Clova STT 비활성"
             if [ -n "$FIREBASE_SERVICE_ACCOUNT_JSON" ]; then
