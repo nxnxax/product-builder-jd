@@ -5980,7 +5980,9 @@ try {
                 $curDataR['customer'] = $clNameR !== '' ? $clNameR : (string)($curDataR['customer'] ?? '');
                 $curDataR['phone']    = $clPhoneR !== '' ? $clPhoneR : (string)($curDataR['phone'] ?? '');
                 $curDataR['content']  = $mergedContentR;
-                if ($clTitleR !== '') $curDataR['title'] = $clTitleR;  // 보고서식 명함첩 미리보기용
+                // 최신 회차 형식 기준 title 동기화 (설명형 최신이면 옛 보고서 제목 제거).
+                if ($clTitleR !== '') $curDataR['title'] = $clTitleR;
+                else unset($curDataR['title']);
                 if (!isset($curDataR['managed'])) $curDataR['managed'] = true;
                 // 사장님 2026-05-24 — 회차별 customer_log_id 자물쇠 매핑.
                 // refresh 는 latest 회차 == callCountR 의 placeholder cid 가 실제 값으로 갱신되는 시점.
@@ -6195,7 +6197,9 @@ try {
                 $mergedData['call_count'] = $newCallCount;
                 $mergedData['content']    = $mergedContent;
                 $mergedData['agent_memo'] = $mergedMemo;
-                if ($clTitle !== '') $mergedData['title'] = $clTitle;  // 보고서형 명함첩 미리보기용
+                // 최신 회차 형식 기준 title 동기화: 보고서형이면 갱신, 설명형이면 제거(옛 보고서 제목 잔존 방지).
+                if ($clTitle !== '') $mergedData['title'] = $clTitle;
+                else unset($mergedData['title']);
                 // 사장님 2026-05-24 — 회차별 customer_log_id 자물쇠 매핑 누적.
                 $existingMap = (isset($existingData['round_log_ids']) && is_array($existingData['round_log_ids']))
                     ? $existingData['round_log_ids'] : [];
