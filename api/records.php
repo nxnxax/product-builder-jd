@@ -1321,9 +1321,18 @@ function ensure_members_plan_columns(PDO $pdo): bool {
         if (!in_array('free_summaries_used', $cols, true)) {
             $pdo->exec("ALTER TABLE `members` ADD COLUMN `free_summaries_used` INT NOT NULL DEFAULT 0");
         }
-        // 2026-06-11 — 통화 요약 표시 모드. 'narrative'(줄글, 기본) / 'structured'(보고서식). PII 아님.
+        // 2026-06-11 — 통화 요약 표시 모드. 'narrative'(줄글) / 'structured'(보고서식). PII 아님.
+        // 2026-06-12 앱팀 — 신규 가입자 default 를 'structured'(보고서형)로. 기존 행 값은 무영향.
         if (!in_array('summary_format', $cols, true)) {
-            $pdo->exec("ALTER TABLE `members` ADD COLUMN `summary_format` VARCHAR(16) NOT NULL DEFAULT 'narrative'");
+            $pdo->exec("ALTER TABLE `members` ADD COLUMN `summary_format` VARCHAR(16) NOT NULL DEFAULT 'structured'");
+        } else {
+            // 이미 컬럼 존재(production) — 신규 INSERT default 만 structured 로 변경(기존 행 미변경). default 다를 때만.
+            try {
+                $sfCol = $pdo->query("SHOW COLUMNS FROM `members` LIKE 'summary_format'")->fetch(PDO::FETCH_ASSOC);
+                if ($sfCol && strtolower((string)($sfCol['Default'] ?? '')) !== 'structured') {
+                    $pdo->exec("ALTER TABLE `members` MODIFY COLUMN `summary_format` VARCHAR(16) NOT NULL DEFAULT 'structured'");
+                }
+            } catch (Throwable $e) { error_log('[records] summary_format default 변경 skip: ' . $e->getMessage()); }
         }
         return $done = true;
     } catch (Throwable $e) {
@@ -2825,6 +2834,7 @@ try {
                     'status' => 'active',
                     'role' => $isAdminUserPf ? 'admin' : 'member',
                     'is_admin' => $isAdminUserPf,
+                    'summary_format' => 'structured',  // 2026-06-12 신규 default 보고서형 (member row 생성 전 임시)
                     'createdAt' => '',
                     'updatedAt' => '',
                     'lastLoginAt' => '',
