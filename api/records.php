@@ -4733,7 +4733,7 @@ try {
                 $cc = (int)($d['call_count'] ?? 0);
                 $consult = (string)($d['date'] ?? '');
                 if (!isset($agg[$norm])) {
-                    $agg[$norm] = ['rows' => 0, 'last_at' => '', 'name' => '', 'summary' => '', 'title' => '', 'callCount' => 0];
+                    $agg[$norm] = ['rows' => 0, 'last_at' => '', 'name' => '', 'summary' => '', 'title' => '', 'preview' => '', 'callCount' => 0];
                 }
                 $agg[$norm]['rows']++;
                 if ($consult >= $agg[$norm]['last_at']) {
@@ -4749,6 +4749,21 @@ try {
                     $summaryBody = (count($secParts) === 2 && strncmp($secParts[0], '📞', 3) === 0)
                         ? $secParts[1] : $firstSec;
                     $agg[$norm]['summary'] = trim($summaryBody);
+                    // 명함첩 한 줄 미리보기: 보고서형이면 첫 핵심 불릿, 줄글이면 첫 문장. ([태그]제목·AI의견 줄은 건너뜀)
+                    $prevLine = '';
+                    $bodyLinesP = preg_split('/\n+/', trim($summaryBody));
+                    foreach ($bodyLinesP as $bl) {
+                        $bl = trim($bl);
+                        if (mb_strpos($bl, '•') === 0) { $prevLine = trim(ltrim($bl, "• \t")); break; }
+                    }
+                    if ($prevLine === '') {
+                        foreach ($bodyLinesP as $bl) {
+                            $bl = trim($bl);
+                            if ($bl === '' || preg_match('/^\[.+?\]/u', $bl) || mb_strpos($bl, 'AI 의견') === 0) continue;
+                            $prevLine = $bl; break;
+                        }
+                    }
+                    $agg[$norm]['preview'] = $prevLine;
                 }
             }
 
@@ -4760,6 +4775,7 @@ try {
                     'call_count'      => $a['callCount'] > 0 ? $a['callCount'] : $a['rows'],
                     'last_summary'    => $a['summary'],   // 항상 채움 (앱 fallback). 보고서 row 없어도 줄글 미리보기 보장.
                     'last_title'      => ($a['title'] !== '' ? $a['title'] : null),  // null = 보고서 row 없음 → 앱이 last_summary fallback
+                    'last_preview'    => ($a['preview'] !== '' ? $a['preview'] : null),  // 제목 아래 한 줄용 (보고서=첫 불릿/줄글=첫 문장)
                     'last_consult_at' => $a['last_at'] !== '' ? $a['last_at'] : null,
                 ];
             }
