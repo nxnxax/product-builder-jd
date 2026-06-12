@@ -5,7 +5,7 @@ import {
     refreshAppHeader,
     isAdmin,
     getInitial,
-} from './auth-shared.js?v=20260517-session-persist';
+} from './auth-shared.js?v=20260612-admin-race';
 
 const STATUS_LABEL = { active: '활성', suspended: '정지', banned: '차단' };
 const ROLE_LABEL = { admin: '관리자', owner: '운영자', member: '일반회원' };
@@ -1029,7 +1029,12 @@ if (_diagTabBtn) _diagTabBtn.addEventListener('click', () => { loadErrors(); });
 
 (async function start() {
     mountAppHeader();
-    const { session } = await initSupabase();
+    let { session } = await initSupabase();
+    // session 복원 race (asymmetric JWT) — 첫 시도 null 이면 짧게 1회 재시도.
+    if (!session) {
+        await new Promise(r => setTimeout(r, 400));
+        try { session = (await initSupabase()).session; } catch {}
+    }
     if (!session) {
         loadingState.classList.add('hidden');
         forbiddenState.classList.remove('hidden');
@@ -1037,7 +1042,9 @@ if (_diagTabBtn) _diagTabBtn.addEventListener('click', () => { loadErrors(); });
     }
     await refreshAppHeader();
 
-    if (!isAdmin(session)) {
+    // profile.role 기반 admin (refreshAppHeader 가 body.is-admin 으로 반영) 도 신뢰.
+    const adminByProfile = document.body.classList.contains('is-admin');
+    if (!isAdmin(session) && !adminByProfile) {
         // Verify with server, since role may be set in DB rather than user_metadata.
         try {
             await apiRequest('admin-stats');

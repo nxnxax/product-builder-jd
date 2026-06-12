@@ -1280,7 +1280,9 @@ export function mountAppHeader(opts) {
 /** session 로드 후 헤더의 사용자 정보 갱신 + 캐시. profile fetch 비용 한 번. */
 export async function refreshAppHeader() {
     const loggedIn = !!currentSession?.user;
-    const admin = loggedIn && isAdmin(currentSession);
+    // 캐시 우선 + session 판별. (asymmetric JWT 라 session.app_metadata.role 이
+    // 첫 로드에 비어 isAdmin 이 false 인 race → 아래 profile.role 로 확정.)
+    let admin = loggedIn && (readCachedAdminFlag() || isAdmin(currentSession));
 
     document.body.classList.toggle('is-admin', admin);
     document.body.classList.toggle('is-anon', !loggedIn);
@@ -1303,6 +1305,14 @@ export async function refreshAppHeader() {
         if (payload?.profile) {
             const refined = getDisplayName(payload.profile, currentSession.user);
             if (refined) displayName = refined;
+            // 서버 truth(profile.role)로 admin 확정 — session app_metadata race 보완.
+            const prole = String(payload.profile.role || '').toLowerCase();
+            const profileAdmin = (prole === 'admin' || prole === 'owner');
+            if (profileAdmin !== admin) {
+                admin = profileAdmin;
+                document.body.classList.toggle('is-admin', admin);
+                cacheAdminFlag(admin);
+            }
         }
     } catch {}
 
@@ -2594,7 +2604,9 @@ export function requireAdmin() {
         window.location.replace('index.html');
         return false;
     }
-    if (!isAdmin(currentSession)) {
+    // session app_metadata race(asymmetric JWT) 보완 — 직전 방문에서 profile.role
+    // 로 확정된 캐시도 신뢰. (서버가 admin-* endpoint 에서 진짜 권한 재검증.)
+    if (!isAdmin(currentSession) && !readCachedAdminFlag()) {
         window.location.replace('index.html');
         return false;
     }
