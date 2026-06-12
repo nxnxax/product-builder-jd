@@ -1073,9 +1073,12 @@
     </main>
 
     <script type="module">
-        import { mountAppHeader, mountAppFooter, initSupabase, apiRequest, getSession } from './auth-shared.js?v=20260612-is-admin';
+        import { mountAppHeader, mountAppFooter, initSupabase, apiRequest, getSession, refreshAppHeader } from './auth-shared.js?v=20260612-is-admin';
         mountAppHeader();
         mountAppFooter();
+        // 첫 화면 헤더 초기화 — session 복원 후 refreshAppHeader 로 로그인/관리자 메뉴 확정.
+        // (index.html 은 bootApp 미사용 → 이 호출 없으면 관리자 메뉴가 캐시에만 의존해 첫 방문 누락.)
+        (async () => { try { await initSupabase(); await refreshAppHeader(); } catch {} })();
 
         // 사장님 2026-05-21 임시 — 결제사 승인 전까지 베타 다운로드 CTA 로 override.
         // 결제사 승인 후 원복: 아래 임시 분기 제거하면 plan 별 분기 (subscribe.html) 자동 복원.
