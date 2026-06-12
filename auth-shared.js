@@ -1305,13 +1305,16 @@ export async function refreshAppHeader() {
         if (payload?.profile) {
             const refined = getDisplayName(payload.profile, currentSession.user);
             if (refined) displayName = refined;
-            // 서버 truth(profile.role)로 admin 확정 — session app_metadata race 보완.
+            // 서버 truth 로 admin 확정 — session app_metadata race 보완.
+            // is_admin(종합: app_metadata+members+allowlist) 우선, 구버전 응답이면 role 폴백.
             const prole = String(payload.profile.role || '').toLowerCase();
-            const profileAdmin = (prole === 'admin' || prole === 'owner');
+            const profileAdmin = (payload.profile.is_admin === true)
+                || (payload.profile.is_admin === undefined && (prole === 'admin' || prole === 'owner'));
             if (profileAdmin !== admin) {
                 admin = profileAdmin;
                 document.body.classList.toggle('is-admin', admin);
                 cacheAdminFlag(admin);
+                try { mountAppHeader(); } catch {}   // admin 확정 즉시 헤더 재렌더 (관리자 메뉴 노출)
             }
         }
     } catch {}

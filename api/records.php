@@ -2813,7 +2813,9 @@ try {
             $rec = fetch_member_by_email($pdo, $email);
             // 사장님 2026-05-25 — v60 client cache refresh 용. requires_subscription flag
             // 매 호출마다 DB latest 반영 (member row 의 plan + admin allowlist 기반).
-            $isAdminUserPf = is_admin_email($email);
+            // 종합 admin 판별 (app_metadata.role/is_admin + members.role + allowlist).
+            // 프론트가 이 is_admin 으로 헤더 관리자 메뉴/admin 페이지 gate 를 확정 — allowlist 만으론 부족했던 race 해소.
+            $isAdminUserPf = current_user_is_admin($pdo, $authUser);
             if (!$rec) {
                 respond(['ok' => true, 'profile' => [
                     'email' => $email,
@@ -2821,7 +2823,8 @@ try {
                     'phone' => '',
                     'provider' => $authUser['app_metadata']['provider'] ?? 'email',
                     'status' => 'active',
-                    'role' => 'member',
+                    'role' => $isAdminUserPf ? 'admin' : 'member',
+                    'is_admin' => $isAdminUserPf,
                     'createdAt' => '',
                     'updatedAt' => '',
                     'lastLoginAt' => '',
@@ -2832,6 +2835,8 @@ try {
             }
             $profile = member_row_from_store($rec['store'], $rec['row']);
             $profile['email'] = $email;
+            $profile['is_admin'] = $isAdminUserPf;
+            if ($isAdminUserPf) $profile['role'] = 'admin';  // 종합 판별이 admin 이면 role 도 admin 으로 노출
             // 사장님 2026-05-26 — 옛 plan key 호환 매핑 (member_row_from_store 가 이미 정규화하지만 fail-safe).
             $effectivePlanPf = strtolower((string)($profile['plan'] ?? 'free'));
             if ($effectivePlanPf === 'trialing') $effectivePlanPf = 'free';
