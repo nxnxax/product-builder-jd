@@ -5269,6 +5269,16 @@ try {
                             log_server_error($pdo, 'send_to_group.fail', '양식전송 후 고객관리대장 반영 예외: ' . $e->getMessage(),
                                 'job=' . $jobId, $owner);
                         }
+                        // 명함첩 즉시 갱신 — ledger 최신 회차 반영됐으니 call_summary_ready 발사.
+                        try {
+                            require_once __DIR__ . '/fcm_helpers.php';
+                            if (function_exists('send_fcm_to_user')) {
+                                $fcmRes = send_fcm_to_user($pdo, $owner, [
+                                    'data' => ['type' => 'call_summary_ready', 'job_id' => $jobId, 'customer_log_id' => $rowId],
+                                ]);
+                                error_log('[mark_usage auto] FCM call_summary_ready cl=' . $rowId . ' sent=' . (int)($fcmRes['sent'] ?? 0));
+                            }
+                        } catch (Throwable $e) { error_log('[mark_usage auto] FCM 실패: ' . $e->getMessage()); }
                     } catch (Throwable $e) {
                         error_log('[mark_usage auto_confirm] customer_log INSERT 실패: ' . $e->getMessage());
                         log_server_error($pdo, 'mark_usage.confirm', $e->getMessage(), 'job_id=' . $jobId, $owner);
@@ -5895,6 +5905,30 @@ try {
                 }
             } catch (Throwable $e) {
                 error_log('[confirm] send_to_group 자동 호출 실패: ' . $e->getMessage());
+            }
+
+            // 명함첩 즉시 갱신 — confirm(고객관리대장 전송) 으로 ledger 최신 회차 반영됐으니
+            // 앱에 call_summary_ready(data-only) 발사 → 앱이 customer_aggregate 재동기화.
+            // (이전엔 callback 경로에만 FCM 있어, 미확인요약 수동 confirm 시 명함첩이 다음 활동까지 옛 회차로 남던 딜레이.)
+            try {
+                require_once __DIR__ . '/fcm_helpers.php';
+                if (function_exists('send_fcm_to_user')) {
+                    $fcmRes = send_fcm_to_user($pdo, $owner, [
+                        'data' => [
+                            'type'            => 'call_summary_ready',
+                            'job_id'          => $jobId,
+                            'customer_log_id' => $rowId,
+                        ],
+                    ]);
+                    error_log('[confirm] FCM call_summary_ready cl=' . $rowId
+                        . ' sent=' . (int)($fcmRes['sent'] ?? 0) . ' reason=' . ($fcmRes['reason'] ?? '-'));
+                    if (function_exists('log_server_error') && (int)($fcmRes['sent'] ?? 0) === 0) {
+                        log_server_error($pdo, 'fcm.summary_ready.zero', 'confirm call_summary_ready 발송 0건',
+                            'reason=' . ($fcmRes['reason'] ?? '-') . ' cl=' . $rowId, $owner);
+                    }
+                }
+            } catch (Throwable $e) {
+                error_log('[confirm] FCM 발사 실패: ' . $e->getMessage());
             }
 
             // 응답
