@@ -31,7 +31,9 @@ $togetherKey = load_env_value('TOGETHER_API_KEY');
 if ($togetherKey !== '') {
     $apiKey   = $togetherKey;
     $llmUrl   = 'https://api.together.xyz/v1/chat/completions';
-    $llmModel = 'Qwen/Qwen3.5-397B-A17B';
+    // 사주는 추론(thinking) 모델 금지 — Qwen3.x reasoning 계열은 content 비고 reasoning 만 채움.
+    // 일반 instruct 모델 사용(바로 답 생성, 빠름, 창작형에 적합).
+    $llmModel = 'Qwen/Qwen2.5-72B-Instruct-Turbo';
     $llmLabel = 'Together';
 } else {
     $apiKey   = load_env_value('OPENAI_API_KEY');
