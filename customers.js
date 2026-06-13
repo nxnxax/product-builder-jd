@@ -60,6 +60,7 @@ let editingGroupId = null;
 let filterState = { filters: {} };
 let selectedIds = new Set();
 let searchByGroup = {};   // groupId → 검색어 (그룹 카드 내부 검색창)
+let managedOnlyByGroup = {};  // groupId → true 면 '관리중' 항목만 표시 (모바일 전용. PC 는 컬럼 필터 사용)
 
 /* ============== Boot ============== */
 (async function boot() {
@@ -319,6 +320,11 @@ function applyFilters(rows, groupId) {
     if (normQ !== '') {
         out = out.filter(r => deepSearchMatch(r.data || {}, normQ));
     }
+    // 모바일 '관리중만 보기' — 비관리중 행 숨김. applyFilters 가 렌더와 전체선택 양쪽에 쓰여
+    // 숨긴 행은 전체선택에서도 자동 제외된다. (PC 는 컬럼 필터로 처리하므로 모바일에서만)
+    if (isLedgerMobile() && managedOnlyByGroup[groupId]) {
+        out = out.filter(r => !!r.data?.managed);
+    }
     return out;
 }
 
@@ -413,6 +419,7 @@ function renderGroupCard(group) {
                     ${loadImportSession(PAGE_TYPE, group.id) ? `<button type="button" data-reimport-gid="${group.id}" title="마지막 가져오기 매핑 다시 열어 수정">🔄 매핑 수정</button>` : ''}
                     <button type="button" data-edit-gid="${group.id}">편집</button>
                     <button type="button" data-settings-gid="${group.id}">⚙ 설정</button>
+                    ${isLedgerMobile() ? (() => { const mo = !!managedOnlyByGroup[group.id]; return `<button type="button" data-managed-only-gid="${group.id}" title="관리중 항목만 보기" style="margin-left:auto;border:1px solid ${mo ? 'var(--ledger-accent)' : 'var(--ledger-line-strong)'}!important;background:${mo ? '#fff1f0' : '#fff'}!important;color:${mo ? 'var(--ledger-accent)' : '#5a534c'}!important;font-weight:600!important;border-radius:7px!important;">${mo ? '☑' : '☐'} 관리중만 보기</button>`; })() : ''}
                 </div>
             </div>
             <div class="accordion-body">${bodyHtml}</div>
@@ -542,6 +549,18 @@ function bindAccordionEvents() {
     });
     document.querySelectorAll('[data-settings-gid]').forEach(b => {
         b.addEventListener('click', (e) => { e.stopPropagation(); openSettingsModal(parseInt(b.dataset.settingsGid, 10)); });
+    });
+    document.querySelectorAll('[data-managed-only-gid]').forEach(b => {
+        b.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const gid = parseInt(b.dataset.managedOnlyGid, 10);
+            managedOnlyByGroup[gid] = !managedOnlyByGroup[gid];
+            // ON 시 숨겨질 비관리중 행은 선택 해제 (안 보이는데 선택된 채 일괄작업 되는 것 방지)
+            if (managedOnlyByGroup[gid]) {
+                records.filter(r => r.groupId === gid && !r.data?.managed).forEach(r => selectedIds.delete(r.id));
+            }
+            renderRecords();
+        });
     });
     document.querySelectorAll('[data-export-gid]').forEach(b => {
         b.addEventListener('click', (e) => { e.stopPropagation(); exportGroup(parseInt(b.dataset.exportGid, 10)); });
