@@ -168,7 +168,13 @@ if ($status < 200 || $status >= 300) {
 
 $reading = (string)($data['choices'][0]['message']['content'] ?? '');
 $reading = trim($reading);
-if ($reading === '') jout(['ok' => false, 'error' => '응답 비어있음'], 502);
+if ($reading === '') {
+    if (($_GET['dbg'] ?? '') === '1') {
+        jout(['ok' => false, 'error' => '응답 비어있음', 'model' => $llmModel, 'status' => $status,
+              'raw' => substr((string)$resp, 0, 1500)], 502);
+    }
+    jout(['ok' => false, 'error' => '응답 비어있음'], 502);
+}
 
 // 관리자 활동로그 기록 — 어떤 AI가 사주를 풀었는지(qwen/gpt-4o). 실패해도 응답엔 영향 없음.
 try {
