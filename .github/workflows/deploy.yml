@@ -81,6 +81,7 @@ jobs:
           php -l api/sms/providers/SolapiProvider.php
           php -l api/sms/providers/AligoProvider.php
           php -l lotto_offline_json_import.php
+          php -l cron-lotto-update.php
           php -l lotto_db_import.php
           php -l lotto_db_config.php
           php -l kapp_premium.php
@@ -162,6 +163,7 @@ jobs:
           cp api/sms/providers/SolapiProvider.php deploy/sms/providers/SolapiProvider.php
           cp api/sms/providers/AligoProvider.php deploy/sms/providers/AligoProvider.php
           cp lotto_offline_json_import.php deploy/lotto_offline_json_import.php
+          cp cron-lotto-update.php deploy/cron-lotto-update.php   # 매주 일요일 01:00 KST 자동 회차 갱신 cron
           cp lotto_numbers_all.json deploy/lotto_numbers_all.json
           cp lotto_db_import.php deploy/lotto_db_import.php  # 폐기 페이지 — 옛 북마크용 301 리디렉트
           cp lotto_db_config.php deploy/lotto_db_config.php

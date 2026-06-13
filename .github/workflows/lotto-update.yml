@@ -1,0 +1,66 @@
+name: Lotto Weekly Update (Sun 01:00 KST)
+
+# 매주 일요일 01:00 KST(=토요일 16:00 UTC) 에 cron-lotto-update.php 호출.
+# smok95 미러에서 최신 회차를 받아 lotto_winning_numbers 에 upsert + lotto_numbers_all.json 갱신.
+# 사장님이 버튼 누를 필요 없이 완전 자동.
+#
+# 작동 조건:
+#   - GitHub Secret LOTTO_CRON_TOKEN 등록(이미 등록·.env 주입됨) — 인증 토큰.
+#   - cafe24 가 smok95.github.io 로 outbound 가능해야 함(실패 시 서버가 로컬 JSON 으로 폴백).
+#
+# 수동 실행: Actions 탭 → "Lotto Weekly Update" → Run workflow.
+
+on:
+  schedule:
+    # 토요일 16:00 UTC = 일요일 01:00 KST (토요일 추첨 ~4시간 뒤, 미러 갱신 여유)
+    - cron: '0 16 * * 6'
+  workflow_dispatch:
+
+concurrency:
+  group: lotto-update
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify LOTTO_CRON_TOKEN secret
+        env:
+          TOKEN: ${{ secrets.LOTTO_CRON_TOKEN }}
+        run: |
+          if [ -z "$TOKEN" ]; then
+            echo "::error::LOTTO_CRON_TOKEN secret 미등록. GitHub Settings → Secrets → Actions 에서 등록 필요."
+            exit 1
+          fi
+          echo "Token secret OK (length=${#TOKEN})"
+
+      - name: Call cron-lotto-update.php
+        env:
+          TOKEN: ${{ secrets.LOTTO_CRON_TOKEN }}
+        run: |
+          set -e
+          RESPONSE=$(curl -sk -w "\n__HTTP_CODE__%{http_code}" \
+            --max-time 240 \
+            --data-urlencode "token=$TOKEN" \
+            "https://youngman-biz.com/cron-lotto-update.php")
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n1 | sed 's/__HTTP_CODE__//')
+          BODY=$(echo "$RESPONSE" | sed '$d')
+
+          echo "── Response ($HTTP_CODE) ──"
+          echo "$BODY"
+          echo "──────────────"
+
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "::error::HTTP $HTTP_CODE — cron-lotto-update.php 호출 실패"
+            exit 1
+          fi
+          if ! echo "$BODY" | grep -q '"ok":true'; then
+            echo "::error::응답에 ok:true 없음"
+            exit 1
+          fi
+
+          SRC=$(echo "$BODY" | grep -oE '"source":"[a-z_]+"' | head -1)
+          MAXB=$(echo "$BODY" | grep -oE '"max_draw_before":[0-9]+' | grep -oE '[0-9]+' || echo '?')
+          MAXA=$(echo "$BODY" | grep -oE '"max_draw_after":[0-9]+' | grep -oE '[0-9]+' || echo '?')
+          echo "Summary — $SRC, 최신회차 $MAXB → $MAXA"
