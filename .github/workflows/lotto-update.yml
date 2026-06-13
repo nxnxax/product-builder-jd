@@ -25,24 +25,24 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Verify LOTTO_CRON_TOKEN secret
+      - name: Verify RECORDING_WORKER_TOKEN secret
         env:
-          TOKEN: ${{ secrets.LOTTO_CRON_TOKEN }}
+          TOKEN: ${{ secrets.RECORDING_WORKER_TOKEN }}
         run: |
           if [ -z "$TOKEN" ]; then
-            echo "::error::LOTTO_CRON_TOKEN secret 미등록. GitHub Settings → Secrets → Actions 에서 등록 필요."
+            echo "::error::RECORDING_WORKER_TOKEN secret 미등록. GitHub Settings → Secrets → Actions 에서 등록 필요."
             exit 1
           fi
           echo "Token secret OK (length=${#TOKEN})"
 
       - name: Call cron-lotto-update.php
         env:
-          TOKEN: ${{ secrets.LOTTO_CRON_TOKEN }}
+          TOKEN: ${{ secrets.RECORDING_WORKER_TOKEN }}
         run: |
           set -e
           RESPONSE=$(curl -sk -w "\n__HTTP_CODE__%{http_code}" \
             --max-time 240 \
-            --data-urlencode "token=$TOKEN" \
+            -H "X-Cron-Token: $TOKEN" \
             "https://youngman-biz.com/cron-lotto-update.php")
           HTTP_CODE=$(echo "$RESPONSE" | tail -n1 | sed 's/__HTTP_CODE__//')
           BODY=$(echo "$RESPONSE" | sed '$d')

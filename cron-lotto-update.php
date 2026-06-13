@@ -26,10 +26,11 @@ function lcu_jout($p, int $code = 200): void {
     exit;
 }
 
-/* ── 토큰 인증 ── */
-$expected = (string)lotto_env('LOTTO_CRON_TOKEN', '');
-$given    = (string)($_GET['token'] ?? $_POST['token'] ?? '');
-if ($expected === '') lcu_jout(['ok' => false, 'error' => 'LOTTO_CRON_TOKEN 미설정(.env)'], 500);
+/* ── 토큰 인증 — keep-alive/process-jobs 와 동일한 RECORDING_WORKER_TOKEN 재사용(.env 에 이미 존재) ──
+   헤더 X-Cron-Token 우선, 수동 테스트용으로 ?token= / POST token 도 허용. */
+$expected = (string)lotto_env('RECORDING_WORKER_TOKEN', '');
+$given    = trim((string)($_SERVER['HTTP_X_CRON_TOKEN'] ?? $_GET['token'] ?? $_POST['token'] ?? ''));
+if ($expected === '') lcu_jout(['ok' => false, 'error' => 'RECORDING_WORKER_TOKEN 미설정(.env)'], 503);
 if (!hash_equals($expected, $given)) lcu_jout(['ok' => false, 'error' => 'unauthorized'], 401);
 
 /* ── import 로직 (lotto_offline_json_import.php 복제) ── */
