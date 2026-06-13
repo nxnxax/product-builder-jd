@@ -28,13 +28,15 @@ if ($method !== 'POST') jout(['ok' => false, 'error' => 'POST only'], 405);
 
 // LLM 선택: Together(Qwen) 우선, 없으면 gpt-4o 폴백
 $togetherKey = load_env_value('TOGETHER_API_KEY');
+$extraParams = [];
 if ($togetherKey !== '') {
     $apiKey   = $togetherKey;
     $llmUrl   = 'https://api.together.xyz/v1/chat/completions';
-    // 사주는 추론(thinking) 모델 금지 — Qwen3.x reasoning 계열은 content 비고 reasoning 만 채움.
-    // 일반 instruct 모델 사용(바로 답 생성, 빠름, 창작형에 적합).
-    $llmModel = 'Qwen/Qwen2.5-72B-Instruct-Turbo';
+    // Qwen3.x 는 추론(thinking) 모델 — 기본 호출 시 reasoning 필드만 채우고 content 가 빈다.
+    // enable_thinking=false 로 사고과정을 끄면 바로 답을 생성(serverless 가능 모델은 이것뿐).
+    $llmModel = 'Qwen/Qwen3.5-397B-A17B';
     $llmLabel = 'Together';
+    $extraParams = ['chat_template_kwargs' => ['enable_thinking' => false]];
 } else {
     $apiKey   = load_env_value('OPENAI_API_KEY');
     $llmUrl   = 'https://api.openai.com/v1/chat/completions';
@@ -132,6 +134,7 @@ $sys = <<<SYS
 - 어느 신체 부위와 어느 시기를 조심해야 하는지, 무슨 습관을 들이면 좋은지 구체적으로. (기운이 가리키는 부위를 일상어로: 심장·혈압, 소화기·위장, 간·피로, 호흡기, 신장·방광·허리 등)
 
 [말투] 정겹고 신비로운 존댓말, 점쟁이체("~보입니다", "~할 운이 따릅니다", "~하세요"). 'AI·분석·데이터' 단어 금지. 순수 텍스트만(HTML 금지).
+[언어] 반드시 한글로만 써라. 중국어 한자(钱财·意見 등)나 일본식 한자, 외국어를 절대 섞지 마라. 간지(병오·갑오 등)도 한글로 적고, 한자를 꼭 보여야 하면 괄호로만(예: 병오(丙午)).
 [금지] 로또 당첨 보장 금지("운이 따른다"는 OK, "당첨된다"는 단정 X). 죽음·중병 단정 예언 금지(조심 권고로).
 SYS;
 
@@ -141,15 +144,14 @@ curl_setopt_array($ch, [
     CURLOPT_RETURNTRANSFER => true,
     CURLOPT_POST => true,
     CURLOPT_POSTFIELDS => json_encode(array_merge([
-        'model' => (($_GET['m'] ?? '') !== '' ? (string)$_GET['m'] : $llmModel),
+        'model' => $llmModel,
         'messages' => [
             ['role' => 'system', 'content' => $sys],
             ['role' => 'user', 'content' => $summary],
         ],
         'max_tokens' => 2000,
         'temperature' => 0.85,
-    ], (($_GET['nothink'] ?? '') === '1') ? ['chat_template_kwargs' => ['enable_thinking' => false]] : []),
-    JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+    ], $extraParams), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
     CURLOPT_HTTPHEADER => [
         'Authorization: Bearer ' . $apiKey,
         'Content-Type: application/json',
@@ -171,13 +173,7 @@ if ($status < 200 || $status >= 300) {
 
 $reading = (string)($data['choices'][0]['message']['content'] ?? '');
 $reading = trim($reading);
-if ($reading === '') {
-    if (($_GET['dbg'] ?? '') === '1') {
-        jout(['ok' => false, 'error' => '응답 비어있음', 'model' => $llmModel, 'status' => $status,
-              'raw' => substr((string)$resp, 0, 1500)], 502);
-    }
-    jout(['ok' => false, 'error' => '응답 비어있음'], 502);
-}
+if ($reading === '') jout(['ok' => false, 'error' => '응답 비어있음'], 502);
 
 // 관리자 활동로그 기록 — 어떤 AI가 사주를 풀었는지(qwen/gpt-4o). 실패해도 응답엔 영향 없음.
 try {
