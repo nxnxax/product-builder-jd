@@ -72,11 +72,13 @@ foreach ([__DIR__ . '/db_config.php', dirname(__DIR__) . '/db_config.php'] as $p
 if (!is_array($dbConfig)) ka_jerror('db_config.php 찾을 수 없음.', 503);
 
 try {
+    // db_config.php 키 = host/port/database/user/password (records.php·cron-process-jobs.php 와 동일).
+    // 과거 'dbname'/'pass' 오타로 비밀번호 없이 접속 시도 → keep-alive 전건 실패(앱 미기상) 했던 버그 수정.
     $dsn = sprintf('mysql:host=%s;port=%s;dbname=%s;charset=utf8mb4',
         $dbConfig['host'] ?? 'localhost',
         $dbConfig['port'] ?? '3306',
-        $dbConfig['dbname'] ?? '');
-    $pdo = new PDO($dsn, $dbConfig['user'] ?? '', $dbConfig['pass'] ?? '', [
+        $dbConfig['database'] ?? ($dbConfig['dbname'] ?? ''));
+    $pdo = new PDO($dsn, $dbConfig['user'] ?? '', $dbConfig['password'] ?? ($dbConfig['pass'] ?? ''), [
         PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
         PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
     ]);
