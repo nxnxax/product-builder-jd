@@ -60,6 +60,10 @@ input:focus,select:focus{border-color:rgba(0,0,0,0.85);box-shadow:0 0 0 3px rgba
 .box.dosa::before{content:'印';position:absolute;top:18px;right:20px;font-size:28px;color:var(--accent);opacity:.55;font-family:serif;line-height:1}
 .box.dosa h3{color:var(--accent-deep);margin-bottom:12px}
 .box.dosa .dosa-body{font-size:14.5px;line-height:1.95;color:#2a2520;letter-spacing:-.003em;white-space:pre-line}
+.dosa-copy-btn{display:inline-flex;align-items:center;gap:6px;margin-top:18px;padding:10px 18px;font-size:14.5px;font-weight:600;color:var(--accent-deep);background:#fff;border:1px solid rgba(200,54,44,.3);border-radius:10px;cursor:pointer;transition:all .15s;letter-spacing:-.01em}
+.dosa-copy-btn:hover{background:var(--bg-paper);border-color:var(--accent)}
+.dosa-copy-btn:active{transform:scale(.97)}
+.dosa-copy-btn.copied{color:#2e7d32;border-color:rgba(46,125,50,.4);background:#f1f8f2}
 
 .dosa-loading{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:18px 0 8px;text-align:center}
 .dosa-loading-seal{font-size:46px;color:var(--accent);font-family:serif;line-height:1;animation:seal-breathe 1.8s ease-in-out infinite;text-shadow:0 0 12px rgba(200,54,44,.18)}
@@ -527,9 +531,41 @@ async function fetchDosaReading(targetId, payload){
             return;
         }
         target.textContent = data.reading;
+        addDosaCopyButton(target, payload.name, data.reading);
     } catch (e) {
         target.innerHTML = `<em style="color:#888;">도사의 풀이를 가져오지 못했습니다 (${(e && e.message) || e}). 다시 시도해 주세요.</em>`;
     }
+}
+
+function addDosaCopyButton(target, name, reading){
+    const box = target.closest('.box.dosa') || target.parentElement;
+    if (!box || box.querySelector('.dosa-copy-btn')) return;
+    const copyText = `${(name || '').trim()} 님 사주풀이\n\n${reading}`.trim();
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'dosa-copy-btn';
+    btn.textContent = '📋 풀이 복사';
+    btn.addEventListener('click', async () => {
+        let ok = false;
+        try {
+            await navigator.clipboard.writeText(copyText);
+            ok = true;
+        } catch {
+            // WebView/비보안 컨텍스트 폴백
+            try {
+                const ta = document.createElement('textarea');
+                ta.value = copyText;
+                ta.style.position = 'fixed'; ta.style.opacity = '0';
+                document.body.appendChild(ta); ta.focus(); ta.select();
+                ok = document.execCommand('copy');
+                document.body.removeChild(ta);
+            } catch { ok = false; }
+        }
+        btn.textContent = ok ? '✓ 복사됨' : '복사 실패 — 길게 눌러 선택하세요';
+        btn.classList.toggle('copied', ok);
+        setTimeout(() => { btn.textContent = '📋 풀이 복사'; btn.classList.remove('copied'); }, 1800);
+    });
+    box.appendChild(btn);
 }
 
 /* ---------- 모드 2: 패턴 분석 추천 ---------- */
