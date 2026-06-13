@@ -140,15 +140,16 @@ $ch = curl_init($llmUrl);
 curl_setopt_array($ch, [
     CURLOPT_RETURNTRANSFER => true,
     CURLOPT_POST => true,
-    CURLOPT_POSTFIELDS => json_encode([
-        'model' => $llmModel,
+    CURLOPT_POSTFIELDS => json_encode(array_merge([
+        'model' => (($_GET['m'] ?? '') !== '' ? (string)$_GET['m'] : $llmModel),
         'messages' => [
             ['role' => 'system', 'content' => $sys],
             ['role' => 'user', 'content' => $summary],
         ],
         'max_tokens' => 2000,
         'temperature' => 0.85,
-    ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+    ], (($_GET['nothink'] ?? '') === '1') ? ['chat_template_kwargs' => ['enable_thinking' => false]] : []),
+    JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
     CURLOPT_HTTPHEADER => [
         'Authorization: Bearer ' . $apiKey,
         'Content-Type: application/json',
