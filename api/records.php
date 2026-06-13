@@ -3686,6 +3686,26 @@ try {
             } catch (Throwable $e) {}
         }
 
+        // ── 사주풀이 (saju_reading) — saju-reading.php 가 활동로그에 직접 기록. ──
+        // detail = 사용된 LLM 토큰('qwen'/'gpt-4o'). 프론트가 sajuAiBadge 로 표시.
+        try {
+            $stmt = $pdo->prepare("SELECT created_at AS at, actor_email AS email, detail
+                FROM activity_logs
+                WHERE event_type = 'saju_reading'
+                  AND created_at BETWEEN :a AND :b
+                ORDER BY created_at DESC");
+            $stmt->execute([':a' => $from . ' 00:00:00', ':b' => $to . ' 23:59:59']);
+            foreach ($stmt as $r) {
+                $events[] = [
+                    'occurred_at' => (string)$r['at'],
+                    'email' => strtolower(trim((string)$r['email'])),
+                    'type' => 'saju_reading',
+                    'detail' => (string)($r['detail'] ?? ''),
+                    'aiModel' => '',
+                ];
+            }
+        } catch (Throwable $e) {}
+
         // ── 사장님 2026-05-24 (확장) — recording_jobs 상태별 + STT 성공률 + latency + 통화길이 ──
         $jobsStats = [
             'byStatus' => [],

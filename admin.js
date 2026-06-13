@@ -508,6 +508,7 @@ const STATS_EVENT_LABEL = {
     cancel: '취소',
     summary_view: '요약보기',
     auto_confirm: '양식전송',
+    saju_reading: '사주풀이',
 };
 const STATS_EVENT_COLOR = {
     signup:       'background:#e8f5e9;color:#2e7d32;',
@@ -515,6 +516,7 @@ const STATS_EVENT_COLOR = {
     cancel:       'background:#fbe9e7;color:#c62828;',
     summary_view: 'background:#fff3e0;color:#ef6c00;',
     auto_confirm: 'background:#f3e5f5;color:#6a1b9a;',
+    saju_reading: 'background:#fff8e1;color:#a36a00;',
 };
 
 function statsBadge(type) {
@@ -580,10 +582,20 @@ function aiModelBadges(model) {
     return badges + (fallback ? '<span style="color:#c8362c;font-size:11.5px;font-weight:600;">⚠️ 대체 처리됨</span>' : '');
 }
 
+// 사주풀이 활동로그용 — 어떤 LLM 이 사주를 풀었는지 뱃지. detail 토큰('qwen'/'gpt-4o') 기준.
+function sajuAiBadge(detail) {
+    const s = (detail || '').toLowerCase();
+    let label, bg, fg;
+    if (s.includes('qwen'))      { label = '사주 · Qwen (Together)';  bg = '#f3e8fd'; fg = '#8a2620'; }
+    else if (s.includes('gpt'))  { label = '사주 · gpt-4o (OpenAI)';  bg = '#e8f0fe'; fg = '#1967d2'; }
+    else return escape(detail || '');
+    return `<span style="display:inline-block;padding:2px 8px;border-radius:9px;font-size:11.5px;font-weight:600;background:${bg};color:${fg};">${escape(label)}</span>`;
+}
+
 function renderEventsTable() {
     const list = _eventsFilter === 'all' ? _lastStatsEvents : _lastStatsEvents.filter(e => e.type === _eventsFilter);
     renderStatsPaginated(statsEventsTbody, list, 4,
-        e => `<tr><td style="white-space:nowrap;">${escape((e.occurred_at || '').replace('T',' ').slice(0,19))}</td><td>${statsBadge(e.type)}</td><td>${escape(e.email || '(unknown)')}</td><td style="color:var(--fg-secondary);">${e.aiModel ? aiModelBadges(e.aiModel) : escape(e.detail || '')}</td></tr>`,
+        e => `<tr><td style="white-space:nowrap;">${escape((e.occurred_at || '').replace('T',' ').slice(0,19))}</td><td>${statsBadge(e.type)}</td><td>${escape(e.email || '(unknown)')}</td><td style="color:var(--fg-secondary);">${e.type === 'saju_reading' ? sajuAiBadge(e.detail) : (e.aiModel ? aiModelBadges(e.aiModel) : escape(e.detail || ''))}</td></tr>`,
         '데이터 없음', 'events');
 }
 

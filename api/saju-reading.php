@@ -137,6 +137,25 @@ $reading = (string)($data['choices'][0]['message']['content'] ?? '');
 $reading = trim($reading);
 if ($reading === '') jout(['ok' => false, 'error' => '응답 비어있음'], 502);
 
+// 관리자 활동로그 기록 — 어떤 AI가 사주를 풀었는지(qwen/gpt-4o). 실패해도 응답엔 영향 없음.
+try {
+    $cfgPath = __DIR__ . '/db_config.php';
+    if (!is_file($cfgPath)) $cfgPath = dirname(__DIR__) . '/db_config.php';
+    if (is_file($cfgPath)) {
+        $db = require $cfgPath;
+        $logPdo = new PDO(
+            sprintf('mysql:host=%s;port=%d;dbname=%s;charset=utf8mb4',
+                $db['host'] ?? 'localhost', (int)($db['port'] ?? 3306), $db['database'] ?? ''),
+            $db['user'] ?? '', $db['password'] ?? '',
+            [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]
+        );
+        $actor = strtolower(trim((string)($body['email'] ?? ''))) ?: '(비회원)';
+        $token = ($llmLabel === 'Together') ? 'qwen' : 'gpt-4o';
+        $st = $logPdo->prepare("INSERT INTO activity_logs (actor_email, event_type, detail) VALUES (?, 'saju_reading', ?)");
+        $st->execute([$actor, $token]);
+    }
+} catch (Throwable $e) { /* 로그 실패는 무시 */ }
+
 jout([
     'ok' => true,
     'reading' => $reading,
