@@ -848,7 +848,7 @@ function setG(pfx,g){
 function initGunghapInputs(){
     const box=document.getElementById('gunghapInputs');
     if(!box || box.dataset.ready) return;
-    box.innerHTML = buildPersonCard('a','첫 번째 사람') + buildPersonCard('b','두 번째 사람');
+    box.innerHTML = buildPersonCard('a','나 (본인)') + buildPersonCard('b','상대방');
     box.dataset.ready='1';
     setG('a','male'); setG('b','male');
 }
@@ -935,10 +935,10 @@ function buildCoupleSummary(A,B,gh){
 - 격국: ${p.ge} (${p.geStatus}) / 신강·신약: ${p.str} / 조후: ${p.cl}
 - 용신(필요한 기운): ${elementKor[p.ys]} / 본인 사주 안 합충: ${p.rel}
 - 오행 분포: `;
-    return `[첫 번째 사람]
+    return `[나(본인)]
 ${P(A)}${gh.scA}
 
-[두 번째 사람]
+[상대방]
 ${P(B)}${gh.scB}
 
 [두 사람의 궁합 데이터 — 명리 법칙으로 산출, 이 근거 안에서만 풀이할 것]
