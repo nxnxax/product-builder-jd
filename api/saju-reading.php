@@ -53,6 +53,7 @@ if (!is_array($body)) jout(['ok' => false, 'error' => 'JSON 형식 오류'], 400
 $name      = trim((string)($body['name']       ?? ''));
 $gender    = trim((string)($body['gender']     ?? ''));
 $birthLabel = trim((string)($body['birthLabel'] ?? ''));
+$region    = trim((string)($body['region']     ?? ''));    // 태어난 곳 (모름 가능)
 $drawDate  = trim((string)($body['drawDate']   ?? ''));
 $ge        = trim((string)($body['ge']         ?? ''));    // 격국
 $geStatus  = trim((string)($body['geStatus']   ?? ''));    // 격국 상태
@@ -77,6 +78,7 @@ if ($mode === 'gunghap') {
 $summary = "이름: {$name}";
 if ($gender !== '')     $summary .= "\n성별: {$gender}";
 if ($birthLabel !== '') $summary .= "\n출생: {$birthLabel}";
+if ($region !== '' && $region !== '모름') $summary .= "\n태어난 곳: {$region}";
 if ($drawDate !== '')   $summary .= "\n추첨일: {$drawDate}";
 if ($ge !== '')         $summary .= "\n격국: {$ge}" . ($geStatus !== '' ? " ({$geStatus})" : '');
 if ($str !== '')        $summary .= "\n신강·신약: {$str}";
@@ -110,6 +112,7 @@ $sys = <<<SYS
   목(木)=동쪽·봄·초록 / 화(火)=남쪽·여름·붉은색 / 금(金)=서쪽·가을·흰색 / 수(水)=북쪽·겨울·검정·파랑 / 토(土)=중앙·환절기·노랑.
   (예: 용신이 물(水)이면 → 북쪽·겨울·물가·파란색이 이로움. 이때만 "북쪽"이라 말할 수 있다.)
 - 사주에 시(時) 정보가 없으니 '아침/오후/저녁' 같은 하루 중 시각은 함부로 단정하지 마라. 시기는 데이터의 대운·세운·월운 흐름에서 '며칠 뒤·올해 안·내년 봄'처럼 끌어내라.
+- '태어난 곳'이 주어지면, 그 고향의 기운과 방위를 풀이에 자연스럽게 한 번 녹여라. 특히 용신/보완 오행의 방위(위 표준 매핑)와 비교해, 고향에 머무는 게 이로운지 타향·바깥으로 나가야 기회가 열리는 기질인지를 짚고 구체 행동으로 풀어라(예: "용신이 물(水)이라 북쪽 기운이 이로우니, 고향보다 북쪽 도시로 나갈 때 일이 풀립니다"). 단 '태어난 곳'이 없거나 '모름'이면 지역 이야기는 꺼내지 마라. 없는 지역을 지어내지도 마라.
 
 [행동 지침 — 구체적으로]
 - "차분히 하세요", "균형을 유지하세요", "긍정적으로 생각하세요" 같은 두루뭉실하고 추상적인 말 금지.

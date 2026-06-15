@@ -177,6 +177,9 @@ input:focus,select:focus{border-color:rgba(0,0,0,0.85);box-shadow:0 0 0 3px rgba
     </select>
     <input id="timeExact" type="number" placeholder="0~23시 입력" style="display:none;margin-top:10px;">
 
+    <label>태어난 지역 <span class="opt-hint">(모르면 '모름')</span></label>
+    <select id="birthRegion"></select>
+
     <label id="drawDateLabel">로또 추첨일</label>
     <div class="row">
         <input id="drawY" type="number" placeholder="연">
@@ -255,6 +258,7 @@ window.onload = function(){
     document.getElementById('drawY').value = t.getFullYear();
     document.getElementById('drawM').value = t.getMonth() + 1;
     document.getElementById('drawD').value = t.getDate();
+    document.getElementById('birthRegion').innerHTML = REGION_OPTS;
     initGunghapInputs();
     switchMode('saju');
 };
@@ -478,9 +482,10 @@ function computeSajuContext(){
     const birthLabel = birthDate.type==='음력'
         ? `음력 ${by}년 ${bm}월 ${bd}일 → 양력 ${y}년 ${m}월 ${d}일`
         : `양력 ${y}년 ${m}월 ${d}일`;
+    const region = (document.getElementById('birthRegion').value) || '모름';
 
     return {
-        name: nm, gender: selectedGender, birthLabel, drawDate: `${dy}년 ${dm}월 ${dd}일`,
+        name: nm, gender: selectedGender, birthLabel, region, drawDate: `${dy}년 ${dm}월 ${dd}일`,
         ge, geStatus, str, cl, ys, lucky, dw, sw, ww, rel,
         seed: `${nm}|${selectedGender}|${y}-${m}-${d}|${h}|${dy}-${dm}-${dd}|${ys}|${lucky}`,
     };
@@ -526,7 +531,7 @@ async function runSaju(){
     fetchDosaReading(readingId, {
         name: ctx.name,
         gender: ctx.gender==='female' ? '여성' : '남성',
-        birthLabel: ctx.birthLabel, drawDate: ctx.drawDate,
+        birthLabel: ctx.birthLabel, region: ctx.region, drawDate: ctx.drawDate,
         ge: ctx.ge, geStatus: ctx.geStatus, str: ctx.str, cl: ctx.cl,
         ys: elementKor[ctx.ys] || ctx.ys,
         lucky: elementKor[ctx.lucky] || ctx.lucky,
