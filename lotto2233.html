@@ -31,12 +31,16 @@ body{margin:0;background:linear-gradient(180deg,var(--bg) 0%,var(--bg-paper) 100
 .container h2{font-size:28px;font-weight:700;letter-spacing:-.024em;margin:0 0 8px}
 .subtitle{color:var(--secondary, #4f4943);font-size:15px;font-weight:500;margin-bottom:20px;line-height:1.6}
 
-.mode-tabs{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;background:var(--bg-muted);padding:6px;border-radius:10px;margin-bottom:24px}
+.mode-tabs{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;background:var(--bg-muted);padding:6px;border-radius:10px;margin-bottom:24px}
 .mode-tab{border:0;background:transparent;color:var(--secondary);font-size:14.5px;font-weight:700;padding:12px 8px;border-radius:7px;cursor:pointer;font-family:inherit;letter-spacing:-.005em;transition:all 180ms cubic-bezier(0.16,1,0.3,1);line-height:1.3}
 .mode-tab.active{background:#fff;color:var(--fg);box-shadow:0 1px 3px rgba(20,14,8,.08)}
 .mode-tab small{display:block;font-size:12.5px;font-weight:500;color:var(--muted);margin-top:3px}
 .mode-tab.active small{color:var(--secondary)}
 
+.person-card{padding:18px 18px 22px;background:#fff;border:1px solid var(--line);border-radius:12px;margin-bottom:14px}
+.person-card .person-title{font-size:15.5px;font-weight:700;color:var(--accent-deep);letter-spacing:-.01em}
+.person-card label:first-of-type{margin-top:12px}
+.opt-hint{font-weight:400;color:var(--muted);font-size:13px}
 label{display:block;margin-top:16px;margin-bottom:8px;font-size:14.5px;color:var(--fg);font-weight:700}
 input,select{width:100%;height:42px;padding:0 14px;border-radius:6px;border:1px solid var(--line-strong);background:#fff;color:var(--fg);font-size:15.5px;font-weight:500;outline:none;font-family:inherit;transition:all 180ms cubic-bezier(0.16,1,0.3,1);appearance:none;-webkit-appearance:none}
 input:focus,select:focus{border-color:rgba(0,0,0,0.85);box-shadow:0 0 0 3px rgba(0,0,0,0.06)}
@@ -107,6 +111,7 @@ input:focus,select:focus{border-color:rgba(0,0,0,0.85);box-shadow:0 0 0 3px rgba
     .main-nav{order:3;flex-basis:100%;overflow-x:auto;padding-bottom:2px}
     .nav-link{white-space:nowrap}
     .container{padding:32px 16px 64px}
+    .mode-tabs{grid-template-columns:repeat(2,1fr)}
     .calendar-row{grid-template-columns:1fr 1fr 1fr}
     .calendar-row select{grid-column:1 / -1}
     .ball{width:42px;height:42px;font-size:15px;font-weight:800}
@@ -130,6 +135,9 @@ input:focus,select:focus{border-color:rgba(0,0,0,0.85);box-shadow:0 0 0 3px rgba
     </button>
     <button class="mode-tab" id="tab-combined" onclick="switchMode('combined')" type="button">
         사주+패턴 융합<small>내 사주 × 1등 패턴</small>
+    </button>
+    <button class="mode-tab" id="tab-gunghap" onclick="switchMode('gunghap')" type="button">
+        궁합<small>두 사람 사주 인연</small>
     </button>
 </div>
 
@@ -177,6 +185,9 @@ input:focus,select:focus{border-color:rgba(0,0,0,0.85);box-shadow:0 0 0 3px rgba
     </div>
 </section>
 
+<!-- 궁합 입력 (두 사람) — gunghap 모드에서만 노출. 카드는 JS 로 주입 -->
+<section id="gunghapInputs" style="display:none;"></section>
+
 <!-- 패턴 모드 안내 -->
 <section id="patternIntro" style="display:none;">
     <div class="intro">
@@ -199,10 +210,13 @@ function switchMode(mode){
     document.getElementById('tab-saju').classList.toggle('active', mode==='saju');
     document.getElementById('tab-pattern').classList.toggle('active', mode==='pattern');
     document.getElementById('tab-combined').classList.toggle('active', mode==='combined');
+    document.getElementById('tab-gunghap').classList.toggle('active', mode==='gunghap');
 
     const showSaju = (mode==='saju' || mode==='combined');
     document.getElementById('sajuInputs').style.display = showSaju ? '' : 'none';
     document.getElementById('patternIntro').style.display = (mode==='pattern') ? '' : 'none';
+    if (mode==='gunghap') initGunghapInputs();
+    document.getElementById('gunghapInputs').style.display = (mode==='gunghap') ? '' : 'none';
 
     const title = document.getElementById('pageTitle');
     const sub   = document.getElementById('pageSubtitle');
@@ -218,11 +232,15 @@ function switchMode(mode){
         title.textContent = '1등 패턴 분석 추천';
         sub.textContent   = '역대 1등 당첨 데이터의 빈도·간격·페어 패턴으로 이번 회차 추천번호를 뽑습니다.';
         btn.textContent   = '이번 회차 추천번호 받기';
-    } else {
+    } else if (mode==='combined') {
         title.textContent = '사주 × 패턴 융합 추천';
         sub.textContent   = '내 사주의 보완 오행과 1등 데이터 패턴을 함께 보고, 운이 잘 모이는 번호 조합을 추천합니다.';
         btn.textContent   = '종합 추천 받기';
         drawLabel.textContent = '로또 추첨일';
+    } else {
+        title.textContent = '도사의 궁합 풀이';
+        sub.textContent   = '두 사람의 사주를 펼쳐 일간·오행·지지의 합과 충, 띠와 용신의 인연까지 보고 궁합을 풀어드립니다.';
+        btn.textContent   = '궁합 풀이 받기';
     }
 
     document.getElementById('result').innerHTML = '';
@@ -237,6 +255,7 @@ window.onload = function(){
     document.getElementById('drawY').value = t.getFullYear();
     document.getElementById('drawM').value = t.getMonth() + 1;
     document.getElementById('drawD').value = t.getDate();
+    initGunghapInputs();
     switchMode('saju');
 };
 
@@ -475,6 +494,7 @@ function onGenerate(){
     if (currentMode === 'saju')     return runSaju();
     if (currentMode === 'pattern')  return runPattern();
     if (currentMode === 'combined') return runCombined();
+    if (currentMode === 'gunghap')  return runGunghap();
 }
 
 /* ---------- 모드 1: 사주 풀이만 ---------- */
@@ -753,6 +773,246 @@ function sajuMethodsBox(){
                 ▪ 출생 사주와 추첨일 사주의 오행 비교
             </div>
             <div class="muted-line" style="margin-top:14px;">※ 이 결과는 실제 당첨을 보장하지 않는 참고용 풀이입니다.</div>
+        </div>`;
+}
+
+/* ============================================================
+   궁합 모드 — 두 사람 사주 + 명리 궁합 법칙
+   ============================================================ */
+function getPillars3(y,m,d){const yp=yearPillar(y,m,d);const mp=monthPillar(yp.stem,m,d);const dp=dayPillar(y,m,d);return [yp,mp,dp];}
+function resolveBirth(calType,y,m,d){
+    if(!validDate(y,m,d)) return {error:'올바른 생년월일을 입력해주세요.'};
+    if(calType==='solar') return {y,m,d,type:'양력'};
+    try{ const c=lunarToSolar(y,m,d); if(!c) return {error:'음력 날짜를 양력으로 변환할 수 없습니다.'}; return {...c,type:'음력'}; }
+    catch(e){ return {error:'이 브라우저는 음력 변환을 지원하지 않습니다. 양력으로 입력해주세요.'}; }
+}
+const branchAnimal={자:'쥐',축:'소',인:'호랑이',묘:'토끼',진:'용',사:'뱀',오:'말',미:'양',신:'원숭이',유:'닭',술:'개',해:'돼지'};
+// 지지 인연/충돌 규칙: 육합·삼합(인연) / 충·형·파·해(갈등)
+const PAIR_RULES=[
+    ['자','오','충'],['축','미','충'],['인','신','충'],['묘','유','충'],['진','술','충'],['사','해','충'],
+    ['자','축','육합'],['인','해','육합'],['묘','술','육합'],['진','유','육합'],['사','신','육합'],['오','미','육합'],
+    ['신','자','삼합'],['자','진','삼합'],['신','진','삼합'],['해','묘','삼합'],['묘','미','삼합'],['해','미','삼합'],
+    ['인','오','삼합'],['오','술','삼합'],['인','술','삼합'],['사','유','삼합'],['유','축','삼합'],['사','축','삼합'],
+    ['자','묘','형'],['인','사','형'],['사','신','형'],['축','술','형'],['술','미','형'],['축','미','형'],
+    ['자','유','파'],['진','축','파'],['신','해','해'],['인','사','해']
+];
+function crossPairs(aB,bB){
+    const out=new Set();
+    aB.forEach(a=>bB.forEach(b=>{
+        PAIR_RULES.forEach(([x,yy,n])=>{ if((a===x&&b===yy)||(a===yy&&b===x)) out.add(`${a}${b} ${n}`); });
+    }));
+    return [...out];
+}
+function fmtScore(sc){return Object.keys(sc).map(k=>elementKor[k][0]+(Math.round(sc[k]*10)/10)).join(' ');}
+
+const ZODIAC_OPTS=`<option value="23">자시(23~01시)</option><option value="1">축시(01~03시)</option><option value="3">인시(03~05시)</option><option value="5">묘시(05~07시)</option><option value="7">진시(07~09시)</option><option value="9">사시(09~11시)</option><option value="11">오시(11~13시)</option><option value="13">미시(13~15시)</option><option value="15">신시(15~17시)</option><option value="17">유시(17~19시)</option><option value="19">술시(19~21시)</option><option value="21">해시(21~23시)</option>`;
+const REGION_OPTS=['모름','서울','인천·경기','강원','대전·충청','대구·경북','부산·울산·경남','광주·전라','제주','북한·해외'].map(r=>`<option value="${r}">${r}</option>`).join('');
+
+function buildPersonCard(pfx,title){
+    return `<div class="person-card">
+        <div class="person-title">${title}</div>
+        <label>이름</label>
+        <input id="${pfx}Name" placeholder="이름 입력">
+        <label>성별</label>
+        <div class="gender">
+            <button id="${pfx}MaleBtn" type="button" onclick="setG('${pfx}','male')">남자</button>
+            <button id="${pfx}FemaleBtn" type="button" onclick="setG('${pfx}','female')">여자</button>
+        </div>
+        <label>태어난 연 / 월 / 일</label>
+        <div class="calendar-row">
+            <select id="${pfx}Cal"><option value="solar">양력</option><option value="lunar">음력</option></select>
+            <input id="${pfx}Y" type="number" placeholder="연"><input id="${pfx}M" type="number" placeholder="월"><input id="${pfx}D" type="number" placeholder="일">
+        </div>
+        <label>태어난 시간</label>
+        <select id="${pfx}TimeType" onchange="toggleG('${pfx}')">
+            <option value="zodiac">자시~해시</option>
+            <option value="exact">정확한 시간</option>
+            <option value="unknown">모름 (시간을 몰라요)</option>
+        </select>
+        <select id="${pfx}TimeZodiac" style="margin-top:10px;">${ZODIAC_OPTS}</select>
+        <input id="${pfx}TimeExact" type="number" placeholder="0~23시 입력" style="display:none;margin-top:10px;">
+        <label>태어난 지역 <span class="opt-hint">(모르면 '모름')</span></label>
+        <select id="${pfx}Region">${REGION_OPTS}</select>
+    </div>`;
+}
+function toggleG(pfx){
+    const t=document.getElementById(pfx+'TimeType').value;
+    document.getElementById(pfx+'TimeZodiac').style.display = t==='zodiac'?'block':'none';
+    document.getElementById(pfx+'TimeExact').style.display  = t==='exact' ?'block':'none';
+}
+function setG(pfx,g){
+    window[pfx+'Gender']=g;
+    document.getElementById(pfx+'MaleBtn').classList.toggle('active',g==='male');
+    document.getElementById(pfx+'FemaleBtn').classList.toggle('active',g==='female');
+}
+function initGunghapInputs(){
+    const box=document.getElementById('gunghapInputs');
+    if(!box || box.dataset.ready) return;
+    box.innerHTML = buildPersonCard('a','첫 번째 사람') + buildPersonCard('b','두 번째 사람');
+    box.dataset.ready='1';
+    setG('a','male'); setG('b','male');
+}
+
+function computePerson(pfx){
+    const g=id=>document.getElementById(pfx+id);
+    const name=g('Name').value.trim();
+    if(!name) return {error:'두 분의 이름을 모두 입력해주세요.'};
+    const by=Number(g('Y').value), bm=Number(g('M').value), bd=Number(g('D').value);
+    if(!by||!bm||!bd||!validDate(by,bm,bd)) return {error:`${name}님의 생년월일을 정확히 입력해주세요.`};
+    const birth=resolveBirth(g('Cal').value,by,bm,bd);
+    if(birth.error) return {error:`${name}님: ${birth.error}`};
+    const {y,m,d}=birth;
+    const tt=g('TimeType').value;
+    let h=null, timeLabel='모름';
+    if(tt==='zodiac'){ h=Number(g('TimeZodiac').value); timeLabel=g('TimeZodiac').selectedOptions[0].text; }
+    else if(tt==='exact'){ const v=g('TimeExact').value, ex=Number(v); if(v!==''&&!Number.isNaN(ex)&&ex>=0&&ex<=23){ h=ex; timeLabel=`${ex}시`; } }
+    const region=g('Region').value || '모름';
+    const bp = h!=null ? getPillars(y,m,d,h) : getPillars3(y,m,d);
+    const sc=elementScore(bp);
+    const dayStem=bp[2].stem;
+    const str=strength(dayStem,bp,sc);
+    const ys=yongshin(dayStem,bp,sc,str);
+    const ge=gyeok(bp,dayStem);
+    const cl=climate(bp[1].branch);
+    const rel=relations(bp);
+    const geStatus=gyeokStatus(ge,str,rel);
+    const birthLabel = birth.type==='음력' ? `음력 ${by}.${bm}.${bd} → 양력 ${y}.${m}.${d}` : `양력 ${y}.${m}.${d}`;
+    return {
+        name, gender: window[pfx+'Gender']||'male', birthLabel, timeLabel, region, hasHour:h!=null,
+        dayStem, dayEl:elementMap[dayStem], yearBranch:bp[0].branch, animal:branchAnimal[bp[0].branch],
+        branches:bp.map(p=>p.branch), pillarsTxt:bp.map(p=>p.stem+p.branch).join(' '),
+        ge,geStatus,str,cl,ys,sc,rel,
+    };
+}
+
+function gunghapData(A,B){
+    const ea=A.dayEl, eb=B.dayEl;
+    let elRel, elRelShort;
+    if(ea===eb){ elRel=`두 분 다 ${elementKor[ea]} 일간 — 같은 기운(비화). 닮아 통하지만 부딪힘도 닮음`; elRelShort='같은 기운(비화)'; }
+    else if(produces[ea]===eb){ elRel=`${A.name}님의 ${elementKor[ea]}가 ${B.name}님의 ${elementKor[eb]}를 살리는 상생 (${A.name}님이 베푸는 자리)`; elRelShort='상생 (A→B)'; }
+    else if(produces[eb]===ea){ elRel=`${B.name}님의 ${elementKor[eb]}가 ${A.name}님의 ${elementKor[ea]}를 살리는 상생 (${B.name}님이 베푸는 자리)`; elRelShort='상생 (B→A)'; }
+    else if(controls[ea]===eb){ elRel=`${A.name}님의 ${elementKor[ea]}가 ${B.name}님의 ${elementKor[eb]}를 누르는 상극 (${A.name}님이 주도)`; elRelShort='상극 (A→B)'; }
+    else { elRel=`${B.name}님의 ${elementKor[eb]}가 ${A.name}님의 ${elementKor[ea]}를 누르는 상극 (${B.name}님이 주도)`; elRelShort='상극 (B→A)'; }
+
+    const dgAB=tenGod(A.dayStem,B.dayStem);
+    const dgBA=tenGod(B.dayStem,A.dayStem);
+
+    const cross=crossPairs(A.branches,B.branches);
+    const harmonies=cross.filter(x=>/(합)/.test(x));
+    const clashes  =cross.filter(x=>/(충|형|파|해)/.test(x));
+
+    const animalTag=crossPairs([A.yearBranch],[B.yearBranch]).map(l=>l.split(' ')[1]);
+    const animalRel=`${A.animal}띠 × ${B.animal}띠 — ${animalTag.length?animalTag.join(', '):'평이(특별한 합·충 없음)'}`;
+
+    const aFromB=B.sc[A.ys]>=3, bFromA=A.sc[B.ys]>=3;
+    const aGetsFromB=aFromB?`${B.name}님이 ${A.name}님의 용신(${elementKor[A.ys]})을 채워줌 — 서로의 귀인`:`${B.name}님은 ${A.name}님의 용신(${elementKor[A.ys]}) 보완이 약함`;
+    const bGetsFromA=bFromA?`${A.name}님이 ${B.name}님의 용신(${elementKor[B.ys]})을 채워줌 — 서로의 귀인`:`${A.name}님은 ${B.name}님의 용신(${elementKor[B.ys]}) 보완이 약함`;
+
+    // 조후 보완: 한쪽 조열 + 한쪽 한습 → 서로 식히고 데움
+    let climateNote='두 분의 기운 온도가 비슷함';
+    const hotA=A.cl==='조열', hotB=B.cl==='조열', coldA=A.cl==='한습', coldB=B.cl==='한습';
+    if((hotA&&coldB)||(coldA&&hotB)) climateNote='한쪽은 뜨겁고 한쪽은 차가워 서로의 온도를 맞춰주는 조후 보완(좋은 짝)';
+    else if(hotA&&hotB) climateNote='두 분 다 기운이 뜨거워 함께 달아오르기 쉬움(과열 주의)';
+    else if(coldA&&coldB) climateNote='두 분 다 기운이 차가워 정이 가라앉기 쉬움(온기 보충 필요)';
+
+    return {
+        elRel, elRelShort, dgAB, dgBA, animalRel, climateNote,
+        harmonies: harmonies.length?harmonies.join(', '):'뚜렷한 합 없음',
+        clashes:   clashes.length?clashes.join(', '):'뚜렷한 충돌 없음',
+        branchSummary:(harmonies.length?`합 ${harmonies.length}`:'합 없음')+(clashes.length?` · 충돌 ${clashes.length}`:' · 충돌 없음'),
+        yongshinShort:(aFromB||bFromA)?'서로 보완':'보완 약함',
+        aGetsFromB, bGetsFromA,
+        scA:fmtScore(A.sc), scB:fmtScore(B.sc),
+    };
+}
+
+function buildCoupleSummary(A,B,gh){
+    const P = p =>
+`- 이름: ${p.name} (${p.gender==='female'?'여성':'남성'})
+- 출생: ${p.birthLabel} / 태어난 시간: ${p.timeLabel}${p.hasHour?'':' (시간 모름 → 시주 제외하고 풀이)'} / 지역: ${p.region}
+- 사주: ${p.pillarsTxt}
+- 일간(본인 본질): ${p.dayStem}(${elementKor[p.dayEl]}) / 띠: ${p.animal}
+- 격국: ${p.ge} (${p.geStatus}) / 신강·신약: ${p.str} / 조후: ${p.cl}
+- 용신(필요한 기운): ${elementKor[p.ys]} / 본인 사주 안 합충: ${p.rel}
+- 오행 분포: `;
+    return `[첫 번째 사람]
+${P(A)}${gh.scA}
+
+[두 번째 사람]
+${P(B)}${gh.scB}
+
+[두 사람의 궁합 데이터 — 명리 법칙으로 산출, 이 근거 안에서만 풀이할 것]
+- 일간 오행 관계(서로의 본질이 살리는지 누르는지): ${gh.elRel}
+- 십성 관계: ${A.name}님이 본 ${B.name}님 = ${gh.dgAB} / ${B.name}님이 본 ${A.name}님 = ${gh.dgBA}
+- 띠(연지) 궁합: ${gh.animalRel}
+- 지지 인연(합 — 끌림·잘 맞음): ${gh.harmonies}
+- 지지 충돌(충·형·파·해 — 부딪힘·조심): ${gh.clashes}
+- 용신 보완(서로 부족한 기운을 채워주는지): ${gh.aGetsFromB} / ${gh.bGetsFromA}
+- 조후(기운 온도) 보완: ${gh.climateNote}`;
+}
+
+async function runGunghap(){
+    const result=document.getElementById('result'); result.innerHTML='';
+    const A=computePerson('a'); if(A.error){ result.innerHTML=`<div class="error">${A.error}</div>`; return; }
+    const B=computePerson('b'); if(B.error){ result.innerHTML=`<div class="error">${B.error}</div>`; return; }
+    const gh=gunghapData(A,B);
+    const couple=buildCoupleSummary(A,B,gh);
+    const readingId='gh-'+Math.random().toString(36).slice(2,9);
+    result.innerHTML=`
+        <div class="box dosa">
+            <h3>도사가 풀어주는 궁합</h3>
+            <div class="based-on">
+                <span><b>${A.name}</b>님 (${A.animal}띠) · ${A.birthLabel} · ${A.pillarsTxt}</span>
+                <span><b>${B.name}</b>님 (${B.animal}띠) · ${B.birthLabel} · ${B.pillarsTxt}</span>
+                <span>본질(일간) 관계 <b>${gh.elRelShort}</b></span>
+                <span>지지 인연 <b>${gh.branchSummary}</b></span>
+                <span>용신 보완 <b>${gh.yongshinShort}</b></span>
+            </div>
+            <div id="${readingId}" class="dosa-body" style="margin-top:14px;">
+                ${dosaLoadingHTML()}
+            </div>
+        </div>
+        ${gunghapMethodsBox()}`;
+    fetchGunghap(readingId, A.name, B.name, couple);
+}
+
+async function fetchGunghap(targetId, nameA, nameB, couple){
+    const target=document.getElementById(targetId);
+    if(!target) return;
+    try{
+        const email=(()=>{ try{ return localStorage.getItem('erp.userEmail.last')||sessionStorage.getItem('erp.userEmail')||''; }catch{ return ''; } })();
+        const res=await fetch('saju-reading.php', {
+            method:'POST',
+            headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({ mode:'gunghap', name:`${nameA}·${nameB}`, couple, email }),
+        });
+        const data=await res.json().catch(()=>null);
+        if(!res.ok || !data?.ok){
+            target.innerHTML=`<em style="color:#888;">궁합 풀이를 가져오지 못했습니다 (${data?.error||res.status}). 다시 시도해 주세요.</em>`;
+            return;
+        }
+        target.textContent=data.reading;
+        addDosaCopyButton(target, `${nameA}·${nameB}`, data.reading);
+    }catch(e){
+        target.innerHTML=`<em style="color:#888;">궁합 풀이를 가져오지 못했습니다 (${(e&&e.message)||e}). 다시 시도해 주세요.</em>`;
+    }
+}
+
+function gunghapMethodsBox(){
+    return `
+        <div class="box">
+            <h3 style="margin-top:0;">📘 적용된 궁합 풀이 방식</h3>
+            <div style="font-size:13.5px;line-height:1.85;color:var(--secondary);">
+                ▪ 두 사람 각자의 사주팔자(년·월·일·시주) 계산 — 시간 모름이면 시주 제외<br>
+                ▪ 일간(본질) 오행의 상생·상극·비화 관계<br>
+                ▪ 십성(서로를 보는 관계) 판단<br>
+                ▪ 지지 육합·삼합(인연) / 충·형·파·해(갈등) 교차 비교<br>
+                ▪ 띠(연지) 궁합<br>
+                ▪ 용신(서로 부족한 기운) 보완 여부 — 귀인 판단<br>
+                ▪ 조후(기운 온도) 보완 여부<br>
+                ▪ 신강·신약 균형
+            </div>
+            <div class="muted-line" style="margin-top:14px;">※ 이 결과는 재미와 참고를 위한 풀이입니다.</div>
         </div>`;
 }
 </script>
