@@ -77,7 +77,7 @@ jobs:
           php -l api/billing/cron-renew.php           # 정기결제 자동 갱신 cron (GitHub Actions schedule)
           php -l api/billing/topup-verify.php         # 일회성 충전권 결제 검증 + 충전
           php -l api/billing/topup-settings.php       # 자동충전 동의 토글 / 잔액 조회
-          php -l api/billing/topup-selftest.php       # (임시) 충전 로직 자체 테스트
+          php -l api/billing/topup-selftest.php       # 비활성 stub (검증 완료 후 폐쇄)
           php -l api/sms/send-bulk.php
           php -l api/sms/balance.php
           php -l api/sms/providers/SmsProvider.php
