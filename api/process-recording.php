@@ -993,6 +993,9 @@ $summaryLimitMinutes = null;   // 분 한도 (NULL 이면 회 단위 레거시 �
 $usageSecondsPeriod = 0;       // 이번달 누적 초
 $overageEnabled = 0;
 $overageBalanceSeconds = 0;
+$autoTopupEnabled = 0;          // 신규 Google Play 충전 동의 (앱팀 2026-06-18). 현재 전원 0 — 옵트인 사용자만 새 흐름.
+$topupBalanceMinutes = 0;       // 일회성 충전 잔액 (분)
+$topupNeeded = false;           // 통화 후 [정기한도+충전잔액] 0 → 앱에 추가충전 유도 신호
 // 사장님 2026-05-26 — 사용량 이월 금지 안전망.
 // cron-renew 가 잡지 못하는 사용자 (free / admin 수동 plan / 결제 미연동) 도
 // last_usage_reset_at 기준 30일 경과 시 usage_seconds_period 자동 0 reset.
@@ -1045,6 +1048,16 @@ try {
 }
 $isAdminUser = is_admin_email_for_recording($ownerEmail);
 
+// 신규 충전권 컬럼 별도 로드 — 컬럼 없으면 0 유지(메인 plan 로드 안전, 차단 영향 X).
+try {
+    $tps = $pdo->prepare('SELECT auto_topup_enabled, topup_balance_minutes FROM members WHERE email = :e LIMIT 1');
+    $tps->execute([':e' => $ownerEmail]);
+    if ($trow = $tps->fetch()) {
+        $autoTopupEnabled    = (int)($trow['auto_topup_enabled'] ?? 0);
+        $topupBalanceMinutes = (int)($trow['topup_balance_minutes'] ?? 0);
+    }
+} catch (Throwable $e) { /* 컬럼 미존재 — 0 유지 */ }
+
 if (!$isAdminUser) {
     // plan_status 검사 — past_due / cancelled 는 즉시 차단.
     $statusLc = strtolower($planStatus);
@@ -1058,7 +1071,12 @@ if (!$isAdminUser) {
     /* Phase 2 분 단위 한도 검사 (summary_limit_minutes 채워진 경우 우선).
      * 앱이 보낸 duration_sec 으로 이번 통화 길이를 사전에 알 수 있음.
      * 한도 + 충전 잔액으로 충당 가능한지 미리 검증. 부족 시 자동 충전 트리거. */
-    if ($summaryLimitMinutes !== null && $summaryLimitMinutes > 0) {
+    if ($autoTopupEnabled === 1 && $summaryLimitMinutes !== null && $summaryLimitMinutes > 0) {
+        // 신규 Google Play 충전 모델 (앱팀 2026-06-18) — 이번 통화는 절대 막지 않는다.
+        // 요약을 정상 처리한 뒤(사후), [정기한도+충전잔액]이 0이면 응답에 topup_needed 신호를 실어
+        // 앱이 결제 UI 를 띄우게 한다. 서버 PortOne 자동청구(charge_overage_top_up) 미사용.
+        // → 사전 차단/청구 로직 전체 skip.
+    } elseif ($summaryLimitMinutes !== null && $summaryLimitMinutes > 0) {
         $limitSec = $summaryLimitMinutes * 60;
         $needSec = max(60, (int)$durationSec);  // 최소 1분 가정 (앱이 0 보낼 때 안전망)
         $afterUsage = $usageSecondsPeriod + $needSec;
@@ -2071,7 +2089,23 @@ if (!$isAdminUser && $planLowerForCount !== 'master' && $planLowerForCount !== '
             $overSec = max(0, $usageAfter - $limitSecFinal);
             $prevOverSec = max(0, $usageSecondsPeriod - $limitSecFinal);
             $deltaOverSec = $overSec - $prevOverSec;  // 이번 통화 분 중 한도 초과분
-            if ($deltaOverSec > 0) {
+            if ($autoTopupEnabled === 1) {
+                // 신규 Google Play 모델 — 한도 초과분을 충전 잔액(분)에서 차감.
+                $deltaOverMin = (int)ceil($deltaOverSec / 60);
+                if ($deltaOverMin > 0) {
+                    try {
+                        $pdo->prepare('UPDATE members SET topup_balance_minutes = GREATEST(0, COALESCE(topup_balance_minutes,0) - :m) WHERE email = :e')
+                            ->execute([':m' => $deltaOverMin, ':e' => $ownerEmail]);
+                    } catch (Throwable $e) {}
+                    $topupBalanceMinutes = max(0, $topupBalanceMinutes - $deltaOverMin);
+                }
+                // 통화 후 잔여 = 정기 한도 남은 분 + 충전 잔액. 0 이하면 추가충전 유도 신호.
+                $limitLeftMin = max(0, $summaryLimitMinutes - (int)ceil($usageAfter / 60));
+                if (($limitLeftMin + $topupBalanceMinutes) <= 0) {
+                    $topupNeeded = true;
+                    error_log('[process-recording] topup_needed: owner=' . $ownerEmail . ', balance=' . $topupBalanceMinutes . 'min');
+                }
+            } elseif ($deltaOverSec > 0) {
                 try {
                     $pdo->prepare('UPDATE members SET overage_balance_seconds = GREATEST(0, COALESCE(overage_balance_seconds,0) - :d) WHERE email = :e')
                         ->execute([':d' => $deltaOverSec, ':e' => $ownerEmail]);
@@ -2206,5 +2240,15 @@ jout([
         'free_quota' => customer_log_free_quota(),
         // 사장님 2026-05-25 — native A 모달 분기용 flag.
         'requires_subscription' => ($plan === 'free' && !$isAdminUser),
+    ],
+    // 일회성 충전권 (앱팀 2026-06-18) — needed=true 면 앱이 결제 UI 표시(통화 후 잔여 0).
+    'topup' => [
+        'auto_topup_enabled' => ($autoTopupEnabled === 1),
+        'balance_minutes'    => $topupBalanceMinutes,
+        'needed'             => $topupNeeded,
+        'message'            => $topupNeeded ? '이번 달 사용량을 모두 사용했습니다. 충전(₩5,000 = 80분) 후 계속 이용하실 수 있습니다.' : null,
+        'product_id'         => 'youngman_topup_80min',
+        'price'              => 5000,
+        'minutes'            => 80,
     ],
 ]);
