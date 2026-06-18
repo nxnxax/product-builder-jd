@@ -816,66 +816,200 @@ if (statsApplyBtn) {
 
 function won(n) { return '₩' + Number(n || 0).toLocaleString('ko-KR'); }
 
+let _revData = null, _revSub = 'daily', _revSubsBound = false;
+const _revPage = { daily: 1, weekly: 1, monthly: 1, payments: 1 };
+const _revQ = { daily: '', weekly: '', monthly: '', payments: '' };
+const REV_BUCKETS_PER_PAGE = 10, REV_PAYMENTS_PER_PAGE = 25;
+
+function revIsoWeek(s) {
+    const d = new Date(s.slice(0, 10) + 'T00:00:00');
+    const t = new Date(d); t.setDate(t.getDate() + 3 - ((t.getDay() + 6) % 7));
+    const w1 = new Date(t.getFullYear(), 0, 4);
+    const wk = 1 + Math.round(((t - w1) / 86400000 - 3 + ((w1.getDay() + 6) % 7)) / 7);
+    return t.getFullYear() + '-W' + String(wk).padStart(2, '0');
+}
+function revKeyFn(sub) {
+    if (sub === 'daily') return r => (r.paid_at || '').slice(0, 10);
+    if (sub === 'weekly') return r => revIsoWeek(r.paid_at || '');
+    return r => (r.paid_at || '').slice(0, 7); // monthly
+}
+function revAggregate(rows, keyFn) {
+    const map = {};
+    for (const r of rows) {
+        const k = keyFn(r);
+        if (!k) continue;
+        if (!map[k]) map[k] = { key: k, count: 0, revenue: 0, google: 0, vat: 0, cost: 0, net: 0, usage_min: 0 };
+        const m = map[k];
+        m.count++; m.revenue += r.total; m.google += r.google_fee; m.vat += r.vat;
+        m.cost += r.cost; m.net += r.net; m.usage_min += r.usage_min;
+    }
+    return Object.values(map).sort((a, b) => b.key.localeCompare(a.key)); // 최신 desc
+}
+function revGraph(buckets) {
+    const show = buckets.slice(0, 18).reverse(); // 오래된→최신
+    if (!show.length) return '';
+    const max = Math.max(1, ...show.map(b => Math.abs(b.net)));
+    const bars = show.map(b => {
+        const h = Math.round(Math.abs(b.net) / max * 96) + 4;
+        const neg = b.net < 0;
+        return `<div style="flex:1;min-width:24px;display:flex;flex-direction:column;align-items:center;gap:3px;justify-content:flex-end;">
+            <div style="font-size:9px;color:var(--fg-tertiary);white-space:nowrap;">${(b.net / 10000).toFixed(1)}만</div>
+            <div title="${won(b.net)}" style="width:62%;height:${h}px;background:${neg ? '#c8362c' : '#1f9d55'};border-radius:3px 3px 0 0;"></div>
+            <div style="font-size:9px;color:var(--fg-secondary);white-space:nowrap;">${b.key.replace(/^\d{4}-/, '')}</div>
+        </div>`;
+    }).join('');
+    return `<div style="font-size:12px;color:var(--fg-secondary);margin-bottom:6px;">순마진 추이 (최근 ${show.length})</div>
+        <div style="display:flex;align-items:flex-end;gap:4px;height:140px;padding:8px;background:var(--bg-subtle,#f7f5f1);border-radius:10px;overflow-x:auto;margin-bottom:14px;">${bars}</div>`;
+}
+function revSearchBar(sub, placeholder) {
+    return `<div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap;">
+        <input id="rev-search" type="text" value="${escape(_revQ[sub])}" placeholder="${placeholder}"
+            style="font-size:13px;padding:6px 10px;min-width:200px;">
+        ${_revQ[sub] ? '<button id="rev-search-clear" type="button" class="tiny-btn">×</button>' : ''}
+    </div>`;
+}
+function revPager(sub, page, totalPages) {
+    if (totalPages <= 1) return '';
+    return `<div style="display:flex;gap:8px;align-items:center;justify-content:center;margin-top:12px;">
+        <button id="rev-prev" type="button" class="tiny-btn" ${page <= 1 ? 'disabled' : ''}>◀ 이전</button>
+        <span style="font-size:13px;color:var(--fg-secondary);">${page} / ${totalPages}</span>
+        <button id="rev-next" type="button" class="tiny-btn" ${page >= totalPages ? 'disabled' : ''}>다음 ▶</button>
+    </div>`;
+}
+function revAggTable(buckets) {
+    const head = (_revSub === 'daily' ? '날짜' : _revSub === 'weekly' ? '주차' : '월');
+    const th = [head, '건수', '매출', 'Google 15%', '부가세', '사용량', 'AI원가', '순마진']
+        .map(h => `<th style="text-align:right;padding:8px 10px;font-size:12px;color:var(--fg-secondary);white-space:nowrap;border-bottom:1px solid var(--line,#eee);">${h}</th>`).join('');
+    const trs = buckets.map(b => `<tr>
+        <td style="text-align:left;padding:8px 10px;font-size:13px;font-weight:600;white-space:nowrap;border-bottom:1px solid var(--line,#f0f0f0);">${b.key}</td>
+        <td style="text-align:right;padding:8px 10px;font-size:13px;border-bottom:1px solid var(--line,#f0f0f0);">${b.count}건</td>
+        <td style="text-align:right;padding:8px 10px;font-size:13px;border-bottom:1px solid var(--line,#f0f0f0);">${won(b.revenue)}</td>
+        <td style="text-align:right;padding:8px 10px;font-size:13px;color:#c8362c;border-bottom:1px solid var(--line,#f0f0f0);">-${won(b.google)}</td>
+        <td style="text-align:right;padding:8px 10px;font-size:13px;color:#c8362c;border-bottom:1px solid var(--line,#f0f0f0);">-${won(b.vat)}</td>
+        <td style="text-align:right;padding:8px 10px;font-size:13px;border-bottom:1px solid var(--line,#f0f0f0);">${(b.usage_min || 0).toLocaleString()}분</td>
+        <td style="text-align:right;padding:8px 10px;font-size:13px;color:#c8362c;border-bottom:1px solid var(--line,#f0f0f0);">-${won(b.cost)}</td>
+        <td style="text-align:right;padding:8px 10px;font-size:13px;border-bottom:1px solid var(--line,#f0f0f0);"><b style="color:${b.net >= 0 ? '#1f9d55' : '#c8362c'}">${won(b.net)}</b></td>
+    </tr>`).join('');
+    return `<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;min-width:600px;"><thead><tr>${th}</tr></thead><tbody>${trs}</tbody></table></div>`;
+}
+
 async function loadRevenue() {
     const totalsEl = document.getElementById('rev-totals');
-    const monthlyEl = document.getElementById('rev-monthly');
-    const paymentsEl = document.getElementById('rev-payments');
     const assumpEl = document.getElementById('rev-assumptions');
     if (totalsEl) totalsEl.innerHTML = '<p class="form-help">불러오는 중…</p>';
     try {
-        const d = await apiRequest('admin-revenue');
-        const a = d.assumptions || {};
+        _revData = await apiRequest('admin-revenue');
+        const a = _revData.assumptions || {}, t = _revData.totals || {};
         if (assumpEl) assumpEl.textContent =
-            `가정: AI 처리 원가 ${a.cost_per_min}원/분 · Google 빌링 수수료 ${a.google_fee_pct}% · 부가세 = 결제가의 10/110. (원가율은 추정치)`;
-
-        const t = d.totals || {};
-        if (totalsEl) totalsEl.innerHTML = `
-            <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:6px;">
-                ${revStat('총 결제(12개월)', won(t.revenue), t.count + '건')}
-                ${revStat('Google 수수료', '-' + won(t.google), '')}
-                ${revStat('부가세', '-' + won(t.vat), '')}
-                ${revStat('AI 원가', '-' + won(t.cost), (t.usage_min||0).toLocaleString() + '분')}
-                ${revStat('순마진', won(t.net), '', true)}
-            </div>`;
-
-        const m = d.monthly || [];
-        if (monthlyEl) monthlyEl.innerHTML = m.length === 0
-            ? '<p class="form-help">사용기간이 끝난(결제 후 30일 경과) 결제가 아직 없습니다.</p>'
-            : revTable(
-                ['월', '건수', '매출', 'Google 15%', '부가세', '사용량', 'AI원가', '최종 순마진'],
-                m.map(r => [r.month, r.count + '건', won(r.revenue), '-' + won(r.google), '-' + won(r.vat),
-                            (r.usage_min||0).toLocaleString() + '분', '-' + won(r.cost),
-                            `<b style="color:${r.net>=0?'#1f9d55':'#c8362c'}">${won(r.net)}</b>`]));
-
-        const p = d.payments || [];
-        if (paymentsEl) paymentsEl.innerHTML = p.length === 0
-            ? '<p class="form-help">결제 내역이 없습니다.</p>'
-            : revTable(
-                ['결제일시', '이메일', '결제액', 'Google 15%', '부가세', '사용량', 'AI원가', '순마진', '상태'],
-                p.map(r => [
-                    (r.paid_at || '').replace('T', ' ').slice(0, 16),
-                    escape(r.email || ''),
-                    won(r.total), '-' + won(r.google_fee), '-' + won(r.vat),
-                    (r.usage_min||0).toLocaleString() + '분', '-' + won(r.cost),
-                    `<b style="color:${r.net>=0?'#1f9d55':'#c8362c'}">${won(r.net)}</b>`,
-                    r.period_done ? '<span style="color:#1f9d55">확정</span>' : '<span style="color:var(--fg-tertiary)">진행중</span>',
-                ]));
+            `가정: AI 원가 ${a.cost_per_min}원/분 · Google 수수료 ${a.google_fee_pct}% · 부가세 = 결제가의 10/110 (추정).`;
+        if (totalsEl) totalsEl.innerHTML = `<div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:6px;">
+            ${revStat('총 결제(12개월)', won(t.revenue), (t.count || 0) + '건')}
+            ${revStat('Google 수수료', '-' + won(t.google), '')}
+            ${revStat('부가세', '-' + won(t.vat), '')}
+            ${revStat('AI 원가', '-' + won(t.cost), (t.usage_min || 0).toLocaleString() + '분')}
+            ${revStat('순마진', won(t.net), '', true)}</div>`;
+        if (!_revSubsBound) {
+            _revSubsBound = true;
+            document.querySelectorAll('#rev-subtabs .rev-sub').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    _revSub = btn.dataset.rev;
+                    document.querySelectorAll('#rev-subtabs .rev-sub').forEach(b => b.classList.toggle('active', b === btn));
+                    renderRevView();
+                });
+            });
+        }
+        renderRevView();
     } catch (e) {
         if (totalsEl) totalsEl.innerHTML = `<p class="form-help" style="color:#c8362c;">매출 조회 실패: ${escape(e.message || String(e))}</p>`;
     }
 }
 
+function renderRevView() {
+    const el = document.getElementById('rev-view');
+    if (!el || !_revData) return;
+    if (_revSub === 'payments') return renderRevPayments(el);
+
+    const placeholder = _revSub === 'daily' ? '날짜 검색 (예: 2026-06-19 또는 2026-06)'
+        : _revSub === 'weekly' ? '주차 검색 (예: 2026-W25)' : '월 검색 (예: 2026-06)';
+    let buckets = revAggregate(_revData.payments || [], revKeyFn(_revSub));
+    const q = _revQ[_revSub].trim();
+    if (q) buckets = buckets.filter(b => b.key.includes(q));
+
+    const totalPages = Math.max(1, Math.ceil(buckets.length / REV_BUCKETS_PER_PAGE));
+    if (_revPage[_revSub] > totalPages) _revPage[_revSub] = totalPages;
+    const page = _revPage[_revSub];
+    const slice = buckets.slice((page - 1) * REV_BUCKETS_PER_PAGE, page * REV_BUCKETS_PER_PAGE);
+
+    el.innerHTML = revSearchBar(_revSub, placeholder)
+        + revGraph(buckets)
+        + (buckets.length ? revAggTable(slice) : '<p class="form-help">해당 데이터가 없습니다.</p>')
+        + revPager(_revSub, page, totalPages);
+    bindRevControls();
+}
+
+function renderRevPayments(el) {
+    let rows = (_revData.payments || []).slice(); // 이미 paid_at desc
+    const q = _revQ.payments.trim();
+    if (q) rows = rows.filter(r => (r.paid_at || '').includes(q) || (r.email || '').includes(q));
+
+    const totalPages = Math.max(1, Math.ceil(rows.length / REV_PAYMENTS_PER_PAGE));
+    if (_revPage.payments > totalPages) _revPage.payments = totalPages;
+    const page = _revPage.payments;
+    const slice = rows.slice((page - 1) * REV_PAYMENTS_PER_PAGE, page * REV_PAYMENTS_PER_PAGE);
+
+    const th = ['결제일시', '이메일', '결제액', 'Google 15%', '부가세', '사용량', 'AI원가', '순마진', '상태']
+        .map(h => `<th style="text-align:right;padding:8px 10px;font-size:12px;color:var(--fg-secondary);white-space:nowrap;border-bottom:1px solid var(--line,#eee);">${h}</th>`).join('');
+    let body = '', lastDay = null;
+    for (const r of slice) {
+        const day = (r.paid_at || '').slice(0, 10);
+        if (day !== lastDay) {
+            lastDay = day;
+            const dr = rows.filter(x => (x.paid_at || '').slice(0, 10) === day);
+            const dRev = dr.reduce((s, x) => s + x.total, 0), dNet = dr.reduce((s, x) => s + x.net, 0);
+            body += `<tr><td colspan="9" style="background:#efece7;font-weight:700;font-size:12px;padding:7px 10px;border-top:2px solid #ddd6cc;">📅 ${day} — ${dr.length}건 · 매출 ${won(dRev)} · 순마진 <span style="color:${dNet >= 0 ? '#1f9d55' : '#c8362c'}">${won(dNet)}</span></td></tr>`;
+        }
+        body += `<tr>
+            <td style="text-align:left;padding:7px 10px;font-size:13px;white-space:nowrap;border-bottom:1px solid var(--line,#f0f0f0);">${(r.paid_at || '').replace('T', ' ').slice(0, 16)}</td>
+            <td style="text-align:left;padding:7px 10px;font-size:12px;white-space:nowrap;border-bottom:1px solid var(--line,#f0f0f0);">${escape(r.email || '')}</td>
+            <td style="text-align:right;padding:7px 10px;font-size:13px;border-bottom:1px solid var(--line,#f0f0f0);">${won(r.total)}</td>
+            <td style="text-align:right;padding:7px 10px;font-size:13px;color:#c8362c;border-bottom:1px solid var(--line,#f0f0f0);">-${won(r.google_fee)}</td>
+            <td style="text-align:right;padding:7px 10px;font-size:13px;color:#c8362c;border-bottom:1px solid var(--line,#f0f0f0);">-${won(r.vat)}</td>
+            <td style="text-align:right;padding:7px 10px;font-size:13px;border-bottom:1px solid var(--line,#f0f0f0);">${(r.usage_min || 0).toLocaleString()}분</td>
+            <td style="text-align:right;padding:7px 10px;font-size:13px;color:#c8362c;border-bottom:1px solid var(--line,#f0f0f0);">-${won(r.cost)}</td>
+            <td style="text-align:right;padding:7px 10px;font-size:13px;border-bottom:1px solid var(--line,#f0f0f0);"><b style="color:${r.net >= 0 ? '#1f9d55' : '#c8362c'}">${won(r.net)}</b></td>
+            <td style="text-align:right;padding:7px 10px;font-size:12px;border-bottom:1px solid var(--line,#f0f0f0);">${r.period_done ? '<span style="color:#1f9d55">확정</span>' : '<span style="color:var(--fg-tertiary)">진행중</span>'}</td>
+        </tr>`;
+    }
+    el.innerHTML = revSearchBar('payments', '날짜(YYYY-MM-DD) 또는 이메일 검색')
+        + (rows.length ? `<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;min-width:760px;"><thead><tr>${th}</tr></thead><tbody>${body}</tbody></table></div>` : '<p class="form-help">결제 내역이 없습니다.</p>')
+        + revPager('payments', page, totalPages);
+    bindRevControls();
+}
+
+function bindRevControls() {
+    const sub = _revSub;
+    const search = document.getElementById('rev-search');
+    if (search) {
+        let tmr = null;
+        search.addEventListener('input', () => {
+            clearTimeout(tmr);
+            tmr = setTimeout(() => { _revQ[sub] = search.value; _revPage[sub] = 1; renderRevView(); }, 300);
+        });
+    }
+    const clr = document.getElementById('rev-search-clear');
+    if (clr) clr.addEventListener('click', () => { _revQ[sub] = ''; _revPage[sub] = 1; renderRevView(); });
+    const prev = document.getElementById('rev-prev');
+    if (prev) prev.addEventListener('click', () => { if (_revPage[sub] > 1) { _revPage[sub]--; renderRevView(); } });
+    const next = document.getElementById('rev-next');
+    if (next) next.addEventListener('click', () => { _revPage[sub]++; renderRevView(); });
+}
+
 function revStat(label, value, sub, big) {
     return `<div style="flex:1;min-width:120px;padding:12px 14px;background:var(--bg-subtle,#f7f5f1);border-radius:10px;">
         <div style="font-size:12px;color:var(--fg-secondary);">${label}</div>
-        <div style="font-size:${big?'20px':'17px'};font-weight:800;color:${big?'#1f9d55':'var(--fg)'};margin-top:2px;">${value}</div>
+        <div style="font-size:${big ? '20px' : '17px'};font-weight:800;color:${big ? '#1f9d55' : 'var(--fg)'};margin-top:2px;">${value}</div>
         ${sub ? `<div style="font-size:11px;color:var(--fg-tertiary);margin-top:1px;">${sub}</div>` : ''}
     </div>`;
-}
-function revTable(headers, rows) {
-    const th = headers.map(h => `<th style="text-align:right;padding:8px 10px;font-size:12px;color:var(--fg-secondary);white-space:nowrap;border-bottom:1px solid var(--line,#eee);">${h}</th>`).join('');
-    const trs = rows.map(cols => `<tr>${cols.map((c, i) => `<td style="text-align:${i<=1?'left':'right'};padding:8px 10px;font-size:13px;white-space:nowrap;border-bottom:1px solid var(--line,#f0f0f0);">${c}</td>`).join('')}</tr>`).join('');
-    return `<table style="width:100%;border-collapse:collapse;min-width:640px;"><thead><tr>${th}</tr></thead><tbody>${trs}</tbody></table>`;
 }
 
 const cleanupBtn = document.getElementById('cleanup-orphans-btn');

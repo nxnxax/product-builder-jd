@@ -518,15 +518,18 @@
                     <p id="rev-assumptions" class="form-help" style="margin:6px 0 12px;font-size:12px;"></p>
                     <div id="rev-totals"></div>
                 </div>
+                <style>
+                    #rev-subtabs .rev-sub.active { background: var(--fg, #1a1611); color: #fff; }
+                </style>
                 <div class="card">
-                    <h3>월별 최종 순마진</h3>
-                    <p class="card-subtitle">결제 후 한 달(사용기간)이 모두 끝난 고객 기준 — 실제 사용량 원가까지 반영한 확정 순마진입니다.</p>
-                    <div id="rev-monthly" style="overflow-x:auto;margin-top:10px;"></div>
-                </div>
-                <div class="card">
-                    <h3>결제 내역 (날짜·시간별)</h3>
-                    <p class="card-subtitle">최근 200건. 사용기간 진행 중인 건은 원가가 잠정치(현재까지 사용량)입니다.</p>
-                    <div id="rev-payments" style="overflow-x:auto;margin-top:10px;"></div>
+                    <div id="rev-subtabs" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;">
+                        <button type="button" class="tiny-btn rev-sub active" data-rev="daily">일간 매출</button>
+                        <button type="button" class="tiny-btn rev-sub" data-rev="weekly">주간 매출</button>
+                        <button type="button" class="tiny-btn rev-sub" data-rev="monthly">월간 매출</button>
+                        <button type="button" class="tiny-btn rev-sub" data-rev="payments">결제내역</button>
+                    </div>
+                    <p class="card-subtitle" style="margin-bottom:12px;">일간/주간/월간은 그래프 + 표 + 검색 + 페이지로, 결제내역은 일별 구분선으로 표시됩니다. (진행중 건은 원가 잠정치)</p>
+                    <div id="rev-view"></div>
                 </div>
             </section>
 
@@ -716,6 +719,6 @@
     </div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-<script src="admin.js?v=20260619-revenue" type="module"></script>
+<script src="admin.js?v=20260619-revenue2" type="module"></script>
 </body>
 </html>

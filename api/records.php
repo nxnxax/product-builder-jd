@@ -3484,7 +3484,7 @@ try {
         respond([
             'ok' => true,
             'assumptions' => ['cost_per_min' => $COST_PER_MIN, 'google_fee_pct' => $GOOGLE_FEE_PCT],
-            'payments' => array_slice($payments, 0, 200),   // 최근 200건 (날짜/시간별 표)
+            'payments' => $payments,                          // 12개월 전체 (클라가 일/주/월 집계)
             'monthly'  => array_values($monthly),            // 사용기간 종료 건 월별 최종 순마진
             'totals'   => $totalsAll,
         ]);
