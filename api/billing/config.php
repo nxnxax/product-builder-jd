@@ -29,23 +29,28 @@ try {
     portone_response(['status' => 'error', 'code' => 'config_missing', 'message' => $e->getMessage()], 503);
 }
 
-// 사장님 2026-05-28 — VAT 별도 정책. 앱팀(어센트라) 요청 §5 스키마 통일.
-//   price         : 실제 결제 청구 금액 (VAT 포함, 26,400 등)
-//   price_display : 사용자 카드 표시 금액 (공급가액, 24,000 등)
-//   vat_excluded  : VAT 별도 플래그 (사용자 표시 시 "(VAT 별도)" 라벨)
-//   minutes       : 월 AI 요약 한도 (분)
-//   amount        : 옛 클라이언트 호환 (= price = 결제 청구액)
+// 사장님 2026-06-18 — 출시기념 할인가 (VAT 포함 최종가). 앱팀(어센트라) 스키마.
+//   price          : 실제 결제 청구 금액 (VAT 포함 최종가, 14,900 등)
+//   price_display  : 사용자 카드 표시 금액 (= 청구액, VAT 포함 최종가)
+//   price_original : 정가 (할인 전, 줄긋기 strikethrough 표시용 — 결제엔 미사용)
+//   supply_amount  : 공급가액 (VAT 제외, 세금계산서용)
+//   vat_amount     : 부가세
+//   vat_excluded   : false (이제 표시가가 VAT 포함 최종가)
+//   minutes        : 월 AI 요약 한도 (분)
+//   amount         : 옛 클라이언트 호환 (= price = 결제 청구액)
 $planKeys = ['sales', 'master', 'agency'];
 $plans = [];
 foreach ($planKeys as $k) {
     $plans[$k] = [
-        'label'         => portone_plan_label($k),
-        'price'         => portone_plan_amount($k),
-        'price_display' => plan_supply_amount($k),
-        'vat_amount'    => plan_vat_amount($k),
-        'vat_excluded'  => true,
-        'minutes'       => plan_default_summary_limit_minutes($k),
-        'amount'        => portone_plan_amount($k),  // 옛 호환
+        'label'          => portone_plan_label($k),
+        'price'          => portone_plan_amount($k),
+        'price_display'  => portone_plan_amount($k),
+        'price_original' => plan_list_price($k),
+        'supply_amount'  => plan_supply_amount($k),
+        'vat_amount'     => plan_vat_amount($k),
+        'vat_excluded'   => false,
+        'minutes'        => plan_default_summary_limit_minutes($k),
+        'amount'         => portone_plan_amount($k),  // 옛 호환
     ];
 }
 

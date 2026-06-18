@@ -160,9 +160,10 @@
         free: 0, sales: 300, master: 700, agency: 1500,
         trialing: 0, plus: 300, pro: 700, premium: 300,
     };
+    // 2026-06-18 출시기념 할인가 (VAT 포함 최종 결제액).
     const PLAN_PRICE = {
-        free: 0, sales: 24000, master: 47000, agency: 89000,
-        trialing: 0, plus: 24000, pro: 47000, premium: 24000,
+        free: 0, sales: 14900, master: 28900, agency: 39900,
+        trialing: 0, plus: 14900, pro: 28900, premium: 14900,
     };
     function normalizePlan(p) {
         if (p === 'premium') return 'sales';
@@ -181,9 +182,9 @@
         return m ? `${m[1]}.${m[2]}.${m[3]}` : s;
     }
     function formatPrice(n) {
-        // 사장님 2026-05-28 — VAT 별도 정책. 공급가액 표시 + "(VAT 별도)" 라벨.
+        // 2026-06-18 출시기념 할인가. 표시가 = VAT 포함 최종 결제액.
         if (!n) return '무료';
-        return '₩' + Number(n).toLocaleString('ko-KR') + ' / 월 (VAT 별도)';
+        return '₩' + Number(n).toLocaleString('ko-KR') + ' / 월 (VAT 포함)';
     }
 
     function renderBilling(profile) {

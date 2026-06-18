@@ -3834,14 +3834,15 @@ try {
         // ── MRR / ARPU ──
         // 사장님 2026-05-28 — VAT 별도 정책. price=청구액(VAT 포함) / price_display=공급가액(사장님 매출).
         // MRR 은 사장님 매출 기준 = price_display (VAT 제외) × active subscriptions.
+        // 2026-06-18 할인가(VAT 포함 최종). price=청구액 / price_display=공급가(VAT제외, 사장님 매출). MRR=공급가×구독수.
         $planPrices = [
-            'sales'   => ['price' => 26400, 'price_display' => 24000, 'vat_excluded' => true, 'minutes' => 300],
-            'master'  => ['price' => 51700, 'price_display' => 47000, 'vat_excluded' => true, 'minutes' => 700],
-            'agency'  => ['price' => 97900, 'price_display' => 89000, 'vat_excluded' => true, 'minutes' => 1500],
+            'sales'   => ['price' => 14900, 'price_display' => 13545, 'vat_excluded' => true, 'minutes' => 300],
+            'master'  => ['price' => 28900, 'price_display' => 26273, 'vat_excluded' => true, 'minutes' => 700],
+            'agency'  => ['price' => 39900, 'price_display' => 36273, 'vat_excluded' => true, 'minutes' => 1500],
             // 옛 plan key fallback (DB migration 잔재 호환)
-            'plus'    => ['price' => 26400, 'price_display' => 24000, 'vat_excluded' => true, 'minutes' => 300],
-            'pro'     => ['price' => 51700, 'price_display' => 47000, 'vat_excluded' => true, 'minutes' => 700],
-            'premium' => ['price' => 26400, 'price_display' => 24000, 'vat_excluded' => true, 'minutes' => 300],
+            'plus'    => ['price' => 14900, 'price_display' => 13545, 'vat_excluded' => true, 'minutes' => 300],
+            'pro'     => ['price' => 28900, 'price_display' => 26273, 'vat_excluded' => true, 'minutes' => 700],
+            'premium' => ['price' => 14900, 'price_display' => 13545, 'vat_excluded' => true, 'minutes' => 300],
         ];
         $mrr = 0;
         $activeSubsCount = 0;

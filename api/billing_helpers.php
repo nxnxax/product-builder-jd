@@ -123,38 +123,39 @@ if (!function_exists('portone_verify_webhook')) {
 }
 
 if (!function_exists('portone_plan_amount')) {
-    /** 우리 plan 코드 → 결제 청구 금액 (KRW, VAT 포함 = 공급가액 + 10%).
-     *  2026-05-28 사장님 — VAT 별도 정책 전환:
-     *    sales  : 공급가액 24,000 + VAT 2,400 = 청구 26,400
-     *    master : 공급가액 47,000 + VAT 4,700 = 청구 51,700
-     *    agency : 공급가액 89,000 + VAT 8,900 = 청구 97,900
-     *  Google Play / PortOne 결제 시 실제 청구 금액 = 이 값.
-     *  사용자 카드 표시는 plan_supply_amount() = 공급가액 + "(VAT 별도)" 표기.
+    /** 우리 plan 코드 → 결제 청구 금액 (KRW, VAT 포함 최종가).
+     *  2026-06-18 사장님 — 출시기념 할인가 적용 (VAT 포함 최종 결제액, 영구 적용):
+     *    sales  : 14,900 (공급가 13,545 + VAT 1,355)   ← 정가 24,000 할인
+     *    master : 28,900 (공급가 26,273 + VAT 2,627)   ← 정가 47,000 할인
+     *    agency : 39,900 (공급가 36,273 + VAT 3,627)   ← 정가 89,000 할인
+     *  Google Play / PortOne 결제 시 실제 청구 금액 = 이 값 (VAT 포함).
+     *  ※ Google Play 는 Play Console 상품가도 동일 금액으로 맞춰야 함 (사장님 설정).
      */
     function portone_plan_amount(string $plan): int {
         switch (strtolower($plan)) {
-            case 'sales':    return 26400;
-            case 'master':   return 51700;
-            case 'agency':   return 97900;
+            case 'sales':    return 14900;
+            case 'master':   return 28900;
+            case 'agency':   return 39900;
             // 옛 가입자 호환 (라이브 구독자 없으나 fail-safe)
-            case 'plus':     return 26400;  // → sales
-            case 'pro':      return 51700;  // → master
-            case 'premium':  return 26400;  // → sales
+            case 'plus':     return 14900;  // → sales
+            case 'pro':      return 28900;  // → master
+            case 'premium':  return 14900;  // → sales
             default:         return 0;
         }
     }
 }
 
 if (!function_exists('plan_supply_amount')) {
-    /** 공급가액 (KRW, VAT 제외). 사용자 카드 표시 / 세금계산서 공급가액 / 사장님 실 매출 기준. */
+    /** 공급가액 (KRW, VAT 제외). 세금계산서 공급가액 / 사장님 실 매출 기준.
+     *  2026-06-18 할인가(VAT 포함 최종)에서 역산: 청구액 ÷ 1.1. 공급가 + plan_vat_amount = 청구액 정확 일치. */
     function plan_supply_amount(string $plan): int {
         switch (strtolower($plan)) {
-            case 'sales':    return 24000;
-            case 'master':   return 47000;
-            case 'agency':   return 89000;
-            case 'plus':     return 24000;
-            case 'pro':      return 47000;
-            case 'premium':  return 24000;
+            case 'sales':    return 13545;  // 13,545 + 1,355 = 14,900
+            case 'master':   return 26273;  // 26,273 + 2,627 = 28,900
+            case 'agency':   return 36273;  // 36,273 + 3,627 = 39,900
+            case 'plus':     return 13545;
+            case 'pro':      return 26273;
+            case 'premium':  return 13545;
             default:         return 0;
         }
     }
@@ -164,6 +165,22 @@ if (!function_exists('plan_vat_amount')) {
     /** 부가세 (KRW, 공급가액의 10%). 세금계산서 세액. */
     function plan_vat_amount(string $plan): int {
         return (int)round(plan_supply_amount($plan) * 0.1);
+    }
+}
+
+if (!function_exists('plan_list_price')) {
+    /** 정가 (KRW, VAT 포함 기준). 2026-06-18 출시기념 할인 전 가격 — 화면 줄긋기(strikethrough) 표시용.
+     *  결제에는 절대 사용 금지 (실제 청구는 portone_plan_amount). 순수 마케팅 표시값. */
+    function plan_list_price(string $plan): int {
+        switch (strtolower($plan)) {
+            case 'sales':    return 24000;
+            case 'master':   return 47000;
+            case 'agency':   return 89000;
+            case 'plus':     return 24000;
+            case 'pro':      return 47000;
+            case 'premium':  return 24000;
+            default:         return 0;
+        }
     }
 }
 
@@ -193,9 +210,9 @@ if (!function_exists('plan_default_summary_limit_minutes')) {
      * plan 별 default summary_limit_minutes (분 단위 — 신규 분 기반 과금).
      * 2026-05-26 사장님 — 신규 요금제:
      *   - Free   : 0분 (무료, AI 요약은 유료 plan 만)
-     *   - Sales  : 300분/월   (₩24,000)
-     *   - Master : 700분/월   (₩47,000)
-     *   - Agency : 1,500분/월 (₩89,000)
+     *   - Sales  : 300분/월   (₩14,900 VAT포함, 정가 24,000)
+     *   - Master : 700분/월   (₩28,900 VAT포함, 정가 47,000)
+     *   - Agency : 1,500분/월 (₩39,900 VAT포함, 정가 89,000)
      * null = 무제한 (admin 수동 부여 시만, 일반 결제에서는 사용 안 함).
      */
     function plan_default_summary_limit_minutes(string $plan): ?int {
