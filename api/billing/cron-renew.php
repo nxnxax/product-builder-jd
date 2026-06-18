@@ -142,6 +142,7 @@ foreach ($rows as $row) {
         $newPeriodEnd = date('Y-m-d H:i:s', strtotime('+30 days'));
         try {
             $newLimit = plan_default_summary_limit($plan);
+            $newLimitMin = plan_default_summary_limit_minutes($plan);  // 분 한도
             // 사장님 2026-05-26 — 사용량 이월 금지: 매월 갱신 결제 시 usage_seconds_period 도 0 으로 reset.
             // 옛 잔여 분은 삭제되고 새 결제 분만 사용 가능.
             $pdo->prepare("UPDATE members SET
@@ -152,9 +153,10 @@ foreach ($rows as $row) {
                     usage_seconds_period = 0,
                     last_usage_warning_pct = 0,
                     last_usage_reset_at = :now,
-                    summary_limit = :slim
+                    summary_limit = :slim,
+                    summary_limit_minutes = :slm
                 WHERE email = :e")
-                ->execute([':ps' => $now, ':pe' => $newPeriodEnd, ':now' => $now, ':slim' => $newLimit, ':e' => $email]);
+                ->execute([':ps' => $now, ':pe' => $newPeriodEnd, ':now' => $now, ':slim' => $newLimit, ':slm' => $newLimitMin, ':e' => $email]);
             $pdo->prepare("UPDATE subscriptions SET
                     status = 'active',
                     current_period_start = :ps,

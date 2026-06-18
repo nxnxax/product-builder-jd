@@ -145,6 +145,7 @@ try {
 try {
     // 사용량 이월 금지 — 신규 결제 시 usage_seconds_period 도 0 으로 reset (사장님 2026-05-26 정책).
     $newLimit = plan_default_summary_limit($planKey);
+    $newLimitMin = plan_default_summary_limit_minutes($planKey);  // 분 한도 (sales 300 / master 700 / agency 1500)
     $pdo->prepare("UPDATE members SET
             plan = :plan,
             plan_status = 'active',
@@ -155,7 +156,8 @@ try {
             usage_seconds_period = 0,
             last_usage_warning_pct = 0,
             last_usage_reset_at = :now,
-            summary_limit = :slim
+            summary_limit = :slim,
+            summary_limit_minutes = :slm
         WHERE LOWER(email) = LOWER(:email)")
         ->execute([
             ':plan' => $planKey,
@@ -163,6 +165,7 @@ try {
             ':pe' => $periodEnd,
             ':now' => $now,
             ':slim' => $newLimit,
+            ':slm' => $newLimitMin,
             ':email' => $ownerEmail,
         ]);
 

@@ -105,6 +105,7 @@ $periodEnd = date('Y-m-d H:i:s', strtotime('+30 days'));
 try {
     // plan 별 default summary_limit 도 동기화 (plus 20 / pro NULL / 그 외 5)
     $newLimit = plan_default_summary_limit($planRequested);
+    $newLimitMin = plan_default_summary_limit_minutes($planRequested);  // 분 한도
     // 사장님 2026-05-26 — 사용량 이월 금지: 매 결제 시 usage_seconds_period 도 0 으로 reset.
     // 옛 잔여 분은 삭제되고 새 결제 분 (sales 300 / master 700 / agency 1500) 으로 시작.
     $pdo->prepare("UPDATE members SET
@@ -120,7 +121,8 @@ try {
             usage_seconds_period = 0,
             last_usage_warning_pct = 0,
             last_usage_reset_at = :now,
-            summary_limit = :slim
+            summary_limit = :slim,
+            summary_limit_minutes = :slm
         WHERE email = :email")
         ->execute([
             ':plan' => $planRequested,
@@ -130,6 +132,7 @@ try {
             ':pe' => $periodEnd,
             ':now' => $now,
             ':slim' => $newLimit,
+            ':slm' => $newLimitMin,
             ':email' => $ownerEmail,
         ]);
 
