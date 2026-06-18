@@ -2845,12 +2845,25 @@ try {
                     'lastLoginAt' => '',
                     'plan' => 'free',
                     'plan_status' => 'active',
+                    'topup_balance_minutes' => 0,    // 앱팀 2026-06-19 — native PlanCache 용
+                    'auto_topup_enabled' => false,
                     'requires_subscription' => !$isAdminUserPf,  // member row 없으면 free 간주
                 ]]);
             }
             $profile = member_row_from_store($rec['store'], $rec['row']);
             $profile['email'] = $email;
             $profile['is_admin'] = $isAdminUserPf;
+            // 앱팀 2026-06-19 — native PlanCache 용 충전 필드. (컬럼 없으면 기본값)
+            $profile['topup_balance_minutes'] = 0;
+            $profile['auto_topup_enabled'] = false;
+            try {
+                $tpf = $pdo->prepare('SELECT COALESCE(topup_balance_minutes,0) bal, COALESCE(auto_topup_enabled,0) en FROM members WHERE LOWER(email)=LOWER(:e) LIMIT 1');
+                $tpf->execute([':e' => $email]);
+                if ($tpr = $tpf->fetch()) {
+                    $profile['topup_balance_minutes'] = (int)$tpr['bal'];
+                    $profile['auto_topup_enabled'] = (bool)(int)$tpr['en'];
+                }
+            } catch (Throwable $e) { /* 컬럼 미존재 — 기본값 유지 */ }
             if ($isAdminUserPf) $profile['role'] = 'admin';  // 종합 판별이 admin 이면 role 도 admin 으로 노출
             // 사장님 2026-05-26 — 옛 plan key 호환 매핑 (member_row_from_store 가 이미 정규화하지만 fail-safe).
             $effectivePlanPf = strtolower((string)($profile['plan'] ?? 'free'));
