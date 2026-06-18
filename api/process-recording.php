@@ -1072,10 +1072,20 @@ if (!$isAdminUser) {
      * 앱이 보낸 duration_sec 으로 이번 통화 길이를 사전에 알 수 있음.
      * 한도 + 충전 잔액으로 충당 가능한지 미리 검증. 부족 시 자동 충전 트리거. */
     if ($autoTopupEnabled === 1 && $summaryLimitMinutes !== null && $summaryLimitMinutes > 0) {
-        // 신규 Google Play 충전 모델 (앱팀 2026-06-18) — 이번 통화는 절대 막지 않는다.
-        // 요약을 정상 처리한 뒤(사후), [정기한도+충전잔액]이 0이면 응답에 topup_needed 신호를 실어
-        // 앱이 결제 UI 를 띄우게 한다. 서버 PortOne 자동청구(charge_overage_top_up) 미사용.
-        // → 사전 차단/청구 로직 전체 skip.
+        // 신규 Google Play 충전 모델 (앱팀 2026-06-18).
+        //  - 한도+충전잔액이 남아있으면 통과 → 요약 처리 + 사후 차감. 이때 잔여 0 되면 응답 topup_needed=true.
+        //    (경계 통화 1건은 허용 — 그 통화가 마지막 분을 소진하고 끝난 뒤 안내)
+        //  - 이미 0 이면 차단(요약 안 함) + topup_required → 앱이 충전 결제 UI. 무한 무료 사용 방지.
+        $usedMinPre = (int)ceil($usageSecondsPeriod / 60);
+        $remainMinPre = max(0, $summaryLimitMinutes - $usedMinPre) + $topupBalanceMinutes;
+        if ($remainMinPre <= 0) {
+            jerror('topup_required',
+                '이번 달 ' . $summaryLimitMinutes . '분을 모두 사용했습니다. 충전(₩' . number_format(5000) . ' = 80분) 후 계속 이용하실 수 있습니다.',
+                402,
+                ['topup' => ['needed' => true, 'product_id' => 'youngman_topup_80min', 'price' => 5000, 'minutes' => 80,
+                             'balance_minutes' => $topupBalanceMinutes]]);
+        }
+        // 남아있으면 통과 (사후 차감 + 잔여0 시 topup_needed 신호는 아래 응답에서 처리)
     } elseif ($summaryLimitMinutes !== null && $summaryLimitMinutes > 0) {
         $limitSec = $summaryLimitMinutes * 60;
         $needSec = max(60, (int)$durationSec);  // 최소 1분 가정 (앱이 0 보낼 때 안전망)
