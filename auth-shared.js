@@ -1940,7 +1940,7 @@ if (typeof document !== 'undefined') {
    Supabase signInWithPassword / signUp / signInWithOAuth + records.php
    auth-member POST 호출 — main.js 의 handleAuthSubmit 과 동일 로직.
    ========================================================================= */
-function openSharedLoginModal(initialMode = 'login') {
+export function openSharedLoginModal(initialMode = 'login') {
     document.querySelectorAll('[data-shared-auth]').forEach(el => el.remove());
 
     const md = document.createElement('div');
