@@ -3,15 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>구독 플랜 · YOUNGMAN</title>
-    <meta name="description" content="YOUNGMAN AI 통화 요약 + CRM 요금제. 출시기념 할인가 — Free 무료 / Sales 14,900원 (300분) / Master 28,900원 (700분) / Agency 39,900원 (1,500분). 모든 가격 VAT 포함.">
+    <title>🎉 출시기념 대박 할인 이벤트 · 구독 플랜 · YOUNGMAN</title>
+    <meta name="description" content="🎉 YOUNGMAN 출시기념 대박 할인 이벤트 — 지금 시작하면 평생 이 가격! Sales 14,900원 (300분) / Master 28,900원 (700분) / Agency 39,900원 (1,500분). 신규 가입자 한정, 특별 공지 시까지. 모든 가격 VAT 포함.">
     <meta name="keywords" content="YOUNGMAN 구독, AI 통화 요약 가격, 영맨 요금제, CRM 구독">
     <meta name="robots" content="index, follow">
     <link rel="canonical" href="https://youngman-biz.com/subscribe.html">
     <meta property="og:type" content="website">
     <meta property="og:url" content="https://youngman-biz.com/subscribe.html">
-    <meta property="og:title" content="구독 플랜 · YOUNGMAN">
-    <meta property="og:description" content="출시기념 할인가 — Free 무료 / Sales 14,900원 / Master 28,900원 / Agency 39,900원 (VAT 포함)">
+    <meta property="og:title" content="🎉 출시기념 대박 할인 이벤트 · YOUNGMAN">
+    <meta property="og:description" content="🎉 출시기념 대박 할인 이벤트 — 지금 시작하면 평생 이 가격! Sales 14,900원 / Master 28,900원 / Agency 39,900원 (VAT 포함, 신규 한정)">
     <meta property="og:image" content="https://youngman-biz.com/og-thumbnail.png">
     <meta property="og:locale" content="ko_KR">
     <meta property="og:site_name" content="YOUNGMAN">
@@ -111,28 +111,93 @@
             gap: 6px;
             margin-bottom: 6px;
         }
-        /* 출시기념 할인 — 정가 줄긋기 + 특가 뱃지 */
-        .plan-card .price-orig {
-            font-size: 16px;
-            font-weight: 600;
-            color: var(--fg-tertiary, #908a82);
-            text-decoration: line-through;
-            text-decoration-thickness: 1.5px;
-        }
+        /* 출시기념 할인 — 특가 뱃지 + 정가 줄긋기(크게) + 평생가 잠금 */
         .plan-card .price-save {
             flex-basis: 100%;
             text-align: center;
-            margin-bottom: 4px;
-            font-size: 11.5px;
-            font-weight: 700;
-            color: #c8362c;
+            margin-bottom: 6px;
+            font-size: 13px;
+            font-weight: 800;
             letter-spacing: -0.01em;
         }
         .plan-card .price-save span {
             display: inline-block;
-            padding: 2px 9px;
-            background: #fdeceb;
+            padding: 4px 13px;
+            color: #fff;
+            background: linear-gradient(135deg, #e0483d 0%, #c8362c 100%);
             border-radius: 999px;
+            box-shadow: 0 2px 6px rgba(200,54,44,.28);
+        }
+        .plan-card .price-orig {
+            flex-basis: 100%;
+            text-align: center;
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--fg-tertiary, #908a82);
+            margin-bottom: 1px;
+        }
+        .plan-card .price-orig s {
+            font-size: 20px;
+            font-weight: 700;
+            color: #b3aaa0;
+            text-decoration-thickness: 2.5px;
+            margin-left: 3px;
+        }
+        .plan-card .price-lock {
+            flex-basis: 100%;
+            text-align: center;
+            margin-top: 6px;
+            font-size: 12.5px;
+            font-weight: 800;
+            color: #c8362c;
+            letter-spacing: -0.01em;
+        }
+        /* 상단 출시기념 이벤트 배너 */
+        .event-hero {
+            margin: 2px 0 22px;
+            padding: 22px 20px;
+            border-radius: 16px;
+            background: linear-gradient(135deg, #c8362c 0%, #8a2620 100%);
+            color: #fff;
+            text-align: center;
+            box-shadow: 0 10px 28px rgba(200,54,44,.26);
+        }
+        .event-hero .event-kicker {
+            display: inline-block;
+            padding: 4px 13px;
+            margin-bottom: 11px;
+            font-size: 12px;
+            font-weight: 800;
+            letter-spacing: 0.03em;
+            background: rgba(255,255,255,0.18);
+            border-radius: 999px;
+        }
+        .event-hero h2 {
+            margin: 0 0 9px;
+            font-size: 23px;
+            font-weight: 800;
+            letter-spacing: -0.02em;
+            line-height: 1.35;
+            color: #fff;
+        }
+        .event-hero h2 em {
+            font-style: normal;
+            color: #ffd86b;
+            text-decoration: underline;
+            text-decoration-thickness: 2px;
+            text-underline-offset: 3px;
+        }
+        .event-hero .event-sub {
+            margin: 0;
+            font-size: 13px;
+            font-weight: 500;
+            color: rgba(255,255,255,0.93);
+            line-height: 1.65;
+        }
+        .event-hero .event-sub b { color: #ffd86b; font-weight: 800; }
+        @media (max-width: 560px) {
+            .event-hero { padding: 20px 16px; }
+            .event-hero h2 { font-size: 19.5px; }
         }
         .plan-card .price-num {
             font-size: 30px;
@@ -339,6 +404,12 @@
         <div id="sub-current-display" style="display:none;"></div>
     </div>
 
+    <div class="event-hero">
+        <span class="event-kicker">🎉 출시기념 대박 할인 이벤트</span>
+        <h2>지금 시작하면 <em>평생 이 가격</em> 그대로</h2>
+        <p class="event-sub">신규 가입자 한정 특별가 · <b>특별 공지 시까지</b><br>한 번 구독하면 영구 고정 — 최대 <b>55% 할인</b></p>
+    </div>
+
     <div id="sub-content"></div>
 
     <p class="sub-fineprint">
@@ -477,7 +548,7 @@
             const off = (!isFree && plan.priceOriginal) ? Math.round((1 - plan.price / plan.priceOriginal) * 100) : 0;
             const priceMainHtml = isFree
                 ? `<span class="price-num">무료</span>`
-                : `${off ? `<span class="price-save"><span>출시기념 특가 ${off}%↓</span></span>` : ''}<span class="price-orig">${formatPrice(plan.priceOriginal)}</span><span class="price-num">${formatPrice(plan.price)}</span><span class="price-unit">/ 월</span><span class="price-vat-note">(VAT 포함)</span>`;
+                : `${off ? `<span class="price-save"><span>🎉 출시기념 대박 할인 ${off}%↓</span></span>` : ''}<span class="price-orig">정가 <s>${formatPrice(plan.priceOriginal)}</s></span><span class="price-num">${formatPrice(plan.price)}</span><span class="price-unit">/ 월</span><span class="price-vat-note">(VAT 포함)</span><span class="price-lock">🔒 지금 시작하면 평생 이 가격</span>`;
             // 유료 플랜은 "AI요약 N분 / 월" / Free 는 "AI요약 0분 / 월" 일관 표시.
             const minutesHtml = `
                 <div class="plan-minutes">
@@ -529,7 +600,7 @@
             const off = (!isFree && plan.priceOriginal) ? Math.round((1 - plan.price / plan.priceOriginal) * 100) : 0;
             const priceMainHtml = isFree
                 ? `<span class="price-num">무료</span>`
-                : `${off ? `<span class="price-save"><span>출시기념 특가 ${off}%↓</span></span>` : ''}<span class="price-orig">${formatPrice(plan.priceOriginal)}</span><span class="price-num">${formatPrice(plan.price)}</span><span class="price-unit">/ 월</span><span class="price-vat-note">(VAT 포함)</span>`;
+                : `${off ? `<span class="price-save"><span>🎉 출시기념 대박 할인 ${off}%↓</span></span>` : ''}<span class="price-orig">정가 <s>${formatPrice(plan.priceOriginal)}</s></span><span class="price-num">${formatPrice(plan.price)}</span><span class="price-unit">/ 월</span><span class="price-vat-note">(VAT 포함)</span><span class="price-lock">🔒 지금 시작하면 평생 이 가격</span>`;
             // 유료 플랜은 "AI요약 N분 / 월" / Free 는 "AI요약 0분 / 월" 일관 표시.
             const minutesHtml = `
                 <div class="plan-minutes">

@@ -1174,5 +1174,79 @@
             });
         });
     </script>
+<!-- ============ 출시기념 대박 할인 이벤트 팝업 (독립 블록 — 인증과 무관) ============ -->
+<style>
+  #ymEventPopup{position:fixed;inset:0;z-index:9999;display:none;align-items:center;justify-content:center;padding:20px;
+    background:rgba(20,14,8,.62);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);animation:ymFade .25s ease both}
+  #ymEventPopup.show{display:flex}
+  @keyframes ymFade{from{opacity:0}to{opacity:1}}
+  @keyframes ymPop{0%{opacity:0;transform:translateY(18px) scale(.94)}100%{opacity:1;transform:none}}
+  @keyframes ymShine{0%{background-position:-160% 0}100%{background-position:260% 0}}
+  @keyframes ymPulse{0%,100%{transform:scale(1)}50%{transform:scale(1.035)}}
+  .ym-pop-card{width:100%;max-width:360px;background:#fffdf9;border-radius:22px;overflow:hidden;
+    box-shadow:0 24px 70px rgba(20,14,8,.4);animation:ymPop .42s cubic-bezier(.16,1,.3,1) both;font-family:'Pretendard',-apple-system,sans-serif}
+  .ym-pop-top{position:relative;padding:26px 22px 22px;text-align:center;color:#fff;
+    background:linear-gradient(135deg,#e0483d 0%,#c8362c 55%,#8a2620 100%);overflow:hidden}
+  .ym-pop-top::after{content:"";position:absolute;inset:0;background:linear-gradient(110deg,transparent 35%,rgba(255,255,255,.28) 50%,transparent 65%);
+    background-size:200% 100%;animation:ymShine 2.6s linear infinite;pointer-events:none}
+  .ym-pop-confetti{font-size:22px;letter-spacing:6px;margin-bottom:8px}
+  .ym-pop-kicker{display:inline-block;padding:5px 14px;border-radius:999px;background:rgba(255,255,255,.2);
+    font-size:12.5px;font-weight:800;letter-spacing:.02em;margin-bottom:12px}
+  .ym-pop-headline{font-size:25px;font-weight:800;letter-spacing:-.02em;line-height:1.32;margin:0}
+  .ym-pop-headline em{font-style:normal;color:#ffd86b;text-decoration:underline;text-decoration-thickness:2px;text-underline-offset:3px}
+  .ym-pop-off{margin-top:12px;font-size:34px;font-weight:900;color:#fff;letter-spacing:-.03em;line-height:1}
+  .ym-pop-off small{display:block;font-size:13px;font-weight:700;color:#ffd86b;letter-spacing:0;margin-top:5px}
+  .ym-pop-body{padding:20px 22px 18px;text-align:center}
+  .ym-pop-price{font-size:15px;font-weight:600;color:#6b635a;line-height:1.7}
+  .ym-pop-price s{color:#b3aaa0;font-weight:700}
+  .ym-pop-price b{color:#c8362c;font-size:19px;font-weight:800}
+  .ym-pop-note{margin:10px 0 0;font-size:12.5px;font-weight:600;color:#8a847e}
+  .ym-pop-note b{color:#c8362c}
+  .ym-pop-cta{display:block;margin:16px 0 0;padding:15px;border-radius:13px;border:0;width:100%;cursor:pointer;
+    font-family:inherit;font-size:16.5px;font-weight:800;color:#fff;letter-spacing:-.01em;text-decoration:none;
+    background:linear-gradient(135deg,#e0483d,#c8362c);box-shadow:0 8px 20px rgba(200,54,44,.32);animation:ymPulse 1.9s ease-in-out infinite}
+  .ym-pop-cta:active{transform:scale(.97)}
+  .ym-pop-foot{display:flex;border-top:1px solid rgba(20,14,8,.08)}
+  .ym-pop-foot button{flex:1;padding:14px;background:none;border:0;cursor:pointer;font-family:inherit;
+    font-size:13.5px;font-weight:600;color:#8a847e}
+  .ym-pop-foot button:first-child{border-right:1px solid rgba(20,14,8,.08)}
+  .ym-pop-foot button:active{background:#f4efe7}
+</style>
+<div id="ymEventPopup" role="dialog" aria-modal="true" aria-label="출시기념 대박 할인 이벤트">
+  <div class="ym-pop-card">
+    <div class="ym-pop-top">
+      <div class="ym-pop-confetti" aria-hidden="true">🎉 🎊 🎉</div>
+      <span class="ym-pop-kicker">출시기념 대박 할인 이벤트</span>
+      <h2 class="ym-pop-headline">지금 시작하면<br><em>평생 이 가격</em> 그대로!</h2>
+      <div class="ym-pop-off">최대 55% 할인<small>신규 가입자 한정 · 특별 공지 시까지</small></div>
+    </div>
+    <div class="ym-pop-body">
+      <p class="ym-pop-price">Sales <s>24,000원</s> → <b>14,900원</b> / 월<br>
+        Master <s>47,000원</s> → <b>28,900원</b> · Agency <s>89,000원</s> → <b>39,900원</b></p>
+      <p class="ym-pop-note">한 번 구독하면 <b>영구 고정가</b> — 지금이 가장 쌉니다 (VAT 포함)</p>
+      <a class="ym-pop-cta" href="subscribe.html">🔥 할인가로 시작하기</a>
+    </div>
+    <div class="ym-pop-foot">
+      <button type="button" id="ymPopHideToday">오늘 그만 보기</button>
+      <button type="button" id="ymPopClose">닫기</button>
+    </div>
+  </div>
+</div>
+<script>
+(function(){
+  var KEY='ym_event_popup_hide';
+  function today(){var d=new Date();return d.getFullYear()+'-'+(d.getMonth()+1)+'-'+d.getDate();}
+  var pop=document.getElementById('ymEventPopup');
+  if(!pop) return;
+  function close(){pop.classList.remove('show');}
+  try{ if(localStorage.getItem(KEY)===today()) return; }catch(e){}
+  setTimeout(function(){ pop.classList.add('show'); }, 700);
+  document.getElementById('ymPopClose').addEventListener('click', close);
+  document.getElementById('ymPopHideToday').addEventListener('click', function(){
+    try{ localStorage.setItem(KEY, today()); }catch(e){} close();
+  });
+  pop.addEventListener('click', function(e){ if(e.target===pop) close(); });
+})();
+</script>
 </body>
 </html>
