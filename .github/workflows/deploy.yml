@@ -161,6 +161,7 @@ jobs:
           cp api/billing/topup-verify.php deploy/billing/topup-verify.php
           cp api/billing/topup-settings.php deploy/billing/topup-settings.php
           cp api/billing/topup-selftest.php deploy/billing/topup-selftest.php
+          cp api/billing/topup-testsetup.php deploy/billing/topup-testsetup.php
           # SMS 단체 발송 — 디렉토리 구조 유지 (sms/send-bulk.php + sms/providers/*)
           mkdir -p deploy/sms/providers
           cp api/sms/send-bulk.php deploy/sms/send-bulk.php
