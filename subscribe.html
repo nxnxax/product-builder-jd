@@ -871,11 +871,13 @@
             return;
         }
         let currentProfile = { email: session.user.email, plan: 'free', plan_status: 'active', name: '' };
+        let watchBeforePlan = 'free|active';  // 결제 전 플랜 스냅샷 (결제 후 변경 감지용)
         try {
             const res = await apiRequest('auth-profile');
             currentProfile = Object.assign(currentProfile, res?.profile || {});
             const plan = normalizePlan((currentProfile.plan || 'free').toLowerCase());
             const planStatus = (currentProfile.plan_status || 'active').toLowerCase();
+            watchBeforePlan = plan + '|' + planStatus;
             renderPlans(plan, planStatus);
         } catch (e) {
             console.warn('[subscribe] profile fetch failed', e);
@@ -885,6 +887,29 @@
         // 사장님 2026-05-28 — 앱팀(어센트라) 진단: RN 측 'billing.startSubscription' listen 중.
         // bridge.js 의 isInApp() / startSubscription 우회 — ReactNativeWebView.postMessage 직접 호출.
         // 이유: webview cache / bridge.js 로드 타이밍 corner case 회피 + click handler 실행 시각 피드백.
+        // 결제 후 플랜 변경 폴링 — 앱 WebView 에서 visibility 이벤트가 안 터지는 경우 대비.
+        // auth-profile(no-store) 을 주기적으로 확인해 plan/status 가 바뀌면 즉시 새로고침.
+        let _planWatchActive = false;
+        function startPlanWatch() {
+            if (_planWatchActive) return;
+            _planWatchActive = true;
+            let tries = 0;
+            const iv = setInterval(async () => {
+                tries++;
+                if (tries > 30) { clearInterval(iv); _planWatchActive = false; return; }  // 3s × 30 ≈ 90초
+                try {
+                    const res = await apiRequest('auth-profile');
+                    const p = normalizePlan((res?.profile?.plan || 'free').toLowerCase());
+                    const s = (res?.profile?.plan_status || 'active').toLowerCase();
+                    if ((p + '|' + s) !== watchBeforePlan) {
+                        clearInterval(iv);
+                        try { sessionStorage.removeItem('ym_billing_await_reload'); } catch (e) {}
+                        location.reload();
+                    }
+                } catch (e) { /* 일시 오류 — 다음 tick 재시도 */ }
+            }, 3000);
+        }
+
         // 실제 결제/플랜변경 실행 (RN 브리지 → 앱 / 외부브라우저 안내).
         function startPayment(btn, planKey) {
             const RN = window.ReactNativeWebView;
@@ -899,6 +924,7 @@
                 try { sessionStorage.setItem('ym_billing_await_reload', String(Date.now())); } catch (e) {}
                 try {
                     RN.postMessage(JSON.stringify({ type: 'billing.startSubscription', payload: { planKey }, ts: Date.now() }));
+                    startPlanWatch();  // 결제 완료(plan 변경) 감지 → 자동 새로고침
                     return;
                 } catch (e) {
                     try { sessionStorage.removeItem('ym_billing_await_reload'); } catch (e2) {}
