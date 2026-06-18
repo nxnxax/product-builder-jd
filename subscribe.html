@@ -205,6 +205,19 @@
             .event-hero { padding: 20px 16px; }
             .event-hero h2 { font-size: 19.5px; }
         }
+        /* 플랜 변경 안내 (기존 유료 구독자) */
+        .plan-change-note {
+            margin: 0 0 18px;
+            padding: 13px 16px;
+            background: #fff7ec;
+            border: 1px solid #f0dcb8;
+            border-radius: 12px;
+            font-size: 13.5px;
+            font-weight: 500;
+            line-height: 1.6;
+            color: #6b5a3a;
+        }
+        .plan-change-note b { color: #c8362c; font-weight: 700; }
         .plan-card .price-num {
             font-size: 30px;
             font-weight: 800;
@@ -529,6 +542,7 @@
     function renderPlans(currentPlan, planStatus) {
         // 사장님 2026-05-25 — trialing 폐지: trialing 사용자도 free 로 표시.
         const effectivePlan = (currentPlan === 'trialing') ? 'free' : currentPlan;
+        const isPaidSubscriber = !!effectivePlan && effectivePlan !== 'free';
         const html = PLAN_DEFS.map(plan => {
             const isCurrent = (
                 (plan.key === 'free' && effectivePlan === 'free') ||
@@ -546,8 +560,9 @@
                 // 유료 플랜 사용자가 free 로 다운그레이드 — billing 페이지에서 해지로 처리.
                 ctaHtml = `<a class="plan-cta secondary" href="billing.html">관리 페이지에서 해지</a>`;
             } else {
-                // 결제 진행 — PortOne JS SDK 호출 (data-pay-plan 으로 click handler 가 잡음).
-                ctaHtml = `<button class="plan-cta primary" type="button" data-pay-plan="${plan.key}">${escapeHtml(plan.cta.label)}</button>`;
+                // 신규/무료 → '○○ 시작하기'. 기존 유료 구독자 → 상·하위 모두 '플랜 변경'(다음 결제일부터 적용).
+                const payLabel = isPaidSubscriber ? '플랜 변경' : plan.cta.label;
+                ctaHtml = `<button class="plan-cta primary" type="button" data-pay-plan="${plan.key}">${escapeHtml(payLabel)}</button>`;
             }
 
             const isFree = plan.price === 0;
@@ -576,7 +591,10 @@
             `;
         }).join('');
 
-        document.getElementById('sub-content').innerHTML = `<div class="plan-grid">${html}</div>`;
+        const changeNote = isPaidSubscriber
+            ? `<p class="plan-change-note">ℹ️ <b>플랜 변경</b> 시, 현재 플랜은 이번 결제기간까지 그대로 이용하고 <b>변경된 플랜·요금은 다음 결제일부터</b> 적용됩니다. (상위·하위 변경 모두 동일)</p>`
+            : '';
+        document.getElementById('sub-content').innerHTML = `${changeNote}<div class="plan-grid">${html}</div>`;
 
         // 현재 plan 상단 표시
         if (effectivePlan && effectivePlan !== 'free') {
