@@ -32,6 +32,7 @@
             <nav class="tabs" role="tablist">
 <button type="button" class="tab active" data-tab="dashboard">대시보드</button>
                 <button type="button" class="tab" data-tab="stats">통계</button>
+                <button type="button" class="tab" data-tab="revenue">매출</button>
                 <button type="button" class="tab" data-tab="members">회원 관리</button>
                 <button type="button" class="tab" data-tab="settings">사이트 설정</button>
                 <button type="button" class="tab" data-tab="logs">활동 로그</button>
@@ -510,6 +511,25 @@
             </section>
 
             <!-- Logs -->
+            <section id="tab-revenue" class="admin-tab hidden">
+                <div class="card">
+                    <h3>매출 / 순마진</h3>
+                    <p class="card-subtitle">결제액에서 Google 빌링 수수료(15%), 부가세(10%), AI 처리 원가를 빼서 순마진을 계산합니다.</p>
+                    <p id="rev-assumptions" class="form-help" style="margin:6px 0 12px;font-size:12px;"></p>
+                    <div id="rev-totals"></div>
+                </div>
+                <div class="card">
+                    <h3>월별 최종 순마진</h3>
+                    <p class="card-subtitle">결제 후 한 달(사용기간)이 모두 끝난 고객 기준 — 실제 사용량 원가까지 반영한 확정 순마진입니다.</p>
+                    <div id="rev-monthly" style="overflow-x:auto;margin-top:10px;"></div>
+                </div>
+                <div class="card">
+                    <h3>결제 내역 (날짜·시간별)</h3>
+                    <p class="card-subtitle">최근 200건. 사용기간 진행 중인 건은 원가가 잠정치(현재까지 사용량)입니다.</p>
+                    <div id="rev-payments" style="overflow-x:auto;margin-top:10px;"></div>
+                </div>
+            </section>
+
             <section id="tab-logs" class="admin-tab hidden">
                 <div class="card">
                     <h3>활동 로그</h3>
@@ -696,6 +716,6 @@
     </div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-<script src="admin.js?v=20260613-saju" type="module"></script>
+<script src="admin.js?v=20260619-revenue" type="module"></script>
 </body>
 </html>

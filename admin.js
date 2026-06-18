@@ -809,6 +809,73 @@ if (statsApplyBtn) {
             loadStatsRange();
         });
     }
+    // 매출 탭 — 진입 시마다 최신 로드.
+    const revenueTabBtn = document.querySelector('.tab[data-tab="revenue"]');
+    if (revenueTabBtn) revenueTabBtn.addEventListener('click', loadRevenue);
+}
+
+function won(n) { return '₩' + Number(n || 0).toLocaleString('ko-KR'); }
+
+async function loadRevenue() {
+    const totalsEl = document.getElementById('rev-totals');
+    const monthlyEl = document.getElementById('rev-monthly');
+    const paymentsEl = document.getElementById('rev-payments');
+    const assumpEl = document.getElementById('rev-assumptions');
+    if (totalsEl) totalsEl.innerHTML = '<p class="form-help">불러오는 중…</p>';
+    try {
+        const d = await apiRequest('admin-revenue');
+        const a = d.assumptions || {};
+        if (assumpEl) assumpEl.textContent =
+            `가정: AI 처리 원가 ${a.cost_per_min}원/분 · Google 빌링 수수료 ${a.google_fee_pct}% · 부가세 = 결제가의 10/110. (원가율은 추정치)`;
+
+        const t = d.totals || {};
+        if (totalsEl) totalsEl.innerHTML = `
+            <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:6px;">
+                ${revStat('총 결제(12개월)', won(t.revenue), t.count + '건')}
+                ${revStat('Google 수수료', '-' + won(t.google), '')}
+                ${revStat('부가세', '-' + won(t.vat), '')}
+                ${revStat('AI 원가', '-' + won(t.cost), (t.usage_min||0).toLocaleString() + '분')}
+                ${revStat('순마진', won(t.net), '', true)}
+            </div>`;
+
+        const m = d.monthly || [];
+        if (monthlyEl) monthlyEl.innerHTML = m.length === 0
+            ? '<p class="form-help">사용기간이 끝난(결제 후 30일 경과) 결제가 아직 없습니다.</p>'
+            : revTable(
+                ['월', '건수', '매출', 'Google 15%', '부가세', '사용량', 'AI원가', '최종 순마진'],
+                m.map(r => [r.month, r.count + '건', won(r.revenue), '-' + won(r.google), '-' + won(r.vat),
+                            (r.usage_min||0).toLocaleString() + '분', '-' + won(r.cost),
+                            `<b style="color:${r.net>=0?'#1f9d55':'#c8362c'}">${won(r.net)}</b>`]));
+
+        const p = d.payments || [];
+        if (paymentsEl) paymentsEl.innerHTML = p.length === 0
+            ? '<p class="form-help">결제 내역이 없습니다.</p>'
+            : revTable(
+                ['결제일시', '이메일', '결제액', 'Google 15%', '부가세', '사용량', 'AI원가', '순마진', '상태'],
+                p.map(r => [
+                    (r.paid_at || '').replace('T', ' ').slice(0, 16),
+                    escape(r.email || ''),
+                    won(r.total), '-' + won(r.google_fee), '-' + won(r.vat),
+                    (r.usage_min||0).toLocaleString() + '분', '-' + won(r.cost),
+                    `<b style="color:${r.net>=0?'#1f9d55':'#c8362c'}">${won(r.net)}</b>`,
+                    r.period_done ? '<span style="color:#1f9d55">확정</span>' : '<span style="color:var(--fg-tertiary)">진행중</span>',
+                ]));
+    } catch (e) {
+        if (totalsEl) totalsEl.innerHTML = `<p class="form-help" style="color:#c8362c;">매출 조회 실패: ${escape(e.message || String(e))}</p>`;
+    }
+}
+
+function revStat(label, value, sub, big) {
+    return `<div style="flex:1;min-width:120px;padding:12px 14px;background:var(--bg-subtle,#f7f5f1);border-radius:10px;">
+        <div style="font-size:12px;color:var(--fg-secondary);">${label}</div>
+        <div style="font-size:${big?'20px':'17px'};font-weight:800;color:${big?'#1f9d55':'var(--fg)'};margin-top:2px;">${value}</div>
+        ${sub ? `<div style="font-size:11px;color:var(--fg-tertiary);margin-top:1px;">${sub}</div>` : ''}
+    </div>`;
+}
+function revTable(headers, rows) {
+    const th = headers.map(h => `<th style="text-align:right;padding:8px 10px;font-size:12px;color:var(--fg-secondary);white-space:nowrap;border-bottom:1px solid var(--line,#eee);">${h}</th>`).join('');
+    const trs = rows.map(cols => `<tr>${cols.map((c, i) => `<td style="text-align:${i<=1?'left':'right'};padding:8px 10px;font-size:13px;white-space:nowrap;border-bottom:1px solid var(--line,#f0f0f0);">${c}</td>`).join('')}</tr>`).join('');
+    return `<table style="width:100%;border-collapse:collapse;min-width:640px;"><thead><tr>${th}</tr></thead><tbody>${trs}</tbody></table>`;
 }
 
 const cleanupBtn = document.getElementById('cleanup-orphans-btn');

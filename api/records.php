@@ -160,7 +160,7 @@ function normalize_resource($value) {
         'customers', 'employees',
         'auth-membership', 'auth-member', 'auth-availability',
         'auth-profile', 'account-delete', 'sms-credentials',
-        'admin-members', 'admin-stats', 'admin-stats-range', 'admin-logs', 'admin-settings',
+        'admin-members', 'admin-stats', 'admin-stats-range', 'admin-logs', 'admin-settings', 'admin-revenue',
         'admin-bootstrap', 'admin-cleanup-orphans', 'admin-errors', 'admin-job-trace',
         'ledger-groups', 'ledger-records', 'ledger-records-bulk',
         'mobile-tokens',
@@ -3403,6 +3403,91 @@ try {
         }
 
         respond(['ok' => false, 'error' => '지원하지 않는 요청 방식입니다.'], 405);
+    }
+
+    if ($resource === 'admin-revenue') {
+        enforce_admin($pdo, $authUser);
+        if ($method !== 'GET') respond(['ok' => false, 'error' => '지원하지 않는 요청 방식입니다.'], 405);
+
+        // ── 가정값 (조정 가능) ──
+        $COST_PER_MIN   = 4;     // AI 처리 원가 (원/분) — Together Whisper+Qwen 추정치
+        $GOOGLE_FEE_PCT = 15;    // Google Play 빌링 수수료 %
+        // 부가세 = VAT 포함 결제가에서 total × 10/110 (= 저장된 vat_amount)
+
+        $rows = [];
+        try {
+            // 결제별: 결제액 / VAT / 결제 후 30일(사용기간) 실제 사용량(초) 산출.
+            $stmt = $pdo->query("
+                SELECT p.owner_email, p.paid_at,
+                       CAST(COALESCE(NULLIF(p.total_amount,0), p.amount) AS UNSIGNED) AS total,
+                       CAST(COALESCE(NULLIF(p.vat_amount,0), ROUND(COALESCE(NULLIF(p.total_amount,0),p.amount)*10/110)) AS UNSIGNED) AS vat,
+                       (SELECT COALESCE(SUM(rj.duration_sec),0) FROM recording_jobs rj
+                          WHERE LOWER(rj.owner_email) = LOWER(p.owner_email)
+                            AND rj.usage_counted_at IS NOT NULL
+                            AND rj.usage_counted_at >= p.paid_at
+                            AND rj.usage_counted_at < DATE_ADD(p.paid_at, INTERVAL 30 DAY)) AS usage_sec
+                FROM payments p
+                WHERE LOWER(p.status) = 'paid'
+                  AND p.paid_at IS NOT NULL
+                  AND p.paid_at >= DATE_SUB(NOW(), INTERVAL 12 MONTH)
+                ORDER BY p.paid_at DESC
+                LIMIT 2000
+            ");
+            $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        } catch (Throwable $e) {
+            respond(['ok' => false, 'error' => '매출 조회 실패: ' . $e->getMessage()], 500);
+        }
+
+        $nowTs = time();
+        $payments = [];
+        $monthly = [];   // 'YYYY-MM' => 집계 (사용기간 종료 건만 = 최종 순마진)
+        $totalsAll = ['revenue'=>0,'google'=>0,'vat'=>0,'cost'=>0,'net'=>0,'count'=>0,'usage_min'=>0];
+
+        foreach ($rows as $r) {
+            $total    = (int)$r['total'];
+            $vat      = (int)$r['vat'];
+            $google   = (int)round($total * $GOOGLE_FEE_PCT / 100);
+            $usageMin = (int)round(((int)$r['usage_sec']) / 60);
+            $cost     = (int)round($usageMin * $COST_PER_MIN);
+            $net      = $total - $google - $vat - $cost;
+            $paidAt   = (string)$r['paid_at'];
+            $periodDone = (strtotime($paidAt) <= ($nowTs - 30 * 86400));  // 결제 후 30일 경과 = 사용기간 종료
+
+            $payments[] = [
+                'paid_at'     => $paidAt,
+                'email'       => (string)$r['owner_email'],
+                'total'       => $total,
+                'google_fee'  => $google,
+                'vat'         => $vat,
+                'usage_min'   => $usageMin,
+                'cost'        => $cost,
+                'net'         => $net,
+                'period_done' => $periodDone,
+            ];
+
+            if ($periodDone) {
+                $mk = substr($paidAt, 0, 7);  // YYYY-MM
+                if (!isset($monthly[$mk])) $monthly[$mk] = ['month'=>$mk,'count'=>0,'revenue'=>0,'google'=>0,'vat'=>0,'usage_min'=>0,'cost'=>0,'net'=>0];
+                $monthly[$mk]['count']++;
+                $monthly[$mk]['revenue']   += $total;
+                $monthly[$mk]['google']    += $google;
+                $monthly[$mk]['vat']       += $vat;
+                $monthly[$mk]['usage_min'] += $usageMin;
+                $monthly[$mk]['cost']      += $cost;
+                $monthly[$mk]['net']       += $net;
+            }
+            $totalsAll['revenue']+=$total; $totalsAll['google']+=$google; $totalsAll['vat']+=$vat;
+            $totalsAll['cost']+=$cost; $totalsAll['net']+=$net; $totalsAll['usage_min']+=$usageMin; $totalsAll['count']++;
+        }
+        krsort($monthly);
+
+        respond([
+            'ok' => true,
+            'assumptions' => ['cost_per_min' => $COST_PER_MIN, 'google_fee_pct' => $GOOGLE_FEE_PCT],
+            'payments' => array_slice($payments, 0, 200),   // 최근 200건 (날짜/시간별 표)
+            'monthly'  => array_values($monthly),            // 사용기간 종료 건 월별 최종 순마진
+            'totals'   => $totalsAll,
+        ]);
     }
 
     if ($resource === 'admin-stats') {
