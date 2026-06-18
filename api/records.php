@@ -5165,6 +5165,23 @@ try {
                     if ($dur > 0) {
                         $pdo->prepare('UPDATE members SET usage_seconds_period = COALESCE(usage_seconds_period,0) + :d WHERE LOWER(email) = LOWER(:e)')
                             ->execute([':d' => $dur, ':e' => $owner]);
+                        // 2026-06-19 — 한도 초과분을 충전 잔액(분)에서 차감. 안 하면 충전 후 잔액이 안 줄어 무한 사용.
+                        try {
+                            $lq = $pdo->prepare('SELECT COALESCE(summary_limit_minutes,0) lim, COALESCE(usage_seconds_period,0) used, COALESCE(topup_balance_minutes,0) bal FROM members WHERE LOWER(email)=LOWER(:e) LIMIT 1');
+                            $lq->execute([':e' => $owner]);
+                            if ($lr = $lq->fetch()) {
+                                $limSec = (int)$lr['lim'] * 60;
+                                $usedSec = (int)$lr['used'];        // 이미 +dur 반영됨
+                                $overNow = max(0, $usedSec - $limSec);
+                                $overPrev = max(0, ($usedSec - $dur) - $limSec);
+                                $deltaOverSec = $overNow - $overPrev;  // 이번 통화 중 한도 초과분
+                                if ($deltaOverSec > 0 && (int)$lr['bal'] > 0) {
+                                    $deltaOverMin = (int)ceil($deltaOverSec / 60);
+                                    $pdo->prepare('UPDATE members SET topup_balance_minutes = GREATEST(0, COALESCE(topup_balance_minutes,0) - :m) WHERE LOWER(email)=LOWER(:e)')
+                                        ->execute([':m' => $deltaOverMin, ':e' => $owner]);
+                                }
+                            }
+                        } catch (Throwable $e) { error_log('[mark_usage] topup decrement: ' . $e->getMessage()); }
                     }
                     try {
                         $pdo->prepare("INSERT INTO activity_logs (actor_email, event_type, detail) VALUES (:e, :t, :d)")

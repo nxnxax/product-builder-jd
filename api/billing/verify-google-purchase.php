@@ -176,11 +176,14 @@ try {
     $pdo->prepare("INSERT INTO subscriptions
             (owner_email, plan, status, portone_customer_id, portone_billing_key, current_period_start, current_period_end,
              supply_amount, vat_amount, total_amount)
-            VALUES (:o, :p, 'active', :gp_token, :gp_token, :ps, :pe, :sa, :va, :ta)")
+            VALUES (:o, :p, 'active', :gp_cust, :gp_key, :ps, :pe, :sa, :va, :ta)")
         ->execute([
             ':o' => $ownerEmail,
             ':p' => $planKey,
-            ':gp_token' => substr($purchaseToken, 0, 120),  // Google purchase token 일부 (이력 추적)
+            // 2026-06-19 앱팀 통합테스트 — portone_customer_id 는 VARCHAR(64) 라 Google purchase token(200~300자) 넣으면 1406 truncation.
+            // → customer_id 는 짧은 google 식별자, billing_key(VARCHAR128)엔 token 앞부분만 보관(이력 추적용).
+            ':gp_cust' => 'gplay-' . substr(md5($purchaseToken), 0, 24),
+            ':gp_key'  => substr($purchaseToken, 0, 120),
             ':ps' => $now,
             ':pe' => $periodEnd,
             ':sa' => $supplyAmt,

@@ -34,6 +34,10 @@ if (function_exists('ym_register_fatal_logger')) ym_register_fatal_logger('fatal
 
 /* ========== 응답/입력 헬퍼 ========== */
 function jout(array $payload, int $code = 200): void {
+    // 2026-06-19 — 한도 검사부에서 set 한 topup 객체를 모든 성공 응답에 자동 포함 (앱이 topup.needed 로 충전 유도).
+    if ($code === 200 && isset($GLOBALS['__ym_topup']) && is_array($GLOBALS['__ym_topup']) && !array_key_exists('topup', $payload)) {
+        $payload['topup'] = $GLOBALS['__ym_topup'];
+    }
     http_response_code($code);
     echo json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
     exit;
@@ -848,6 +852,47 @@ if (!empty($planInfoEarly['requires_subscription'])) {
         'message' => 'AI 통화 요약은 Plus 또는 Pro 구독부터 사용 가능합니다.',
         'plan' => $planInfoEarly,
     ]);
+}
+
+/* ========== 분 한도 차단 + 충전 신호 (async 큐 분기 전 — 모든 경로 적용) ==========
+ * 앱팀 통합테스트 2026-06-19 #2/#3 — 기존 한도검사가 async 분기 뒤라 죽은 코드였음.
+ *  - [정기한도 잔여 + 충전잔액] 이 0 이면 요약 생성 자체 차단 (auto_topup → HTTP 402 topup_required → 앱 결제 UI).
+ *  - 잔여 임박(≤5분)이면 topup.needed=true 를 모든 성공 응답에 자동 포함(jout) → 앱이 미리 결제 유도.
+ *  - admin / 무제한(minutes_limit=null) 은 제외.
+ */
+if (!$isAdminUserEarly && ($planInfoEarly['minutes_limit'] ?? null) !== null) {
+    $remainMinEarly = max(0, (int)($planInfoEarly['minutes_remaining'] ?? 0));
+    $autoTopupE = 0; $topupBalE = 0;
+    try {
+        $tqE = $pdo->prepare('SELECT COALESCE(auto_topup_enabled,0) en, COALESCE(topup_balance_minutes,0) bal FROM members WHERE LOWER(email)=LOWER(:e) LIMIT 1');
+        $tqE->execute([':e' => $ownerEmail]);
+        if ($trE = $tqE->fetch()) { $autoTopupE = (int)$trE['en']; $topupBalE = (int)$trE['bal']; }
+    } catch (Throwable $e) { /* 컬럼 없으면 0 */ }
+    $effRemain = $remainMinEarly + $topupBalE;
+    $topupObjE = [
+        'auto_topup_enabled' => ($autoTopupE === 1),
+        'balance_minutes'    => $topupBalE,
+        'needed'             => ($effRemain <= 5),
+        'message'            => ($effRemain <= 5) ? '사용량이 거의 소진됐습니다. 충전(₩5,000 = 80분) 후 계속 이용하실 수 있습니다.' : null,
+        'product_id' => 'youngman_topup_80min', 'price' => 5000, 'minutes' => 80,
+    ];
+    if ($effRemain <= 0) {
+        // 한도+충전잔액 0 → 요약 차단. audio drop (best-effort).
+        try {
+            $sp2 = trim((string)$storagePath);
+            if ($sp2 !== '') { foreach ([$sp2, __DIR__ . '/' . $sp2, dirname(__DIR__) . '/' . $sp2] as $p2) { if (is_file($p2)) { @unlink($p2); break; } } }
+        } catch (Throwable $e) {}
+        $limMinE = (int)($planInfoEarly['minutes_limit'] ?? 0);
+        if ($autoTopupE === 1) {
+            jerror('topup_required', '이번 달 ' . $limMinE . '분을 모두 사용했습니다. 충전(₩5,000 = 80분) 후 계속 이용하실 수 있습니다.', 402,
+                ['topup' => $topupObjE, 'plan' => $planInfoEarly]);
+        } else {
+            jerror('quota_exceeded', '이번 달 ' . $limMinE . '분을 모두 사용했습니다. 자동충전을 켜시거나 다음 결제일을 기다려 주세요.', 403,
+                ['plan' => $planInfoEarly]);
+        }
+    }
+    // 통과 — 모든 성공 응답(jout 200)에 topup 객체 자동 포함.
+    $GLOBALS['__ym_topup'] = $topupObjE;
 }
 
 /* ========== Phase 2 M2 — async 분기 ==========
