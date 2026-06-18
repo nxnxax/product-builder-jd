@@ -895,10 +895,13 @@
 
             if (RN && typeof RN.postMessage === 'function') {
                 // 앱팀 spec: { type: 'billing.startSubscription', payload: { planKey } }
+                // 결제 시작 표시 — 앱 결제 후 webview 로 복귀하면 1회 새로고침(새 플랜 반영).
+                try { sessionStorage.setItem('ym_billing_await_reload', String(Date.now())); } catch (e) {}
                 try {
                     RN.postMessage(JSON.stringify({ type: 'billing.startSubscription', payload: { planKey }, ts: Date.now() }));
                     return;
                 } catch (e) {
+                    try { sessionStorage.removeItem('ym_billing_await_reload'); } catch (e2) {}
                     btn.disabled = false; btn.textContent = orig;
                     alert('결제창 호출 실패: ' + (e?.message || e));
                     return;
@@ -944,6 +947,38 @@
                 startPayment(btn, planKey);
             });
         });
+
+        // ───── 앱(Google Play) 결제 후 자동 새로고침 ─────
+        // 앱 경로는 결제 완료를 webview 에 안 알려줘 stale. 결제 시작 후 webview 로 복귀하면 1회만 새로고침.
+        (function installBillingReloadOnReturn() {
+            const KEY = 'ym_billing_await_reload';
+            let handled = false;
+            function maybeReload() {
+                if (handled) return;
+                let ts = 0;
+                try { ts = parseInt(sessionStorage.getItem(KEY) || '0', 10); } catch (e) {}
+                if (!ts || (Date.now() - ts) > 15 * 60 * 1000) return;  // 결제 시작 15분 이내만
+                handled = true;
+                try { sessionStorage.removeItem(KEY); } catch (e) {}
+                // 백엔드 verify-google-purchase 완료 여유 후 새로고침.
+                setTimeout(() => { try { location.reload(); } catch (e) {} }, 1200);
+            }
+            document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') maybeReload(); });
+            window.addEventListener('pageshow', maybeReload);
+            window.addEventListener('focus', maybeReload);
+            // 앱이 결제완료를 명시 신호로 보내면 즉시 처리 (보내면 동작, 없어도 위 복귀감지로 커버).
+            function onAppMsg(e) {
+                let d = e && e.data;
+                if (typeof d === 'string') { try { d = JSON.parse(d); } catch (x) { return; } }
+                const t = d && (d.type || d.event);
+                if (t === 'billing.complete' || t === 'billing.subscriptionComplete' || t === 'billing.purchaseComplete') {
+                    try { sessionStorage.setItem(KEY, String(Date.now())); } catch (x) {}
+                    handled = false; maybeReload();
+                }
+            }
+            window.addEventListener('message', onAppMsg);
+            document.addEventListener('message', onAppMsg);  // RN Android 는 document 에 message
+        })();
     })();
 </script>
 
