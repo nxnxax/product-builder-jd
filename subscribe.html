@@ -229,6 +229,14 @@
         .pc-modal-confirm:active{transform:scale(.98)}
         .pc-modal-cancel{padding:11px;border:0;border-radius:11px;background:transparent;color:#8a847e;
             font-size:14px;font-weight:600;cursor:pointer;font-family:inherit}
+        /* 결제 확인 중 로딩 오버레이 */
+        #billingLoading{position:fixed;inset:0;z-index:10001;display:flex;align-items:center;justify-content:center;
+            background:rgba(20,14,8,.55);backdrop-filter:blur(2px);-webkit-backdrop-filter:blur(2px)}
+        #billingLoading .bl-box{background:#fff;border-radius:16px;padding:26px 30px;text-align:center;box-shadow:0 16px 50px rgba(20,14,8,.32)}
+        #billingLoading .bl-spin{width:38px;height:38px;margin:0 auto 14px;border:3.5px solid #eee;border-top-color:#c8362c;border-radius:50%;animation:blspin .8s linear infinite}
+        @keyframes blspin{to{transform:rotate(360deg)}}
+        #billingLoading .bl-text{font-size:15.5px;font-weight:700;color:#1a1611;letter-spacing:-.01em}
+        #billingLoading .bl-sub{margin-top:7px;font-size:12px;color:#8a847e}
         .plan-card .price-num {
             font-size: 30px;
             font-weight: 800;
@@ -451,6 +459,9 @@
 
 <script type="module">
     import { initSupabase, apiRequest, getSession, getClient, openSharedLoginModal, mountAppHeader, mountAppFooter } from './auth-shared.js?v=20260618-login';
+
+    // 결제 후 새로고침 시 스크롤 위치를 직접 복원하므로, 브라우저 자동복원(최하단 점프) 비활성화.
+    try { if ('scrollRestoration' in history) history.scrollRestoration = 'manual'; } catch (e) {}
 
     // 사장님 2026-05-26 — 신규 요금제 (sales/master/agency). 옛 plus/pro 폐지.
     // 카드 spec: 메인(금액) / 서브(AI요약 분량) / 부연(차감 룰) / 차이(분당 단가)
@@ -879,6 +890,7 @@
             const planStatus = (currentProfile.plan_status || 'active').toLowerCase();
             watchBeforePlan = plan + '|' + planStatus;
             renderPlans(plan, planStatus);
+            restoreScrollAfterBilling();  // 결제 후 새로고침이면 보던 위치로
         } catch (e) {
             console.warn('[subscribe] profile fetch failed', e);
             renderPlans('free', 'active');
@@ -890,24 +902,56 @@
         // 결제 후 플랜 변경 폴링 — 앱 WebView 에서 visibility 이벤트가 안 터지는 경우 대비.
         // auth-profile(no-store) 을 주기적으로 확인해 plan/status 가 바뀌면 즉시 새로고침.
         let _planWatchActive = false;
+        // 새로고침 시 보던 위치 복원 (결제 후 같은 자리로).
+        function reloadKeepingScroll() {
+            try { sessionStorage.setItem('ym_sub_scroll', String(window.scrollY || window.pageYOffset || 0)); } catch (e) {}
+            try { sessionStorage.removeItem('ym_billing_await_reload'); } catch (e) {}
+            location.reload();
+        }
+        function restoreScrollAfterBilling() {
+            try {
+                const sy = parseInt(sessionStorage.getItem('ym_sub_scroll') || '', 10);
+                if (Number.isFinite(sy) && sy > 0) {
+                    sessionStorage.removeItem('ym_sub_scroll');
+                    const go = () => { try { window.scrollTo(0, sy); } catch (e) {} };
+                    requestAnimationFrame(go);
+                    setTimeout(go, 80);
+                    setTimeout(go, 250);  // 렌더/이미지 안정화 후 한 번 더
+                }
+            } catch (e) {}
+        }
+        function showBillingLoading() {
+            if (document.getElementById('billingLoading')) return;
+            const ov = document.createElement('div');
+            ov.id = 'billingLoading';
+            ov.innerHTML = '<div class="bl-box"><div class="bl-spin"></div><div class="bl-text">결제 확인 중…</div><div class="bl-sub">취소하셨다면 화면을 탭하세요</div></div>';
+            ov.addEventListener('click', () => { hideBillingLoading(); _planWatchActive = false; });  // 탭하면 닫힘(취소 대비)
+            document.body.appendChild(ov);
+        }
+        function hideBillingLoading() { const ov = document.getElementById('billingLoading'); if (ov) ov.remove(); }
+
         function startPlanWatch() {
             if (_planWatchActive) return;
             _planWatchActive = true;
+            showBillingLoading();
             let tries = 0;
-            const iv = setInterval(async () => {
-                tries++;
-                if (tries > 30) { clearInterval(iv); _planWatchActive = false; return; }  // 3s × 30 ≈ 90초
+            async function check() {
                 try {
                     const res = await apiRequest('auth-profile');
                     const p = normalizePlan((res?.profile?.plan || 'free').toLowerCase());
                     const s = (res?.profile?.plan_status || 'active').toLowerCase();
-                    if ((p + '|' + s) !== watchBeforePlan) {
-                        clearInterval(iv);
-                        try { sessionStorage.removeItem('ym_billing_await_reload'); } catch (e) {}
-                        location.reload();
-                    }
-                } catch (e) { /* 일시 오류 — 다음 tick 재시도 */ }
-            }, 3000);
+                    if ((p + '|' + s) !== watchBeforePlan) { reloadKeepingScroll(); return true; }
+                } catch (e) { /* 다음 tick 재시도 */ }
+                return false;
+            }
+            (async () => {
+                if (await check()) return;  // 즉시 1회 확인
+                const iv = setInterval(async () => {
+                    if (!_planWatchActive) { clearInterval(iv); return; }  // 탭으로 취소됨
+                    if (++tries > 35) { clearInterval(iv); _planWatchActive = false; hideBillingLoading(); return; }  // 1.2s × 35 ≈ 42초
+                    if (await check()) clearInterval(iv);
+                }, 1200);
+            })();
         }
 
         // 실제 결제/플랜변경 실행 (RN 브리지 → 앱 / 외부브라우저 안내).
@@ -985,9 +1029,8 @@
                 try { ts = parseInt(sessionStorage.getItem(KEY) || '0', 10); } catch (e) {}
                 if (!ts || (Date.now() - ts) > 15 * 60 * 1000) return;  // 결제 시작 15분 이내만
                 handled = true;
-                try { sessionStorage.removeItem(KEY); } catch (e) {}
-                // 백엔드 verify-google-purchase 완료 여유 후 새로고침.
-                setTimeout(() => { try { location.reload(); } catch (e) {} }, 1200);
+                // 복귀/완료신호 → 폴링 시작(오버레이+변경감지+스크롤유지 새로고침). 블라인드 reload 안 함.
+                try { startPlanWatch(); } catch (e) {}
             }
             document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') maybeReload(); });
             window.addEventListener('pageshow', maybeReload);
