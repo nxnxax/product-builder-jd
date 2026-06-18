@@ -68,6 +68,16 @@ let managedOnlyByGroup = {};  // groupId → true 면 '관리중' 항목만 표�
         const result = await initSupabase();
         supabaseClient = result?.client || null;
     } catch (e) { supabaseClient = null; }
+
+    // 광고용 데모 화면: customers.html?demo=1 이면 인증/서버 대신 예시 고객 20명을 주입한다.
+    // 실제 고객 데이터/DB 와 전혀 무관(PII 아님). 캡쳐 용도. 정상 사용자 흐름엔 영향 없음.
+    if (/[?&]demo=1\b/.test(location.search)) {
+        bindUI();
+        loadDemoData();
+        onLedgerViewportChange(() => renderRecords());
+        return;
+    }
+
     const session = getSession();
     if (!supabaseClient || !session) {
         document.getElementById('content').innerHTML =
@@ -78,6 +88,79 @@ let managedOnlyByGroup = {};  // groupId → true 면 '관리중' 항목만 표�
     await loadGroups();
     onLedgerViewportChange(() => renderRecords());
 })();
+
+/* ============== 광고용 데모 데이터 (예시 고객 20명) ============== */
+function loadDemoData() {
+    groups = [
+        { id: 1, name: '브레인시티 푸르지오 분양', isDefault: true },
+        { id: 2, name: '동탄2 디에트르 상담', isDefault: false },
+    ];
+    expandedGroupIds = new Set([1]);
+    const rows = [
+        { managed:1, date:'2026-06-16', call_count:3, customer:'김도윤', phone:'010-2914-7733', region:'수원 영통구',
+          content:'📞 2026-06-16 14:22 통화 (3회차)\n[계약임박] 84A 남향 계약 의사 — 자금 확인 완료\n• 84A 남향 선호, 예산 4억 후반 확보\n• 중도금 무이자·발코니 확장 조건 재확인\n• 주말 모델하우스 재방문 약속\nAI 의견: 계약 성사 가능성 매우 높음. 가용 동호수 우선 안내 권장.',
+          agent_memo:'토요일 11시 재방문, VIP 응대', memo:'가망 A' },
+        { managed:1, date:'2026-06-16', call_count:2, customer:'이서연', phone:'010-3382-5120', region:'화성 동탄',
+          content:'📞 2026-06-16 11:05 통화 (2회차)\n[관심] 59㎡ 투자 문의 — 전세가율·임대수요 질문\n• 59B 선호, 갭투자 목적\n• 입주장 전세 시세·임대 수요 자료 요청\nAI 의견: 투자 정보 제공 시 전환 가능. 임대수익 시뮬레이션 발송 권장.',
+          agent_memo:'임대수익 자료 메일 발송함', memo:'투자' },
+        { managed:1, date:'2026-06-15', call_count:5, customer:'박준혁', phone:'010-5571-8842', region:'용인 기흥',
+          content:'📞 2026-06-15 16:40 통화 (5회차)\n[계약완료] 102동 1504호 정계약 체결\n• 계약금 납부 완료, 중도금 대출 안내 마침\n• 잔금 일정·입주 지정일 협의 완료\nAI 의견: 마무리 단계. 입주 지원 서비스 안내로 만족도 관리.',
+          agent_memo:'계약 완료 ✅ 입주안내문 발송', memo:'계약' },
+        { managed:1, date:'2026-06-15', call_count:1, customer:'최지우', phone:'010-2208-3471', region:'성남 분당',
+          content:'📞 2026-06-15 10:18 통화 (1회차)\n[신규] 84B 분양가·옵션 첫 문의\n• 분양가표·옵션 품목 요청\n• 자녀 학군 정보 함께 문의\nAI 의견: 학군 자료 동봉해 회신 시 재상담 유도 가능.',
+          agent_memo:'분양가표+학군지도 발송', memo:'신규' },
+        { managed:0, date:'2026-06-14', call_count:1, customer:'정민서', phone:'010-6643-9015', region:'수원 권선구',
+          content:'📞 2026-06-14 13:55 통화 (1회차)\n[보류] 예산 부족으로 당분간 보류\n• 희망 예산 3억 초반, 분양가와 차이 큼\n• 추후 미분양 할인 시 재연락 희망\nAI 의견: 단기 전환 어려움. 분기별 안부 연락 대상으로 관리.',
+          agent_memo:'3개월 뒤 재연락', memo:'장기' },
+        { managed:1, date:'2026-06-14', call_count:2, customer:'강하윤', phone:'010-4419-7768', region:'화성 봉담',
+          content:'📞 2026-06-14 09:30 통화 (2회차)\n[관심] 중도금 무이자 조건 재확인\n• 84A 관심, 무이자 횟수·시점 질문\n• 사은품·이사지원 여부 문의\nAI 의견: 조건 명확화로 신뢰 형성. 계약 상담 일정 제안 권장.',
+          agent_memo:'금요일 상담 일정 조율 중', memo:'가망 B' },
+        { managed:1, date:'2026-06-13', call_count:4, customer:'윤서준', phone:'010-3120-5589', region:'오산 세교',
+          content:'📞 2026-06-13 15:12 통화 (4회차)\n[계약임박] 청약 당첨 — 계약서류 안내\n• 당첨 동호수 확인, 계약일 예약\n• 필요 서류·계약금 비율 안내\nAI 의견: 계약 확정적. 서류 체크리스트 문자 발송으로 이탈 방지.',
+          agent_memo:'계약 6/20 14시 예약', memo:'당첨' },
+        { managed:1, date:'2026-06-13', call_count:1, customer:'임채원', phone:'010-7754-2206', region:'수원 장안구',
+          content:'📞 2026-06-13 11:48 통화 (1회차)\n[신규] 발코니 확장·시스템에어컨 옵션 문의\n• 84C 관심, 확장 시 평면 변화 질문\n• 옵션 일괄 계약 시 할인 여부\nAI 의견: 옵션 카탈로그 발송 후 재상담 약속 권장.',
+          agent_memo:'옵션 카탈로그 발송', memo:'신규' },
+        { managed:1, date:'2026-06-12', call_count:3, customer:'한지호', phone:'010-2967-4130', region:'평택 고덕',
+          content:'📞 2026-06-12 17:02 통화 (3회차)\n[관심] 직주근접 실거주 — 입주시기 조율\n• 삼성 고덕캠퍼스 출퇴근 고려\n• 입주 지정일·전입 시기 상담\nAI 의견: 실거주 니즈 뚜렷. 입주 일정 맞춤 안내로 계약 견인.',
+          agent_memo:'입주 일정표 전달', memo:'실거주' },
+        { managed:1, date:'2026-06-12', call_count:2, customer:'오유진', phone:'010-5083-6627', region:'용인 처인구',
+          content:'📞 2026-06-12 10:40 통화 (2회차)\n[관심] 84A vs 84B 평면 비교 상담\n• 주방 동선·수납 차이 질문\n• 남향/판상형 선호\nAI 의견: 평면 비교표 제공 시 결정 빨라질 것. 방문 유도 권장.',
+          agent_memo:'평면 비교표 발송, 방문 권유', memo:'가망 B' },
+        { managed:0, date:'2026-06-11', call_count:1, customer:'서지안', phone:'010-3341-9952', region:'안산 단원구',
+          content:'📞 2026-06-11 14:20 통화 (1회차)\n[부재] 부재중 — 문자 안내 발송\n• 통화 연결 안 됨\n• 분양 안내 문자 + 모델하우스 위치 전송\nAI 의견: 재시도 필요. 저녁 시간대 통화 재시도 권장.',
+          agent_memo:'저녁에 재시도', memo:'부재' },
+        { managed:1, date:'2026-06-11', call_count:3, customer:'신우빈', phone:'010-6629-1184', region:'수원 팔달구',
+          content:'📞 2026-06-11 09:10 통화 (3회차)\n[계약임박] 부모 증여 자금 확정 — 계약 결심\n• 증여 절차·자금 출처 정리 완료\n• 84A 계약 의사 확정\nAI 의견: 자금 준비 완료. 계약일 즉시 확정 권장.',
+          agent_memo:'계약일 잡기로 함', memo:'가망 A' },
+        { managed:1, date:'2026-06-10', call_count:1, customer:'곽민재', phone:'010-2755-3398', region:'화성 향남',
+          content:'📞 2026-06-10 16:33 통화 (1회차)\n[신규] 분양 일정·청약 자격 문의\n• 1순위 자격 요건 질문\n• 특별공급 해당 여부 확인 요청\nAI 의견: 자격 안내 후 청약 독려. 일정 알림 등록 권장.',
+          agent_memo:'청약 일정 알림 등록', memo:'신규' },
+        { managed:1, date:'2026-06-10', call_count:2, customer:'배수아', phone:'010-4490-7261', region:'성남 수정구',
+          content:'📞 2026-06-10 11:25 통화 (2회차)\n[관심] 1층·저층 세대 프라이버시 문의\n• 어린 자녀로 저층 선호\n• 1층 테라스·필로티 여부 질문\nAI 의견: 저층 매물 안내로 맞춤 제안. 방문 상담 연결 권장.',
+          agent_memo:'저층 동호수 안내', memo:'가망 B' },
+        { managed:1, date:'2026-06-09', call_count:4, customer:'문지환', phone:'010-3876-5540', region:'수원 영통구',
+          content:'📞 2026-06-09 15:50 통화 (4회차)\n[계약완료] 105동 802호 계약 체결\n• 계약금 입금 확인\n• 중도금 대출 은행 안내 완료\nAI 의견: 계약 완료. 입주 예약 서비스 연계로 추가 만족도.',
+          agent_memo:'계약 완료 ✅', memo:'계약' },
+        { managed:1, date:'2026-06-09', call_count:1, customer:'노하은', phone:'010-5512-8807', region:'용인 수지구',
+          content:'📞 2026-06-09 10:05 통화 (1회차)\n[신규] 모델하우스 방문 예약 요청\n• 주말 가족 방문 희망\n• 주차·관람 소요시간 문의\nAI 의견: 방문 예약 확정. 방문 전 리마인드 문자 권장.',
+          agent_memo:'토요일 14시 방문 예약', memo:'방문예약' },
+        { managed:1, date:'2026-06-08', call_count:2, customer:'천예준', phone:'010-2043-6691', region:'안성 공도',
+          content:'📞 2026-06-08 13:18 통화 (2회차)\n[관심] 분양가 협의·할인 가능 여부\n• 분양가 부담, 할인·혜택 질문\n• 발코니 확장 무상 여부 확인\nAI 의견: 혜택 패키지 안내로 가격 저항 완화. 재상담 약속 권장.',
+          agent_memo:'혜택 패키지 안내함', memo:'가망 B' },
+        { managed:0, date:'2026-06-08', call_count:1, customer:'구시현', phone:'010-6718-2240', region:'수원 권선구',
+          content:'📞 2026-06-08 09:42 통화 (1회차)\n[보류] 타 단지와 비교 중 — 결정 보류\n• 인근 신축과 입지·가격 비교 중\n• 2주 뒤 재연락 희망\nAI 의견: 경쟁 단지 대비 강점(역세권·학군) 정리해 재접촉 권장.',
+          agent_memo:'2주 뒤 비교자료로 재연락', memo:'경쟁' },
+        { managed:1, date:'2026-06-07', call_count:3, customer:'황도경', phone:'010-3359-7714', region:'화성 동탄',
+          content:'📞 2026-06-07 16:55 통화 (3회차)\n[계약임박] 부부 동반 방문 후 84A 결심\n• 부부 모두 만족, 자금 계획 확정\n• 계약 가능일 문의\nAI 의견: 결심 단계. 계약일 즉시 예약 권장.',
+          agent_memo:'계약일 조율 중', memo:'가망 A' },
+        { managed:1, date:'2026-06-07', call_count:1, customer:'양서윤', phone:'010-4127-9986', region:'평택 비전동',
+          content:'📞 2026-06-07 11:30 통화 (1회차)\n[신규] 전매·입주 시점 문의\n• 입주까지 기간·전매 제한 질문\n• 실입주 vs 전세 고민\nAI 의견: 전매 규정 안내 후 실거주 장점 강조. 재상담 유도.',
+          agent_memo:'전매 규정 안내', memo:'신규' },
+    ];
+    records = rows.map((d, i) => ({ id: 101 + i, groupId: 1, data: d }));
+    renderRecords();
+}
 
 async function api(resource, opts = {}) {
     return apiRequest(resource, {
