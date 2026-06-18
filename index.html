@@ -1229,7 +1229,7 @@
       <a class="ym-pop-cta" href="subscribe.html">🔥 할인가로 시작하기</a>
     </div>
     <div class="ym-pop-foot">
-      <button type="button" id="ymPopHideToday">오늘 그만 보기</button>
+      <button type="button" id="ymPopNever">다시 보지 않기</button>
       <button type="button" id="ymPopClose">닫기</button>
     </div>
   </div>
@@ -1237,15 +1237,15 @@
 <script>
 (function(){
   var KEY='ym_event_popup_hide';
-  function today(){var d=new Date();return d.getFullYear()+'-'+(d.getMonth()+1)+'-'+d.getDate();}
   var pop=document.getElementById('ymEventPopup');
   if(!pop) return;
   function close(){pop.classList.remove('show');}
-  try{ if(localStorage.getItem(KEY)===today()) return; }catch(e){}
+  // '다시 보지 않기' 누르면 영구 숨김 (값이 있으면 다신 안 뜸).
+  try{ if(localStorage.getItem(KEY)) return; }catch(e){}
   setTimeout(function(){ pop.classList.add('show'); }, 700);
   document.getElementById('ymPopClose').addEventListener('click', close);
-  document.getElementById('ymPopHideToday').addEventListener('click', function(){
-    try{ localStorage.setItem(KEY, today()); }catch(e){} close();
+  document.getElementById('ymPopNever').addEventListener('click', function(){
+    try{ localStorage.setItem(KEY, '1'); }catch(e){} close();
   });
   pop.addEventListener('click', function(e){ if(e.target===pop) close(); });
 })();
