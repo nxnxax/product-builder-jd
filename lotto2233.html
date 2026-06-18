@@ -811,7 +811,7 @@ function crossPairs(aB,bB){
 function fmtScore(sc){return Object.keys(sc).map(k=>elementKor[k][0]+(Math.round(sc[k]*10)/10)).join(' ');}
 
 const ZODIAC_OPTS=`<option value="23">자시(23~01시)</option><option value="1">축시(01~03시)</option><option value="3">인시(03~05시)</option><option value="5">묘시(05~07시)</option><option value="7">진시(07~09시)</option><option value="9">사시(09~11시)</option><option value="11">오시(11~13시)</option><option value="13">미시(13~15시)</option><option value="15">신시(15~17시)</option><option value="17">유시(17~19시)</option><option value="19">술시(19~21시)</option><option value="21">해시(21~23시)</option>`;
-const REGION_OPTS=['모름','서울','경기','인천','강원','대전','세종','충북','충남','대구','경북','부산','울산','경남','광주','전북','전남','제주','북한','해외'].map(r=>`<option value="${r}">${r}</option>`).join('');
+const REGION_OPTS=['모름','서울','경기','인천','강원','대전','세종','충북','충남','대구','경북','부산','울산','경남','광주','전북','전남','제주','해외'].map(r=>`<option value="${r}">${r}</option>`).join('');
 
 function buildPersonCard(pfx,title){
     return `<div class="person-card">
