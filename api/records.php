@@ -2,6 +2,11 @@
 // 2026-06-01 — cafe24 opcache 강제 invalidate (5171cc2 fix 적용 안 되던 이슈)
 if (function_exists('opcache_invalidate')) { @opcache_invalidate(__FILE__, true); }
 header('Content-Type: application/json; charset=utf-8');
+// 2026-06-18 — API 응답 캐시 금지. 누락 시 브라우저/RN WebView 가 GET 응답(auth-profile/plan/ledger 등)을
+// 캐시해 "변경이 바로 반영 안 되고 몇 번 다시 들어와야 적용되는" 증상 유발. 항상 최신 DB 반영.
+header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+header('Pragma: no-cache');
+header('Expires: 0');
 
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     http_response_code(204);
