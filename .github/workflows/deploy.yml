@@ -75,6 +75,9 @@ jobs:
           php -l api/billing/cancel-subscription.php  # 구독 해지 (cancel_at_period_end)
           php -l api/billing/config.php               # storeId/channelKey publishable config
           php -l api/billing/cron-renew.php           # 정기결제 자동 갱신 cron (GitHub Actions schedule)
+          php -l api/billing/topup-verify.php         # 일회성 충전권 결제 검증 + 충전
+          php -l api/billing/topup-settings.php       # 자동충전 동의 토글 / 잔액 조회
+          php -l api/billing/topup-selftest.php       # (임시) 충전 로직 자체 테스트
           php -l api/sms/send-bulk.php
           php -l api/sms/balance.php
           php -l api/sms/providers/SmsProvider.php
@@ -155,6 +158,9 @@ jobs:
           cp api/billing/google_play_helpers.php deploy/billing/google_play_helpers.php
           cp api/billing/verify-google-purchase.php deploy/billing/verify-google-purchase.php
           cp api/billing/rtdn.php deploy/billing/rtdn.php
+          cp api/billing/topup-verify.php deploy/billing/topup-verify.php
+          cp api/billing/topup-settings.php deploy/billing/topup-settings.php
+          cp api/billing/topup-selftest.php deploy/billing/topup-selftest.php
           # SMS 단체 발송 — 디렉토리 구조 유지 (sms/send-bulk.php + sms/providers/*)
           mkdir -p deploy/sms/providers
           cp api/sms/send-bulk.php deploy/sms/send-bulk.php

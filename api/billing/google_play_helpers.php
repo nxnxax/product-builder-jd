@@ -120,3 +120,48 @@ if (!function_exists('google_play_get_subscription')) {
         return ['http' => $code, 'body' => is_array($body) ? $body : null, 'raw' => (string)$raw];
     }
 }
+
+if (!function_exists('google_play_get_product')) {
+    /** 일회성 상품(consumable) 구매 검증. purchases.products.get.
+     *  응답: purchaseState(0=구매완료/1=취소/2=대기), consumptionState, acknowledgementState, orderId.
+     *  returns ['http'=>int,'body'=>array|null,'raw'=>string]. */
+    function google_play_get_product(string $packageName, string $productId, string $purchaseToken): array {
+        $accessToken = google_play_access_token();
+        $url = sprintf('https://androidpublisher.googleapis.com/androidpublisher/v3/applications/%s/purchases/products/%s/tokens/%s',
+            rawurlencode($packageName), rawurlencode($productId), rawurlencode($purchaseToken));
+        $ch = curl_init($url);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_HTTPHEADER => ['Authorization: Bearer ' . $accessToken, 'Accept: application/json'],
+            CURLOPT_TIMEOUT => 15,
+            CURLOPT_CONNECTTIMEOUT => 5,
+        ]);
+        $raw = curl_exec($ch);
+        $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+        $body = ($raw !== false) ? json_decode((string)$raw, true) : null;
+        return ['http' => $code, 'body' => is_array($body) ? $body : null, 'raw' => (string)$raw];
+    }
+}
+
+if (!function_exists('google_play_acknowledge_product')) {
+    /** 일회성 상품 acknowledge (소비형은 보통 앱이 consumeAsync 로 소비하지만, 서버 ACK 도 가능). 성공 시 true. */
+    function google_play_acknowledge_product(string $packageName, string $productId, string $purchaseToken): bool {
+        $accessToken = google_play_access_token();
+        $url = sprintf('https://androidpublisher.googleapis.com/androidpublisher/v3/applications/%s/purchases/products/%s/tokens/%s:acknowledge',
+            rawurlencode($packageName), rawurlencode($productId), rawurlencode($purchaseToken));
+        $ch = curl_init($url);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_POST => true,
+            CURLOPT_POSTFIELDS => '{}',
+            CURLOPT_HTTPHEADER => ['Authorization: Bearer ' . $accessToken, 'Content-Type: application/json'],
+            CURLOPT_TIMEOUT => 15,
+            CURLOPT_CONNECTTIMEOUT => 5,
+        ]);
+        curl_exec($ch);
+        $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+        return $code >= 200 && $code < 300;
+    }
+}

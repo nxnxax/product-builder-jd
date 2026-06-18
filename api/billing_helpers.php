@@ -241,6 +241,92 @@ if (!function_exists('overage_top_up_seconds')) {
     function overage_per_minute_won(): int { return 63; }  // 5,000 / 80분 ≈ 62.5원/분
 }
 
+/* ============================================================
+ * 일회성 충전권 (Google Play consumable) — 앱팀 스펙 2026-06-18
+ *   상품: youngman_topup_80min / ₩5,000 / 80분 / consumable
+ * ============================================================ */
+if (!function_exists('topup_product_id')) {
+    function topup_product_id(): string { return 'youngman_topup_80min'; }
+    function topup_minutes_per_purchase(): int { return 80; }
+    function topup_price_won(): int { return 5000; }
+}
+
+if (!function_exists('topup_get_balance')) {
+    /** 사용자 충전 잔액 (분). 컬럼 없으면 0. */
+    function topup_get_balance(PDO $pdo, string $email): int {
+        try {
+            $st = $pdo->prepare("SELECT COALESCE(topup_balance_minutes,0) FROM members WHERE LOWER(email)=LOWER(:e) LIMIT 1");
+            $st->execute([':e' => $email]);
+            return (int)$st->fetchColumn();
+        } catch (Throwable $e) { return 0; }
+    }
+}
+
+if (!function_exists('topup_credit')) {
+    /** 충전 적립 — purchase_token 기준 idempotent (UNIQUE 1차 + 상태 2차 방어).
+     *  returns ['balance_minutes'=>int, 'duplicate'=>bool, 'credited'=>int]. */
+    function topup_credit(PDO $pdo, string $email, string $purchaseToken, string $orderId, string $productId, int $minutes): array {
+        // 이미 처리된 token 이면 그대로 반환 (중복 차감 차단)
+        try {
+            $st = $pdo->prepare("SELECT status FROM topup_purchases WHERE purchase_token=:t LIMIT 1");
+            $st->execute([':t' => $purchaseToken]);
+            $existing = $st->fetchColumn();
+            if ($existing && in_array($existing, ['verified', 'consumed'], true)) {
+                return ['balance_minutes' => topup_get_balance($pdo, $email), 'duplicate' => true, 'credited' => 0];
+            }
+        } catch (Throwable $e) { /* 테이블 없으면 ensure 후 재시도되도록 아래로 진행 */ }
+
+        $pdo->beginTransaction();
+        try {
+            $pdo->prepare("INSERT INTO topup_purchases
+                    (owner_email, purchase_token, order_id, product_id, amount_minutes, amount_price, status, verified_at)
+                    VALUES (:o, :t, :oid, :pid, :m, :price, 'verified', NOW())")
+                ->execute([
+                    ':o' => $email, ':t' => $purchaseToken, ':oid' => ($orderId !== '' ? $orderId : null),
+                    ':pid' => $productId, ':m' => $minutes, ':price' => topup_price_won(),
+                ]);
+            $pdo->prepare("UPDATE members SET topup_balance_minutes = COALESCE(topup_balance_minutes,0) + :m
+                           WHERE LOWER(email)=LOWER(:e)")
+                ->execute([':m' => $minutes, ':e' => $email]);
+            $pdo->commit();
+        } catch (PDOException $e) {
+            if ($pdo->inTransaction()) $pdo->rollBack();
+            // UNIQUE 충돌 = 동시 중복 verify → 이미 적립됨으로 간주 (idempotent).
+            return ['balance_minutes' => topup_get_balance($pdo, $email), 'duplicate' => true, 'credited' => 0];
+        }
+        return ['balance_minutes' => topup_get_balance($pdo, $email), 'duplicate' => false, 'credited' => $minutes];
+    }
+}
+
+if (!function_exists('topup_mark_consumed')) {
+    function topup_mark_consumed(PDO $pdo, string $purchaseToken): void {
+        try {
+            $pdo->prepare("UPDATE topup_purchases SET status='consumed', consumed_at=NOW() WHERE purchase_token=:t")
+                ->execute([':t' => $purchaseToken]);
+        } catch (Throwable $e) { /* 무시 */ }
+    }
+}
+
+if (!function_exists('topup_evaluate_quota')) {
+    /** AI 요약 차감 판정 (분 단위). 앱팀 스펙 ■4.
+     *   정기 한도 남으면 → limit / 소진+잔액 충분 → topup 차감 / 잔액 부족+동의 → topup_required(앱이 결제 UI) / 미동의 → blocked.
+     *   returns ['decision'=>'allow'|'topup_required'|'blocked','from'=>'limit'|'topup','consume_topup_minutes'=>int,'message'=>?]. */
+    function topup_evaluate_quota(int $limitMin, int $usedMin, int $needMin, int $topupBalanceMin, bool $autoTopupEnabled): array {
+        if ($limitMin > 0 && $usedMin < $limitMin) {
+            return ['decision' => 'allow', 'from' => 'limit', 'consume_topup_minutes' => 0];
+        }
+        if ($topupBalanceMin >= $needMin && $needMin > 0) {
+            return ['decision' => 'allow', 'from' => 'topup', 'consume_topup_minutes' => $needMin];
+        }
+        if ($autoTopupEnabled) {
+            return ['decision' => 'topup_required', 'from' => 'none', 'consume_topup_minutes' => 0,
+                    'message' => '이번 달 한도를 모두 사용했습니다. 충전(₩' . number_format(topup_price_won()) . ' = ' . topup_minutes_per_purchase() . '분) 후 계속 이용하실 수 있습니다.'];
+        }
+        return ['decision' => 'blocked', 'from' => 'none', 'consume_topup_minutes' => 0,
+                'message' => '이번 달 한도를 모두 사용했습니다. 자동충전을 켜시거나 다음 결제일을 기다려 주세요.'];
+    }
+}
+
 if (!function_exists('charge_overage_top_up')) {
     /**
      * 사용자의 등록된 PortOne billingKey 로 자동 충전 결제 (5,000원).
@@ -484,6 +570,25 @@ if (!function_exists('billing_ensure_tables')) {
                     INDEX idx_usage_created (created_at)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
             ");
+            // 일회성 충전권 구매 이력 (Google Play consumable) — 앱팀 2026-06-18.
+            $pdo->exec("
+                CREATE TABLE IF NOT EXISTS topup_purchases (
+                    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+                    owner_email VARCHAR(255) NOT NULL,
+                    purchase_token VARCHAR(512) NOT NULL,
+                    order_id VARCHAR(128) NULL DEFAULT NULL,
+                    product_id VARCHAR(64) NOT NULL DEFAULT 'youngman_topup_80min',
+                    amount_minutes INT NOT NULL DEFAULT 80,
+                    amount_price INT NOT NULL DEFAULT 5000,
+                    status VARCHAR(16) NOT NULL DEFAULT 'pending',
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    verified_at DATETIME NULL DEFAULT NULL,
+                    consumed_at DATETIME NULL DEFAULT NULL,
+                    UNIQUE KEY uniq_purchase_token (purchase_token(191)),
+                    INDEX idx_topup_owner (owner_email),
+                    INDEX idx_topup_status (status)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+            ");
             // members 의 결제 컬럼들도 안전망 lazy ALTER (process-recording 의 ensure 미경유 케이스).
             $cols = [];
             try {
@@ -507,6 +612,9 @@ if (!function_exists('billing_ensure_tables')) {
                 'overage_balance_seconds'  => 'INT NOT NULL DEFAULT 0',          // 충전 잔여 (초)
                 'overage_top_up_count'     => 'INT NOT NULL DEFAULT 0',          // 이번달 충전 횟수
                 'overage_last_top_up_at'   => 'DATETIME NULL DEFAULT NULL',
+                // 일회성 충전권 (Google Play consumable) — 앱팀 2026-06-18. 잔액은 이월(리셋 X).
+                'topup_balance_minutes'    => 'INT NOT NULL DEFAULT 0',          // 충전 잔액 (분)
+                'auto_topup_enabled'       => 'TINYINT(1) NOT NULL DEFAULT 0',   // 사용량 초과 시 자동 충전(결제 UI) 동의
                 'last_usage_warning_pct'   => 'INT NOT NULL DEFAULT 0',          // FCM 중복 발송 방지 (0/80/90/100)
                 // 통화 녹취 자동 저장 vs 검토 후 저장 (앱팀 2026-05-20 요청 — Native Outbox 흐름)
                 'recording_review_mode'    => "VARCHAR(16) NOT NULL DEFAULT 'auto'", // 'auto' = customer_log 자동 INSERT, 'review' = ready_to_review 단계 거침
