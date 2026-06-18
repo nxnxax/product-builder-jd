@@ -277,7 +277,7 @@ if (!function_exists('send_usage_warning_fcm')) {
         $body  = '';
         if ($threshold >= 100) {
             $title = '월 한도 도달';
-            $body  = '이번 달 사용량이 한도(' . $limitMin . '분) 에 도달했습니다. 자동 충전을 켜시면 ₩5,000 (71분) 추가 사용 가능.';
+            $body  = '이번 달 사용량이 한도(' . $limitMin . '분) 에 도달했습니다. 자동충전을 켜시면 ₩5,000 (80분) 추가 사용 가능.';
         } elseif ($threshold >= 90) {
             $title = '사용량 90% 도달';
             $body  = '이번 달 ' . $usedMin . '분 / ' . $limitMin . '분 사용. 남은 ' . $remainMin . '분.';

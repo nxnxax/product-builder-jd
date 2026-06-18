@@ -263,7 +263,7 @@
                 <div class="billing-row-value" style="display:flex;flex-direction:column;gap:6px;align-items:flex-end;">
                     <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:14px;">
                         <input type="checkbox" id="overage-toggle" ${overageEnabled ? 'checked' : ''} style="width:18px;height:18px;cursor:pointer;">
-                        <span>한도 초과 시 자동 충전 (₩5,000 = 71분)</span>
+                        <span>사용량 초과 시 자동충전 (₩5,000 = 80분)</span>
                     </label>
                     <span style="font-size:12px;color:var(--fg-tertiary);">충전 잔액: <b style="color:var(--fg-primary);">${overageBalMin}분</b>${overageTopUpCount > 0 ? ` · 이번달 ${overageTopUpCount}회 충전` : ''}</span>
                 </div>
@@ -281,7 +281,7 @@
                 <p class="billing-info-line">
                     <b>차감 룰</b> — 요약보기 · 양식으로 전송 버튼 클릭 시에만 차감됩니다. 팝업 [취소] / 자동 종료 시 차감 X.<br>
                     <b>매월 결제일에 사용량 0으로 초기화</b> — 잔여 분은 다음 달로 이월되지 않습니다.<br>
-                    통화 분 단위로 차감되며 (짧은 통화도 정확히 길이만큼). 자동 충전은 한도 초과 시 등록 카드로 ₩5,000 (71분 분량) 결제됩니다.
+                    통화 분 단위로 차감되며 (짧은 통화도 정확히 길이만큼). 자동충전은 사용량 초과 시 ₩5,000 (80분 분량)이 결제됩니다.
                 </p>
             </section>
         `;

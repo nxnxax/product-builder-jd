@@ -233,18 +233,18 @@ if (!function_exists('plan_default_summary_limit_minutes')) {
 
 if (!function_exists('overage_top_up_seconds')) {
     /**
-     * 자동 충전 1회 단위 (초). 5,000원 / 분당 70원 = 71.43분 ≈ 4,286초.
+     * 자동 충전 1회 단위 (초). 2026-06-18 사장님 — 구글스토어 설정 = 5,000원 / 80분 = 4,800초.
      * 사용자가 5,000원 자동결제 시 이 초 만큼 overage_balance_seconds 에 충전.
      */
-    function overage_top_up_seconds(): int { return 4286; }
+    function overage_top_up_seconds(): int { return 4800; }
     function overage_top_up_amount_won(): int { return 5000; }
-    function overage_per_minute_won(): int { return 70; }
+    function overage_per_minute_won(): int { return 63; }  // 5,000 / 80분 ≈ 62.5원/분
 }
 
 if (!function_exists('charge_overage_top_up')) {
     /**
      * 사용자의 등록된 PortOne billingKey 로 자동 충전 결제 (5,000원).
-     * 성공 시 members.overage_balance_seconds += 4286 (분당 70원 = 71분).
+     * 성공 시 members.overage_balance_seconds += 4800 (5,000원 = 80분).
      *
      * 호출 전 검증:
      *   - members.overage_enabled = 1 (자동 충전 사전 동의)
