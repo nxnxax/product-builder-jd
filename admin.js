@@ -1009,7 +1009,7 @@ function runPaymentTrace() {
         .catch(e => { out.innerHTML = `<p class="form-help" style="color:#c8362c;">조회 실패: ${escape(e.message || String(e))}</p>`; });
 }
 
-function traceTable(title, rows, cols) {
+function revTraceTable(title, rows, cols) {
     if (!rows || !rows.length) return `<div style="margin-bottom:12px;"><b style="font-size:13px;">${title}</b> <span class="form-help">— 없음</span></div>`;
     const th = cols.map(c => `<th style="text-align:left;padding:5px 8px;font-size:11px;color:var(--fg-secondary);border-bottom:1px solid var(--line,#eee);white-space:nowrap;">${c}</th>`).join('');
     const trs = rows.map(r => '<tr>' + cols.map(c => `<td style="text-align:left;padding:5px 8px;font-size:12px;border-bottom:1px solid var(--line,#f3f3f3);white-space:nowrap;">${escape(String(r[c] ?? ''))}</td>`).join('') + '</tr>').join('');
@@ -1026,9 +1026,9 @@ function renderTrace(d) {
         ? `<div style="margin-bottom:12px;font-size:13px;">현재 회원상태 — plan=<b>${escape(m.plan || '')}</b> · status=${escape(m.plan_status || '')} · 해지예약=${m.cancel_at_period_end} · 기간 ${escape((m.current_period_start || '').slice(0, 10))}~${escape((m.current_period_end || '').slice(0, 10))} · 충전잔액 ${m.topup_balance_minutes || 0}분</div>`
         : '<div style="margin-bottom:12px;" class="form-help">members 행 없음</div>';
     return memberLine
-        + traceTable('💳 payments (결제 기록)', d.payments, ['paid_at', 'status', 'total', 'portone_payment_id'])
-        + traceTable('📄 subscriptions (구독 이력)', d.subscriptions, ['plan', 'status', 'cancel_at_period_end', 'current_period_start', 'current_period_end', 'updated_at'])
-        + traceTable('🎟️ topup_purchases (충전권)', d.topups, ['product_id', 'amount_minutes', 'amount_price', 'status', 'verified_at', 'consumed_at']);
+        + revTraceTable('💳 payments (결제 기록)', d.payments, ['paid_at', 'status', 'total', 'portone_payment_id'])
+        + revTraceTable('📄 subscriptions (구독 이력)', d.subscriptions, ['plan', 'status', 'cancel_at_period_end', 'current_period_start', 'current_period_end', 'updated_at'])
+        + revTraceTable('🎟️ topup_purchases (충전권)', d.topups, ['product_id', 'amount_minutes', 'amount_price', 'status', 'verified_at', 'consumed_at']);
 }
 
 // ── 1. 실시간 결제내역 (최상단) ──
