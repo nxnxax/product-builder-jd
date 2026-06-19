@@ -213,18 +213,22 @@
         } else if (limitMin === 0) {
             usageHtml = `<span class="billing-row-value" style="color:var(--fg-tertiary);">사용 불가 (구독 필요)</span>`;
         } else {
-            const pct = Math.min(100, Math.round((usedMin / limitMin) * 100));
-            const overCls = usedMin >= limitMin ? 'over' : '';
             const remainMin = Math.max(0, limitMin - usedMin);
-            const effectiveRemain = remainMin + topupBalMin;  // 정기 잔여 + 충전 잔액 = 실제 남은 분
+            const overUsed = Math.max(0, usedMin - limitMin);   // 한도 초과분(=충전에서 차감된 분)
+            const topupAdded = topupBalMin + overUsed;          // 이번 기간 충전으로 추가된 총량 (80분 단위)
+            const topupCount = topupAdded > 0 ? Math.round(topupAdded / 80) : 0;
+            const topupSeg = topupCount > 0 ? '+' + Array(topupCount).fill(80).join('+') : '';  // 예: +80 / +80+80
+            const effectiveRemain = remainMin + topupBalMin;    // 실제 남은 분 (정기 + 충전)
+            const capacity = limitMin + topupAdded;
+            const pct = Math.min(100, Math.round((usedMin / Math.max(1, capacity)) * 100));
+            const overCls = usedMin >= capacity ? 'over' : '';
             usageHtml = `
                 <div style="flex:1 1 auto;">
-                    <div style="display:flex;justify-content:space-between;align-items:baseline;">
-                        <span style="font-size:14px;font-weight:600;">${usedMin}분 / ${limitMin}분</span>
-                        <span style="font-size:12px;color:var(--fg-tertiary);">남은 <b style="color:var(--fg);">${effectiveRemain}분</b></span>
+                    <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;">
+                        <span style="font-size:14px;font-weight:600;">${usedMin}${topupSeg}분 / ${limitMin}분</span>
+                        <span style="font-size:12px;color:var(--fg-tertiary);white-space:nowrap;">남은 ${effectiveRemain}분</span>
                     </div>
                     <div class="usage-bar-wrap"><div class="usage-bar-fill ${overCls}" style="width:${pct}%;"></div></div>
-                    ${topupBalMin > 0 ? `<div style="font-size:12px;color:#7a5cff;margin-top:5px;font-weight:600;">⚡ 충전 +${topupBalMin}분 포함 — 정기 ${remainMin}분 + 충전 ${topupBalMin}분 = 총 ${effectiveRemain}분</div>` : ''}
                 </div>
             `;
         }
@@ -270,8 +274,10 @@
                         <span>사용량 초과 시 자동충전 (₩5,000 = 80분)</span>
                     </label>
                     <span style="font-size:12px;color:var(--fg-tertiary);">충전 잔액: <b style="color:var(--fg-primary);">${topupBalMin}분</b></span>
-                    <button type="button" class="billing-btn primary" data-topup-now style="font-size:13px;padding:9px 16px;margin-top:2px;">⚡ 지금 충전 (₩5,000 = 80분)</button>
                 </div>
+            </div>
+            <div class="billing-actions" style="margin-top:12px;">
+                <button type="button" class="billing-btn primary" data-topup-now>지금 충전</button>
             </div>
         ` : '';
 
