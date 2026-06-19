@@ -203,6 +203,8 @@
         const overageBalSec = profile.overage_balance_seconds || 0;
         const overageBalMin = Math.round(overageBalSec / 60);
         const overageTopUpCount = profile.overage_top_up_count || 0;
+        // 새 충전권(₩5,000=80분) 적립분 — overage_balance 와 별개. auth-profile.topup_balance_minutes.
+        const topupBalMin = profile.topup_balance_minutes || 0;
         const periodEnd = profile.current_period_end;
 
         let usageHtml;
@@ -214,13 +216,15 @@
             const pct = Math.min(100, Math.round((usedMin / limitMin) * 100));
             const overCls = usedMin >= limitMin ? 'over' : '';
             const remainMin = Math.max(0, limitMin - usedMin);
+            const effectiveRemain = remainMin + topupBalMin;  // 정기 잔여 + 충전 잔액 = 실제 남은 분
             usageHtml = `
                 <div style="flex:1 1 auto;">
                     <div style="display:flex;justify-content:space-between;align-items:baseline;">
                         <span style="font-size:14px;font-weight:600;">${usedMin}분 / ${limitMin}분</span>
-                        <span style="font-size:12px;color:var(--fg-tertiary);">남은 ${remainMin}분 (${pct}%)</span>
+                        <span style="font-size:12px;color:var(--fg-tertiary);">남은 <b style="color:var(--fg);">${effectiveRemain}분</b></span>
                     </div>
                     <div class="usage-bar-wrap"><div class="usage-bar-fill ${overCls}" style="width:${pct}%;"></div></div>
+                    ${topupBalMin > 0 ? `<div style="font-size:12px;color:#7a5cff;margin-top:5px;font-weight:600;">⚡ 충전 +${topupBalMin}분 포함 — 정기 ${remainMin}분 + 충전 ${topupBalMin}분 = 총 ${effectiveRemain}분</div>` : ''}
                 </div>
             `;
         }
@@ -265,7 +269,8 @@
                         <input type="checkbox" id="overage-toggle" ${overageEnabled ? 'checked' : ''} style="width:18px;height:18px;cursor:pointer;">
                         <span>사용량 초과 시 자동충전 (₩5,000 = 80분)</span>
                     </label>
-                    <span style="font-size:12px;color:var(--fg-tertiary);">충전 잔액: <b style="color:var(--fg-primary);">${overageBalMin}분</b>${overageTopUpCount > 0 ? ` · 이번달 ${overageTopUpCount}회 충전` : ''}</span>
+                    <span style="font-size:12px;color:var(--fg-tertiary);">충전 잔액: <b style="color:var(--fg-primary);">${topupBalMin}분</b></span>
+                    <button type="button" class="billing-btn primary" data-topup-now style="font-size:13px;padding:9px 16px;margin-top:2px;">⚡ 지금 충전 (₩5,000 = 80분)</button>
                 </div>
             </div>
         ` : '';
@@ -378,6 +383,50 @@
                 }
             });
         }
+
+        // 지금 충전 (수동) — 앱 브리지로 Google Play 충전권(consumable) 구매 trigger.
+        //   subscribe.html startSubscription 과 동일한 직접 postMessage 패턴(앱팀 검증).
+        const topupBtn = document.querySelector('[data-topup-now]');
+        if (topupBtn) {
+            topupBtn.addEventListener('click', () => {
+                const RN = window.ReactNativeWebView;
+                if (!RN || typeof RN.postMessage !== 'function') {
+                    alert('충전은 안드로이드 영맨 앱(Google Play)에서 진행됩니다.\n앱에서 구독관리 → 지금 충전을 눌러주세요.');
+                    return;
+                }
+                const orig = topupBtn.textContent;
+                topupBtn.disabled = true;
+                topupBtn.textContent = '충전창 여는 중…';
+                setTimeout(() => { if (topupBtn.disabled) { topupBtn.disabled = false; topupBtn.textContent = orig; } }, 8000);
+                try {
+                    // 앱팀 spec: { type: 'billing.startTopup', payload: { productId } }
+                    RN.postMessage(JSON.stringify({ type: 'billing.startTopup', payload: { productId: 'youngman_topup_80min' }, ts: Date.now() }));
+                    startTopupWatch(topupBalMin, topupBtn, orig);  // 충전 잔액 증가 감지 → 자동 새로고침
+                } catch (e) {
+                    topupBtn.disabled = false; topupBtn.textContent = orig;
+                    alert('충전창 호출 실패: ' + (e?.message || e));
+                }
+            });
+        }
+    }
+
+    // 충전 완료 감지 — topup_balance_minutes 증가하면 새로고침(앱 결제 후 webview 복귀 대비). ~60초 폴링.
+    let _topupWatchTimer = null;
+    function startTopupWatch(beforeMin, btn, origLabel) {
+        if (_topupWatchTimer) clearInterval(_topupWatchTimer);
+        let tries = 0;
+        _topupWatchTimer = setInterval(async () => {
+            tries++;
+            try {
+                const res = await apiRequest('auth-profile');
+                const nowMin = res?.profile?.topup_balance_minutes ?? 0;
+                if (nowMin > beforeMin) { clearInterval(_topupWatchTimer); window.location.reload(); return; }
+            } catch (e) {}
+            if (tries >= 40) {
+                clearInterval(_topupWatchTimer);
+                if (btn) { btn.disabled = false; btn.textContent = origLabel; }
+            }
+        }, 1500);
     }
 
     function renderAnon() {
