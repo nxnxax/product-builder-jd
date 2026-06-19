@@ -267,7 +267,7 @@ function rtdn_record_renewal_payment(PDO $pdo, string $ownerEmail, string $planK
         $ta = function_exists('portone_plan_amount') ? portone_plan_amount($planKey) : 0;
         if ($ta <= 0) return; // 금액 미상이면 기록 안 함
 
-        $pdo->prepare("INSERT INTO payments
+        $pdo->prepare("INSERT IGNORE INTO payments
                 (owner_email, portone_payment_id, amount, currency, status, paid_at, raw_event_json,
                  supply_amount, vat_amount, total_amount)
                 VALUES (:o, :pid, :amt, 'KRW', 'PAID', :paid, :raw, :sa, :va, :ta)")

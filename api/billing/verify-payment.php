@@ -159,7 +159,7 @@ try {
     $pdo->prepare('UPDATE members SET portone_subscription_id = :sid WHERE email = :e')
         ->execute([':sid' => $subscriptionId, ':e' => $ownerEmail]);
 
-    $pdo->prepare("INSERT INTO payments
+    $pdo->prepare("INSERT IGNORE INTO payments
             (owner_email, portone_payment_id, portone_subscription_id, amount, currency, status, paid_at, raw_event_json,
              supply_amount, vat_amount, total_amount)
             VALUES (:o, :pid, :sid, :amt, 'KRW', 'paid', :paid, :raw, :sa, :va, :ta)")

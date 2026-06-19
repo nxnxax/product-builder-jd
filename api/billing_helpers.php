@@ -396,7 +396,7 @@ if (!function_exists('charge_overage_top_up')) {
         if (!$okHttp || $paymentStatus !== 'PAID') {
             error_log('[charge_overage_top_up] payment failed: status=' . $resp['status'] . ', payment_status=' . $paymentStatus . ', owner=' . $ownerEmail);
             try {
-                $pdo->prepare("INSERT INTO payments (owner_email, portone_payment_id, amount, currency, status, raw_event_json)
+                $pdo->prepare("INSERT IGNORE INTO payments (owner_email, portone_payment_id, amount, currency, status, raw_event_json)
                                VALUES (:e, :pid, :amt, 'KRW', :st, :raw)")
                     ->execute([
                         ':e' => $ownerEmail, ':pid' => $paymentId, ':amt' => $amount,
@@ -419,7 +419,7 @@ if (!function_exists('charge_overage_top_up')) {
             error_log('[charge_overage_top_up] members update failed: ' . $e->getMessage());
         }
         try {
-            $pdo->prepare("INSERT INTO payments (owner_email, portone_payment_id, amount, currency, status, paid_at, raw_event_json)
+            $pdo->prepare("INSERT IGNORE INTO payments (owner_email, portone_payment_id, amount, currency, status, paid_at, raw_event_json)
                            VALUES (:e, :pid, :amt, 'KRW', 'PAID', NOW(), :raw)")
                 ->execute([
                     ':e' => $ownerEmail, ':pid' => $paymentId, ':amt' => $paidAmount ?: $amount,

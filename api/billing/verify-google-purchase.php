@@ -207,7 +207,7 @@ try {
     $isNewPayment = !$exists->fetchColumn();
 
     if ($isNewPayment) {
-        $pdo->prepare("INSERT INTO payments
+        $pdo->prepare("INSERT IGNORE INTO payments
                 (owner_email, portone_payment_id, amount, currency, status, paid_at, raw_event_json,
                  supply_amount, vat_amount, total_amount)
                 VALUES (:o, :pid, :amt, 'KRW', 'PAID', :paid, :raw, :sa, :va, :ta)")

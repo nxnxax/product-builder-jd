@@ -164,7 +164,7 @@ foreach ($rows as $row) {
                     updated_at = NOW()
                 WHERE owner_email = :e AND status IN ('active', 'past_due')")
                 ->execute([':ps' => $now, ':pe' => $newPeriodEnd, ':e' => $email]);
-            $pdo->prepare("INSERT INTO payments
+            $pdo->prepare("INSERT IGNORE INTO payments
                     (owner_email, portone_payment_id, amount, currency, status, paid_at, raw_event_json)
                     VALUES (:o, :pid, :amt, 'KRW', 'paid', :paid, :raw)")
                 ->execute([
@@ -186,7 +186,7 @@ foreach ($rows as $row) {
         $errorMsg = (string)($resp['body']['message'] ?? $resp['body']['type'] ?? 'unknown');
         try {
             $pdo->prepare("UPDATE members SET plan_status = 'past_due' WHERE email = :e")->execute([':e' => $email]);
-            $pdo->prepare("INSERT INTO payments
+            $pdo->prepare("INSERT IGNORE INTO payments
                     (owner_email, portone_payment_id, amount, currency, status, raw_event_json)
                     VALUES (:o, :pid, :amt, 'KRW', 'failed', :raw)")
                 ->execute([

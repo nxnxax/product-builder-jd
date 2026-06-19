@@ -76,7 +76,7 @@ $now = date('Y-m-d H:i:s');
 
 try {
     // payments row 항상 INSERT (감사용)
-    $pdo->prepare("INSERT INTO payments
+    $pdo->prepare("INSERT IGNORE INTO payments
             (owner_email, portone_payment_id, amount, currency, status, paid_at, raw_event_json)
             VALUES (:o, :pid, :amt, 'KRW', :st, :paid, :raw)")
         ->execute([
