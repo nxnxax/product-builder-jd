@@ -161,7 +161,7 @@ function normalize_resource($value) {
         'auth-membership', 'auth-member', 'auth-availability',
         'auth-profile', 'account-delete', 'sms-credentials',
         'admin-members', 'admin-stats', 'admin-stats-range', 'admin-logs', 'admin-settings', 'admin-revenue',
-        'admin-bootstrap', 'admin-cleanup-orphans', 'admin-errors', 'admin-job-trace', 'admin-payment-trace', 'admin-backlog-holds',
+        'admin-bootstrap', 'admin-cleanup-orphans', 'admin-errors', 'admin-job-trace', 'admin-payment-trace', 'admin-backlog-holds', 'admin-overcharge-scan',
         'ledger-groups', 'ledger-records', 'ledger-records-bulk',
         'mobile-tokens',
         'customer-log',
@@ -4296,6 +4296,45 @@ try {
         respond(['ok' => true, 'count' => count($items), 'items' => array_map(function ($r) {
             return ['actor' => $r['actor_email'] ?? '', 'detail' => $r['detail'] ?? '', 'createdAt' => $r['created_at'] ?? ''];
         }, $items)]);
+    }
+
+    // 무더기차감 자동 감지 — 전체 사용자 중 "짧은시간(60초) 다발 차감"(부당청구 지문)을 스캔.
+    // 재현 없이 실데이터로 "지금 무더기차감이 일어나는지" 판별. 0건이면 정상.
+    if ($resource === 'admin-overcharge-scan') {
+        enforce_admin($pdo, $authUser);
+        if ($method !== 'GET') respond(['ok' => false, 'error' => '지원하지 않는 요청 방식입니다.'], 405);
+        $days = max(1, min(90, (int)($_GET['days'] ?? 30)));
+        $threshold = max(3, min(50, (int)($_GET['threshold'] ?? 5)));
+        $items = [];
+        try {
+            // owner별 + 60초 버킷별 차감 건수 → threshold 이상 = 무더기 지문.
+            $stmt = $pdo->prepare("
+                SELECT owner_email,
+                       COUNT(*) AS cnt,
+                       MIN(usage_counted_at) AS burst_start,
+                       MAX(usage_counted_at) AS burst_end,
+                       ROUND(AVG(TIMESTAMPDIFF(HOUR, recorded_at, usage_counted_at)), 1) AS avg_gap_h
+                FROM recording_jobs
+                WHERE usage_counted_at IS NOT NULL
+                  AND usage_counted_at >= DATE_SUB(NOW(), INTERVAL {$days} DAY)
+                GROUP BY owner_email, FLOOR(UNIX_TIMESTAMP(usage_counted_at) / 60)
+                HAVING cnt >= {$threshold}
+                ORDER BY burst_start DESC
+                LIMIT 100
+            ");
+            $stmt->execute();
+            $items = $stmt->fetchAll() ?: [];
+        } catch (Throwable $e) { $items = []; }
+        respond(['ok' => true, 'days' => $days, 'threshold' => $threshold, 'count' => count($items),
+            'items' => array_map(function ($r) {
+                return [
+                    'email' => $r['owner_email'] ?? '',
+                    'count' => (int)($r['cnt'] ?? 0),
+                    'burst_start' => $r['burst_start'] ?? '',
+                    'burst_end' => $r['burst_end'] ?? '',
+                    'avg_gap_hours' => $r['avg_gap_h'],  // 녹음→차감 평균 지연(시간). 큼=오래된 백로그 무더기
+                ];
+            }, $items)]);
     }
 
     // 서버 에러 로그 — 관리자 진단용 (GET: 최근 목록 / DELETE: 비우기)

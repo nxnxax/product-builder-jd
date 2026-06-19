@@ -577,6 +577,23 @@
 
             <!-- Diagnostics (사장님 2026-06-08) -->
             <section id="tab-diagnostics" class="admin-tab hidden">
+                <!-- 무더기차감 자동 감지 (부당청구 지문 스캐너) -->
+                <div class="card">
+                    <h3>🔬 무더기차감 자동 감지</h3>
+                    <p class="card-subtitle">전체 사용자 중 <b>"한 사람이 60초 안에 5건+ 차감"</b>된 무더기차감(부당청구) 지문을 자동 스캔합니다. 재현 없이 실데이터로 판별 — <b>0건이면 정상</b>(무더기차감 없음). 녹음→차감 평균 지연이 크면(시간 단위) 오래된 백로그가 한꺼번에 처리된 신호입니다.</p>
+                    <div class="form-actions" style="margin-top:4px;margin-bottom:10px;">
+                        <span id="ovscan-message" class="form-help" style="margin-right:auto;"></span>
+                        <button type="button" class="secondary-btn" id="ovscan-refresh">최근 30일 스캔</button>
+                    </div>
+                    <div style="overflow-x:auto;">
+                        <table class="data-table" id="ovscan-table" style="display:none;">
+                            <thead><tr><th>사용자</th><th>차감 건수<br>(60초 내)</th><th>발생 시각</th><th>녹음→차감<br>평균 지연</th></tr></thead>
+                            <tbody id="ovscan-list"></tbody>
+                        </table>
+                    </div>
+                    <div id="ovscan-empty" class="empty-state hidden"><p>✅ 무더기차감 없음 — 정상 (최근 30일 내 60초당 5건+ 차감 사례 0건).</p></div>
+                </div>
+
                 <!-- 통화 job 추적 -->
                 <div class="card">
                     <h3>통화 처리 추적</h3>
@@ -767,6 +784,6 @@
     </div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-<script src="admin.js?v=20260619-revenue8" type="module"></script>
+<script src="admin.js?v=20260619-revenue9" type="module"></script>
 </body>
 </html>

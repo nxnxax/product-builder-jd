@@ -61,6 +61,11 @@ const holdsMessage = document.getElementById('holds-message');
 const holdsTable = document.getElementById('holds-table');
 const holdsList = document.getElementById('holds-list');
 const holdsEmpty = document.getElementById('holds-empty');
+const ovscanRefresh = document.getElementById('ovscan-refresh');
+const ovscanMessage = document.getElementById('ovscan-message');
+const ovscanTable = document.getElementById('ovscan-table');
+const ovscanList = document.getElementById('ovscan-list');
+const ovscanEmpty = document.getElementById('ovscan-empty');
 
 const logsList = document.getElementById('logs-list');
 const logsEmpty = document.getElementById('logs-empty');
@@ -1449,13 +1454,36 @@ async function loadBacklogHolds() {
     }
 }
 
+async function loadOverchargeScan() {
+    try {
+        const payload = await apiRequest('admin-overcharge-scan', { query: 'days=30&threshold=5' });
+        const items = Array.isArray(payload.items) ? payload.items : [];
+        if (ovscanMessage) ovscanMessage.textContent = items.length === 0 ? '✅ 0건 — 무더기차감 없음 (정상)' : `⚠ 무더기차감 ${items.length}건 감지됨`;
+        if (items.length === 0) { ovscanTable.style.display = 'none'; ovscanEmpty.classList.remove('hidden'); ovscanList.innerHTML = ''; return; }
+        ovscanEmpty.classList.add('hidden'); ovscanTable.style.display = '';
+        ovscanList.innerHTML = items.map(it => {
+            const gapRed = (it.avg_gap_hours != null && it.avg_gap_hours >= 6);
+            const gap = (it.avg_gap_hours == null) ? '-' : `${it.avg_gap_hours}시간`;
+            return `<tr>
+                <td style="font-size:12px;">${escape(it.email || '')}</td>
+                <td style="text-align:center;font-weight:700;color:#c8362c;">${it.count}건</td>
+                <td style="white-space:nowrap;font-size:12px;">${escape((it.burst_start || '').slice(0, 19))}</td>
+                <td style="text-align:center;color:${gapRed ? '#c8362c' : 'var(--fg-tertiary)'};font-weight:${gapRed ? '700' : '400'};">${gap}</td>
+            </tr>`;
+        }).join('');
+    } catch (e) {
+        if (ovscanTable) { ovscanTable.style.display = ''; ovscanList.innerHTML = `<tr><td colspan="4" style="color:var(--danger);">${escape(e.message || '로드 실패')}</td></tr>`; }
+    }
+}
+
 if (traceBtn) traceBtn.addEventListener('click', traceJobs);
 if (traceEmail) traceEmail.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); traceJobs(); } });
 if (errorsRefresh) errorsRefresh.addEventListener('click', loadErrors);
 if (errorsClear) errorsClear.addEventListener('click', clearErrors);
 if (holdsRefresh) holdsRefresh.addEventListener('click', loadBacklogHolds);
+if (ovscanRefresh) ovscanRefresh.addEventListener('click', loadOverchargeScan);
 const _diagTabBtn = document.querySelector('.tab[data-tab="diagnostics"]');
-if (_diagTabBtn) _diagTabBtn.addEventListener('click', () => { loadErrors(); loadBacklogHolds(); });
+if (_diagTabBtn) _diagTabBtn.addEventListener('click', () => { loadErrors(); loadBacklogHolds(); loadOverchargeScan(); });
 
 (async function start() {
     mountAppHeader();
