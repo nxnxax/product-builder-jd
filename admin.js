@@ -1039,33 +1039,47 @@ function renderRevPayments() {
     const q = _revPayQ.trim();
     if (q) rows = rows.filter(r => (r.paid_at || '').includes(q) || (r.email || '').includes(q));
 
-    const totalPages = Math.max(1, Math.ceil(rows.length / REV_PAYMENTS_PER_PAGE));
+    // 일자별 그룹화 후 "일 단위"로 페이지 구성 — 한 날짜가 페이지 경계에 쪼개지지 않게 한다.
+    // → 일별 구분선 합계(건수·매출·순마진)가 그 페이지에 실제 보이는 행과 항상 일치 + 같은 날짜 헤더 중복 없음.
+    const dayGroups = [];
+    for (const r of rows) {
+        const day = (r.paid_at || '').slice(0, 10);
+        const g = dayGroups[dayGroups.length - 1];
+        if (!g || g.day !== day) dayGroups.push({ day, items: [r] });
+        else g.items.push(r);
+    }
+    const pages = [];
+    let bucket = [], cnt = 0;
+    for (const g of dayGroups) {
+        if (bucket.length && cnt + g.items.length > REV_PAYMENTS_PER_PAGE) { pages.push(bucket); bucket = []; cnt = 0; }
+        bucket.push(g); cnt += g.items.length;
+    }
+    if (bucket.length) pages.push(bucket);
+
+    const totalPages = Math.max(1, pages.length);
     if (_revPage.payments > totalPages) _revPage.payments = totalPages;
     const page = _revPage.payments;
-    const slice = rows.slice((page - 1) * REV_PAYMENTS_PER_PAGE, page * REV_PAYMENTS_PER_PAGE);
+    const curGroups = pages[page - 1] || [];
 
     const th = ['결제일시', '이메일', '결제액', 'Google 15%', '부가세', '사용량', 'AI원가', '순마진', '상태']
         .map(h => `<th style="text-align:right;padding:8px 10px;font-size:12px;color:var(--fg-secondary);white-space:nowrap;border-bottom:1px solid var(--line,#eee);">${h}</th>`).join('');
-    let body = '', lastDay = null;
-    for (const r of slice) {
-        const day = (r.paid_at || '').slice(0, 10);
-        if (day !== lastDay) {
-            lastDay = day;
-            const dr = rows.filter(x => (x.paid_at || '').slice(0, 10) === day);
-            const dRev = dr.reduce((s, x) => s + x.total, 0), dNet = dr.reduce((s, x) => s + x.net, 0);
-            body += `<tr><td colspan="9" style="background:#efece7;font-weight:700;font-size:12px;padding:7px 10px;border-top:2px solid #ddd6cc;">📅 ${day} — ${dr.length}건 · 매출 ${won(dRev)} · 순마진 <span style="color:${dNet >= 0 ? '#1f9d55' : '#c8362c'}">${won(dNet)}</span></td></tr>`;
+    let body = '';
+    for (const g of curGroups) {
+        const dRev = g.items.reduce((s, x) => s + x.total, 0), dNet = g.items.reduce((s, x) => s + x.net, 0);
+        body += `<tr><td colspan="9" style="background:#efece7;font-weight:700;font-size:12px;padding:7px 10px;border-top:2px solid #ddd6cc;">📅 ${g.day} — ${g.items.length}건 · 매출 ${won(dRev)} · 순마진 <span style="color:${dNet >= 0 ? '#1f9d55' : '#c8362c'}">${won(dNet)}</span></td></tr>`;
+        for (const r of g.items) {
+            body += `<tr>
+                <td style="text-align:left;padding:7px 10px;font-size:13px;white-space:nowrap;border-bottom:1px solid var(--line,#f0f0f0);">${(r.paid_at || '').replace('T', ' ').slice(0, 16)}</td>
+                <td style="text-align:left;padding:7px 10px;font-size:12px;white-space:nowrap;border-bottom:1px solid var(--line,#f0f0f0);">${escape(r.email || '')}${r.kind === 'topup' ? ' <span style="font-size:10px;color:#7a5cff;border:1px solid #d8cfff;border-radius:6px;padding:1px 5px;">충전권</span>' : ''}</td>
+                <td style="text-align:right;padding:7px 10px;font-size:13px;border-bottom:1px solid var(--line,#f0f0f0);">${won(r.total)}</td>
+                <td style="text-align:right;padding:7px 10px;font-size:13px;color:#c8362c;border-bottom:1px solid var(--line,#f0f0f0);">-${won(r.google_fee)}</td>
+                <td style="text-align:right;padding:7px 10px;font-size:13px;color:#c8362c;border-bottom:1px solid var(--line,#f0f0f0);">-${won(r.vat)}</td>
+                <td style="text-align:right;padding:7px 10px;font-size:13px;border-bottom:1px solid var(--line,#f0f0f0);">${(r.usage_min || 0).toLocaleString()}분</td>
+                <td style="text-align:right;padding:7px 10px;font-size:13px;color:#c8362c;border-bottom:1px solid var(--line,#f0f0f0);">-${won(r.cost)}</td>
+                <td style="text-align:right;padding:7px 10px;font-size:13px;border-bottom:1px solid var(--line,#f0f0f0);"><b style="color:${r.net >= 0 ? '#1f9d55' : '#c8362c'}">${won(r.net)}</b></td>
+                <td style="text-align:right;padding:7px 10px;font-size:12px;border-bottom:1px solid var(--line,#f0f0f0);">${r.period_done ? '<span style="color:#1f9d55">확정</span>' : '<span style="color:var(--fg-tertiary)">진행중</span>'}</td>
+            </tr>`;
         }
-        body += `<tr>
-            <td style="text-align:left;padding:7px 10px;font-size:13px;white-space:nowrap;border-bottom:1px solid var(--line,#f0f0f0);">${(r.paid_at || '').replace('T', ' ').slice(0, 16)}</td>
-            <td style="text-align:left;padding:7px 10px;font-size:12px;white-space:nowrap;border-bottom:1px solid var(--line,#f0f0f0);">${escape(r.email || '')}${r.kind === 'topup' ? ' <span style="font-size:10px;color:#7a5cff;border:1px solid #d8cfff;border-radius:6px;padding:1px 5px;">충전권</span>' : ''}</td>
-            <td style="text-align:right;padding:7px 10px;font-size:13px;border-bottom:1px solid var(--line,#f0f0f0);">${won(r.total)}</td>
-            <td style="text-align:right;padding:7px 10px;font-size:13px;color:#c8362c;border-bottom:1px solid var(--line,#f0f0f0);">-${won(r.google_fee)}</td>
-            <td style="text-align:right;padding:7px 10px;font-size:13px;color:#c8362c;border-bottom:1px solid var(--line,#f0f0f0);">-${won(r.vat)}</td>
-            <td style="text-align:right;padding:7px 10px;font-size:13px;border-bottom:1px solid var(--line,#f0f0f0);">${(r.usage_min || 0).toLocaleString()}분</td>
-            <td style="text-align:right;padding:7px 10px;font-size:13px;color:#c8362c;border-bottom:1px solid var(--line,#f0f0f0);">-${won(r.cost)}</td>
-            <td style="text-align:right;padding:7px 10px;font-size:13px;border-bottom:1px solid var(--line,#f0f0f0);"><b style="color:${r.net >= 0 ? '#1f9d55' : '#c8362c'}">${won(r.net)}</b></td>
-            <td style="text-align:right;padding:7px 10px;font-size:12px;border-bottom:1px solid var(--line,#f0f0f0);">${r.period_done ? '<span style="color:#1f9d55">확정</span>' : '<span style="color:var(--fg-tertiary)">진행중</span>'}</td>
-        </tr>`;
     }
     el.innerHTML = revPaySearchBar()
         + (rows.length ? `<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;min-width:760px;"><thead><tr>${th}</tr></thead><tbody>${body}</tbody></table></div>` : '<p class="form-help">아직 결제 내역이 없습니다.</p>')

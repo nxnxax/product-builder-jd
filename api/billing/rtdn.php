@@ -180,6 +180,10 @@ try {
                     cancel_at_period_end=0
                   WHERE LOWER(email)=LOWER(:e)")
                 ->execute([':now' => $now, ':pe' => $periodEnd, ':e' => $ownerEmail]);
+            // 갱신/복구 결제를 payments 에 기록 → 실시간 결제내역·매출에 반영.
+            // (앱 미실행 중 자동갱신은 RTDN 만 오므로, 여기서 안 남기면 반복매출이 매출페이지에서 영구 누락된다.)
+            // 멱등: purchaseToken 은 갱신돼도 동일하므로 기간(periodEnd)을 키에 포함해 갱신 1건당 1행만.
+            rtdn_record_renewal_payment($pdo, $ownerEmail, $planKey, $periodEnd, $purchaseToken, $productId, $notificationType, $now);
             break;
 
         case 3:  // CANCELED — 사용자가 Google Play 에서 해지. current_period_end 까지 사용 가능.
@@ -243,6 +247,40 @@ portone_response(['ok' => true, 'handled' => $notificationType, 'owner' => $owne
 // ────────────────────────────────────────────────────────────────────
 // helpers
 // ────────────────────────────────────────────────────────────────────
+
+/**
+ * 갱신/복구(RENEWED/RECOVERED) 결제를 payments 에 멱등 기록. best-effort —
+ * 실패해도 RTDN 처리/응답엔 영향 없음(자체 try/catch). 매출/실시간 결제내역 반영용.
+ * 멱등키: purchaseToken 은 갱신돼도 동일하므로 periodEnd 를 포함해 "갱신 1주기당 1행".
+ * (신규 PURCHASED 는 앱이 verify-google-purchase 로 이미 기록하므로 여기선 제외 — 이중기록 방지.)
+ */
+function rtdn_record_renewal_payment(PDO $pdo, string $ownerEmail, string $planKey, ?string $periodEnd, string $purchaseToken, string $productId, int $notificationType, string $now): void {
+    if ($ownerEmail === '' || $planKey === '' || !$periodEnd) return; // periodEnd 없으면 멱등키 불가 → 스킵
+    try {
+        $rPid = 'gplay-renew-' . substr(md5($purchaseToken . '|' . $periodEnd), 0, 14);
+        $ex = $pdo->prepare("SELECT 1 FROM payments WHERE portone_payment_id = :pid LIMIT 1");
+        $ex->execute([':pid' => $rPid]);
+        if ($ex->fetchColumn()) return; // 이미 기록됨 (RTDN 재전송 대비)
+
+        $sa = function_exists('plan_supply_amount') ? plan_supply_amount($planKey) : 0;
+        $va = function_exists('plan_vat_amount') ? plan_vat_amount($planKey) : 0;
+        $ta = function_exists('portone_plan_amount') ? portone_plan_amount($planKey) : 0;
+        if ($ta <= 0) return; // 금액 미상이면 기록 안 함
+
+        $pdo->prepare("INSERT INTO payments
+                (owner_email, portone_payment_id, amount, currency, status, paid_at, raw_event_json,
+                 supply_amount, vat_amount, total_amount)
+                VALUES (:o, :pid, :amt, 'KRW', 'PAID', :paid, :raw, :sa, :va, :ta)")
+            ->execute([
+                ':o' => $ownerEmail, ':pid' => $rPid, ':amt' => $ta, ':paid' => $now,
+                ':raw' => substr(json_encode(['provider' => 'google_play_rtdn', 'type' => $notificationType, 'productId' => $productId], JSON_UNESCAPED_UNICODE), 0, 2000),
+                ':sa' => $sa, ':va' => $va, ':ta' => $ta,
+            ]);
+        error_log('[rtdn] 갱신 결제기록: owner=' . $ownerEmail . ' plan=' . $planKey . ' amount=' . $ta);
+    } catch (Throwable $e) {
+        error_log('[rtdn] 갱신 결제기록 실패(흐름 계속): ' . $e->getMessage());
+    }
+}
 
 function rtdn_handle_voided(PDO $pdo, string $purchaseToken): void {
     if ($purchaseToken === '') return;
