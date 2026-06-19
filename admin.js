@@ -56,6 +56,11 @@ const errorsMessage = document.getElementById('errors-message');
 const errorsTable = document.getElementById('errors-table');
 const errorsList = document.getElementById('errors-list');
 const errorsEmpty = document.getElementById('errors-empty');
+const holdsRefresh = document.getElementById('holds-refresh');
+const holdsMessage = document.getElementById('holds-message');
+const holdsTable = document.getElementById('holds-table');
+const holdsList = document.getElementById('holds-list');
+const holdsEmpty = document.getElementById('holds-empty');
 
 const logsList = document.getElementById('logs-list');
 const logsEmpty = document.getElementById('logs-empty');
@@ -1427,12 +1432,30 @@ async function clearErrors() {
     }
 }
 
+async function loadBacklogHolds() {
+    try {
+        const payload = await apiRequest('admin-backlog-holds', { query: 'limit=150' });
+        const items = Array.isArray(payload.items) ? payload.items : [];
+        if (holdsMessage) holdsMessage.textContent = items.length === 0 ? '✅ 0건 (정상)' : `⚠ ${items.length}건 보류됨`;
+        if (items.length === 0) { holdsTable.style.display = 'none'; holdsEmpty.classList.remove('hidden'); holdsList.innerHTML = ''; return; }
+        holdsEmpty.classList.add('hidden'); holdsTable.style.display = '';
+        holdsList.innerHTML = items.map(it => `<tr>
+            <td style="white-space:nowrap;">${escape((it.createdAt || '').slice(0, 19))}</td>
+            <td style="font-size:12px;">${escape(it.actor || '')}</td>
+            <td style="font-size:11px;color:var(--fg-tertiary);max-width:380px;word-break:break-word;">${escape(it.detail || '')}</td>
+        </tr>`).join('');
+    } catch (e) {
+        if (holdsTable) { holdsTable.style.display = ''; holdsList.innerHTML = `<tr><td colspan="3" style="color:var(--danger);">${escape(e.message || '로드 실패')}</td></tr>`; }
+    }
+}
+
 if (traceBtn) traceBtn.addEventListener('click', traceJobs);
 if (traceEmail) traceEmail.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); traceJobs(); } });
 if (errorsRefresh) errorsRefresh.addEventListener('click', loadErrors);
 if (errorsClear) errorsClear.addEventListener('click', clearErrors);
+if (holdsRefresh) holdsRefresh.addEventListener('click', loadBacklogHolds);
 const _diagTabBtn = document.querySelector('.tab[data-tab="diagnostics"]');
-if (_diagTabBtn) _diagTabBtn.addEventListener('click', () => { loadErrors(); });
+if (_diagTabBtn) _diagTabBtn.addEventListener('click', () => { loadErrors(); loadBacklogHolds(); });
 
 (async function start() {
     mountAppHeader();

@@ -161,7 +161,7 @@ function normalize_resource($value) {
         'auth-membership', 'auth-member', 'auth-availability',
         'auth-profile', 'account-delete', 'sms-credentials',
         'admin-members', 'admin-stats', 'admin-stats-range', 'admin-logs', 'admin-settings', 'admin-revenue',
-        'admin-bootstrap', 'admin-cleanup-orphans', 'admin-errors', 'admin-job-trace', 'admin-payment-trace',
+        'admin-bootstrap', 'admin-cleanup-orphans', 'admin-errors', 'admin-job-trace', 'admin-payment-trace', 'admin-backlog-holds',
         'ledger-groups', 'ledger-records', 'ledger-records-bulk',
         'mobile-tokens',
         'customer-log',
@@ -4281,6 +4281,23 @@ try {
         }, $items)]);
     }
 
+    // 백로그 보류(held) 기록 — LG 등 부당청구 방어로 자동차감 보류된 건 (관리자 모니터링용).
+    // 앱이 백로그 자동전송을 잘 막으면 계속 0건이어야 정상.
+    if ($resource === 'admin-backlog-holds') {
+        enforce_admin($pdo, $authUser);
+        if ($method !== 'GET') respond(['ok' => false, 'error' => '지원하지 않는 요청 방식입니다.'], 405);
+        ensure_activity_log_table($pdo);
+        $limit = max(1, min(200, (int)($_GET['limit'] ?? 100)));
+        try {
+            $stmt = $pdo->prepare("SELECT actor_email, detail, created_at FROM activity_logs WHERE event_type = 'backlog_hold' ORDER BY id DESC LIMIT " . $limit);
+            $stmt->execute();
+            $items = $stmt->fetchAll() ?: [];
+        } catch (Throwable $e) { $items = []; }
+        respond(['ok' => true, 'count' => count($items), 'items' => array_map(function ($r) {
+            return ['actor' => $r['actor_email'] ?? '', 'detail' => $r['detail'] ?? '', 'createdAt' => $r['created_at'] ?? ''];
+        }, $items)]);
+    }
+
     // 서버 에러 로그 — 관리자 진단용 (GET: 최근 목록 / DELETE: 비우기)
     if ($resource === 'admin-errors') {
         enforce_admin($pdo, $authUser);
@@ -5423,6 +5440,10 @@ try {
                     } catch (Throwable $e) {}
                     if ($burst >= 6) {
                         error_log('[mark_usage] backlog hold (부당청구 방어): owner=' . $owner . ' job=' . $jobId . ' burst=' . $burst . ' recorded_at=' . $recAt);
+                        try {
+                            $pdo->prepare("INSERT INTO activity_logs (actor_email, event_type, detail) VALUES (:e, 'backlog_hold', :d)")
+                                ->execute([':e' => $owner, ':d' => 'job=' . $jobId . ' · 다발=' . $burst . '건/60초 · 녹음=' . $recAt]);
+                        } catch (Throwable $e) {}
                         respond(['ok' => true, 'held' => true, 'counted' => false, 'reason' => 'stale_backlog_burst',
                                  'message' => '밀린 통화가 한꺼번에 처리되어 자동 차감을 보류했습니다. 미확인 요약에서 직접 확인해 주세요.']);
                     }
