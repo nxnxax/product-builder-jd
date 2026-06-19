@@ -2864,6 +2864,17 @@ try {
                     $profile['auto_topup_enabled'] = (bool)(int)$tpr['en'];
                 }
             } catch (Throwable $e) { /* 컬럼 미존재 — 기본값 유지 */ }
+            // 앱팀 v212 요청 4 — auth-profile 분 단위 정합 (process-recording plan 객체와 동일 필드명).
+            //   ※ summary_used/summary_limit(회 단위)는 관리자 회원관리(admin.js)가 카운트로 읽고/쓰므로 의미 변경 금지.
+            //     분 기준 값은 아래 전용 필드로 노출 — PlanCache 는 이 필드들을 사용할 것.
+            $pfUsedMin = (int)round(((int)($profile['usage_seconds_period'] ?? 0)) / 60);
+            $pfLimMin = (isset($profile['summary_limit_minutes']) && $profile['summary_limit_minutes'] !== null) ? (int)$profile['summary_limit_minutes'] : null;
+            $pfRemainMin = ($pfLimMin === null) ? null : max(0, $pfLimMin - $pfUsedMin);
+            $pfTopupBal = (int)($profile['topup_balance_minutes'] ?? 0);
+            $profile['minutes_used'] = $pfUsedMin;
+            $profile['minutes_limit'] = $pfLimMin;                     // null = 무제한
+            $profile['minutes_remaining'] = $pfRemainMin;              // 정기한도만
+            $profile['effective_minutes_remaining'] = ($pfRemainMin === null) ? null : $pfRemainMin + $pfTopupBal; // 정기+충전
             if ($isAdminUserPf) $profile['role'] = 'admin';  // 종합 판별이 admin 이면 role 도 admin 으로 노출
             // 사장님 2026-05-26 — 옛 plan key 호환 매핑 (member_row_from_store 가 이미 정규화하지만 fail-safe).
             $effectivePlanPf = strtolower((string)($profile['plan'] ?? 'free'));
