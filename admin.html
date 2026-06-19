@@ -539,6 +539,17 @@
                     <div id="rev-members-view"></div>
                 </div>
 
+                <!-- 1d. 계정 결제 추적 (진단) -->
+                <div class="card">
+                    <h3 style="margin:0 0 4px;">🔎 계정 결제 추적 (진단)</h3>
+                    <p class="card-subtitle" style="margin:4px 0 10px;">특정 계정의 결제(payments)·구독(subscriptions)·충전권·회원상태 원시 기록을 조회합니다. "왜 기록이 없지?" 확인용.</p>
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+                        <input id="rev-trace-email" type="text" placeholder="이메일 (예: nxnxqx@gmail.com)" style="font-size:13px;padding:6px 10px;min-width:260px;">
+                        <button id="rev-trace-btn" type="button" class="tiny-btn">조회</button>
+                    </div>
+                    <div id="rev-trace-result"></div>
+                </div>
+
                 <!-- 2. 매출 분석 — 일/주/월 + 기간(달력) 선택 + 하단 합계 -->
                 <div class="card">
                     <h3 style="margin:0 0 4px;">📊 매출 분석</h3>
@@ -739,6 +750,6 @@
     </div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-<script src="admin.js?v=20260619-revenue4" type="module"></script>
+<script src="admin.js?v=20260619-revenue5" type="module"></script>
 </body>
 </html>

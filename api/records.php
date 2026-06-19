@@ -161,7 +161,7 @@ function normalize_resource($value) {
         'auth-membership', 'auth-member', 'auth-availability',
         'auth-profile', 'account-delete', 'sms-credentials',
         'admin-members', 'admin-stats', 'admin-stats-range', 'admin-logs', 'admin-settings', 'admin-revenue',
-        'admin-bootstrap', 'admin-cleanup-orphans', 'admin-errors', 'admin-job-trace',
+        'admin-bootstrap', 'admin-cleanup-orphans', 'admin-errors', 'admin-job-trace', 'admin-payment-trace',
         'ledger-groups', 'ledger-records', 'ledger-records-bulk',
         'mobile-tokens',
         'customer-log',
@@ -3463,6 +3463,7 @@ try {
                 'cost'        => $cost,
                 'net'         => $net,
                 'period_done' => $periodDone,
+                'kind'        => 'subscription',
             ];
 
             if ($periodDone) {
@@ -3479,6 +3480,34 @@ try {
             $totalsAll['revenue']+=$total; $totalsAll['google']+=$google; $totalsAll['vat']+=$vat;
             $totalsAll['cost']+=$cost; $totalsAll['net']+=$net; $totalsAll['usage_min']+=$usageMin; $totalsAll['count']++;
         }
+
+        // 충전권(topup) 매출 — payments 테이블엔 없으므로 topup_purchases 에서 별도 합산.
+        try {
+            $tstmt = $pdo->query("
+                SELECT owner_email, amount_price, COALESCE(verified_at, consumed_at) AS paid_at
+                FROM topup_purchases
+                WHERE status IN ('verified','consumed')
+                  AND COALESCE(verified_at, consumed_at) >= DATE_SUB(NOW(), INTERVAL 12 MONTH)
+                ORDER BY paid_at DESC LIMIT 2000
+            ");
+            foreach ($tstmt as $r) {
+                $total = (int)$r['amount_price'];
+                if ($total <= 0) continue;
+                $vat    = (int)round($total * 10 / 110);
+                $google = (int)round($total * $GOOGLE_FEE_PCT / 100);
+                $net    = $total - $google - $vat;  // 충전권 사용 원가는 실제 통화시 mark_usage 로 별도 반영
+                $paidAt = (string)$r['paid_at'];
+                $payments[] = [
+                    'paid_at' => $paidAt, 'email' => (string)$r['owner_email'], 'total' => $total,
+                    'google_fee' => $google, 'vat' => $vat, 'usage_min' => 0, 'cost' => 0, 'net' => $net,
+                    'period_done' => true, 'kind' => 'topup',
+                ];
+                $totalsAll['revenue']+=$total; $totalsAll['google']+=$google; $totalsAll['vat']+=$vat;
+                $totalsAll['net']+=$net; $totalsAll['count']++;
+            }
+            usort($payments, function ($a, $b) { return strcmp((string)$b['paid_at'], (string)$a['paid_at']); });
+        } catch (Throwable $e) { /* topup_purchases 테이블 없으면 생략 */ }
+
         krsort($monthly);
 
         // ── 실시간 결제취소 — subscriptions 해지신청/완료 + 사용기간(결제일~취소일)·사용량 ──
@@ -3563,6 +3592,45 @@ try {
             'cancellations' => $cancellations,               // 실시간 결제취소 (결제일~취소일·사용량)
             'member_stats'  => $memberStats,                 // 총 유료회원·신규30일·플랜별
         ]);
+    }
+
+    /* 계정 결제 추적 (진단) — "왜 기록이 없지?" 확인용.
+     * 특정 이메일의 payments / subscriptions / topup_purchases / members 상태 원시 조회.
+     * GET ?resource=admin-payment-trace&email=... */
+    if ($resource === 'admin-payment-trace') {
+        enforce_admin($pdo, $authUser);
+        if ($method !== 'GET') respond(['ok' => false, 'error' => '지원하지 않는 요청 방식입니다.'], 405);
+        $email = strtolower(trim((string)($_GET['email'] ?? '')));
+        if ($email === '') respond(['ok' => false, 'error' => 'email 파라미터가 필요합니다.'], 400);
+
+        $out = ['ok' => true, 'email' => $email, 'payments' => [], 'subscriptions' => [], 'topups' => [], 'member' => null];
+        try {
+            $ps = $pdo->prepare("SELECT paid_at, status,
+                                        CAST(COALESCE(NULLIF(total_amount,0),amount) AS UNSIGNED) AS total,
+                                        portone_payment_id
+                                 FROM payments WHERE LOWER(owner_email)=LOWER(:e)
+                                 ORDER BY paid_at DESC LIMIT 100");
+            $ps->execute([':e' => $email]); $out['payments'] = $ps->fetchAll(PDO::FETCH_ASSOC);
+        } catch (Throwable $e) { $out['payments_err'] = $e->getMessage(); }
+        try {
+            $ss = $pdo->prepare("SELECT plan, status, cancel_at_period_end, current_period_start, current_period_end, updated_at
+                                 FROM subscriptions WHERE LOWER(owner_email)=LOWER(:e)
+                                 ORDER BY updated_at DESC LIMIT 50");
+            $ss->execute([':e' => $email]); $out['subscriptions'] = $ss->fetchAll(PDO::FETCH_ASSOC);
+        } catch (Throwable $e) { $out['subscriptions_err'] = $e->getMessage(); }
+        try {
+            $ts = $pdo->prepare("SELECT product_id, amount_minutes, amount_price, status, verified_at, consumed_at
+                                 FROM topup_purchases WHERE LOWER(owner_email)=LOWER(:e)
+                                 ORDER BY verified_at DESC LIMIT 50");
+            $ts->execute([':e' => $email]); $out['topups'] = $ts->fetchAll(PDO::FETCH_ASSOC);
+        } catch (Throwable $e) { $out['topups_err'] = $e->getMessage(); }
+        try {
+            $ms = $pdo->prepare("SELECT plan, plan_status, cancel_at_period_end, current_period_start, current_period_end,
+                                        COALESCE(topup_balance_minutes,0) AS topup_balance_minutes
+                                 FROM members WHERE LOWER(email)=LOWER(:e) LIMIT 1");
+            $ms->execute([':e' => $email]); $out['member'] = $ms->fetch(PDO::FETCH_ASSOC) ?: null;
+        } catch (Throwable $e) { $out['member_err'] = $e->getMessage(); }
+        respond($out);
     }
 
     if ($resource === 'admin-stats') {

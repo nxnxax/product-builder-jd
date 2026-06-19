@@ -919,6 +919,10 @@ async function loadRevenue() {
             });
             const rf = document.getElementById('rev-refresh');
             if (rf) rf.addEventListener('click', loadRevenue);
+            const tb = document.getElementById('rev-trace-btn');
+            if (tb) tb.addEventListener('click', runPaymentTrace);
+            const te = document.getElementById('rev-trace-email');
+            if (te) te.addEventListener('keydown', (e) => { if (e.key === 'Enter') runPaymentTrace(); });
         }
         renderRevPayments();
         renderRevCancels();
@@ -993,6 +997,40 @@ function renderRevMembers() {
         </div>`;
 }
 
+// ── 1d. 계정 결제 추적 (진단) ──
+function runPaymentTrace() {
+    const email = (document.getElementById('rev-trace-email')?.value || '').trim();
+    const out = document.getElementById('rev-trace-result');
+    if (!out) return;
+    if (!email) { out.innerHTML = '<p class="form-help">이메일을 입력하세요.</p>'; return; }
+    out.innerHTML = '<p class="form-help">조회 중…</p>';
+    apiRequest('admin-payment-trace', { query: 'email=' + encodeURIComponent(email) })
+        .then(d => { out.innerHTML = renderTrace(d); })
+        .catch(e => { out.innerHTML = `<p class="form-help" style="color:#c8362c;">조회 실패: ${escape(e.message || String(e))}</p>`; });
+}
+
+function traceTable(title, rows, cols) {
+    if (!rows || !rows.length) return `<div style="margin-bottom:12px;"><b style="font-size:13px;">${title}</b> <span class="form-help">— 없음</span></div>`;
+    const th = cols.map(c => `<th style="text-align:left;padding:5px 8px;font-size:11px;color:var(--fg-secondary);border-bottom:1px solid var(--line,#eee);white-space:nowrap;">${c}</th>`).join('');
+    const trs = rows.map(r => '<tr>' + cols.map(c => `<td style="text-align:left;padding:5px 8px;font-size:12px;border-bottom:1px solid var(--line,#f3f3f3);white-space:nowrap;">${escape(String(r[c] ?? ''))}</td>`).join('') + '</tr>').join('');
+    return `<div style="margin-bottom:14px;">
+        <b style="font-size:13px;">${title}</b> <span class="form-help">${rows.length}건</span>
+        <div style="overflow-x:auto;margin-top:4px;"><table style="border-collapse:collapse;min-width:400px;"><thead><tr>${th}</tr></thead><tbody>${trs}</tbody></table></div>
+    </div>`;
+}
+
+function renderTrace(d) {
+    if (!d || !d.ok) return '<p class="form-help" style="color:#c8362c;">조회 실패</p>';
+    const m = d.member;
+    const memberLine = m
+        ? `<div style="margin-bottom:12px;font-size:13px;">현재 회원상태 — plan=<b>${escape(m.plan || '')}</b> · status=${escape(m.plan_status || '')} · 해지예약=${m.cancel_at_period_end} · 기간 ${escape((m.current_period_start || '').slice(0, 10))}~${escape((m.current_period_end || '').slice(0, 10))} · 충전잔액 ${m.topup_balance_minutes || 0}분</div>`
+        : '<div style="margin-bottom:12px;" class="form-help">members 행 없음</div>';
+    return memberLine
+        + traceTable('💳 payments (결제 기록)', d.payments, ['paid_at', 'status', 'total', 'portone_payment_id'])
+        + traceTable('📄 subscriptions (구독 이력)', d.subscriptions, ['plan', 'status', 'cancel_at_period_end', 'current_period_start', 'current_period_end', 'updated_at'])
+        + traceTable('🎟️ topup_purchases (충전권)', d.topups, ['product_id', 'amount_minutes', 'amount_price', 'status', 'verified_at', 'consumed_at']);
+}
+
 // ── 1. 실시간 결제내역 (최상단) ──
 function renderRevPayments() {
     const el = document.getElementById('rev-payments-view');
@@ -1019,7 +1057,7 @@ function renderRevPayments() {
         }
         body += `<tr>
             <td style="text-align:left;padding:7px 10px;font-size:13px;white-space:nowrap;border-bottom:1px solid var(--line,#f0f0f0);">${(r.paid_at || '').replace('T', ' ').slice(0, 16)}</td>
-            <td style="text-align:left;padding:7px 10px;font-size:12px;white-space:nowrap;border-bottom:1px solid var(--line,#f0f0f0);">${escape(r.email || '')}</td>
+            <td style="text-align:left;padding:7px 10px;font-size:12px;white-space:nowrap;border-bottom:1px solid var(--line,#f0f0f0);">${escape(r.email || '')}${r.kind === 'topup' ? ' <span style="font-size:10px;color:#7a5cff;border:1px solid #d8cfff;border-radius:6px;padding:1px 5px;">충전권</span>' : ''}</td>
             <td style="text-align:right;padding:7px 10px;font-size:13px;border-bottom:1px solid var(--line,#f0f0f0);">${won(r.total)}</td>
             <td style="text-align:right;padding:7px 10px;font-size:13px;color:#c8362c;border-bottom:1px solid var(--line,#f0f0f0);">-${won(r.google_fee)}</td>
             <td style="text-align:right;padding:7px 10px;font-size:13px;color:#c8362c;border-bottom:1px solid var(--line,#f0f0f0);">-${won(r.vat)}</td>
