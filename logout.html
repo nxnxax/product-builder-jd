@@ -122,7 +122,8 @@
             try {
                 const RN = window.ReactNativeWebView;
                 if (RN && typeof RN.postMessage === 'function') {
-                    RN.postMessage(JSON.stringify({ type: 'auth.logout', payload: null, ts: Date.now() }));
+                    // 앱팀 v219 — payload.explicit=true marker 로 30초 race guard skip + 즉시 clearSession.
+                    RN.postMessage(JSON.stringify({ type: 'auth.logout', payload: { explicit: true }, ts: Date.now() }));
                 } else {
                     const b = await import('./bridge.js?v=20260528-startsubscription');
                     b.notifyLogout();
