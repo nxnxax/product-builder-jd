@@ -34,10 +34,8 @@ if (function_exists('ym_register_fatal_logger')) ym_register_fatal_logger('fatal
 
 /* ========== 응답/입력 헬퍼 ========== */
 function jout(array $payload, int $code = 200): void {
-    // 2026-06-19 — 한도 검사부에서 set 한 topup 객체를 모든 성공 응답에 자동 포함 (앱이 topup.needed 로 충전 유도).
-    if ($code === 200 && isset($GLOBALS['__ym_topup']) && is_array($GLOBALS['__ym_topup']) && !array_key_exists('topup', $payload)) {
-        $payload['topup'] = $GLOBALS['__ym_topup'];
-    }
+    // 2026-06-19 v212 (앱팀 gate 전환 완료) — 누수 차단: 성공(200=summary) 응답엔 topup 객체를 넣지 않는다.
+    //   topup 객체는 gate='topup_required'(402/403) 응답에서만 명시적으로 내려간다. (잔여량 표시는 plan.effective_minutes_remaining 사용)
     // 2026-06-19 — gate: 잔여(정기+충전) 기준 단일 권위 신호. 성공(200) = 'summary'.
     //   앱은 오직 gate 로만 모달 분기: summary=통화 전/후 모달 / topup_required=결제유도창. 상호배타.
     //   (topup/plan 객체의 '존재 여부'로 분기 금지 — gate 값만 본다.)
@@ -258,11 +256,12 @@ function build_plan_info_for_response(PDO $pdo, string $ownerEmail, bool $isAdmi
     $freeUsed = 0;
     $usageSec = 0;
     $limitMinDb = null;
+    $topupBal = 0;   // 충전잔액(분) — 앱팀 v212: plan 객체 cache mirror 보정용
     $rowFound = false;
     try {
         // 사장님 2026-05-25 — case-insensitive email match. 옛 가입자의 mixed-case email 호환.
         // 사장님 2026-05-26 (앱팀 §5) — minutes_used / limit / remaining 추가 응답.
-        $ps = $pdo->prepare('SELECT plan, free_summaries_used, usage_seconds_period, summary_limit_minutes FROM members WHERE LOWER(email) = LOWER(:e) LIMIT 1');
+        $ps = $pdo->prepare('SELECT plan, free_summaries_used, usage_seconds_period, summary_limit_minutes, COALESCE(topup_balance_minutes,0) AS topup_bal FROM members WHERE LOWER(email) = LOWER(:e) LIMIT 1');
         $ps->execute([':e' => $ownerEmail]);
         $row = $ps->fetch();
         if ($row) {
@@ -275,6 +274,7 @@ function build_plan_info_for_response(PDO $pdo, string $ownerEmail, bool $isAdmi
             $freeUsed = (int)($row['free_summaries_used'] ?? 0);
             $usageSec = (int)($row['usage_seconds_period'] ?? 0);
             $limitMinDb = isset($row['summary_limit_minutes']) ? (int)$row['summary_limit_minutes'] : null;
+            $topupBal = (int)($row['topup_bal'] ?? 0);
         }
     } catch (Throwable $e) {
         error_log('[build_plan_info] SELECT fail owner=' . $ownerEmail . ' err=' . $e->getMessage());
@@ -298,7 +298,9 @@ function build_plan_info_for_response(PDO $pdo, string $ownerEmail, bool $isAdmi
         'requires_subscription' => $requiresSubscription,
         'minutes_used' => $usedMin,
         'minutes_limit' => $limitMin,         // null = 무제한 (admin override 등)
-        'minutes_remaining' => $remainingMin, // null = 무제한
+        'minutes_remaining' => $remainingMin, // null = 무제한 (정기한도만)
+        'topup_balance_minutes' => $topupBal, // 앱팀 v212 요청 3 — plan 객체 cache mirror 보정
+        'effective_minutes_remaining' => ($remainingMin === null ? null : $remainingMin + $topupBal), // 정기+충전 합산 (앱 표시·판단 기준)
     ];
 }
 
@@ -890,18 +892,18 @@ if (!$isAdminUserEarly && ($planInfoEarly['minutes_limit'] ?? null) !== null) {
             if ($sp2 !== '') { foreach ([$sp2, __DIR__ . '/' . $sp2, dirname(__DIR__) . '/' . $sp2] as $p2) { if (is_file($p2)) { @unlink($p2); break; } } }
         } catch (Throwable $e) {}
         $limMinE = (int)($planInfoEarly['minutes_limit'] ?? 0);
-        // gate='topup_required' — 잔여 0 일 때 단일 결제유도 신호 (auto_topup on/off 둘 다 동일 gate, 상태코드만 기존 유지).
+        // gate='topup_required' — 잔여 0 일 때 단일 결제유도 신호. plan 객체는 빼서(모달트리거 누수 차단) topup 만 내린다.
         if ($autoTopupE === 1) {
             jerror('topup_required', '이번 달 ' . $limMinE . '분을 모두 사용했습니다. 충전(₩5,000 = 80분) 후 계속 이용하실 수 있습니다.', 402,
-                ['gate' => 'topup_required', 'topup' => $topupObjE, 'plan' => $planInfoEarly]);
+                ['gate' => 'topup_required', 'topup' => $topupObjE]);
         } else {
             jerror('quota_exceeded', '이번 달 ' . $limMinE . '분을 모두 사용했습니다. 충전(₩5,000 = 80분) 후 계속 이용하실 수 있습니다.', 403,
-                ['gate' => 'topup_required', 'topup' => $topupObjE, 'plan' => $planInfoEarly]);
+                ['gate' => 'topup_required', 'topup' => $topupObjE]);
         }
     }
-    // 통과(잔여>0, 충전분 포함) — gate='summary'(통화 전/후 모달 전용). 모든 성공 응답(jout 200)에 자동 포함.
+    // 통과(잔여>0, 충전분 포함) — gate='summary'(통화 전/후 모달 전용).
+    //   topup 객체는 내리지 않음(누수 차단). 잔여 표시는 plan.effective_minutes_remaining / plan.topup_balance_minutes 사용.
     $GLOBALS['__ym_gate'] = 'summary';
-    $GLOBALS['__ym_topup'] = $topupObjE;  // backwards compat — 앱이 gate 전환 완료 후 제거 예정(누수 차단)
 
 }
 
