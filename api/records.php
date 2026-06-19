@@ -5406,6 +5406,29 @@ try {
             }
             if (!$jRow) respond(['ok'=>false, 'code'=>'not_found', 'message'=>'해당 job 없음 또는 권한 없음.'], 404);
 
+            // ── 백로그 무더기 자동전송 방어 (LG 등 — 앱이 밀린 통화를 사용자 클릭 없이 일괄 auto_confirm → 부당 차감) ──
+            // HOLD 조건(4중): auto_confirm + user_initiated 아님 + 오래된 녹음(6h+ 과거) + 짧은시간 다발(최근 60초 6건+ 차감).
+            //   → 자동차감 보류(held). summary_view(요약보기)·최근통화·단건·user_initiated(사용자 명시클릭) 는 정상 차감.
+            //   근본해결=앱(백로그 자동전송 중단). 이건 서버 안전망. ref: project_auto_confirm_overcharge.
+            if ($clickAction === 'auto_confirm' && empty($body['user_initiated'])) {
+                $recAt = $jRow['recorded_at'] ?? null;
+                $recTs = $recAt ? strtotime((string)$recAt) : 0;
+                $isStale = ($recTs > 0) && ($recTs < (time() - 6 * 3600));
+                if ($isStale) {
+                    $burst = 0;
+                    try {
+                        $bq = $pdo->prepare("SELECT COUNT(*) FROM recording_jobs WHERE owner_email = :o AND usage_counted_at >= (NOW() - INTERVAL 60 SECOND)");
+                        $bq->execute([':o' => $owner]);
+                        $burst = (int)$bq->fetchColumn();
+                    } catch (Throwable $e) {}
+                    if ($burst >= 6) {
+                        error_log('[mark_usage] backlog hold (부당청구 방어): owner=' . $owner . ' job=' . $jobId . ' burst=' . $burst . ' recorded_at=' . $recAt);
+                        respond(['ok' => true, 'held' => true, 'counted' => false, 'reason' => 'stale_backlog_burst',
+                                 'message' => '밀린 통화가 한꺼번에 처리되어 자동 차감을 보류했습니다. 미확인 요약에서 직접 확인해 주세요.']);
+                    }
+                }
+            }
+
             $dur = (int)($jRow['duration_sec'] ?? 0);
             $counted = false;
             // 1) 차감 (멱등)
