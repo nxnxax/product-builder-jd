@@ -340,7 +340,9 @@ if (!function_exists('notify_admin_new_payment')) {
      */
     function notify_admin_new_payment(PDO $pdo, string $kind, string $buyerEmail, int $amountWon, string $planLabel = ''): array {
         $adminEmail = 'nxnxax@gmail.com'; // 하드코딩 admin (PROJECT_CONTEXT §8)
-        $kindLabel = $kind === 'topup' ? '충전권' : ($kind === 'renewal' ? '구독 갱신' : '신규 구독');
+        $kindLabel = $kind === 'topup' ? '충전권'
+            : ($kind === 'overage' ? '초과결제'
+            : ($kind === 'renewal' ? '구독 갱신' : '신규 구독'));
         $title = '💰 ₩' . number_format($amountWon) . ' 결제 (' . $kindLabel . ')';
         $parts = [];
         if ($planLabel !== '') $parts[] = $planLabel;

@@ -1145,6 +1145,12 @@ if (!$isAdminUser) {
                 if ($topUp['ok']) {
                     $overageBalanceSeconds = (int)($topUp['new_balance_seconds'] ?? ($overageBalanceSeconds + (int)($topUp['added_seconds'] ?? 0)));
                     error_log('[process-recording] overage auto top-up success: owner=' . $ownerEmail . ', added=' . ($topUp['added_seconds'] ?? 0) . 's, new_balance=' . $overageBalanceSeconds . 's');
+                    // 사장님 실시간 결제 알림 — 초과결제(자동 초과충전) 발생. 실패해도 통화 처리 흐름엔 영향 없음.
+                    if (function_exists('notify_admin_new_payment')) {
+                        $overAmt = function_exists('overage_top_up_amount_won') ? overage_top_up_amount_won() : 5000;
+                        try { notify_admin_new_payment($pdo, 'overage', $ownerEmail, (int)$overAmt, '자동 초과충전'); }
+                        catch (Throwable $e) { error_log('[process-recording] overage admin notify: ' . $e->getMessage()); }
+                    }
                     // 충전 후에도 부족하면 (5,000원으론 모자란 매우 긴 통화) — 일단 통과시키되 차감 시 음수 허용
                     // 다음 통화 시점에 다시 충전 트리거됨
                 } else {
