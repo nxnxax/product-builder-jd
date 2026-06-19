@@ -216,6 +216,11 @@ function send_fcm_to_user(PDO $pdo, string $ownerEmail, array $message): array {
     }
     // Android 채널 ID + iOS APNS — 향후 앱 측 요구사항 따라 확장.
     $payload['android'] = ['priority' => 'high'];
+    // 앱팀 2026-06-19 v218 — 채널/표시 옵션 명시(android.notification). OS 가 직접 heads-up+소리+잠금화면 표시.
+    //   예: ['channel_id'=>'yk_admin_notice_v1','visibility'=>'PUBLIC','default_sound'=>true,'default_vibrate_timings'=>true]
+    if (!empty($message['android_notification']) && is_array($message['android_notification'])) {
+        $payload['android']['notification'] = $message['android_notification'];
+    }
 
     $sent = 0;
     $failed = 0;
@@ -349,10 +354,12 @@ if (!function_exists('notify_admin_new_payment')) {
         if ($buyerEmail !== '') $parts[] = $buyerEmail;
         $body = $parts ? implode(' · ', $parts) : '새 결제가 발생했습니다.';
         try {
-            // 앱 FCM 구조 = data-only (앱이 onMessageReceived 의 switch(type) 로 직접 알림 표시).
-            //   call_summary_ready(recording-callback) 와 동일 방식. notification 블록 쓰면 앱 핸들러 안 탐 → 안 뜸.
-            //   표시 문구(title/body)도 data 에 넣어 앱이 type='admin_payment' 핸들러로 heads-up 구성하게 한다.
+            // 앱팀 2026-06-19 v218 옵션B — OS 가 직접 표시(heads-up + 소리 + 잠금화면 + persistent).
+            //   notification 블록(title/body) + android.notification(채널 yk_admin_notice_v1) 명시 → 앱 코드 경유 없음.
+            //   data 도 함께 보내 향후 앱 포그라운드 커스텀/라우팅 여지 유지.
             return send_fcm_to_user($pdo, $adminEmail, [
+                'title' => $title,
+                'body'  => $body,
                 'data'  => [
                     'type'   => 'admin_payment',
                     'title'  => $title,
@@ -361,6 +368,12 @@ if (!function_exists('notify_admin_new_payment')) {
                     'amount' => $amountWon,
                     'buyer'  => $buyerEmail,
                     'plan'   => $planLabel,
+                ],
+                'android_notification' => [
+                    'channel_id'              => 'yk_admin_notice_v1',
+                    'visibility'              => 'PUBLIC',
+                    'default_sound'           => true,
+                    'default_vibrate_timings' => true,
                 ],
             ]);
         } catch (Throwable $e) {
