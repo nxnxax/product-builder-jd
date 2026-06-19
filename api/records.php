@@ -3532,11 +3532,17 @@ try {
                 if (isset($memberStats['by_plan'][$p])) $memberStats['by_plan'][$p] = $c;
                 $memberStats['total_paid'] += $c;
             }
-            foreach ($pdo->query("SELECT plan, COUNT(*) c FROM members
-                    WHERE plan IN ('sales','master','agency')
-                      AND current_period_start IS NOT NULL
-                      AND current_period_start >= DATE_SUB(NOW(), INTERVAL 30 DAY)
-                    GROUP BY plan") as $r) {
+            // 신규 = 첫 결제(MIN(paid_at))가 최근 30일 이내인 회원만 (갱신자 제외 — 순수 신규 유료회원).
+            foreach ($pdo->query("
+                    SELECT m.plan AS plan, COUNT(*) AS c
+                    FROM (SELECT owner_email, MIN(paid_at) AS first_paid
+                            FROM payments
+                            WHERE LOWER(status) = 'paid' AND paid_at IS NOT NULL
+                            GROUP BY owner_email
+                            HAVING first_paid >= DATE_SUB(NOW(), INTERVAL 30 DAY)) fp
+                    JOIN members m ON LOWER(m.email) = LOWER(fp.owner_email)
+                    WHERE m.plan IN ('sales','master','agency')
+                    GROUP BY m.plan") as $r) {
                 $p = (string)$r['plan']; $c = (int)$r['c'];
                 if (isset($memberStats['new_30d_by_plan'][$p])) $memberStats['new_30d_by_plan'][$p] = $c;
                 $memberStats['new_30d'] += $c;
