@@ -349,11 +349,14 @@ if (!function_exists('notify_admin_new_payment')) {
         if ($buyerEmail !== '') $parts[] = $buyerEmail;
         $body = $parts ? implode(' · ', $parts) : '새 결제가 발생했습니다.';
         try {
+            // 앱 FCM 구조 = data-only (앱이 onMessageReceived 의 switch(type) 로 직접 알림 표시).
+            //   call_summary_ready(recording-callback) 와 동일 방식. notification 블록 쓰면 앱 핸들러 안 탐 → 안 뜸.
+            //   표시 문구(title/body)도 data 에 넣어 앱이 type='admin_payment' 핸들러로 heads-up 구성하게 한다.
             return send_fcm_to_user($pdo, $adminEmail, [
-                'title' => $title,
-                'body'  => $body,
                 'data'  => [
                     'type'   => 'admin_payment',
+                    'title'  => $title,
+                    'body'   => $body,
                     'kind'   => $kind,
                     'amount' => $amountWon,
                     'buyer'  => $buyerEmail,
