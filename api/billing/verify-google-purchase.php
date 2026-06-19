@@ -29,6 +29,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../billing_helpers.php';
 require_once __DIR__ . '/google_play_helpers.php';
+require_once __DIR__ . '/../fcm_helpers.php'; // 사장님 실시간 결제 알림
 
 header('Content-Type: application/json; charset=utf-8');
 
@@ -191,23 +192,38 @@ try {
             ':ta' => $totalAmt,
         ]);
 
-    $pdo->prepare("INSERT INTO payments
-            (owner_email, portone_payment_id, amount, currency, status, paid_at, raw_event_json,
-             supply_amount, vat_amount, total_amount)
-            VALUES (:o, :pid, :amt, 'KRW', 'PAID', :paid, :raw, :sa, :va, :ta)")
-        ->execute([
-            ':o' => $ownerEmail,
-            ':pid' => 'gplay-' . substr(md5($purchaseToken), 0, 16),
-            ':amt' => $totalAmt,
-            ':paid' => $now,
-            ':raw' => substr(json_encode(['provider' => 'google_play', 'productId' => $productId, 'response' => $resp], JSON_UNESCAPED_UNICODE), 0, 4000),
-            ':sa' => $supplyAmt,
-            ':va' => $vatAmt,
-            ':ta' => $totalAmt,
-        ]);
+    // 동일 purchaseToken 의 결제 행 멱등 — 앱 재검증(앱 재실행 시 verify 재호출) 으로
+    // 같은 구매가 중복 기록/중복 알림 되지 않게 한다. (갱신은 Google 이 새 token 발급 → 새 pid → 정상 기록)
+    $payPid = 'gplay-' . substr(md5($purchaseToken), 0, 16);
+    $exists = $pdo->prepare("SELECT 1 FROM payments WHERE portone_payment_id = :pid LIMIT 1");
+    $exists->execute([':pid' => $payPid]);
+    $isNewPayment = !$exists->fetchColumn();
+
+    if ($isNewPayment) {
+        $pdo->prepare("INSERT INTO payments
+                (owner_email, portone_payment_id, amount, currency, status, paid_at, raw_event_json,
+                 supply_amount, vat_amount, total_amount)
+                VALUES (:o, :pid, :amt, 'KRW', 'PAID', :paid, :raw, :sa, :va, :ta)")
+            ->execute([
+                ':o' => $ownerEmail,
+                ':pid' => $payPid,
+                ':amt' => $totalAmt,
+                ':paid' => $now,
+                ':raw' => substr(json_encode(['provider' => 'google_play', 'productId' => $productId, 'response' => $resp], JSON_UNESCAPED_UNICODE), 0, 4000),
+                ':sa' => $supplyAmt,
+                ':va' => $vatAmt,
+                ':ta' => $totalAmt,
+            ]);
+    }
 } catch (Throwable $e) {
     error_log('[verify-google-purchase] DB write 실패: ' . $e->getMessage());
     portone_response(['ok' => false, 'code' => 'db_write', 'message' => 'DB 갱신 실패: ' . $e->getMessage()], 500);
+}
+
+// 사장님 실시간 결제 알림 — 새 결제 행이 기록됐을 때만. 실패해도 결제 응답엔 영향 없음.
+if (!empty($isNewPayment) && function_exists('notify_admin_new_payment')) {
+    try { notify_admin_new_payment($pdo, 'subscription', $ownerEmail, (int)$totalAmt, (string)$planKey); }
+    catch (Throwable $e) { error_log('[verify-google] admin notify: ' . $e->getMessage()); }
 }
 
 portone_response([

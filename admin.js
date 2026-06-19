@@ -816,10 +816,23 @@ if (statsApplyBtn) {
 
 function won(n) { return '₩' + Number(n || 0).toLocaleString('ko-KR'); }
 
-let _revData = null, _revSub = 'daily', _revSubsBound = false;
+let _revData = null, _revSub = 'daily', _revBound = false;
 const _revPage = { daily: 1, weekly: 1, monthly: 1, payments: 1 };
-const _revQ = { daily: '', weekly: '', monthly: '', payments: '' };
-const REV_BUCKETS_PER_PAGE = 10, REV_PAYMENTS_PER_PAGE = 25;
+const _revRange = { daily: { from: '', to: '' }, weekly: { from: '', to: '' }, monthly: { from: '', to: '' } };
+let _revPayQ = '';
+const REV_BUCKETS_PER_PAGE = 12, REV_PAYMENTS_PER_PAGE = 25;
+
+function revFmtDate(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
+function revFmtMonth(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); }
+function revInRange(r, sub) {
+    const rg = _revRange[sub];
+    if (!rg.from && !rg.to) return true;
+    const v = sub === 'monthly' ? (r.paid_at || '').slice(0, 7) : (r.paid_at || '').slice(0, 10);
+    if (!v) return false;
+    if (rg.from && v < rg.from) return false;
+    if (rg.to && v > rg.to) return false;
+    return true;
+}
 
 function revIsoWeek(s) {
     const d = new Date(s.slice(0, 10) + 'T00:00:00');
@@ -861,19 +874,12 @@ function revGraph(buckets) {
     return `<div style="font-size:12px;color:var(--fg-secondary);margin-bottom:6px;">순마진 추이 (최근 ${show.length})</div>
         <div style="display:flex;align-items:flex-end;gap:4px;height:140px;padding:8px;background:var(--bg-subtle,#f7f5f1);border-radius:10px;overflow-x:auto;margin-bottom:14px;">${bars}</div>`;
 }
-function revSearchBar(sub, placeholder) {
-    return `<div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap;">
-        <input id="rev-search" type="text" value="${escape(_revQ[sub])}" placeholder="${placeholder}"
-            style="font-size:13px;padding:6px 10px;min-width:200px;">
-        ${_revQ[sub] ? '<button id="rev-search-clear" type="button" class="tiny-btn">×</button>' : ''}
-    </div>`;
-}
-function revPager(sub, page, totalPages) {
+function revNavPager(ns, page, totalPages) {
     if (totalPages <= 1) return '';
     return `<div style="display:flex;gap:8px;align-items:center;justify-content:center;margin-top:12px;">
-        <button id="rev-prev" type="button" class="tiny-btn" ${page <= 1 ? 'disabled' : ''}>◀ 이전</button>
+        <button id="rev-${ns}-prev" type="button" class="tiny-btn" ${page <= 1 ? 'disabled' : ''}>◀ 이전</button>
         <span style="font-size:13px;color:var(--fg-secondary);">${page} / ${totalPages}</span>
-        <button id="rev-next" type="button" class="tiny-btn" ${page >= totalPages ? 'disabled' : ''}>다음 ▶</button>
+        <button id="rev-${ns}-next" type="button" class="tiny-btn" ${page >= totalPages ? 'disabled' : ''}>다음 ▶</button>
     </div>`;
 }
 function revAggTable(buckets) {
@@ -894,62 +900,39 @@ function revAggTable(buckets) {
 }
 
 async function loadRevenue() {
-    const totalsEl = document.getElementById('rev-totals');
     const assumpEl = document.getElementById('rev-assumptions');
-    if (totalsEl) totalsEl.innerHTML = '<p class="form-help">불러오는 중…</p>';
+    const payEl = document.getElementById('rev-payments-view');
+    if (payEl) payEl.innerHTML = '<p class="form-help">불러오는 중…</p>';
     try {
         _revData = await apiRequest('admin-revenue');
-        const a = _revData.assumptions || {}, t = _revData.totals || {};
+        const a = _revData.assumptions || {};
         if (assumpEl) assumpEl.textContent =
-            `가정: AI 원가 ${a.cost_per_min}원/분 · Google 수수료 ${a.google_fee_pct}% · 부가세 = 결제가의 10/110 (추정).`;
-        if (totalsEl) totalsEl.innerHTML = `<div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:6px;">
-            ${revStat('총 결제(12개월)', won(t.revenue), (t.count || 0) + '건')}
-            ${revStat('Google 수수료', '-' + won(t.google), '')}
-            ${revStat('부가세', '-' + won(t.vat), '')}
-            ${revStat('AI 원가', '-' + won(t.cost), (t.usage_min || 0).toLocaleString() + '분')}
-            ${revStat('순마진', won(t.net), '', true)}</div>`;
-        if (!_revSubsBound) {
-            _revSubsBound = true;
+            `순마진 = 결제액 − Google ${a.google_fee_pct}% − 부가세(10/110) − AI원가 ${a.cost_per_min}원/분 (추정).`;
+        if (!_revBound) {
+            _revBound = true;
             document.querySelectorAll('#rev-subtabs .rev-sub').forEach(btn => {
                 btn.addEventListener('click', () => {
                     _revSub = btn.dataset.rev;
                     document.querySelectorAll('#rev-subtabs .rev-sub').forEach(b => b.classList.toggle('active', b === btn));
-                    renderRevView();
+                    renderRevAnalysis();
                 });
             });
+            const rf = document.getElementById('rev-refresh');
+            if (rf) rf.addEventListener('click', loadRevenue);
         }
-        renderRevView();
+        renderRevPayments();
+        renderRevAnalysis();
     } catch (e) {
-        if (totalsEl) totalsEl.innerHTML = `<p class="form-help" style="color:#c8362c;">매출 조회 실패: ${escape(e.message || String(e))}</p>`;
+        if (payEl) payEl.innerHTML = `<p class="form-help" style="color:#c8362c;">매출 조회 실패: ${escape(e.message || String(e))}</p>`;
     }
 }
 
-function renderRevView() {
-    const el = document.getElementById('rev-view');
+// ── 1. 실시간 결제내역 (최상단) ──
+function renderRevPayments() {
+    const el = document.getElementById('rev-payments-view');
     if (!el || !_revData) return;
-    if (_revSub === 'payments') return renderRevPayments(el);
-
-    const placeholder = _revSub === 'daily' ? '날짜 검색 (예: 2026-06-19 또는 2026-06)'
-        : _revSub === 'weekly' ? '주차 검색 (예: 2026-W25)' : '월 검색 (예: 2026-06)';
-    let buckets = revAggregate(_revData.payments || [], revKeyFn(_revSub));
-    const q = _revQ[_revSub].trim();
-    if (q) buckets = buckets.filter(b => b.key.includes(q));
-
-    const totalPages = Math.max(1, Math.ceil(buckets.length / REV_BUCKETS_PER_PAGE));
-    if (_revPage[_revSub] > totalPages) _revPage[_revSub] = totalPages;
-    const page = _revPage[_revSub];
-    const slice = buckets.slice((page - 1) * REV_BUCKETS_PER_PAGE, page * REV_BUCKETS_PER_PAGE);
-
-    el.innerHTML = revSearchBar(_revSub, placeholder)
-        + revGraph(buckets)
-        + (buckets.length ? revAggTable(slice) : '<p class="form-help">해당 데이터가 없습니다.</p>')
-        + revPager(_revSub, page, totalPages);
-    bindRevControls();
-}
-
-function renderRevPayments(el) {
     let rows = (_revData.payments || []).slice(); // 이미 paid_at desc
-    const q = _revQ.payments.trim();
+    const q = _revPayQ.trim();
     if (q) rows = rows.filter(r => (r.paid_at || '').includes(q) || (r.email || '').includes(q));
 
     const totalPages = Math.max(1, Math.ceil(rows.length / REV_PAYMENTS_PER_PAGE));
@@ -980,28 +963,121 @@ function renderRevPayments(el) {
             <td style="text-align:right;padding:7px 10px;font-size:12px;border-bottom:1px solid var(--line,#f0f0f0);">${r.period_done ? '<span style="color:#1f9d55">확정</span>' : '<span style="color:var(--fg-tertiary)">진행중</span>'}</td>
         </tr>`;
     }
-    el.innerHTML = revSearchBar('payments', '날짜(YYYY-MM-DD) 또는 이메일 검색')
-        + (rows.length ? `<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;min-width:760px;"><thead><tr>${th}</tr></thead><tbody>${body}</tbody></table></div>` : '<p class="form-help">결제 내역이 없습니다.</p>')
-        + revPager('payments', page, totalPages);
-    bindRevControls();
+    el.innerHTML = revPaySearchBar()
+        + (rows.length ? `<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;min-width:760px;"><thead><tr>${th}</tr></thead><tbody>${body}</tbody></table></div>` : '<p class="form-help">아직 결제 내역이 없습니다.</p>')
+        + revNavPager('pay', page, totalPages);
+    bindRevPaymentsControls();
 }
 
-function bindRevControls() {
-    const sub = _revSub;
-    const search = document.getElementById('rev-search');
+function revPaySearchBar() {
+    return `<div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap;">
+        <input id="rev-pay-search" type="text" value="${escape(_revPayQ)}" placeholder="날짜(YYYY-MM-DD) 또는 이메일 검색"
+            style="font-size:13px;padding:6px 10px;min-width:220px;">
+        ${_revPayQ ? '<button id="rev-pay-clear" type="button" class="tiny-btn">×</button>' : ''}
+    </div>`;
+}
+
+function bindRevPaymentsControls() {
+    const search = document.getElementById('rev-pay-search');
     if (search) {
         let tmr = null;
         search.addEventListener('input', () => {
             clearTimeout(tmr);
-            tmr = setTimeout(() => { _revQ[sub] = search.value; _revPage[sub] = 1; renderRevView(); }, 300);
+            tmr = setTimeout(() => { _revPayQ = search.value; _revPage.payments = 1; renderRevPayments(); }, 300);
         });
     }
-    const clr = document.getElementById('rev-search-clear');
-    if (clr) clr.addEventListener('click', () => { _revQ[sub] = ''; _revPage[sub] = 1; renderRevView(); });
-    const prev = document.getElementById('rev-prev');
-    if (prev) prev.addEventListener('click', () => { if (_revPage[sub] > 1) { _revPage[sub]--; renderRevView(); } });
-    const next = document.getElementById('rev-next');
-    if (next) next.addEventListener('click', () => { _revPage[sub]++; renderRevView(); });
+    const clr = document.getElementById('rev-pay-clear');
+    if (clr) clr.addEventListener('click', () => { _revPayQ = ''; _revPage.payments = 1; renderRevPayments(); });
+    const prev = document.getElementById('rev-pay-prev');
+    if (prev) prev.addEventListener('click', () => { if (_revPage.payments > 1) { _revPage.payments--; renderRevPayments(); } });
+    const next = document.getElementById('rev-pay-next');
+    if (next) next.addEventListener('click', () => { _revPage.payments++; renderRevPayments(); });
+}
+
+// ── 2. 매출 분석 (일/주/월 + 기간 선택 + 하단 합계) ──
+function renderRevAnalysis() {
+    const el = document.getElementById('rev-analysis-view');
+    if (!el || !_revData) return;
+    const sub = _revSub;
+    const rows = (_revData.payments || []).filter(r => revInRange(r, sub));
+    const buckets = revAggregate(rows, revKeyFn(sub));
+
+    const totalPages = Math.max(1, Math.ceil(buckets.length / REV_BUCKETS_PER_PAGE));
+    if (_revPage[sub] > totalPages) _revPage[sub] = totalPages;
+    const page = _revPage[sub];
+    const slice = buckets.slice((page - 1) * REV_BUCKETS_PER_PAGE, page * REV_BUCKETS_PER_PAGE);
+
+    el.innerHTML = revRangeBar(sub)
+        + (buckets.length
+            ? revGraph(buckets) + revAggTable(slice) + revNavPager('an', page, totalPages)
+            : '<p class="form-help" style="margin:10px 0;">선택한 기간에 결제 데이터가 없습니다.</p>')
+        + revRangeSummary(rows, sub);
+    bindRevAnalysisControls(sub);
+}
+
+function revRangeBar(sub) {
+    const rg = _revRange[sub];
+    const type = sub === 'monthly' ? 'month' : 'date';
+    const presets = sub === 'monthly'
+        ? [['최근 6개월', 'm6'], ['올해', 'ytd']]
+        : [['오늘', 'd0'], ['최근 7일', 'd7'], ['최근 30일', 'd30'], ['이번 달', 'mtd']];
+    const presetBtns = presets.map(([label, key]) =>
+        `<button type="button" class="tiny-btn rev-preset" data-preset="${key}">${label}</button>`).join('');
+    return `<div id="rev-range" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px;">
+        <span style="font-size:13px;color:var(--fg-secondary);">기간</span>
+        <input id="rev-from" type="${type}" value="${rg.from}" style="font-size:13px;padding:6px 8px;border:1px solid var(--line,#e3ddd2);border-radius:8px;">
+        <span style="color:var(--fg-tertiary);">~</span>
+        <input id="rev-to" type="${type}" value="${rg.to}" style="font-size:13px;padding:6px 8px;border:1px solid var(--line,#e3ddd2);border-radius:8px;">
+        ${presetBtns}
+        ${(rg.from || rg.to) ? '<button type="button" id="rev-range-clear" class="tiny-btn">전체</button>' : ''}
+    </div>`;
+}
+
+function revRangeSummary(rows, sub) {
+    const s = rows.reduce((a, r) => { a.rev += r.total; a.google += r.google_fee; a.vat += r.vat; a.cost += r.cost; a.net += r.net; a.min += r.usage_min; a.count++; return a; },
+        { rev: 0, google: 0, vat: 0, cost: 0, net: 0, min: 0, count: 0 });
+    const rg = _revRange[sub];
+    const label = (rg.from || rg.to) ? `${rg.from || '처음'} ~ ${rg.to || '지금'}` : '전체 기간';
+    return `<div style="margin-top:18px;padding-top:14px;border-top:2px solid var(--line,#e3ddd2);">
+        <div style="font-size:13px;color:var(--fg-secondary);margin-bottom:8px;">선택 기간 <b>${label}</b> · 결제 ${s.count}건</div>
+        <div style="display:flex;gap:12px;flex-wrap:wrap;">
+            ${revStat('매출', won(s.rev), '')}
+            ${revStat('Google 수수료', '-' + won(s.google), '')}
+            ${revStat('부가세', '-' + won(s.vat), '')}
+            ${revStat('AI 원가', '-' + won(s.cost), s.min.toLocaleString() + '분')}
+            ${revStat('순마진', won(s.net), '', true)}
+        </div>
+    </div>`;
+}
+
+function revApplyPreset(sub, key) {
+    const now = new Date();
+    const rg = _revRange[sub];
+    if (sub === 'monthly') {
+        if (key === 'm6') { rg.from = revFmtMonth(new Date(now.getFullYear(), now.getMonth() - 5, 1)); rg.to = revFmtMonth(now); }
+        else if (key === 'ytd') { rg.from = now.getFullYear() + '-01'; rg.to = revFmtMonth(now); }
+        return;
+    }
+    if (key === 'd0') { rg.from = revFmtDate(now); rg.to = revFmtDate(now); }
+    else if (key === 'd7') { const f = new Date(now); f.setDate(f.getDate() - 6); rg.from = revFmtDate(f); rg.to = revFmtDate(now); }
+    else if (key === 'd30') { const f = new Date(now); f.setDate(f.getDate() - 29); rg.from = revFmtDate(f); rg.to = revFmtDate(now); }
+    else if (key === 'mtd') { rg.from = revFmtDate(new Date(now.getFullYear(), now.getMonth(), 1)); rg.to = revFmtDate(now); }
+}
+
+function bindRevAnalysisControls(sub) {
+    const from = document.getElementById('rev-from');
+    if (from) from.addEventListener('change', () => { _revRange[sub].from = from.value; _revPage[sub] = 1; renderRevAnalysis(); });
+    const to = document.getElementById('rev-to');
+    if (to) to.addEventListener('change', () => { _revRange[sub].to = to.value; _revPage[sub] = 1; renderRevAnalysis(); });
+    const clr = document.getElementById('rev-range-clear');
+    if (clr) clr.addEventListener('click', () => { _revRange[sub] = { from: '', to: '' }; _revPage[sub] = 1; renderRevAnalysis(); });
+    document.querySelectorAll('#rev-range .rev-preset').forEach(btn => {
+        btn.addEventListener('click', () => { revApplyPreset(sub, btn.dataset.preset); _revPage[sub] = 1; renderRevAnalysis(); });
+    });
+    const prev = document.getElementById('rev-an-prev');
+    if (prev) prev.addEventListener('click', () => { if (_revPage[sub] > 1) { _revPage[sub]--; renderRevAnalysis(); } });
+    const next = document.getElementById('rev-an-next');
+    if (next) next.addEventListener('click', () => { _revPage[sub]++; renderRevAnalysis(); });
 }
 
 function revStat(label, value, sub, big) {

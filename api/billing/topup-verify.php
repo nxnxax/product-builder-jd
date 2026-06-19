@@ -12,6 +12,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../billing_helpers.php';
 require_once __DIR__ . '/google_play_helpers.php';
+require_once __DIR__ . '/../fcm_helpers.php'; // 사장님 실시간 결제 알림
 
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
@@ -78,6 +79,11 @@ $result = topup_credit($pdo, $ownerEmail, $purchaseToken, $orderId, $productId, 
 if (!$result['duplicate']) {
     try { google_play_acknowledge_product($pkg, $productId, $purchaseToken); } catch (Throwable $e) { /* 무시 */ }
     topup_mark_consumed($pdo, $purchaseToken);
+    // 사장님 실시간 결제 알림 — 새 충전권 적립 때만. 실패해도 응답엔 영향 없음.
+    if (function_exists('notify_admin_new_payment')) {
+        try { notify_admin_new_payment($pdo, 'topup', $ownerEmail, topup_price_won(), topup_minutes_per_purchase() . '분 충전권'); }
+        catch (Throwable $e) { error_log('[topup-verify] admin notify: ' . $e->getMessage()); }
+    }
 }
 
 portone_response([

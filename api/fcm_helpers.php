@@ -328,3 +328,39 @@ if (!function_exists('send_overage_charged_fcm')) {
         ]);
     }
 }
+
+if (!function_exists('notify_admin_new_payment')) {
+    /**
+     * 새 결제 발생 시 사장님(admin) 디바이스로 실시간 푸시. (2026-06-19)
+     * 출시·광고 기간 결제 모니터링용 — 구매자가 아니라 admin(nxnxax@gmail.com) 토큰으로 발송.
+     * 실패해도 결제 흐름엔 영향 없도록 항상 try/catch 로 감싸 호출할 것.
+     *
+     * @param string $kind 'subscription' | 'topup' | 'renewal'
+     * @return array send_fcm_to_user 결과
+     */
+    function notify_admin_new_payment(PDO $pdo, string $kind, string $buyerEmail, int $amountWon, string $planLabel = ''): array {
+        $adminEmail = 'nxnxax@gmail.com'; // 하드코딩 admin (PROJECT_CONTEXT §8)
+        $kindLabel = $kind === 'topup' ? '충전권' : ($kind === 'renewal' ? '구독 갱신' : '신규 구독');
+        $title = '💰 ₩' . number_format($amountWon) . ' 결제 (' . $kindLabel . ')';
+        $parts = [];
+        if ($planLabel !== '') $parts[] = $planLabel;
+        if ($buyerEmail !== '') $parts[] = $buyerEmail;
+        $body = $parts ? implode(' · ', $parts) : '새 결제가 발생했습니다.';
+        try {
+            return send_fcm_to_user($pdo, $adminEmail, [
+                'title' => $title,
+                'body'  => $body,
+                'data'  => [
+                    'type'   => 'admin_payment',
+                    'kind'   => $kind,
+                    'amount' => $amountWon,
+                    'buyer'  => $buyerEmail,
+                    'plan'   => $planLabel,
+                ],
+            ]);
+        } catch (Throwable $e) {
+            error_log('[notify_admin_new_payment] ' . $e->getMessage());
+            return ['sent' => 0, 'failed' => 0, 'invalid_tokens' => [], 'reason' => 'exception'];
+        }
+    }
+}

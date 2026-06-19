@@ -512,24 +512,31 @@
 
             <!-- Logs -->
             <section id="tab-revenue" class="admin-tab hidden">
-                <div class="card">
-                    <h3>매출 / 순마진</h3>
-                    <p class="card-subtitle">결제액에서 Google 빌링 수수료(15%), 부가세(10%), AI 처리 원가를 빼서 순마진을 계산합니다.</p>
-                    <p id="rev-assumptions" class="form-help" style="margin:6px 0 12px;font-size:12px;"></p>
-                    <div id="rev-totals"></div>
-                </div>
                 <style>
                     #rev-subtabs .rev-sub.active { background: var(--fg, #1a1611); color: #fff; }
                 </style>
+
+                <!-- 1. 실시간 결제내역 — 최상단, 가장 먼저 보이는 핵심 -->
                 <div class="card">
-                    <div id="rev-subtabs" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;">
-                        <button type="button" class="tiny-btn rev-sub active" data-rev="daily">일간 매출</button>
-                        <button type="button" class="tiny-btn rev-sub" data-rev="weekly">주간 매출</button>
-                        <button type="button" class="tiny-btn rev-sub" data-rev="monthly">월간 매출</button>
-                        <button type="button" class="tiny-btn rev-sub" data-rev="payments">결제내역</button>
+                    <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+                        <h3 style="margin:0;">💳 실시간 결제내역</h3>
+                        <button type="button" id="rev-refresh" class="tiny-btn">↻ 새로고침</button>
                     </div>
-                    <p class="card-subtitle" style="margin-bottom:12px;">일간/주간/월간은 그래프 + 표 + 검색 + 페이지로, 결제내역은 일별 구분선으로 표시됩니다. (진행중 건은 원가 잠정치)</p>
-                    <div id="rev-view"></div>
+                    <p class="card-subtitle" style="margin:6px 0 12px;">결제가 발생하면 즉시 사장님 휴대폰으로 푸시 알림이 가고, 이 목록 맨 위에 쌓입니다. 최신순 · 일별 구분선 · 이메일/날짜 검색. (진행중 건은 원가 잠정치)</p>
+                    <div id="rev-payments-view"></div>
+                </div>
+
+                <!-- 2. 매출 분석 — 일/주/월 + 기간(달력) 선택 + 하단 합계 -->
+                <div class="card">
+                    <h3 style="margin:0 0 4px;">📊 매출 분석</h3>
+                    <p id="rev-assumptions" class="form-help" style="margin:4px 0 12px;font-size:12px;"></p>
+                    <div id="rev-subtabs" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;">
+                        <button type="button" class="tiny-btn rev-sub active" data-rev="daily">일간</button>
+                        <button type="button" class="tiny-btn rev-sub" data-rev="weekly">주간</button>
+                        <button type="button" class="tiny-btn rev-sub" data-rev="monthly">월간</button>
+                    </div>
+                    <p class="card-subtitle" style="margin-bottom:12px;">달력으로 기간(언제부터~언제까지)을 선택하면, 그 기간의 그래프·표와 함께 <b>하단에 매출/순마진 합계</b>가 계산됩니다.</p>
+                    <div id="rev-analysis-view"></div>
                 </div>
             </section>
 
@@ -719,6 +726,6 @@
     </div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-<script src="admin.js?v=20260619-revenue2" type="module"></script>
+<script src="admin.js?v=20260619-revenue3" type="module"></script>
 </body>
 </html>
