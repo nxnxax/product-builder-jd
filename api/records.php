@@ -3498,7 +3498,12 @@ try {
                             AND rj.usage_counted_at >= s.current_period_start
                             AND rj.usage_counted_at <= {$cancelTs}) AS usage_sec
                 FROM subscriptions s
-                WHERE LOWER(s.status) IN ('cancelled','canceled') OR s.cancel_at_period_end = 1
+                WHERE s.plan IN ('sales','master','agency')   -- 현행 플랜만 (옛 'plus' 등 테스트 잔재 제외)
+                  AND (
+                        LOWER(s.status) IN ('cancelled','canceled')                                    -- 해지 완료
+                        OR (s.cancel_at_period_end = 1 AND LOWER(s.status) = 'active'
+                            AND s.current_period_end >= NOW())                                          -- 진짜 진행중 해지신청(기간 안 끝남)
+                      )
                 ORDER BY cancelled_at DESC
                 LIMIT 500
             ");
