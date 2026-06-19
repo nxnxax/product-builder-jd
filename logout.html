@@ -116,10 +116,17 @@
             // 0) 사용자 의도적 로그아웃 플래그 set — auth-shared.js 가 SIGNED_OUT 시점에 이 플래그를 보고만 logout 통보.
             try { sessionStorage.setItem('erp.userInitiatedLogout', '1'); } catch {}
 
-            // 0-2) 네이티브 앱에 logout 먼저 통보 — navigation race 로 SIGNED_OUT 이벤트가 못 닿는 경우 대비.
+            // 0-2) 네이티브 앱에 logout 통보 — 명시 로그아웃은 bridge race guard(최근 30초 로그인이면 skip)를
+            //   우회해서 ReactNativeWebView 로 직접 통보한다. (2026-06-19 자동로그인 fix)
+            //   기존: notifyLogout() 이 토큰갱신 직후 30초간 skip → 앱이 로그아웃 못 듣고 세션 도로 주입 → 자동로그인.
             try {
-                const b = await import('./bridge.js?v=20260528-startsubscription');
-                b.notifyLogout();
+                const RN = window.ReactNativeWebView;
+                if (RN && typeof RN.postMessage === 'function') {
+                    RN.postMessage(JSON.stringify({ type: 'auth.logout', payload: null, ts: Date.now() }));
+                } else {
+                    const b = await import('./bridge.js?v=20260528-startsubscription');
+                    b.notifyLogout();
+                }
             } catch {}
 
             // 1) Supabase signOut — scope: 'global' 로 서버의 모든 refresh token revoke.
