@@ -38,6 +38,12 @@ function jout(array $payload, int $code = 200): void {
     if ($code === 200 && isset($GLOBALS['__ym_topup']) && is_array($GLOBALS['__ym_topup']) && !array_key_exists('topup', $payload)) {
         $payload['topup'] = $GLOBALS['__ym_topup'];
     }
+    // 2026-06-19 — gate: 잔여(정기+충전) 기준 단일 권위 신호. 성공(200) = 'summary'.
+    //   앱은 오직 gate 로만 모달 분기: summary=통화 전/후 모달 / topup_required=결제유도창. 상호배타.
+    //   (topup/plan 객체의 '존재 여부'로 분기 금지 — gate 값만 본다.)
+    if ($code === 200 && isset($GLOBALS['__ym_gate']) && !array_key_exists('gate', $payload)) {
+        $payload['gate'] = $GLOBALS['__ym_gate'];
+    }
     http_response_code($code);
     echo json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
     exit;
@@ -868,31 +874,35 @@ if (!$isAdminUserEarly && ($planInfoEarly['minutes_limit'] ?? null) !== null) {
         $tqE->execute([':e' => $ownerEmail]);
         if ($trE = $tqE->fetch()) { $autoTopupE = (int)$trE['en']; $topupBalE = (int)$trE['bal']; }
     } catch (Throwable $e) { /* 컬럼 없으면 0 */ }
-    $effRemain = $remainMinEarly + $topupBalE;
+    $effRemain = $remainMinEarly + $topupBalE;   // ★ 정기 잔여 + 충전잔액(₩5,000=80분) 합산 = gate 판단 단일 기준
     $topupObjE = [
         'auto_topup_enabled' => ($autoTopupE === 1),
         'balance_minutes'    => $topupBalE,
+        'effective_minutes_remaining' => $effRemain, // 정기+충전 합산 잔여 (앱은 정기 minutes_remaining 말고 이 값을 쓸 것)
         'needed'             => ($effRemain <= 5),
         'message'            => ($effRemain <= 5) ? '사용량이 거의 소진됐습니다. 충전(₩5,000 = 80분) 후 계속 이용하실 수 있습니다.' : null,
         'product_id' => 'youngman_topup_80min', 'price' => 5000, 'minutes' => 80,
     ];
     if ($effRemain <= 0) {
-        // 한도+충전잔액 0 → 요약 차단. audio drop (best-effort).
+        // 잔여(정기+충전) 0 → 요약 차단 = 결제유도 전용 (gate='topup_required'). audio drop (best-effort).
         try {
             $sp2 = trim((string)$storagePath);
             if ($sp2 !== '') { foreach ([$sp2, __DIR__ . '/' . $sp2, dirname(__DIR__) . '/' . $sp2] as $p2) { if (is_file($p2)) { @unlink($p2); break; } } }
         } catch (Throwable $e) {}
         $limMinE = (int)($planInfoEarly['minutes_limit'] ?? 0);
+        // gate='topup_required' — 잔여 0 일 때 단일 결제유도 신호 (auto_topup on/off 둘 다 동일 gate, 상태코드만 기존 유지).
         if ($autoTopupE === 1) {
             jerror('topup_required', '이번 달 ' . $limMinE . '분을 모두 사용했습니다. 충전(₩5,000 = 80분) 후 계속 이용하실 수 있습니다.', 402,
-                ['topup' => $topupObjE, 'plan' => $planInfoEarly]);
+                ['gate' => 'topup_required', 'topup' => $topupObjE, 'plan' => $planInfoEarly]);
         } else {
-            jerror('quota_exceeded', '이번 달 ' . $limMinE . '분을 모두 사용했습니다. 자동충전을 켜시거나 다음 결제일을 기다려 주세요.', 403,
-                ['plan' => $planInfoEarly]);
+            jerror('quota_exceeded', '이번 달 ' . $limMinE . '분을 모두 사용했습니다. 충전(₩5,000 = 80분) 후 계속 이용하실 수 있습니다.', 403,
+                ['gate' => 'topup_required', 'topup' => $topupObjE, 'plan' => $planInfoEarly]);
         }
     }
-    // 통과 — 모든 성공 응답(jout 200)에 topup 객체 자동 포함.
-    $GLOBALS['__ym_topup'] = $topupObjE;
+    // 통과(잔여>0, 충전분 포함) — gate='summary'(통화 전/후 모달 전용). 모든 성공 응답(jout 200)에 자동 포함.
+    $GLOBALS['__ym_gate'] = 'summary';
+    $GLOBALS['__ym_topup'] = $topupObjE;  // backwards compat — 앱이 gate 전환 완료 후 제거 예정(누수 차단)
+
 }
 
 /* ========== Phase 2 M2 — async 분기 ==========
