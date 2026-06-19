@@ -46,8 +46,9 @@ if ($limitMin <= 0) {
     $sets[] = "summary_limit = 20";
 }
 
-// 1분 남기기: 사용량 = (한도 - 1) 분
-$usageSec = max(0, ($limitMin - 1) * 60);
+// 잔여량 남기기: 사용량 = (한도 - left) 분. ?left=N (기본 1분).
+$leftMin = isset($_GET['left']) ? max(0, min($limitMin, (int)$_GET['left'])) : 1;
+$usageSec = max(0, ($limitMin - $leftMin) * 60);
 $sets[] = "usage_seconds_period = :u";   $params[':u'] = $usageSec;
 $sets[] = "free_summaries_used = 0";
 $sets[] = "auto_topup_enabled = 1";       // 신규 충전 흐름 동의
