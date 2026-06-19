@@ -3481,12 +3481,76 @@ try {
         }
         krsort($monthly);
 
+        // ── 실시간 결제취소 — subscriptions 해지신청/완료 + 사용기간(결제일~취소일)·사용량 ──
+        $cancellations = [];
+        try {
+            // cancelled_at 컬럼 유무 동적 감지 (스키마 변형 대비 — 없으면 updated_at 사용)
+            $hasCancelledAt = false;
+            try { $hasCancelledAt = (bool)$pdo->query("SHOW COLUMNS FROM subscriptions LIKE 'cancelled_at'")->fetch(); } catch (Throwable $e) {}
+            $cancelTs = $hasCancelledAt ? "COALESCE(s.cancelled_at, s.updated_at)" : "s.updated_at";
+            $cstmt = $pdo->query("
+                SELECT s.owner_email, s.plan, s.status, s.cancel_at_period_end,
+                       s.current_period_start AS started_at,
+                       {$cancelTs} AS cancelled_at,
+                       (SELECT COALESCE(SUM(rj.duration_sec),0) FROM recording_jobs rj
+                          WHERE LOWER(rj.owner_email) = LOWER(s.owner_email)
+                            AND rj.usage_counted_at IS NOT NULL
+                            AND rj.usage_counted_at >= s.current_period_start
+                            AND rj.usage_counted_at <= {$cancelTs}) AS usage_sec
+                FROM subscriptions s
+                WHERE LOWER(s.status) IN ('cancelled','canceled') OR s.cancel_at_period_end = 1
+                ORDER BY cancelled_at DESC
+                LIMIT 500
+            ");
+            foreach ($cstmt as $r) {
+                $startedAt   = (string)($r['started_at'] ?? '');
+                $cancelledAt = (string)($r['cancelled_at'] ?? '');
+                $sTs = $startedAt ? strtotime($startedAt) : 0;
+                $cTs = $cancelledAt ? strtotime($cancelledAt) : 0;
+                $daysUsed = ($sTs && $cTs && $cTs >= $sTs) ? (int)floor(($cTs - $sTs) / 86400) : null;
+                $isPending = ((int)$r['cancel_at_period_end'] === 1 && strtolower((string)$r['status']) !== 'cancelled');
+                $cancellations[] = [
+                    'email'        => (string)$r['owner_email'],
+                    'plan'         => (string)$r['plan'],
+                    'started_at'   => $startedAt,
+                    'cancelled_at' => $cancelledAt,
+                    'days_used'    => $daysUsed,
+                    'usage_min'    => (int)round(((int)$r['usage_sec']) / 60),
+                    'state'        => $isPending ? 'pending' : 'done',  // pending=해지신청(기간만료 전 사용중) / done=해지완료
+                ];
+            }
+        } catch (Throwable $e) { /* subscriptions 테이블 없거나 스키마 상이 — 취소목록 생략 */ }
+
+        // ── 회원 통계 — 총 유료회원 / 최근 30일 신규 결제 / 플랜별(sales/master/agency) ──
+        $memberStats = [
+            'total_paid'      => 0, 'by_plan'        => ['sales' => 0, 'master' => 0, 'agency' => 0],
+            'new_30d'         => 0, 'new_30d_by_plan' => ['sales' => 0, 'master' => 0, 'agency' => 0],
+        ];
+        try {
+            foreach ($pdo->query("SELECT plan, COUNT(*) c FROM members WHERE plan IN ('sales','master','agency') GROUP BY plan") as $r) {
+                $p = (string)$r['plan']; $c = (int)$r['c'];
+                if (isset($memberStats['by_plan'][$p])) $memberStats['by_plan'][$p] = $c;
+                $memberStats['total_paid'] += $c;
+            }
+            foreach ($pdo->query("SELECT plan, COUNT(*) c FROM members
+                    WHERE plan IN ('sales','master','agency')
+                      AND current_period_start IS NOT NULL
+                      AND current_period_start >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+                    GROUP BY plan") as $r) {
+                $p = (string)$r['plan']; $c = (int)$r['c'];
+                if (isset($memberStats['new_30d_by_plan'][$p])) $memberStats['new_30d_by_plan'][$p] = $c;
+                $memberStats['new_30d'] += $c;
+            }
+        } catch (Throwable $e) { /* members plan/current_period_start 컬럼 상이 — 통계 생략 */ }
+
         respond([
             'ok' => true,
             'assumptions' => ['cost_per_min' => $COST_PER_MIN, 'google_fee_pct' => $GOOGLE_FEE_PCT],
             'payments' => $payments,                          // 12개월 전체 (클라가 일/주/월 집계)
             'monthly'  => array_values($monthly),            // 사용기간 종료 건 월별 최종 순마진
             'totals'   => $totalsAll,
+            'cancellations' => $cancellations,               // 실시간 결제취소 (결제일~취소일·사용량)
+            'member_stats'  => $memberStats,                 // 총 유료회원·신규30일·플랜별
         ]);
     }
 

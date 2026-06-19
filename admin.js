@@ -817,7 +817,7 @@ if (statsApplyBtn) {
 function won(n) { return '₩' + Number(n || 0).toLocaleString('ko-KR'); }
 
 let _revData = null, _revSub = 'daily', _revBound = false;
-const _revPage = { daily: 1, weekly: 1, monthly: 1, payments: 1 };
+const _revPage = { daily: 1, weekly: 1, monthly: 1, payments: 1, cancels: 1 };
 const _revRange = { daily: { from: '', to: '' }, weekly: { from: '', to: '' }, monthly: { from: '', to: '' } };
 let _revPayQ = '';
 const REV_BUCKETS_PER_PAGE = 12, REV_PAYMENTS_PER_PAGE = 25;
@@ -921,10 +921,76 @@ async function loadRevenue() {
             if (rf) rf.addEventListener('click', loadRevenue);
         }
         renderRevPayments();
+        renderRevCancels();
+        renderRevMembers();
         renderRevAnalysis();
     } catch (e) {
         if (payEl) payEl.innerHTML = `<p class="form-help" style="color:#c8362c;">매출 조회 실패: ${escape(e.message || String(e))}</p>`;
     }
+}
+
+const REV_PLAN_LABEL = { sales: '세일즈', master: '마스터', agency: '에이전시', free: '무료' };
+function revPlanLabel(p) { return REV_PLAN_LABEL[p] || p || '-'; }
+
+// ── 1b. 실시간 결제취소 ──
+function renderRevCancels() {
+    const el = document.getElementById('rev-cancels-view');
+    if (!el || !_revData) return;
+    const rows = _revData.cancellations || [];
+    if (!rows.length) { el.innerHTML = '<p class="form-help">취소된 결제가 없습니다.</p>'; return; }
+
+    const totalPages = Math.max(1, Math.ceil(rows.length / REV_PAYMENTS_PER_PAGE));
+    if (_revPage.cancels > totalPages) _revPage.cancels = totalPages;
+    const page = _revPage.cancels;
+    const slice = rows.slice((page - 1) * REV_PAYMENTS_PER_PAGE, page * REV_PAYMENTS_PER_PAGE);
+
+    const th = ['취소일시', '이메일', '플랜', '결제일', '사용 기간', '사용량', '상태']
+        .map(h => `<th style="text-align:left;padding:8px 10px;font-size:12px;color:var(--fg-secondary);white-space:nowrap;border-bottom:1px solid var(--line,#eee);">${h}</th>`).join('');
+    const body = slice.map(r => {
+        const days = (r.days_used == null) ? '-' : `${r.days_used}일`;
+        const badge = r.state === 'pending'
+            ? '<span style="color:#d08700;font-weight:600;">해지 신청 (사용중)</span>'
+            : '<span style="color:#c8362c;font-weight:600;">해지 완료</span>';
+        return `<tr>
+            <td style="text-align:left;padding:7px 10px;font-size:13px;white-space:nowrap;border-bottom:1px solid var(--line,#f0f0f0);">${(r.cancelled_at || '').replace('T', ' ').slice(0, 16) || '-'}</td>
+            <td style="text-align:left;padding:7px 10px;font-size:12px;white-space:nowrap;border-bottom:1px solid var(--line,#f0f0f0);">${escape(r.email || '')}</td>
+            <td style="text-align:left;padding:7px 10px;font-size:13px;border-bottom:1px solid var(--line,#f0f0f0);">${revPlanLabel(r.plan)}</td>
+            <td style="text-align:left;padding:7px 10px;font-size:13px;white-space:nowrap;border-bottom:1px solid var(--line,#f0f0f0);">${(r.started_at || '').slice(0, 10) || '-'}</td>
+            <td style="text-align:left;padding:7px 10px;font-size:13px;font-weight:600;border-bottom:1px solid var(--line,#f0f0f0);">${days}</td>
+            <td style="text-align:left;padding:7px 10px;font-size:13px;border-bottom:1px solid var(--line,#f0f0f0);">${(r.usage_min || 0).toLocaleString()}분</td>
+            <td style="text-align:left;padding:7px 10px;font-size:12px;border-bottom:1px solid var(--line,#f0f0f0);">${badge}</td>
+        </tr>`;
+    }).join('');
+
+    el.innerHTML = `<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;min-width:680px;"><thead><tr>${th}</tr></thead><tbody>${body}</tbody></table></div>`
+        + revNavPager('cancel', page, totalPages);
+    const prev = document.getElementById('rev-cancel-prev');
+    if (prev) prev.addEventListener('click', () => { if (_revPage.cancels > 1) { _revPage.cancels--; renderRevCancels(); } });
+    const next = document.getElementById('rev-cancel-next');
+    if (next) next.addEventListener('click', () => { _revPage.cancels++; renderRevCancels(); });
+}
+
+// ── 1c. 유료회원 현황 ──
+function renderRevMembers() {
+    const el = document.getElementById('rev-members-view');
+    if (!el || !_revData) return;
+    const m = _revData.member_stats || {};
+    const bp = m.by_plan || {}, np = m.new_30d_by_plan || {};
+    el.innerHTML = `
+        <div style="font-size:13px;color:var(--fg-secondary);margin-bottom:8px;">전체 유료회원 (현재 구독 중)</div>
+        <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:18px;">
+            ${revStat('총 유료회원', (m.total_paid || 0) + '명', '', true)}
+            ${revStat('세일즈', (bp.sales || 0) + '명', '')}
+            ${revStat('마스터', (bp.master || 0) + '명', '')}
+            ${revStat('에이전시', (bp.agency || 0) + '명', '')}
+        </div>
+        <div style="font-size:13px;color:var(--fg-secondary);margin-bottom:8px;">최근 30일 신규 결제 회원</div>
+        <div style="display:flex;gap:12px;flex-wrap:wrap;">
+            ${revStat('신규 결제(30일)', (m.new_30d || 0) + '명', '', true)}
+            ${revStat('세일즈', (np.sales || 0) + '명', '')}
+            ${revStat('마스터', (np.master || 0) + '명', '')}
+            ${revStat('에이전시', (np.agency || 0) + '명', '')}
+        </div>`;
 }
 
 // ── 1. 실시간 결제내역 (최상단) ──
