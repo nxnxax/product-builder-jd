@@ -234,6 +234,11 @@ export async function initSupabase() {
             // 로그인 전환 시점에 사용자 정의 양식 목록을 서버에서 새로 가져와
             // 슬롯 dropdown 에 즉시 반영. 같은 디바이스에서 로그아웃→재로그인
             // 케이스의 양식 누락 문제 fix.
+            // 명시 로그아웃 플래그 위생 — 새 로그인/세션복원 확정 시 잔존 플래그 제거.
+            //   (stale 플래그가 통화 중 transient SIGNED_OUT 을 "명시 로그아웃"으로 오인 → 통화 끊김, 그걸 차단)
+            if (currentSession?.user && (event === 'SIGNED_IN' || event === 'INITIAL_SESSION')) {
+                try { sessionStorage.removeItem('erp.userInitiatedLogout'); } catch {}
+            }
             if (currentSession?.user && (event === 'SIGNED_IN' || event === 'INITIAL_SESSION' || event === 'TOKEN_REFRESHED' || !had)) {
                 try { refreshNavFormsCache(); } catch {}
                 try { ensureMemberRowOnce(); } catch {}
@@ -253,34 +258,39 @@ export async function initSupabase() {
                 const recentRefreshMs = _refreshLastSuccessAt > 0 ? (Date.now() - _refreshLastSuccessAt) : Infinity;
                 const recentRefreshSuccess = recentRefreshMs < 60_000;
 
+                // 사용자가 직접 누른 명시 로그아웃인지 먼저 판별 (2026-06-19 fix — 60초 재발급 가드보다 우선).
+                //   앱 안: logout.html 이 set 한 erp.userInitiatedLogout=1 플래그.
+                //   앱 밖(브라우저): SIGNED_OUT = 사용자 의도로 간주.
+                let userInitiated = false;  // default FALSE (보수적 — 통화 중 transient 보호)
+                if (inApp) {
+                    try { userInitiated = sessionStorage.getItem('erp.userInitiatedLogout') === '1'; } catch {}
+                } else {
+                    userInitiated = true;
+                }
+
                 // 진단 로그 — 앱팀이 ErrorLog 에서 확인 가능
                 try {
                     console.log('[auth] SIGNED_OUT', {
-                        inApp,
+                        inApp, userInitiated,
                         recentRefreshMs: recentRefreshMs === Infinity ? 'never' : Math.round(recentRefreshMs),
-                        userInitiatedFlag: (typeof sessionStorage !== 'undefined') ? sessionStorage.getItem('erp.userInitiatedLogout') : null,
                         sessionExists: !!session,
                     });
                 } catch {}
 
-                if (recentRefreshSuccess) {
-                    // [safety 1] 최근 60초 안 refresh 성공 → transient SIGNED_OUT, logout 무시
+                // [safety 1] 최근 60초 refresh 성공 = transient(통화 중 토큰갱신→SIGNED_OUT race) → 로그아웃 무시·재발급 유지.
+                //   ★ 단 "사용자가 직접 누른 로그아웃"은 이 가드보다 우선 — 명시 로그아웃은 재발급 안 함.
+                //   (자동/통화 중 재발급 로직은 그대로 — userInitiated 가 아닐 때만 가드 작동)
+                if (recentRefreshSuccess && !userInitiated) {
                     try { _runRefreshOnce(); } catch {}
                     return;
                 }
 
-                let userInitiated = false;  // ← default FALSE (보수적)
-                if (inApp) {
-                    try { userInitiated = sessionStorage.getItem('erp.userInitiatedLogout') === '1'; } catch {}
-                } else {
-                    // 앱 밖 (일반 브라우저) — SIGNED_OUT 은 사용자 의도일 가능성 높음
-                    userInitiated = true;
-                }
-
                 if (userInitiated) {
+                    // 진짜 로그아웃 — 플래그 즉시 소비(제거)로 잔존 방지(다음 transient 오인 차단).
+                    try { sessionStorage.removeItem('erp.userInitiatedLogout'); } catch {}
                     try { _bridgeLogout(); } catch {}
                 } else {
-                    // 앱 안 transient SIGNED_OUT — refresh 한 번 더 시도.
+                    // 앱 안 transient SIGNED_OUT — refresh 한 번 더 시도(재발급 유지).
                     try { _runRefreshOnce(); } catch {}
                 }
             }

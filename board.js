@@ -11,7 +11,7 @@
 import {
     initSupabase, getSession, apiRequest, isAdmin,
     mountAppHeader, refreshAppHeader,
-} from './auth-shared.js?v=20260612-is-admin';
+} from './auth-shared.js?v=20260619-logout';
 
 const CATEGORIES = {
     notice: { title: '공지사항',     sub: '중요한 공지를 확인하세요.',                writeAdminOnly: true  },

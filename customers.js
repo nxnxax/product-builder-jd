@@ -9,7 +9,7 @@
  *  - client_idempotency_key 로 같은 통화의 중복 전송 차단
  */
 
-import { initSupabase, apiRequest, getSession } from './auth-shared.js?v=20260612-is-admin';
+import { initSupabase, apiRequest, getSession } from './auth-shared.js?v=20260619-logout';
 import { attachColumnFilters, applyColumnFilters, openRowAddModal, attachPhoneAutoFormat, getEffectiveFields, mountFieldManager,
          exportRecordsToExcel, pickExcelFile, parseExcelFile, suggestFieldMapping, openImportPreviewModal,
          saveImportSession, loadImportSession, clearImportSession,
@@ -2113,7 +2113,7 @@ async function openSmsModal() {
 }
 
 async function getAccessTokenForSms() {
-    const { getAccessToken } = await import('./auth-shared.js?v=20260612-is-admin');
+    const { getAccessToken } = await import('./auth-shared.js?v=20260619-logout');
     return await getAccessToken();
 }
 
