@@ -174,23 +174,30 @@ try {
     $supplyAmt = plan_supply_amount($planKey);
     $vatAmt    = plan_vat_amount($planKey);
     $totalAmt  = portone_plan_amount($planKey);
-    $pdo->prepare("INSERT INTO subscriptions
-            (owner_email, plan, status, portone_customer_id, portone_billing_key, current_period_start, current_period_end,
-             supply_amount, vat_amount, total_amount)
-            VALUES (:o, :p, 'active', :gp_cust, :gp_key, :ps, :pe, :sa, :va, :ta)")
-        ->execute([
-            ':o' => $ownerEmail,
-            ':p' => $planKey,
-            // 2026-06-19 앱팀 통합테스트 — portone_customer_id 는 VARCHAR(64) 라 Google purchase token(200~300자) 넣으면 1406 truncation.
-            // → customer_id 는 짧은 google 식별자, billing_key(VARCHAR128)엔 token 앞부분만 보관(이력 추적용).
-            ':gp_cust' => 'gplay-' . substr(md5($purchaseToken), 0, 24),
-            ':gp_key'  => substr($purchaseToken, 0, 120),
-            ':ps' => $now,
-            ':pe' => $periodEnd,
-            ':sa' => $supplyAmt,
-            ':va' => $vatAmt,
-            ':ta' => $totalAmt,
-        ]);
+    // 구독 이력(subscriptions)은 best-effort — 별도 try 로 격리한다.
+    // 2026-06-19: 이 INSERT 가 실패(예: 토큰 truncation 1406)하면 아래 payments(매출 단일기준) 기록까지
+    // 통째로 날아가 "최초 결제건조차 안 남는" 사고가 났었다. 이력 실패가 매출 기록을 막지 않도록 분리.
+    try {
+        $pdo->prepare("INSERT INTO subscriptions
+                (owner_email, plan, status, portone_customer_id, portone_billing_key, current_period_start, current_period_end,
+                 supply_amount, vat_amount, total_amount)
+                VALUES (:o, :p, 'active', :gp_cust, :gp_key, :ps, :pe, :sa, :va, :ta)")
+            ->execute([
+                ':o' => $ownerEmail,
+                ':p' => $planKey,
+                // portone_customer_id 는 VARCHAR(64) — Google purchase token(200~300자) 직접 넣으면 1406 truncation.
+                // → customer_id 는 짧은 google 식별자, billing_key(VARCHAR128)엔 token 앞부분만 보관(이력 추적용).
+                ':gp_cust' => 'gplay-' . substr(md5($purchaseToken), 0, 24),
+                ':gp_key'  => substr($purchaseToken, 0, 120),
+                ':ps' => $now,
+                ':pe' => $periodEnd,
+                ':sa' => $supplyAmt,
+                ':va' => $vatAmt,
+                ':ta' => $totalAmt,
+            ]);
+    } catch (Throwable $e) {
+        error_log('[verify-google-purchase] subscriptions 이력 기록 실패(매출 기록은 계속 진행): ' . $e->getMessage());
+    }
 
     // 동일 purchaseToken 의 결제 행 멱등 — 앱 재검증(앱 재실행 시 verify 재호출) 으로
     // 같은 구매가 중복 기록/중복 알림 되지 않게 한다. (갱신은 Google 이 새 token 발급 → 새 pid → 정상 기록)
