@@ -78,6 +78,7 @@ jobs:
           php -l api/billing/topup-verify.php         # 일회성 충전권 결제 검증 + 충전
           php -l api/billing/topup-settings.php       # 자동충전 동의 토글 / 잔액 조회
           php -l api/billing/topup-selftest.php       # 비활성 stub (검증 완료 후 폐쇄)
+          php -l api/billing/notify-test.php          # (임시) 관리자 결제 FCM 팝업 테스트
           php -l api/sms/send-bulk.php
           php -l api/sms/balance.php
           php -l api/sms/providers/SmsProvider.php
@@ -162,6 +163,7 @@ jobs:
           cp api/billing/topup-settings.php deploy/billing/topup-settings.php
           cp api/billing/topup-selftest.php deploy/billing/topup-selftest.php
           cp api/billing/topup-testsetup.php deploy/billing/topup-testsetup.php
+          cp api/billing/notify-test.php deploy/billing/notify-test.php
           # SMS 단체 발송 — 디렉토리 구조 유지 (sms/send-bulk.php + sms/providers/*)
           mkdir -p deploy/sms/providers
           cp api/sms/send-bulk.php deploy/sms/send-bulk.php
