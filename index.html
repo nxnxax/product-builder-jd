@@ -310,6 +310,25 @@
         .gplay-cta-pc { display: flex; width: fit-content; margin: 6px 0 12px; }
         .gplay-cta-mobile { display: none; }
 
+        /* 사이트 유틸 바 — PC 전용 (상단 우측: 즐겨찾기 / 바탕화면 바로가기) */
+        .site-util-bar { display: flex; justify-content: flex-end; gap: 8px; max-width: 1200px; margin: 0 auto; padding: 12px 24px 0; }
+        .util-btn {
+            display: inline-flex; align-items: center; gap: 5px;
+            background: #fff; color: #5b554e; font-size: 13px; font-weight: 600; font-family: inherit;
+            border: 1px solid #e6e0d6; border-radius: 999px; padding: 7px 14px;
+            cursor: pointer; transition: background .12s, border-color .12s, color .12s;
+        }
+        .util-btn:hover { background: #faf7f1; border-color: #d8cfbf; color: #1a1611; }
+        @media (max-width: 820px) { .site-util-bar { display: none; } }
+        /* 안내 팝업 */
+        .util-pop-backdrop { position: fixed; inset: 0; background: rgba(20,15,10,.42); display: none; align-items: center; justify-content: center; z-index: 1000; padding: 20px; }
+        .util-pop-backdrop.show { display: flex; }
+        .util-pop { background: #fff; border-radius: 16px; max-width: 380px; width: 100%; padding: 26px 24px 20px; box-shadow: 0 20px 50px rgba(0,0,0,.25); text-align: center; }
+        .util-pop h4 { margin: 0 0 12px; font-size: 18px; }
+        .util-pop p { margin: 0 0 8px; font-size: 14px; line-height: 1.65; color: #4f4943; }
+        .util-pop kbd { display: inline-block; background: #1a1611; color: #fff; border-radius: 6px; padding: 2px 9px; font-size: 13px; font-weight: 700; font-family: inherit; margin: 0 1px; }
+        .util-pop-close { margin-top: 16px; background: var(--accent, #c8362c); color: #fff; border: 0; border-radius: 10px; padding: 11px 22px; font-size: 14px; font-weight: 700; cursor: pointer; width: 100%; font-family: inherit; }
+
         /* hero 일러스트 */
         .hero-stage-art {
             position: relative;
@@ -672,6 +691,13 @@
     </svg>
 
     <main id="app-dashboard" class="dashboard">
+
+        <!-- PC 전용 유틸 (상단 우측) — 즐겨찾기 / 바탕화면 바로가기 -->
+        <div class="site-util-bar">
+            <button type="button" class="util-btn" id="util-bookmark">⭐ 즐겨찾기 추가</button>
+            <button type="button" class="util-btn" id="util-shortcut">🖥️ 바탕화면 바로가기</button>
+        </div>
+
 
         <!-- ================== HERO (1단락 — AI 고객관리) ================== -->
         <section class="hero floating-host" id="features">
@@ -1292,6 +1318,46 @@
     try{ localStorage.setItem(KEY, '1'); }catch(e){} close();
   });
   pop.addEventListener('click', function(e){ if(e.target===pop) close(); });
+})();
+</script>
+<!-- 유틸 안내 팝업 -->
+<div class="util-pop-backdrop" id="util-pop-backdrop">
+    <div class="util-pop" role="dialog" aria-modal="true">
+        <h4 id="util-pop-title"></h4>
+        <div id="util-pop-body"></div>
+        <button type="button" class="util-pop-close" id="util-pop-close">확인</button>
+    </div>
+</div>
+<script>
+(function () {
+    var backdrop = document.getElementById('util-pop-backdrop');
+    var titleEl = document.getElementById('util-pop-title');
+    var bodyEl = document.getElementById('util-pop-body');
+    function show(title, html) { if (!backdrop) return; titleEl.textContent = title; bodyEl.innerHTML = html; backdrop.classList.add('show'); }
+    function hide() { backdrop && backdrop.classList.remove('show'); }
+    var closeBtn = document.getElementById('util-pop-close');
+    if (closeBtn) closeBtn.addEventListener('click', hide);
+    if (backdrop) backdrop.addEventListener('click', function (e) { if (e.target === backdrop) hide(); });
+    var isMac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || '');
+
+    var bm = document.getElementById('util-bookmark');
+    if (bm) bm.addEventListener('click', function () {
+        show('⭐ 즐겨찾기 추가',
+            '<p>키보드에서 <kbd>' + (isMac ? '⌘' : 'Ctrl') + '</kbd> + <kbd>D</kbd> 를 누르면<br>영맨이 즐겨찾기(북마크)에 추가됩니다.</p>' +
+            '<p style="font-size:12.5px;color:#8a847e;">브라우저 보안 정책상 사이트가 자동으로 추가할 수는 없어, 위 단축키로 한 번에 추가하실 수 있어요.</p>');
+    });
+
+    // 바탕화면 바로가기 — PWA 설치 프롬프트가 있으면 1클릭, 없으면 정확한 안내.
+    var deferredPrompt = null;
+    window.addEventListener('beforeinstallprompt', function (e) { e.preventDefault(); deferredPrompt = e; });
+    var sc = document.getElementById('util-shortcut');
+    if (sc) sc.addEventListener('click', function () {
+        if (deferredPrompt) { deferredPrompt.prompt(); try { deferredPrompt.userChoice.finally(function () { deferredPrompt = null; }); } catch (e) { deferredPrompt = null; } return; }
+        show('🖥️ 바탕화면 바로가기 만들기',
+            '<p><b>Chrome · Edge</b> 기준</p>' +
+            '<p style="text-align:left;">① 오른쪽 위 메뉴 <b>⋮</b> 클릭<br>② <b>저장 및 공유</b> 또는 <b>도구 더보기</b> → <b>바로가기 만들기</b><br>③ <b>"바탕화면에 추가"</b> 체크 → 만들기</p>' +
+            '<p style="font-size:12.5px;color:#8a847e;">바탕화면에 영맨 아이콘이 생깁니다. (바로가기는 브라우저가 직접 만드는 기능이라 이 경로로 진행해요.)</p>');
+    });
 })();
 </script>
 </body>
