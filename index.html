@@ -310,15 +310,14 @@
         .gplay-cta-pc { display: flex; width: fit-content; margin: 6px 0 12px; }
         .gplay-cta-mobile { display: none; }
 
-        /* 사이트 유틸 바 — PC 전용 (상단 우측: 즐겨찾기 / 바탕화면 바로가기) */
-        .site-util-bar { display: flex; justify-content: flex-end; gap: 8px; max-width: 1200px; margin: 0 auto; padding: 12px 24px 0; }
+        /* 사이트 유틸 바 — PC 전용 (상단 우측: 작은 회색 텍스트 링크, 한국 사이트 관용 스타일) */
+        .site-util-bar { display: flex; justify-content: flex-end; align-items: center; max-width: 1200px; margin: 0 auto; padding: 9px 24px 0; }
         .util-btn {
-            display: inline-flex; align-items: center; gap: 5px;
-            background: #fff; color: #5b554e; font-size: 13px; font-weight: 600; font-family: inherit;
-            border: 1px solid #e6e0d6; border-radius: 999px; padding: 7px 14px;
-            cursor: pointer; transition: background .12s, border-color .12s, color .12s;
+            background: none; border: 0; color: #a39c92; font-size: 12.5px; font-weight: 500; font-family: inherit;
+            cursor: pointer; padding: 3px 13px; transition: color .12s; line-height: 1.4;
         }
-        .util-btn:hover { background: #faf7f1; border-color: #d8cfbf; color: #1a1611; }
+        .util-btn:hover { color: var(--accent, #c8362c); }
+        .util-btn + .util-btn { border-left: 1px solid #e6e0d6; }
         @media (max-width: 820px) { .site-util-bar { display: none; } }
         /* 안내 팝업 */
         .util-pop-backdrop { position: fixed; inset: 0; background: rgba(20,15,10,.42); display: none; align-items: center; justify-content: center; z-index: 1000; padding: 20px; }
@@ -694,8 +693,8 @@
 
         <!-- PC 전용 유틸 (상단 우측) — 즐겨찾기 / 바탕화면 바로가기 -->
         <div class="site-util-bar">
-            <button type="button" class="util-btn" id="util-bookmark">⭐ 즐겨찾기 추가</button>
-            <button type="button" class="util-btn" id="util-shortcut">🖥️ 바탕화면 바로가기</button>
+            <button type="button" class="util-btn" id="util-bookmark">즐겨찾기 추가</button>
+            <button type="button" class="util-btn" id="util-shortcut">바탕화면 바로가기</button>
         </div>
 
 
