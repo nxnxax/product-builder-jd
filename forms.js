@@ -14,7 +14,7 @@
  * 토글 필드는 settings.customFields[i] = { key, label, type:'toggle', onLabel, offLabel, custom:true }
  */
 
-import { initSupabase, apiRequest, getSession, refreshNavForms } from './auth-shared.js?v=20260619-logout';
+import { initSupabase, apiRequest, getSession, refreshNavForms } from './auth-shared.js?v=20260619-gp';
 import {
     isLedgerMobile, onLedgerViewportChange, openRowAddModal,
     attachColumnFilters, applyColumnFilters,
@@ -1042,7 +1042,7 @@ async function openRowEntry(form, fields, existing) {
                     try {
                         const fd = new FormData();
                         fd.append('file', file);
-                        const { getAccessToken } = await import('./auth-shared.js?v=20260619-logout');
+                        const { getAccessToken } = await import('./auth-shared.js?v=20260619-gp');
                         const tok = await getAccessToken();
                         const res = await fetch('upload.php', {
                             method: 'POST',
