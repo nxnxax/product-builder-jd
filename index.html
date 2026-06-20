@@ -295,16 +295,21 @@
         /* 모바일: hero-stage-art 와 eyebrow 사이 */
         .hero-flagship-cta-mobile { display: none; }
 
-        /* Google Play 다운로드 버튼 (플랜 CTA 위) */
+        /* Google Play 다운로드 버튼 (플랜 CTA 위) — 공식 컬러 로고 + 배지 스타일 */
         .gplay-cta {
-            align-items: center; justify-content: center; gap: 9px;
-            background: #1a1611; color: #fff; border-radius: 12px;
-            padding: 14px 24px; font-weight: 700; font-size: 16px; text-decoration: none;
-            box-shadow: 0 3px 10px rgba(0,0,0,0.15); transition: background .15s;
+            align-items: center; gap: 12px;
+            background: #fff; color: #1a1611;
+            border: 1.5px solid #e6e0d6; border-radius: 14px;
+            padding: 10px 22px 10px 18px; text-decoration: none;
+            box-shadow: 0 4px 14px rgba(40,30,20,0.08);
+            transition: transform .12s ease, box-shadow .12s ease, border-color .12s ease;
         }
-        .gplay-cta:hover { background: #000; color: #fff; }
+        .gplay-cta:hover { transform: translateY(-1px); box-shadow: 0 7px 20px rgba(40,30,20,0.14); border-color: #d8cfbf; color: #1a1611; }
         .gplay-cta svg { flex: 0 0 auto; }
-        .gplay-cta-pc { display: inline-flex; margin: 6px 0 10px; max-width: 520px; }
+        .gplay-cta .gp-text { display: flex; flex-direction: column; line-height: 1.18; text-align: left; }
+        .gplay-cta .gp-sm { font-size: 11px; font-weight: 600; color: #8a847e; letter-spacing: .02em; }
+        .gplay-cta .gp-lg { font-size: 17px; font-weight: 800; letter-spacing: -.01em; }
+        .gplay-cta-pc { display: inline-flex; margin: 6px 0 12px; }
         .gplay-cta-mobile { display: none; }
 
         /* hero 일러스트 */
@@ -566,7 +571,9 @@
             }
             .hero-flagship-cta-pc { display: none !important; }
             .gplay-cta-pc { display: none !important; }
-            .gplay-cta-mobile { display: flex; margin: 0 0 10px; }
+            .gplay-cta-mobile { display: flex; width: fit-content; margin: 2px auto 12px; padding: 11px 26px 11px 20px; }
+            .gplay-cta-mobile .gp-lg { font-size: 18px; }
+            .gplay-cta-mobile .gp-sm { font-size: 11.5px; }
             @keyframes mobile-float {
                 0%, 100% { transform: translateY(0) rotate(-0.5deg); }
                 50%      { transform: translateY(-8px) rotate(0.6deg); }
@@ -671,9 +678,14 @@
         <!-- ================== HERO (1단락 — AI 고객관리) ================== -->
         <section class="hero floating-host" id="features">
             <div class="hero-inner">
-                <a class="gplay-cta gplay-cta-mobile" href="https://play.google.com/store/apps/details?id=com.youngmanapp" target="_blank" rel="noopener">
-                    <svg width="15" height="17" viewBox="0 0 24 24" fill="#fff" aria-hidden="true"><path d="M4 2.7v18.6c0 .8.9 1.3 1.6.9l15.3-9.3c.6-.4.6-1.3 0-1.7L5.6 1.8C4.9 1.4 4 1.9 4 2.7z"/></svg>
-                    Google Play 다운받기
+                <a class="gplay-cta gplay-cta-mobile" href="https://play.google.com/store/apps/details?id=com.youngmanapp" target="_blank" rel="noopener" aria-label="Google Play 에서 다운로드">
+                    <svg width="24" height="26" viewBox="0 0 512 512" aria-hidden="true">
+                        <path fill="#EA4335" d="M325.3 234.3 104.6 13l280.8 161.2z"/>
+                        <path fill="#FBBC04" d="m472.2 225.6-58.9-34.1-65.7 64.5 65.7 64.5 60.1-34.1c18-14.3 18-46.5-1.2-60.8z"/>
+                        <path fill="#34A853" d="M104.6 499l220.7-221.3 60.1 60.1z"/>
+                        <path fill="#4285F4" d="M47 0C34 6.8 25.3 19.2 25.3 35.3v441.3c0 16.1 8.7 28.5 21.7 35.3l256.6-256z"/>
+                    </svg>
+                    <span class="gp-text"><span class="gp-sm">지금 다운로드</span><span class="gp-lg">Google Play</span></span>
                 </a>
                 <a class="hero-flagship-cta hero-flagship-cta-mobile" href="subscribe.html" data-plan-cta>
                     <span class="flagship-text">AI 통화요약 플랜 업그레이드 바로가기</span>
@@ -684,9 +696,14 @@
                         고객관리, 이제<br>
                         <span class="accent">전화만 하세요.</span>
                     </h1>
-                    <a class="gplay-cta gplay-cta-pc" href="https://play.google.com/store/apps/details?id=com.youngmanapp" target="_blank" rel="noopener">
-                        <svg width="15" height="17" viewBox="0 0 24 24" fill="#fff" aria-hidden="true"><path d="M4 2.7v18.6c0 .8.9 1.3 1.6.9l15.3-9.3c.6-.4.6-1.3 0-1.7L5.6 1.8C4.9 1.4 4 1.9 4 2.7z"/></svg>
-                        Google Play 다운받기
+                    <a class="gplay-cta gplay-cta-pc" href="https://play.google.com/store/apps/details?id=com.youngmanapp" target="_blank" rel="noopener" aria-label="Google Play 에서 다운로드">
+                        <svg width="24" height="26" viewBox="0 0 512 512" aria-hidden="true">
+                            <path fill="#EA4335" d="M325.3 234.3 104.6 13l280.8 161.2z"/>
+                            <path fill="#FBBC04" d="m472.2 225.6-58.9-34.1-65.7 64.5 65.7 64.5 60.1-34.1c18-14.3 18-46.5-1.2-60.8z"/>
+                            <path fill="#34A853" d="M104.6 499l220.7-221.3 60.1 60.1z"/>
+                            <path fill="#4285F4" d="M47 0C34 6.8 25.3 19.2 25.3 35.3v441.3c0 16.1 8.7 28.5 21.7 35.3l256.6-256z"/>
+                        </svg>
+                        <span class="gp-text"><span class="gp-sm">지금 다운로드</span><span class="gp-lg">Google Play</span></span>
                     </a>
                     <a class="hero-flagship-cta hero-flagship-cta-pc" href="subscribe.html" data-plan-cta>
                         <span class="flagship-text">AI 통화요약 플랜 업그레이드 바로가기</span>
