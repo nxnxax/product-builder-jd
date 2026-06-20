@@ -1352,16 +1352,14 @@
             '<p style="font-size:12.5px;color:#8a847e;">브라우저 보안 정책상 사이트가 자동으로 추가할 수는 없어, 위 단축키로 한 번에 추가하실 수 있어요.</p>');
     });
 
-    // 바탕화면 바로가기 — PWA 설치 프롬프트가 있으면 1클릭, 없으면 정확한 안내.
-    var deferredPrompt = null;
-    window.addEventListener('beforeinstallprompt', function (e) { e.preventDefault(); deferredPrompt = e; });
+    // 바탕화면 바로가기 — 평소 쓰는 브라우저 탭으로 열리는 일반 바로가기 안내.
+    // (별도 앱 창으로 열리는 PWA 설치는 사용하지 않음 — 익숙한 바로가기 방식)
     var sc = document.getElementById('util-shortcut');
     if (sc) sc.addEventListener('click', function () {
-        if (deferredPrompt) { deferredPrompt.prompt(); try { deferredPrompt.userChoice.finally(function () { deferredPrompt = null; }); } catch (e) { deferredPrompt = null; } return; }
         show('🖥️ 바탕화면 바로가기 만들기',
             '<p><b>Chrome · Edge</b> 기준</p>' +
-            '<p style="text-align:left;">① 오른쪽 위 메뉴 <b>⋮</b> 클릭<br>② <b>저장 및 공유</b> 또는 <b>도구 더보기</b> → <b>바로가기 만들기</b><br>③ <b>"바탕화면에 추가"</b> 체크 → 만들기</p>' +
-            '<p style="font-size:12.5px;color:#8a847e;">바탕화면에 영맨 아이콘이 생깁니다. (바로가기는 브라우저가 직접 만드는 기능이라 이 경로로 진행해요.)</p>');
+            '<p style="text-align:left;">① 오른쪽 위 메뉴 <b>⋮</b> 클릭<br>② <b>저장 및 공유</b> 또는 <b>도구 더보기</b> → <b>바로가기 만들기</b><br>③ 이름 확인 후 <b>"창으로 열기"는 체크하지 말고</b> → <b>만들기</b></p>' +
+            '<p style="font-size:12.5px;color:#8a847e;">바탕화면에 영맨 아이콘이 생기고, 누르면 <b>평소 쓰는 브라우저 탭</b>으로 열립니다. ("창으로 열기"를 체크하면 별도 앱 창으로 열리니 체크하지 마세요.)</p>');
     });
 })();
 </script>
