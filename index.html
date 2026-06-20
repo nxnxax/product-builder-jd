@@ -309,6 +309,8 @@
         .gplay-cta .gp-text { font-size: 16px; font-weight: 600; color: #1a1611; letter-spacing: -.005em; white-space: nowrap; }
         .gplay-cta-pc { display: flex; width: fit-content; margin: 6px 0 12px; }
         .gplay-cta-mobile { display: none; }
+        /* 모바일 전용 CTA 그룹 (메시지 아래 — 헤드라인 다음에 버튼) */
+        .hero-cta-mobile-group { display: none; }
 
         /* hero 일러스트 */
         .hero-stage-art {
@@ -569,7 +571,10 @@
             }
             .hero-flagship-cta-pc { display: none !important; }
             .gplay-cta-pc { display: none !important; }
-            .gplay-cta-mobile { display: flex; width: fit-content; margin: 2px auto 10px; padding: 7px 20px; order: -1; }
+            .hero-cta-mobile-group { display: flex; flex-direction: column; align-items: center; gap: 9px; margin: 14px auto 6px; }
+            .hero-cta-mobile-group .gplay-cta-mobile,
+            .hero-cta-mobile-group .hero-flagship-cta-mobile { margin: 0 !important; order: 0 !important; }
+            .gplay-cta-mobile { display: flex; width: fit-content; padding: 7px 20px; }
             .gplay-cta-mobile .gp-text { font-size: 15px; }
             .gplay-cta-mobile svg { width: 21px; height: 23px; }
             @keyframes mobile-float {
@@ -676,18 +681,6 @@
         <!-- ================== HERO (1단락 — AI 고객관리) ================== -->
         <section class="hero floating-host" id="features">
             <div class="hero-inner">
-                <a class="gplay-cta gplay-cta-mobile" href="https://play.google.com/store/apps/details?id=com.youngmanapp" target="_blank" rel="noopener" aria-label="Google Play 에서 다운로드">
-                    <svg width="24" height="26" viewBox="0 0 512 512" aria-hidden="true">
-                        <path fill="#EA4335" d="M325.3 234.3 104.6 13l280.8 161.2z"/>
-                        <path fill="#FBBC04" d="m472.2 225.6-58.9-34.1-65.7 64.5 65.7 64.5 60.1-34.1c18-14.3 18-46.5-1.2-60.8z"/>
-                        <path fill="#34A853" d="M104.6 499l220.7-221.3 60.1 60.1z"/>
-                        <path fill="#4285F4" d="M47 0C34 6.8 25.3 19.2 25.3 35.3v441.3c0 16.1 8.7 28.5 21.7 35.3l256.6-256z"/>
-                    </svg>
-                    <span class="gp-text">Google Play 다운받기</span>
-                </a>
-                <a class="hero-flagship-cta hero-flagship-cta-mobile" href="subscribe.html" data-plan-cta>
-                    <span class="flagship-text">AI 통화요약 플랜 업그레이드 바로가기</span>
-                </a>
                 <div class="hero-copy">
                     <span class="hero-eyebrow">YOUNGMAN · AI 고객관리 플랫폼</span>
                     <h1 class="hero-title">
@@ -711,6 +704,20 @@
                         중요한 상담내용, 메모, 고객 성향, 요청사항까지 — <strong>통화 후 전송버튼 하나로 고객관리대장에 자동저장</strong>.
                         깜빡하고 놓친 내용까지 AI 가 놓치지 않습니다.
                     </p>
+                    <div class="hero-cta-mobile-group">
+                        <a class="gplay-cta gplay-cta-mobile" href="https://play.google.com/store/apps/details?id=com.youngmanapp" target="_blank" rel="noopener" aria-label="Google Play 에서 다운로드">
+                            <svg width="24" height="26" viewBox="0 0 512 512" aria-hidden="true">
+                                <path fill="#EA4335" d="M325.3 234.3 104.6 13l280.8 161.2z"/>
+                                <path fill="#FBBC04" d="m472.2 225.6-58.9-34.1-65.7 64.5 65.7 64.5 60.1-34.1c18-14.3 18-46.5-1.2-60.8z"/>
+                                <path fill="#34A853" d="M104.6 499l220.7-221.3 60.1 60.1z"/>
+                                <path fill="#4285F4" d="M47 0C34 6.8 25.3 19.2 25.3 35.3v441.3c0 16.1 8.7 28.5 21.7 35.3l256.6-256z"/>
+                            </svg>
+                            <span class="gp-text">Google Play 다운받기</span>
+                        </a>
+                        <a class="hero-flagship-cta hero-flagship-cta-mobile" href="subscribe.html" data-plan-cta>
+                            <span class="flagship-text">AI 통화요약 플랜 업그레이드 바로가기</span>
+                        </a>
+                    </div>
                     <blockquote class="hero-quote">
                         고객관리가 귀찮아도 괜찮습니다.<br>
                         <span class="hero-quote-em">영맨이 당신의 든든한 비서가 되어<br class="br-md">강제로라도 체계적인 고객관리를 만들어드립니다.</span>
