@@ -6832,12 +6832,23 @@ try {
                     device_id = VALUES(device_id),
                     platform = VALUES(platform),
                     last_seen_at = CURRENT_TIMESTAMP");
-            $ins->execute([
-                ':o' => $owner,
-                ':t' => $tok,
-                ':d' => $devId !== '' ? $devId : null,
-                ':p' => $plat,
-            ]);
+            // 동시 동일 token 등록(계정 빠른 전환 등) 시 INSERT...ON DUPLICATE 가 1213 deadlock 가능.
+            //   → deadlock(SQLSTATE 40001 / 1213) 이면 짧은 backoff 후 재시도(최대 3회). 토큰 등록 누락 방지.
+            $fcmInsParams = [':o' => $owner, ':t' => $tok, ':d' => $devId !== '' ? $devId : null, ':p' => $plat];
+            $fcmAttempt = 0;
+            while (true) {
+                try {
+                    $ins->execute($fcmInsParams);
+                    break;
+                } catch (PDOException $e) {
+                    $isDeadlock = ($e->getCode() === '40001') || (strpos($e->getMessage(), '1213') !== false);
+                    if ($isDeadlock && ++$fcmAttempt < 3) {
+                        usleep(50000 * $fcmAttempt);  // 50ms, 100ms backoff
+                        continue;
+                    }
+                    throw $e;  // 데드락 아님 또는 재시도 소진 → 상위 핸들러가 기록/응답
+                }
+            }
             $sel = $pdo->prepare('SELECT * FROM user_fcm_tokens WHERE token = :t LIMIT 1');
             $sel->execute([':t' => $tok]);
             $row = $sel->fetch();
