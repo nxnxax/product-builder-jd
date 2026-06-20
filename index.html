@@ -10,6 +10,9 @@
     <meta name="robots" content="index, follow">
     <link rel="canonical" href="https://youngman-biz.com/">
     <link rel="icon" type="image/png" href="logo_main.png">
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#c8362c">
+    <link rel="apple-touch-icon" href="app-icon-192.png">
     <link rel="apple-touch-icon" href="logo_main.png">
 
     <!-- Open Graph -->
@@ -310,8 +313,9 @@
         .gplay-cta-pc { display: flex; width: fit-content; margin: 6px 0 12px; }
         .gplay-cta-mobile { display: none; }
 
-        /* 사이트 유틸 바 — PC 전용 (상단 우측: 작은 회색 텍스트 링크, 한국 사이트 관용 스타일) */
-        .site-util-bar { display: flex; justify-content: flex-end; align-items: center; max-width: 1200px; margin: 0 auto; padding: 9px 24px 0; }
+        /* 사이트 유틸 — PC 전용 (상단 우측 구석에 은근슬쩍 tuck, 별도 줄/섹션 없이 오버레이) */
+        #app-dashboard { position: relative; }
+        .site-util-bar { position: absolute; top: 7px; right: 26px; z-index: 6; display: flex; align-items: center; }
         .util-btn {
             background: none; border: 0; color: #a39c92; font-size: 12.5px; font-weight: 500; font-family: inherit;
             cursor: pointer; padding: 3px 13px; transition: color .12s; line-height: 1.4;
@@ -1329,6 +1333,8 @@
 </div>
 <script>
 (function () {
+    // PWA 설치 가능 조건 — service worker 등록(설치 criteria 충족, no-op).
+    if ('serviceWorker' in navigator) { try { navigator.serviceWorker.register('/sw.js').catch(function () {}); } catch (e) {} }
     var backdrop = document.getElementById('util-pop-backdrop');
     var titleEl = document.getElementById('util-pop-title');
     var bodyEl = document.getElementById('util-pop-body');

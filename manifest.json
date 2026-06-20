@@ -1,0 +1,13 @@
+{
+  "name": "영맨 YOUNGMAN",
+  "short_name": "영맨",
+  "description": "고객관리, 이제 전화만 하세요 — AI 통화요약 고객관리 플랫폼",
+  "start_url": "/index.html",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#fbf8f3",
+  "theme_color": "#c8362c",
+  "icons": [
+    { "src": "/app-icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" }
+  ]
+}
