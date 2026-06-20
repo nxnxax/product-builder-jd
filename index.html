@@ -309,7 +309,7 @@
         .gplay-cta .gp-text { display: flex; flex-direction: column; line-height: 1.18; text-align: left; }
         .gplay-cta .gp-sm { font-size: 11px; font-weight: 600; color: #8a847e; letter-spacing: .02em; }
         .gplay-cta .gp-lg { font-size: 17px; font-weight: 800; letter-spacing: -.01em; }
-        .gplay-cta-pc { display: inline-flex; margin: 6px 0 12px; }
+        .gplay-cta-pc { display: flex; width: fit-content; margin: 6px 0 12px; }
         .gplay-cta-mobile { display: none; }
 
         /* hero 일러스트 */
@@ -571,9 +571,10 @@
             }
             .hero-flagship-cta-pc { display: none !important; }
             .gplay-cta-pc { display: none !important; }
-            .gplay-cta-mobile { display: flex; width: fit-content; margin: 2px auto 12px; padding: 11px 26px 11px 20px; }
-            .gplay-cta-mobile .gp-lg { font-size: 18px; }
-            .gplay-cta-mobile .gp-sm { font-size: 11.5px; }
+            .gplay-cta-mobile { display: flex; width: fit-content; margin: 2px auto 12px; padding: 8px 22px; }
+            .gplay-cta-mobile .gp-sm { display: none; }
+            .gplay-cta-mobile .gp-lg { font-size: 16px; }
+            .gplay-cta-mobile svg { width: 22px; height: 24px; }
             @keyframes mobile-float {
                 0%, 100% { transform: translateY(0) rotate(-0.5deg); }
                 50%      { transform: translateY(-8px) rotate(0.6deg); }
