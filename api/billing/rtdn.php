@@ -168,18 +168,42 @@ try {
     switch ($notificationType) {
         case 1:  // RECOVERED
         case 2:  // RENEWED
-            // 이월 금지 — usage_seconds_period reset.
-            $pdo->prepare("UPDATE members SET
-                    plan_status='active',
-                    current_period_start=:now,
-                    current_period_end=COALESCE(:pe, current_period_end),
-                    free_summaries_used=0,
-                    usage_seconds_period=0,
-                    last_usage_warning_pct=0,
-                    last_usage_reset_at=:now,
-                    cancel_at_period_end=0
-                  WHERE LOWER(email)=LOWER(:e)")
-                ->execute([':now' => $now, ':pe' => $periodEnd, ':e' => $ownerEmail]);
+            // 이월 금지 — usage_seconds_period reset. + (planKey 알면) plan/한도 재확정(자가치유).
+            //   2026-06-21 정밀검사: 기존엔 사용량만 reset 하고 summary_limit_minutes 는 안 건드려,
+            //   그 값이 어떤 이유로 비어 있으면 갱신해도 복구 안 됨 → 게이트가 분 한도 못 잡음.
+            //   verify-google-purchase / cron-renew 와 동일하게 한도까지 재확정해 일관성·자가치유 확보.
+            if ($planKey !== '') {
+                $reLimit = plan_default_summary_limit($planKey);
+                $reLimitMin = plan_default_summary_limit_minutes($planKey);
+                $pdo->prepare("UPDATE members SET
+                        plan=:p,
+                        plan_status='active',
+                        current_period_start=:now,
+                        current_period_end=COALESCE(:pe, current_period_end),
+                        free_summaries_used=0,
+                        usage_seconds_period=0,
+                        last_usage_warning_pct=0,
+                        last_usage_reset_at=:now,
+                        cancel_at_period_end=0,
+                        summary_limit=:slim,
+                        summary_limit_minutes=:slm
+                      WHERE LOWER(email)=LOWER(:e)")
+                    ->execute([':p' => $planKey, ':now' => $now, ':pe' => $periodEnd,
+                               ':slim' => $reLimit, ':slm' => $reLimitMin, ':e' => $ownerEmail]);
+            } else {
+                // planKey 미상(productId 매핑 안 됨) — 기존대로 usage reset + period 연장만(안전).
+                $pdo->prepare("UPDATE members SET
+                        plan_status='active',
+                        current_period_start=:now,
+                        current_period_end=COALESCE(:pe, current_period_end),
+                        free_summaries_used=0,
+                        usage_seconds_period=0,
+                        last_usage_warning_pct=0,
+                        last_usage_reset_at=:now,
+                        cancel_at_period_end=0
+                      WHERE LOWER(email)=LOWER(:e)")
+                    ->execute([':now' => $now, ':pe' => $periodEnd, ':e' => $ownerEmail]);
+            }
             // 갱신/복구 결제를 payments 에 기록 → 실시간 결제내역·매출에 반영.
             // (앱 미실행 중 자동갱신은 RTDN 만 오므로, 여기서 안 남기면 반복매출이 매출페이지에서 영구 누락된다.)
             // 멱등: purchaseToken 은 갱신돼도 동일하므로 기간(periodEnd)을 키에 포함해 갱신 1건당 1행만.
