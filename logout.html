@@ -110,9 +110,26 @@
             } catch { return false; }
         })();
 
+        // ★ 2026-06-21 회귀 fix — "자는 사이 유령 로그아웃" 차단.
+        //   증상: 새벽에 통화 모달이 안 뜸([diag.modal] logged out — finish before bind),
+        //         native 가 03:20 explicit logout 받고 auto re-login 영구 차단.
+        //   원인: logout.html?explicit=1 이 bfcache 복원 → auth-shared 의 pageshow→reload()
+        //         (line 802~) 로 스크립트 재실행 → explicit 로그아웃 재발사 루프.
+        //   해결: "진짜 사용자 네비게이션(navigate)" 일 때만 발사. reload / back_forward(bfcache)
+        //         재실행이면 로그아웃 의도 아님 → 발사 X, index 로 조용히 이동.
+        //   genuine 로그아웃(performLogout)은 location.replace = navType 'navigate' → 정상 발사.
+        const _navType = (() => {
+            try {
+                const nav = performance.getEntriesByType('navigation')[0];
+                return nav ? nav.type : 'navigate';
+            } catch { return 'navigate'; }   // 미지원 환경 = genuine 으로 간주(안전 default)
+        })();
+        const _isFreshNav = (_navType === 'navigate');
+        try { console.warn('[logout.html] navType=' + _navType + ' explicit=' + _isExplicitLogout + ' freshNav=' + _isFreshNav); } catch {}
+
         // 사장님 2026-05-21 hotfix — module top-level `return` 은 SyntaxError.
         // login-complete.html 의 a2385b8 와 동일 패턴. if 블록 안에 전체 흐름 통합.
-        if (_isExplicitLogout) {
+        if (_isExplicitLogout && _isFreshNav) {
             // 0) 사용자 의도적 로그아웃 플래그 set — auth-shared.js 가 SIGNED_OUT 시점에 이 플래그를 보고만 logout 통보.
             try { sessionStorage.setItem('erp.userInitiatedLogout', '1'); } catch {}
 
@@ -167,9 +184,10 @@
                 }
             }, 1500);
         } else {
-            // explicit 아닌 진입 (history.back / redirect race) — logout 의도 아님.
-            // 사용자에게 안내 후 메인 페이지로 이동.
-            try { console.warn('[logout.html] not explicit, redirecting to index'); } catch {}
+            // 로그아웃 의도 아닌 진입 — 발사/cleanup 없이 조용히 index 로 이동.
+            //  (a) explicit 아님: history.back / redirect race
+            //  (b) explicit 이지만 reload·bfcache 재실행(_isFreshNav=false): 유령 로그아웃 루프 → 차단
+            try { console.warn('[logout.html] skip logout (explicit=' + _isExplicitLogout + ', navType=' + _navType + '), redirecting to index'); } catch {}
             try { window.location.replace('/'); } catch {}
         }
     </script>
