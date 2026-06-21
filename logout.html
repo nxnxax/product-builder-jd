@@ -45,6 +45,7 @@
         const KEEP_PATTERNS = [
             /^yman_nav_/i,             // 헤더 신규양식 슬롯 1/2 선택값
             /^erp\.userEmail\.last$/i, // 재로그인 시 슬롯 키 매칭용 마지막 email
+            /^erp\.logoutConsumedSig$/i, // 2026-06-21 — 같은 로그아웃 URL 재실행 차단 마커(아래). clearStorage 후에도 보존돼야 함.
         ];
         const shouldKeep = (k) => !!k && KEEP_PATTERNS.some(p => p.test(k));
 
@@ -125,11 +126,25 @@
             } catch { return 'navigate'; }   // 미지원 환경 = genuine 으로 간주(안전 default)
         })();
         const _isFreshNav = (_navType === 'navigate');
-        try { console.warn('[logout.html] navType=' + _navType + ' explicit=' + _isExplicitLogout + ' freshNav=' + _isFreshNav); } catch {}
+
+        // ★ 2026-06-21 이중 가드 — navType 과 무관하게 "같은 로그아웃 URL 재실행" 차단.
+        //   navType='navigate' 로 보고하는 WebView 상태복원(프로세스 사망→복원)까지 막기 위함.
+        //   genuine 로그아웃은 performLogout/click-handler 가 매번 fresh `_t=Date.now()` 를 붙여 _sig 가 항상 새로움 → 정상 발사.
+        //   reload/복원은 같은 URL(같은 _t) 재실행 → _sig 동일 → 이미 소비됨 → 발사 X.
+        //   마커는 KEEP_PATTERNS 로 clearStorage 후에도 보존(한 번 소비한 URL 영구 무력화).
+        const _sig = (() => { try { return window.location.search || ''; } catch { return ''; } })();
+        const _alreadyConsumed = (() => {
+            // _t 포함 URL 만 중복판정(재실행 벡터는 항상 _t 보유). bare href 정상 로그아웃은 오차단 안 함.
+            try { return _sig.indexOf('_t=') !== -1 && localStorage.getItem('erp.logoutConsumedSig') === _sig; } catch { return false; }
+        })();
+        const _shouldFireLogout = _isExplicitLogout && _isFreshNav && !_alreadyConsumed;
+        try { console.warn('[logout.html] navType=' + _navType + ' explicit=' + _isExplicitLogout + ' freshNav=' + _isFreshNav + ' consumed=' + _alreadyConsumed + ' fire=' + _shouldFireLogout); } catch {}
 
         // 사장님 2026-05-21 hotfix — module top-level `return` 은 SyntaxError.
         // login-complete.html 의 a2385b8 와 동일 패턴. if 블록 안에 전체 흐름 통합.
-        if (_isExplicitLogout && _isFreshNav) {
+        if (_shouldFireLogout) {
+            // 0-0) 이 로그아웃 URL 을 "소비됨" 으로 즉시 기록 — 재실행(reload/복원) 시 재발사 차단.
+            try { localStorage.setItem('erp.logoutConsumedSig', _sig); } catch {}
             // 0) 사용자 의도적 로그아웃 플래그 set — auth-shared.js 가 SIGNED_OUT 시점에 이 플래그를 보고만 logout 통보.
             try { sessionStorage.setItem('erp.userInitiatedLogout', '1'); } catch {}
 
