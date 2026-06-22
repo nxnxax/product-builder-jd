@@ -60,6 +60,7 @@ jobs:
           php -l api/records.php
           php -l api/error_logger.php
           php -l api/upload.php
+          php -l api/guide-video.php          # 안내영상 관리자 업로드 + 공개 조회 (import-guide.html)
           php -l api/card-design.php
           php -l api/saju-reading.php
           php -l api/lotto-recommend.php
@@ -138,6 +139,7 @@ jobs:
           cp api/records.php deploy/records.php
           cp api/error_logger.php deploy/error_logger.php     # 서버 에러 진단 로거 — recording-callback/process-recording 이 require
           cp api/upload.php deploy/upload.php
+          cp api/guide-video.php deploy/guide-video.php       # 안내영상 관리자 업로드 엔드포인트
           cp api/card-design.php deploy/card-design.php
           cp api/saju-reading.php deploy/saju-reading.php
           cp api/lotto-recommend.php deploy/lotto-recommend.php
