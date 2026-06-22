@@ -50,6 +50,7 @@ jobs:
           test -f billing.html            # 구독 관리 페이지 (현재 plan / 사용량 / 해지)
           test -f unreviewed.html         # 미확인 요약 페이지 (앱 전용 하단 nav 진입점)
           test -f tester.html             # 베타 테스터용 APK 다운로드 안내 페이지
+          test -f import-guide.html       # 타사 통화기록 가져오기 설명서 (index 배너 링크 대상)
           test -f robots.txt              # SEO — 크롤러 차단 정책
           test -f sitemap.xml             # SEO — 크롤러 페이지 인덱싱 지도
           grep -q 'auth-shared.js?v=' index.html   # 새 랜딩은 main.js 대신 auth-shared 만 import
@@ -120,6 +121,7 @@ jobs:
           cp board.js deploy/board.js
           cp terms.html deploy/terms.html
           cp privacy.html deploy/privacy.html
+          cp import-guide.html deploy/import-guide.html         # 타사 통화기록 가져오기 설명서 (index 배너 링크)
           cp forms.html deploy/forms.html
           cp forms.js deploy/forms.js
           cp logout.html deploy/logout.html                      # 단일 로그아웃 cleanup 페이지
@@ -308,7 +310,7 @@ jobs:
           set -euo pipefail
           CB="$(date +%s)"
           MISSING=0
-          for f in index.html style.css main.js admin.html admin.js profile.html profile.js auth-shared.js upload.html download.html org.html org.js contracts.html contracts.js customers.html customers.js terms.html privacy.html forms.html forms.js logout.html login-complete.html; do
+          for f in index.html style.css main.js admin.html admin.js profile.html profile.js auth-shared.js upload.html download.html org.html org.js contracts.html contracts.js customers.html customers.js terms.html privacy.html forms.html forms.js logout.html login-complete.html import-guide.html; do
             code=$(curl -sk -o /dev/null -w "%{http_code}" "https://youngman-biz.com/${f}?cb=${CB}")
             size=$(curl -sk -o /dev/null -w "%{size_download}" "https://youngman-biz.com/${f}?cb=${CB}")
             echo "  ${f}: HTTP ${code}  size=${size}"

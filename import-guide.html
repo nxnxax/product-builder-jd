@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>타사 통화기록 가져오기 — 영맨</title>
+  <meta name="description" content="타사 전화앱의 통화녹음을 영맨 고객관리대장으로 보내는 방법 안내">
+  <link rel="icon" type="image/png" href="logo_main.png">
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+  <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
+  <link rel="stylesheet" href="style.css?v=20260526-policy">
+  <style>
+    * { box-sizing: border-box; }
+    body { background: #fbf8f3; }
+    :root { --seal: #c8362c; --seal-dark: #a82a20; --ink: #2a2320; --muted: #7a7068; }
+
+    .guide-shell { max-width: 760px; margin: 0 auto; padding: 20px 18px 72px; color: var(--ink); }
+
+    /* ── 헤더 ── */
+    .guide-head { text-align: center; padding: 20px 8px 24px; }
+    .guide-eyebrow {
+      display: inline-flex; align-items: center; gap: 6px;
+      background: #fff; border: 1px solid #f0ddd7; color: var(--seal);
+      font-size: 13px; font-weight: 700; letter-spacing: -0.2px;
+      padding: 6px 14px; border-radius: 999px; margin-bottom: 14px;
+    }
+    .guide-title { font-size: 27px; font-weight: 800; letter-spacing: -0.6px; line-height: 1.3; margin: 0 0 12px; }
+    .guide-title .accent { color: var(--seal); }
+    .guide-intro { font-size: 16.5px; line-height: 1.7; color: #46403a; margin: 0 auto; max-width: 600px; }
+
+    /* ── 주의 콜아웃 ── */
+    .guide-note {
+      display: flex; align-items: flex-start; gap: 10px;
+      background: #fff6f3; border: 1px solid #f3d6cd; border-left: 4px solid var(--seal);
+      border-radius: 12px; padding: 14px 16px; margin: 22px 0 30px;
+      font-size: 15px; line-height: 1.6; color: #6e3a32; font-weight: 600;
+    }
+    .guide-note .note-ico { font-size: 18px; line-height: 1.4; }
+
+    /* ── 영상 ── */
+    .guide-section-label { font-size: 15px; font-weight: 800; color: var(--seal); margin: 0 0 12px; letter-spacing: -0.3px; }
+    .guide-video {
+      position: relative; width: 100%; aspect-ratio: 16 / 9;
+      border-radius: 16px; overflow: hidden; background: #000;
+      box-shadow: 0 14px 36px rgba(120, 50, 40, 0.18); margin-bottom: 12px;
+    }
+    .guide-video iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+    .guide-video-link {
+      display: inline-flex; align-items: center; gap: 6px;
+      font-size: 14px; color: var(--seal); text-decoration: none; font-weight: 600; margin-bottom: 34px;
+    }
+    .guide-video-link:hover { text-decoration: underline; }
+
+    /* ── 단계 ── */
+    .guide-steps { list-style: none; margin: 0 0 32px; padding: 0; position: relative; }
+    .guide-steps::before {
+      content: ""; position: absolute; left: 18px; top: 12px; bottom: 12px;
+      width: 2px; background: linear-gradient(#f0d3cc, #f7e7e2);
+    }
+    .guide-step { position: relative; display: flex; align-items: flex-start; gap: 16px; padding: 9px 0; }
+    .step-num {
+      flex-shrink: 0; width: 38px; height: 38px; border-radius: 50%;
+      background: linear-gradient(135deg, var(--seal), var(--seal-dark)); color: #fff;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 16px; font-weight: 800; z-index: 1;
+      box-shadow: 0 4px 12px rgba(168, 42, 32, 0.28);
+    }
+    .step-body {
+      flex: 1; background: #fff; border: 1px solid #f0e7e2; border-radius: 12px;
+      padding: 13px 16px; font-size: 16px; font-weight: 600; line-height: 1.5;
+      box-shadow: 0 2px 8px rgba(120, 80, 60, 0.05);
+    }
+    .step-body .step-em { color: var(--seal); font-weight: 800; }
+
+    /* ── 결과 ── */
+    .guide-result {
+      background: linear-gradient(135deg, #fff, #fdf4f1);
+      border: 1px solid #f0ddd7; border-radius: 16px;
+      padding: 22px 20px; text-align: center;
+      box-shadow: 0 8px 24px rgba(120, 50, 40, 0.08);
+    }
+    .guide-result .result-ico { font-size: 30px; }
+    .guide-result h3 { font-size: 18px; font-weight: 800; margin: 8px 0 8px; color: var(--ink); letter-spacing: -0.3px; }
+    .guide-result p { font-size: 15.5px; line-height: 1.7; color: #514a44; margin: 0; }
+    .guide-result .hl { color: var(--seal); font-weight: 800; }
+
+    .guide-back {
+      display: inline-flex; align-items: center; gap: 6px; margin: 30px auto 0;
+      color: var(--muted); text-decoration: none; font-size: 14px; font-weight: 600;
+    }
+    .guide-back:hover { color: var(--ink); }
+    .guide-center { text-align: center; }
+
+    @media (max-width: 560px) {
+      .guide-title { font-size: 23px; }
+      .guide-intro { font-size: 15.5px; }
+      .step-body { font-size: 15.5px; }
+    }
+  </style>
+</head>
+<body>
+  <header id="app-header" class="app-header"></header>
+
+  <main class="guide-shell">
+    <div class="guide-head">
+      <span class="guide-eyebrow">📞 통화기록 가져오기</span>
+      <h1 class="guide-title">타사 전화앱 통화내용,<br><span class="accent">영맨 고객관리대장</span>으로 저장하기</h1>
+      <p class="guide-intro">이제 타사 전화앱의 최근 통화내용 중 저장하고 싶은 내용을 골라서 영맨의 고객관리대장에 저장할 수 있습니다.</p>
+    </div>
+
+    <div class="guide-note">
+      <span class="note-ico">⚠️</span>
+      <span>해당 기능은 디바이스의 <b>통화녹음 기능을 지원하는 경우에만</b> 가능합니다.</span>
+    </div>
+
+    <p class="guide-section-label">▶ 영상으로 보기</p>
+    <div class="guide-video">
+      <iframe src="https://www.youtube.com/embed/tRnePL1Fo2k" title="영맨 통화기록 가져오기 안내"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+              referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+    </div>
+    <a class="guide-video-link" href="https://youtu.be/tRnePL1Fo2k" target="_blank" rel="noopener">유튜브에서 보기 ↗</a>
+
+    <p class="guide-section-label">✔ 따라하기</p>
+    <ol class="guide-steps">
+      <li class="guide-step"><span class="step-num">1</span><span class="step-body">타사 전화앱에서 <span class="step-em">최근 통화기록</span> 열기</span></li>
+      <li class="guide-step"><span class="step-num">2</span><span class="step-body">저장을 원하는 <span class="step-em">통화 선택</span></span></li>
+      <li class="guide-step"><span class="step-num">3</span><span class="step-body"><span class="step-em">통화녹음</span> 클릭</span></li>
+      <li class="guide-step"><span class="step-num">4</span><span class="step-body"><span class="step-em">공유 버튼</span> 클릭</span></li>
+      <li class="guide-step"><span class="step-num">5</span><span class="step-body">공유할 목록에서 <span class="step-em">'영맨' 앱 아이콘</span> 선택</span></li>
+    </ol>
+
+    <div class="guide-result">
+      <div class="result-ico">📒</div>
+      <h3>이후엔 영맨이 알아서 정리합니다</h3>
+      <p>영맨앱이 해당 통화내용을 <span class="hl">자동 요약</span> 후 <span class="hl">고객관리대장에 자동 저장</span>합니다.<br>
+      공유한 뒤 <span class="hl">약 2~3분 뒤</span> 영맨 고객관리대장에서 저장된 통화요약을 확인하실 수 있습니다.</p>
+    </div>
+
+    <div class="guide-center">
+      <a class="guide-back" href="index.html">← 영맨 홈으로</a>
+    </div>
+  </main>
+
+  <script type="module">
+    import { mountAppHeader, mountAppFooter } from './auth-shared.js?v=20260619-gp';
+    mountAppHeader(); mountAppFooter();
+  </script>
+</body>
+</html>
