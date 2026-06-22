@@ -11,83 +11,83 @@
   <link rel="stylesheet" href="style.css?v=20260526-policy">
   <style>
     * { box-sizing: border-box; }
-    body { background: #fbf8f3; }
-    :root { --seal: #c8362c; --seal-dark: #a82a20; --ink: #2a2320; --muted: #7a7068; }
-
-    .guide-shell { max-width: 760px; margin: 0 auto; padding: 20px 18px 72px; color: var(--ink); }
+    :root {
+      --ink: #222936; --navy: #2b3a57; --navy-d: #1f2b44;
+      --gold: #a9791e; --muted: #7c8398; --line: #e7ebf2;
+    }
+    body { background: #fbf9f5; }
+    .guide-shell { max-width: 720px; margin: 0 auto; padding: 18px 18px 72px; color: var(--ink); }
 
     /* ── 헤더 ── */
-    .guide-head { text-align: center; padding: 20px 8px 24px; }
-    .guide-eyebrow {
-      display: inline-flex; align-items: center; gap: 6px;
-      background: #fff; border: 1px solid #f0ddd7; color: var(--seal);
-      font-size: 13px; font-weight: 700; letter-spacing: -0.2px;
-      padding: 6px 14px; border-radius: 999px; margin-bottom: 14px;
+    .guide-head { text-align: center; padding: 18px 8px 22px; }
+    .guide-badge {
+      width: 54px; height: 54px; margin: 0 auto 16px; border-radius: 16px;
+      display: flex; align-items: center; justify-content: center; color: #ffd7a6;
+      background: linear-gradient(150deg, #33415f, #202c47);
+      box-shadow: 0 10px 24px rgba(31, 43, 68, 0.32), inset 0 1px 0 rgba(255,255,255,0.16);
     }
-    .guide-title { font-size: 27px; font-weight: 800; letter-spacing: -0.6px; line-height: 1.3; margin: 0 0 12px; }
-    .guide-title .accent { color: var(--seal); }
-    .guide-intro { font-size: 16.5px; line-height: 1.7; color: #46403a; margin: 0 auto; max-width: 600px; }
+    .guide-title { font-size: 26px; font-weight: 800; letter-spacing: -0.6px; line-height: 1.32; margin: 0 0 12px; color: var(--ink); }
+    .guide-title .accent { color: var(--navy); }
+    .guide-intro { font-size: 16.5px; line-height: 1.7; color: #4b5263; margin: 0 auto; max-width: 600px; }
 
     /* ── 주의 콜아웃 ── */
     .guide-note {
-      display: flex; align-items: flex-start; gap: 10px;
-      background: #fff6f3; border: 1px solid #f3d6cd; border-left: 4px solid var(--seal);
-      border-radius: 12px; padding: 14px 16px; margin: 22px 0 30px;
-      font-size: 15px; line-height: 1.6; color: #6e3a32; font-weight: 600;
+      display: flex; align-items: center; gap: 11px;
+      background: #f2f5fb; border: 1px solid #e1e7f1; border-left: 4px solid var(--navy);
+      border-radius: 12px; padding: 14px 16px; margin: 22px 0 32px;
+      font-size: 15px; line-height: 1.55; color: #3e465a; font-weight: 600;
     }
-    .guide-note .note-ico { font-size: 18px; line-height: 1.4; }
+    .guide-note svg { flex-shrink: 0; color: var(--navy); }
 
-    /* ── 영상 ── */
-    .guide-section-label { font-size: 15px; font-weight: 800; color: var(--seal); margin: 0 0 12px; letter-spacing: -0.3px; }
+    /* ── 섹션 라벨 ── */
+    .guide-label { display: flex; align-items: center; gap: 9px; font-size: 15px; font-weight: 800; color: var(--navy); margin: 0 0 14px; letter-spacing: -0.3px; }
+    .guide-label::before { content: ""; width: 4px; height: 16px; border-radius: 2px; background: linear-gradient(var(--navy), var(--gold)); }
+
+    /* ── 영상 (세로 9:16, 자동재생·반복) ── */
+    .guide-video-wrap { display: flex; justify-content: center; margin-bottom: 12px; }
     .guide-video {
-      position: relative; width: 100%; aspect-ratio: 16 / 9;
-      border-radius: 16px; overflow: hidden; background: #000;
-      box-shadow: 0 14px 36px rgba(120, 50, 40, 0.18); margin-bottom: 12px;
+      position: relative; width: 100%; max-width: 320px; aspect-ratio: 9 / 16;
+      border-radius: 22px; overflow: hidden; background: #000;
+      box-shadow: 0 18px 46px rgba(28, 38, 66, 0.24);
     }
     .guide-video iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
-    .guide-video-link {
-      display: inline-flex; align-items: center; gap: 6px;
-      font-size: 14px; color: var(--seal); text-decoration: none; font-weight: 600; margin-bottom: 34px;
-    }
+    .guide-video-link { display: block; text-align: center; font-size: 14px; color: var(--navy); text-decoration: none; font-weight: 600; margin-bottom: 36px; }
     .guide-video-link:hover { text-decoration: underline; }
 
     /* ── 단계 ── */
     .guide-steps { list-style: none; margin: 0 0 32px; padding: 0; position: relative; }
-    .guide-steps::before {
-      content: ""; position: absolute; left: 18px; top: 12px; bottom: 12px;
-      width: 2px; background: linear-gradient(#f0d3cc, #f7e7e2);
-    }
-    .guide-step { position: relative; display: flex; align-items: flex-start; gap: 16px; padding: 9px 0; }
+    .guide-steps::before { content: ""; position: absolute; left: 18px; top: 14px; bottom: 14px; width: 2px; background: linear-gradient(#dbe1ec, #eef1f7); }
+    .guide-step { position: relative; display: flex; align-items: center; gap: 16px; padding: 8px 0; }
     .step-num {
       flex-shrink: 0; width: 38px; height: 38px; border-radius: 50%;
-      background: linear-gradient(135deg, var(--seal), var(--seal-dark)); color: #fff;
-      display: flex; align-items: center; justify-content: center;
-      font-size: 16px; font-weight: 800; z-index: 1;
-      box-shadow: 0 4px 12px rgba(168, 42, 32, 0.28);
+      background: linear-gradient(150deg, #33415f, #202c47); color: #fff;
+      display: flex; align-items: center; justify-content: center; font-size: 16px; font-weight: 800; z-index: 1;
+      box-shadow: 0 5px 13px rgba(31, 43, 68, 0.26);
     }
     .step-body {
-      flex: 1; background: #fff; border: 1px solid #f0e7e2; border-radius: 12px;
+      flex: 1; background: #fff; border: 1px solid var(--line); border-radius: 12px;
       padding: 13px 16px; font-size: 16px; font-weight: 600; line-height: 1.5;
-      box-shadow: 0 2px 8px rgba(120, 80, 60, 0.05);
+      box-shadow: 0 2px 8px rgba(40, 50, 80, 0.05);
     }
-    .step-body .step-em { color: var(--seal); font-weight: 800; }
+    .step-body .step-em { color: var(--gold); font-weight: 800; }
 
     /* ── 결과 ── */
     .guide-result {
-      background: linear-gradient(135deg, #fff, #fdf4f1);
-      border: 1px solid #f0ddd7; border-radius: 16px;
-      padding: 22px 20px; text-align: center;
-      box-shadow: 0 8px 24px rgba(120, 50, 40, 0.08);
+      background: linear-gradient(150deg, #fff, #f4f7fc);
+      border: 1px solid #e6ecf5; border-radius: 16px; padding: 24px 20px; text-align: center;
+      box-shadow: 0 10px 28px rgba(30, 42, 72, 0.08);
     }
-    .guide-result .result-ico { font-size: 30px; }
-    .guide-result h3 { font-size: 18px; font-weight: 800; margin: 8px 0 8px; color: var(--ink); letter-spacing: -0.3px; }
-    .guide-result p { font-size: 15.5px; line-height: 1.7; color: #514a44; margin: 0; }
-    .guide-result .hl { color: var(--seal); font-weight: 800; }
+    .guide-result .result-ico {
+      width: 46px; height: 46px; margin: 0 auto 10px; border-radius: 14px;
+      display: flex; align-items: center; justify-content: center; color: #fff;
+      background: linear-gradient(150deg, #33415f, #202c47);
+    }
+    .guide-result h3 { font-size: 18px; font-weight: 800; margin: 0 0 9px; color: var(--ink); letter-spacing: -0.3px; }
+    .guide-result p { font-size: 15.5px; line-height: 1.75; color: #4f5666; margin: 0; }
+    .guide-result .hl { color: var(--navy); font-weight: 800; }
+    .guide-result .hl-gold { color: var(--gold); font-weight: 800; }
 
-    .guide-back {
-      display: inline-flex; align-items: center; gap: 6px; margin: 30px auto 0;
-      color: var(--muted); text-decoration: none; font-size: 14px; font-weight: 600;
-    }
+    .guide-back { display: inline-flex; align-items: center; gap: 6px; margin: 30px auto 0; color: var(--muted); text-decoration: none; font-size: 14px; font-weight: 600; }
     .guide-back:hover { color: var(--ink); }
     .guide-center { text-align: center; }
 
@@ -103,25 +103,33 @@
 
   <main class="guide-shell">
     <div class="guide-head">
-      <span class="guide-eyebrow">📞 통화기록 가져오기</span>
+      <span class="guide-badge" aria-hidden="true">
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="18 2 22 6 18 10"/><line x1="14" y1="6" x2="22" y2="6"/>
+          <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>
+        </svg>
+      </span>
       <h1 class="guide-title">타사 전화앱 통화내용,<br><span class="accent">영맨 고객관리대장</span>으로 저장하기</h1>
       <p class="guide-intro">이제 타사 전화앱의 최근 통화내용 중 저장하고 싶은 내용을 골라서 영맨의 고객관리대장에 저장할 수 있습니다.</p>
     </div>
 
     <div class="guide-note">
-      <span class="note-ico">⚠️</span>
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
       <span>해당 기능은 디바이스의 <b>통화녹음 기능을 지원하는 경우에만</b> 가능합니다.</span>
     </div>
 
-    <p class="guide-section-label">▶ 영상으로 보기</p>
-    <div class="guide-video">
-      <iframe src="https://www.youtube.com/embed/tRnePL1Fo2k" title="영맨 통화기록 가져오기 안내"
-              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-              referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+    <p class="guide-label">영상으로 보기</p>
+    <div class="guide-video-wrap">
+      <div class="guide-video">
+        <iframe src="https://www.youtube.com/embed/tRnePL1Fo2k?autoplay=1&amp;mute=1&amp;loop=1&amp;playlist=tRnePL1Fo2k&amp;playsinline=1&amp;rel=0&amp;modestbranding=1&amp;controls=1"
+                title="영맨 통화기록 가져오기 안내"
+                allow="autoplay; encrypted-media; picture-in-picture; web-share"
+                referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+      </div>
     </div>
     <a class="guide-video-link" href="https://youtu.be/tRnePL1Fo2k" target="_blank" rel="noopener">유튜브에서 보기 ↗</a>
 
-    <p class="guide-section-label">✔ 따라하기</p>
+    <p class="guide-label">따라하기</p>
     <ol class="guide-steps">
       <li class="guide-step"><span class="step-num">1</span><span class="step-body">타사 전화앱에서 <span class="step-em">최근 통화기록</span> 열기</span></li>
       <li class="guide-step"><span class="step-num">2</span><span class="step-body">저장을 원하는 <span class="step-em">통화 선택</span></span></li>
@@ -131,10 +139,12 @@
     </ol>
 
     <div class="guide-result">
-      <div class="result-ico">📒</div>
+      <span class="result-ico" aria-hidden="true">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+      </span>
       <h3>이후엔 영맨이 알아서 정리합니다</h3>
       <p>영맨앱이 해당 통화내용을 <span class="hl">자동 요약</span> 후 <span class="hl">고객관리대장에 자동 저장</span>합니다.<br>
-      공유한 뒤 <span class="hl">약 2~3분 뒤</span> 영맨 고객관리대장에서 저장된 통화요약을 확인하실 수 있습니다.</p>
+      공유한 뒤 <span class="hl-gold">약 2~3분 뒤</span> 영맨 고객관리대장에서 저장된 통화요약을 확인하실 수 있습니다.</p>
     </div>
 
     <div class="guide-center">
