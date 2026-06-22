@@ -61,6 +61,8 @@ jobs:
           php -l api/error_logger.php
           php -l api/upload.php
           php -l api/guide-video.php          # 안내영상 관리자 업로드 + 공개 조회 (import-guide.html)
+          php -l api/install-ping.php         # 앱 설치 1회 핑 (광고 설치 추적, dedup)
+          php -l api/admin-stats.php          # 일별 통계(install/signup/payment) — 관리자 전용
           php -l api/card-design.php
           php -l api/saju-reading.php
           php -l api/lotto-recommend.php
@@ -140,6 +142,8 @@ jobs:
           cp api/error_logger.php deploy/error_logger.php     # 서버 에러 진단 로거 — recording-callback/process-recording 이 require
           cp api/upload.php deploy/upload.php
           cp api/guide-video.php deploy/guide-video.php       # 안내영상 관리자 업로드 엔드포인트
+          cp api/install-ping.php deploy/install-ping.php     # 앱 설치 1회 핑 (광고 설치 추적)
+          cp api/admin-stats.php deploy/admin-stats.php       # 일별 통계 (관리자 전용)
           cp api/card-design.php deploy/card-design.php
           cp api/saju-reading.php deploy/saju-reading.php
           cp api/lotto-recommend.php deploy/lotto-recommend.php
