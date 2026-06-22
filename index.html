@@ -1231,6 +1231,28 @@
         import { mountAppHeader, mountAppFooter, initSupabase, apiRequest, getSession, refreshAppHeader } from './auth-shared.js?v=20260619-gp';
         mountAppHeader();
         mountAppFooter();
+
+        // ★ 2026-06-23 방문자 트래킹 — index 는 bootApp 미사용이라 pageview 가 발사 안 됐음(광고 랜딩 유입 전량 누락).
+        //   auth-shared.tryLogPageview 와 동일 키('erp.pvSid')·페이로드·엔드포인트로 직접 1회 발사(즉시 = anon 광고유입 확실히 집계).
+        (function fireLandingPageview() {
+            let sid = '';
+            try {
+                sid = sessionStorage.getItem('erp.pvSid') || '';
+                if (!sid) { sid = (crypto?.randomUUID?.() || (Date.now().toString(36) + Math.random().toString(36).slice(2, 10))); sessionStorage.setItem('erp.pvSid', sid); }
+            } catch {}
+            const params = new URLSearchParams(location.search || '');
+            let email = ''; try { email = getSession()?.user?.email || ''; } catch {}
+            const payload = {
+                path: location.pathname || '/', referrer: document.referrer || '',
+                utm_source: params.get('utm_source') || '', utm_medium: params.get('utm_medium') || '', utm_campaign: params.get('utm_campaign') || '',
+                session_id: sid, owner_email: email,
+            };
+            try {
+                const blob = new Blob([JSON.stringify(payload)], { type: 'application/json' });
+                if (navigator.sendBeacon) navigator.sendBeacon('/pageview.php', blob);
+                else fetch('/pageview.php', { method: 'POST', body: JSON.stringify(payload), headers: { 'Content-Type': 'application/json' }, keepalive: true }).catch(() => {});
+            } catch {}
+        })();
         // 첫 화면 헤더 초기화 — session 복원 후 refreshAppHeader 로 로그인/관리자 메뉴 확정.
         // (index.html 은 bootApp 미사용 → 이 호출 없으면 관리자 메뉴가 캐시에만 의존해 첫 방문 누락.)
         (async () => { try { await initSupabase(); await refreshAppHeader(); } catch {} })();

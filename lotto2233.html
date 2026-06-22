@@ -493,6 +493,8 @@ function computeSajuContext(){
 
 /* ============ 액션 분기 ============ */
 function onGenerate(){
+    const _gb = document.getElementById('generateBtn');
+    if (_gb?.disabled) return;   // 처리 중 — 중복 클릭 무시 (진행중 풀이·LLM 중복호출 차단)
     const result = document.getElementById('result');
     result.innerHTML = '';
 
@@ -528,16 +530,23 @@ async function runSaju(){
         </div>
         ${sajuMethodsBox()}`;
 
-    fetchDosaReading(readingId, {
-        name: ctx.name,
-        gender: ctx.gender==='female' ? '여성' : '남성',
-        birthLabel: ctx.birthLabel, region: ctx.region, drawDate: ctx.drawDate,
-        ge: ctx.ge, geStatus: ctx.geStatus, str: ctx.str, cl: ctx.cl,
-        ys: elementKor[ctx.ys] || ctx.ys,
-        lucky: elementKor[ctx.lucky] || ctx.lucky,
-        daewoon: ctx.dw, sewoon: ctx.sw, wolwoon: ctx.ww,
-        relations: ctx.rel,
-    });
+    const btn = document.getElementById('generateBtn');
+    const prevLabel = btn ? btn.textContent : '';
+    if (btn) { btn.disabled = true; btn.textContent = '분석 중…'; }
+    try {
+        await fetchDosaReading(readingId, {
+            name: ctx.name,
+            gender: ctx.gender==='female' ? '여성' : '남성',
+            birthLabel: ctx.birthLabel, region: ctx.region, drawDate: ctx.drawDate,
+            ge: ctx.ge, geStatus: ctx.geStatus, str: ctx.str, cl: ctx.cl,
+            ys: elementKor[ctx.ys] || ctx.ys,
+            lucky: elementKor[ctx.lucky] || ctx.lucky,
+            daewoon: ctx.dw, sewoon: ctx.sw, wolwoon: ctx.ww,
+            relations: ctx.rel,
+        });
+    } finally {
+        if (btn) { btn.disabled = false; btn.textContent = prevLabel || '사주 풀이 받기'; }
+    }
 }
 
 async function fetchDosaReading(targetId, payload){
@@ -978,7 +987,11 @@ async function runGunghap(){
             </div>
         </div>
         ${gunghapMethodsBox()}`;
-    fetchGunghap(readingId, A.name, B.name, couple);
+    const btn = document.getElementById('generateBtn');
+    const prevLabel = btn ? btn.textContent : '';
+    if (btn) { btn.disabled = true; btn.textContent = '분석 중…'; }
+    try { await fetchGunghap(readingId, A.name, B.name, couple); }
+    finally { if (btn) { btn.disabled = false; btn.textContent = prevLabel || '궁합 풀이 받기'; } }
 }
 
 async function fetchGunghap(targetId, nameA, nameB, couple){
