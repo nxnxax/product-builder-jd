@@ -19,6 +19,19 @@
         .cb-capture-row { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem; }
         @media (max-width: 480px) { .cb-capture-row { grid-template-columns: 1fr; } }
 
+        .cb-mode-toggle { display: flex; gap: .5rem; flex-wrap: wrap; }
+        .cb-mode-btn {
+            flex: 1 1 0; min-width: 160px; padding: .7rem .9rem;
+            border: 1px solid var(--border); border-radius: var(--radius-md);
+            background: var(--bg-subtle); color: var(--fg-secondary);
+            font-size: .9rem; font-weight: 600; cursor: pointer; line-height: 1.35;
+            transition: border-color .15s, background .15s, color .15s;
+        }
+        .cb-mode-btn small { display: block; font-weight: 400; font-size: .72rem; color: var(--fg-tertiary); margin-top: .15rem; }
+        .cb-mode-btn:hover { border-color: var(--fg-tertiary); }
+        .cb-mode-btn.is-active { border-color: var(--accent); background: var(--accent); color: #fff; }
+        .cb-mode-btn.is-active small { color: rgba(255,255,255,.85); }
+
         .cb-capture-btn,
         .cb-upload-btn {
             position: relative;
@@ -138,6 +151,15 @@
             </div>
         </section>
 
+        <section class="cb-section">
+            <h3>4. 결과물 종류</h3>
+            <div class="cb-mode-toggle" role="group" aria-label="결과물 종류">
+                <button type="button" class="cb-mode-btn is-active" data-mode="gpt_image">분양·부동산 광고 <small>(AI 이미지 · 한글 정확)</small></button>
+                <button type="button" class="cb-mode-btn" data-mode="claude_html">명함 (HTML)</button>
+            </div>
+            <p class="cb-form-help" id="cb-mode-help">실사 건물·금테 디자인의 분양 광고 배너를 AI가 한 장으로 생성합니다. 단지명·평형·혜택 등은 위 "디자인 톤"에 적어주세요.</p>
+        </section>
+
         <div class="cb-actions">
             <button type="button" id="cb-generate" class="primary-btn">AI 디자인 생성</button>
             <button type="button" id="cb-reset" class="secondary-btn">초기화</button>
@@ -175,7 +197,18 @@
         const resultBody = $('cb-result-body');
 
         let currentFile = null;
-        const currentMode = 'claude_html';   // Ideogram 사용 중지 — Claude HTML 만 사용
+        let currentMode = 'gpt_image';   // 기본: gpt-image-1 분양광고. 'claude_html' = HTML 명함
+        const modeBtns = document.querySelectorAll('.cb-mode-btn');
+        const modeHelp = $('cb-mode-help');
+        const MODE_HELP = {
+            gpt_image: '실사 건물·금테 디자인의 분양 광고 배너를 AI가 한 장으로 생성합니다. 단지명·평형·혜택 등은 위 "디자인 톤"에 적어주세요.',
+            claude_html: '깔끔한 HTML 명함을 생성합니다. 한글 100% 정확, 가벼움. 명함 이미지를 올리면 정보를 자동 인식합니다.',
+        };
+        modeBtns.forEach(btn => btn.addEventListener('click', () => {
+            currentMode = btn.dataset.mode;
+            modeBtns.forEach(b => b.classList.toggle('is-active', b === btn));
+            if (modeHelp) modeHelp.textContent = MODE_HELP[currentMode] || '';
+        }));
 
         function setStatus(text, type) {
             statusEl.className = 'cb-status visible' + (type ? ' ' + type : '');
@@ -248,7 +281,9 @@
             }
             generateBtn.disabled = true;
             generateBtn.textContent = '생성 중…';
-            setStatus('Claude 가 HTML 명함을 디자인 중… (30~60초)', '');
+            setStatus(currentMode === 'gpt_image'
+                ? 'AI가 분양 광고 이미지를 생성 중… (20~60초, 고화질이라 조금 걸려요)'
+                : 'Claude 가 HTML 명함을 디자인 중… (30~60초)', '');
             try {
                 const fd = new FormData();
                 if (currentFile) fd.append('image', currentFile);

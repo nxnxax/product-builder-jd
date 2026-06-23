@@ -46,6 +46,42 @@ function openai_chat(string $apiKey, array $body, int $timeout = 60): array {
     return ['ok' => $status >= 200 && $status < 300, 'status' => $status, 'body' => json_decode((string)$resp, true), 'raw' => (string)$resp];
 }
 
+// gpt-image-1 이미지 생성. 한글 텍스트 렌더링이 정확한 OpenAI 네이티브 이미지 모델.
+// 반환: ['ok'=>true, 'b64'=>..., 'usage'=>...] — gpt-image-1 은 항상 b64_json 으로 응답 (url 없음).
+function openai_image_generate(string $apiKey, string $prompt, string $size = '1536x1024', string $quality = 'high', int $timeout = 180): array {
+    $ch = curl_init('https://api.openai.com/v1/images/generations');
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST => true,
+        CURLOPT_POSTFIELDS => json_encode([
+            'model'   => 'gpt-image-1',
+            'prompt'  => $prompt,
+            'size'    => $size,      // '1536x1024'(가로) | '1024x1536'(세로) | '1024x1024'
+            'quality' => $quality,   // 'low' | 'medium' | 'high'
+            'n'       => 1,
+        ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+        CURLOPT_HTTPHEADER => [
+            'Authorization: Bearer ' . $apiKey,
+            'Content-Type: application/json',
+        ],
+        CURLOPT_TIMEOUT => $timeout,
+        CURLOPT_CONNECTTIMEOUT => 15,
+    ]);
+    $resp = curl_exec($ch);
+    $status = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $err = curl_error($ch);
+    curl_close($ch);
+    if ($resp === false) return ['ok' => false, 'status' => 0, 'error' => 'curl: ' . $err];
+    $data = json_decode((string)$resp, true);
+    if ($status < 200 || $status >= 300) {
+        $msg = $data['error']['message'] ?? ('HTTP ' . $status);
+        return ['ok' => false, 'status' => $status, 'error' => 'OpenAI image ' . $status . ': ' . $msg, 'body' => $data];
+    }
+    $b64 = $data['data'][0]['b64_json'] ?? '';
+    if ($b64 === '') return ['ok' => false, 'status' => $status, 'error' => '응답에 이미지 데이터(b64_json)가 없습니다.', 'body' => $data];
+    return ['ok' => true, 'b64' => $b64, 'usage' => $data['usage'] ?? null];
+}
+
 function anthropic_message(string $apiKey, array $body, int $timeout = 90): array {
     $ch = curl_init('https://api.anthropic.com/v1/messages');
     curl_setopt_array($ch, [
@@ -532,6 +568,22 @@ function save_remote_image(string $url): ?string {
     return $proto . '://' . $host . '/uploads/cards/' . $name;
 }
 
+// gpt-image-1 의 base64 PNG 를 파일로 저장하고 공개 URL 반환.
+function save_b64_image(string $b64, string $ext = 'png'): ?string {
+    $dir = __DIR__ . '/uploads/cards';
+    if (!is_dir($dir) && (!@mkdir($dir, 0755, true) && !is_dir($dir))) return null;
+    $bytes = base64_decode($b64, true);
+    if ($bytes === false || $bytes === '') return null;
+    try { $rand = bin2hex(random_bytes(5)); } catch (Throwable $e) { $rand = substr(sha1(uniqid('', true)), 0, 10); }
+    $name = 'ad-' . date('Ymd-His') . '-' . $rand . '.' . $ext;
+    $path = $dir . '/' . $name;
+    if (@file_put_contents($path, $bytes) === false) return null;
+    @chmod($path, 0644);
+    $proto = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+    $host = $_SERVER['HTTP_HOST'] ?? 'youngman-biz.com';
+    return $proto . '://' . $host . '/uploads/cards/' . $name;
+}
+
 function build_monogram(string $candidate): string {
     $candidate = trim($candidate);
     if ($candidate === '') return 'JD';
@@ -587,6 +639,42 @@ function save_html(string $html): ?string {
     return $proto . '://' . $host . '/uploads/cards/' . $name;
 }
 
+// gpt-image-1 용 한국 분양/부동산 프리미엄 광고 배너 프롬프트.
+// OCR/입력 필드의 한글은 VERBATIM 으로만 사용 — 모델이 연락처/가격/이름을 지어내지 않게 강제.
+function build_realestate_ad_prompt(array $f, ?array $siteMeta, string $tone): string {
+    $hero    = trim((string)($f['brand_title'] ?? $f['company'] ?? ''));
+    $company = trim((string)($f['company'] ?? ''));
+    $name    = trim((string)($f['name'] ?? ''));
+    $title   = trim((string)($f['title'] ?? ''));
+    $phone   = trim((string)($f['phone'] ?? $f['mobile'] ?? ''));
+    $email   = trim((string)($f['email'] ?? ''));
+    $address = trim((string)($f['address'] ?? ''));
+    $tagline = trim((string)($f['tagline'] ?? ''));
+
+    $L = [];
+    $L[] = "Create a PREMIUM Korean real-estate (분양/아파트 신규 분양) promotional banner. Horizontal landscape, top advertising-agency quality, photorealistic and luxurious.";
+    $L[] = "OVERALL LOOK: deep emerald-green to charcoal gradient background on the LEFT two-thirds; a large flowing GOLD curved ribbon divider sweeping diagonally; on the RIGHT third, a PHOTOREALISTIC architectural render of modern Korean luxury high-rise apartment towers at golden-hour dusk, with landscaped grounds and a grand entrance gate. Refined, calm, expensive. Warm gold (#c9a567) accents used sparingly.";
+    $L[] = "TYPOGRAPHY: elegant Korean serif for the big headline (premium 격조), clean Korean sans-serif for body text. Very strong size hierarchy and generous whitespace.";
+    $L[] = "LEFT-PANEL LAYOUT, top to bottom: (1) a small gold eyebrow line of copy; (2) an OVERSIZE Korean headline = the 단지명/브랜드명; (3) directly under it, an UPPERCASE English transliteration of the headline in widely-spaced thin gold letters; (4) a thin gold horizontal rule; (5) a row of 3–4 small gold line-icons, each with a one-line Korean feature label above a tiny sub-label; (6) a gold-outlined benefit box containing 2–3 short benefit items separated by thin dividers; (7) the agent block: NAME in large widely-spaced characters + small role label, then a phone line prefixed with a gold 'M', then an address line prefixed with a gold pin icon and a '견본주택' label.";
+
+    // 반드시 그대로 렌더링할 한글 텍스트 (없으면 생략, 절대 지어내지 말 것)
+    if ($hero !== '')    $L[] = "HEADLINE — render EXACTLY this Korean text, large: \"{$hero}\"";
+    if ($tagline !== '') $L[] = "EYEBROW/TAGLINE — render EXACTLY: \"{$tagline}\"";
+    if ($name !== '')    $L[] = "AGENT NAME — render EXACTLY (space the syllables apart): \"{$name}\"" . ($title !== '' ? "  (role label: \"{$title}\")" : "");
+    if ($phone !== '')   $L[] = "PHONE — render EXACTLY, bold, with a gold 'M' marker before it: \"{$phone}\"";
+    if ($email !== '')   $L[] = "EMAIL — render EXACTLY: \"{$email}\"";
+    if ($address !== '') $L[] = "ADDRESS — render EXACTLY after a '견본주택' label: \"{$address}\"";
+    if ($tone !== '')    $L[] = "EXTRA BRIEF (Korean; use to fill the feature icons, benefit box, and eyebrow copy — keep it short and realistic): {$tone}";
+    if ($siteMeta && trim((string)($siteMeta['title'] ?? '')) !== '') {
+        $ctx = mb_substr(trim(($siteMeta['title'] ?? '') . ' ' . ($siteMeta['description'] ?? '')), 0, 200, 'UTF-8');
+        $L[] = "BRAND CONTEXT (for tone only): {$ctx}";
+    }
+
+    $L[] = "CRITICAL TEXT RULES: every Korean character must be spelled PERFECTLY and be crisply legible — absolutely no garbled, broken, or invented glyphs. Render ONLY the Korean text explicitly provided above. Do NOT invent phone numbers, names, prices, dates, or addresses. For feature/benefit slots without given data, use safe generic premium phrasing (e.g. \"브랜드 프리미엄\", \"프리미엄 입지\") instead of fabricating specifics.";
+    $L[] = "Do NOT include any real company logo, watermark, QR code, or copyrighted brand mark. The building must look like a clean original architectural render, not stock clipart or a city skyline silhouette.";
+    return implode("\n", $L);
+}
+
 // === Main ===
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 
@@ -598,6 +686,7 @@ if ($method === 'GET' && (($_GET['test'] ?? '') === 'connectivity')) {
             'RECRAFT_API_KEY_present'   => load_env_value('RECRAFT_API_KEY')   !== '',
             'IDEOGRAM_API_KEY_present'  => load_env_value('IDEOGRAM_API_KEY')  !== '',
             'ANTHROPIC_API_KEY_present' => load_env_value('ANTHROPIC_API_KEY') !== '',
+            'gpt_image_ready'           => load_env_value('OPENAI_API_KEY')    !== '',  // gpt-image-1 = OPENAI 키 재사용
             'php_version' => PHP_VERSION,
         ],
         'templates' => array_values(array_map(function ($p) { return basename($p, '.html'); }, glob(dirname(__DIR__) . '/templates/cards/*.html') ?: [])),
@@ -674,6 +763,35 @@ if ($mode === 'claude_html') {
         'htmlUrl'   => $savedUrl,
         'usage'     => $claude['usage'] ?? null,
         'note'      => $ocrError ? ('OCR: ' . $ocrError) : null,
+    ]);
+}
+
+// === gpt-image-1 분양/부동산 광고 이미지 모드 ===
+// 디자인 전용 이미지 생성. 한글 렌더링 정확. (Ideogram 한글 깨짐 문제 대체)
+if ($mode === 'gpt_image') {
+    if ($openaiKey === '') jout(['ok' => false, 'error' => 'OPENAI_API_KEY가 서버 .env에 설정되지 않았습니다.'], 500);
+    $adPrompt = build_realestate_ad_prompt($cardFields, $siteMeta, $tone);
+    // 입력 비율에 맞춰 가로/세로 결정 (기본 가로 광고).
+    $size = ((int)$inputDims['height'] > (int)$inputDims['width']) ? '1024x1536' : '1536x1024';
+    $quality = trim((string)($_POST['quality'] ?? 'high'));
+    if (!in_array($quality, ['low', 'medium', 'high'], true)) $quality = 'high';
+    $img = openai_image_generate($openaiKey, $adPrompt, $size, $quality);
+    if (!$img['ok']) {
+        jout(['ok' => false, 'error' => $img['error'] ?? 'gpt-image-1 호출 실패', 'detail' => $img['body']['error'] ?? null], 502);
+    }
+    $savedUrl = save_b64_image($img['b64']);
+    if ($savedUrl === null) jout(['ok' => false, 'error' => '이미지 저장 실패'], 500);
+    jout([
+        'ok'       => true,
+        'mode'     => 'gpt_image',
+        'fields'   => $cardFields,
+        'siteMeta' => $siteMeta,
+        'imageUrl' => $savedUrl,
+        'size'     => $size,
+        'quality'  => $quality,
+        'prompt'   => $adPrompt,
+        'usage'    => $img['usage'] ?? null,
+        'note'     => $ocrError ? ('OCR: ' . $ocrError) : null,
     ]);
 }
 
