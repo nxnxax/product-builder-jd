@@ -53,6 +53,9 @@ jobs:
           test -f import-guide.html       # 타사 통화기록 가져오기 설명서 (index 배너 링크 대상)
           test -f robots.txt              # SEO — 크롤러 차단 정책
           test -f sitemap.xml             # SEO — 크롤러 페이지 인덱싱 지도
+          test -f rss.xml                 # SEO — RSS 피드 (robots.txt Sitemap 등록 대상, 삭제 금지)
+          grep -q 'google-site-verification' index.html   # 구글 소유확인 메타 — 삭제 시 검색등록 풀림
+          grep -q 'naver-site-verification' index.html    # 네이버 소유확인 메타 — 삭제 시 검색등록 풀림
           grep -q 'auth-shared.js?v=' index.html   # 새 랜딩은 main.js 대신 auth-shared 만 import
           grep -q 'profile.js?v=' profile.html
           grep -q 'admin.js?v=' admin.html
@@ -137,6 +140,7 @@ jobs:
           cp tester.html deploy/tester.html                      # 베타 테스터 APK 다운로드 안내 (APK 본체는 사장님 FTP 직접 업로드: /download/youngman-latest.apk)
           cp robots.txt deploy/robots.txt                        # SEO — 크롤러 정책
           cp sitemap.xml deploy/sitemap.xml                      # SEO — 인덱싱 지도
+          cp rss.xml deploy/rss.xml                              # SEO — RSS 피드 (robots.txt Sitemap 등록, 삭제 금지)
           cp api/analyze.php deploy/analyze.php
           cp api/records.php deploy/records.php
           cp api/error_logger.php deploy/error_logger.php     # 서버 에러 진단 로거 — recording-callback/process-recording 이 require

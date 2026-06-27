@@ -50,3 +50,4 @@ Disallow: /BRIDGE_API.md
 Disallow: /CALL_RECORDING_BACKEND.md
 
 Sitemap: https://youngman-biz.com/sitemap.xml
+Sitemap: https://youngman-biz.com/rss.xml

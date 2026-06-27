@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+<channel>
+  <title>영맨 - AI 통화요약 고객관리대장 비서</title>
+  <link>https://youngman-biz.com/</link>
+  <description>고객과의 통화를 AI가 자동으로 요약하고 관리대장 양식에 저장해주는 영업 비서. 나만의 고객관리 양식을 AI에게 맡기세요.</description>
+  <language>ko</language>
+  <item>
+    <title>AI 통화 요약 - 통화 후 자동으로 대화내용 정리</title>
+    <link>https://youngman-biz.com/</link>
+    <description>고객과 통화하면 AI가 자동으로 핵심을 요약해 고객관리대장에 저장합니다.</description>
+  </item>
+  <item>
+    <title>나만의 고객관리 양식 - AI 자동 저장</title>
+    <link>https://youngman-biz.com/Marketing.html</link>
+    <description>커스텀 업무양식에 통화 요약과 고객정보를 자동 보관. 누락 없는 영업 관리.</description>
+  </item>
+</channel>
+</rss>
